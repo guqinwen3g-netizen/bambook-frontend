@@ -1,6 +1,7 @@
 import {developmentDomain,emptyFabricRequirements,fabricRequirementError,validFabricSample,type DevelopmentDomain,type FabricDevelopmentRequirements} from './mistDevelopmentDomain';
 import {createFulfillmentState,applyFulfillmentCommand,fulfillmentCommandPermission,getFulfillmentReviews,assertProductionTransition,type FulfillmentState,type FulfillmentCommand} from './mistFulfillment';
 import {createMarketState,applyMarketCommand,marketCommandPermission,getMarketReviews,type MarketState,type MarketCommand} from './mistMarket';
+import {createEmailState,applyEmailCommand,emailCommandPermission,seedEmailExamples,type EmailState,type EmailCommand} from './mistEmail';
 import {createPlatformState,applyPlatformCommand,platformCommandPermission,getPlatformReviews,platformCreditAppliedMinor,getRequiredBusinessNumberPlan as platformBusinessNumberPlan,type PlatformState,type PlatformCommand} from './mistPlatform';
 import type {MistCreditDocumentIssue} from './mistCreditDocuments';
 import type {MistReviewTask} from './mistReview';
@@ -76,10 +77,10 @@ export type MistState = {
   receipts: MistReceipt[]; invoices: MistInvoice[]; allocations: MistAllocation[]; payments: MistPayment[];
   customers: MistCustomer[]; contacts: MistContact[]; files: MistFile[];
   events: MistEvent[]; tasks: MistTask[]; notifications: MistNotification[]; calendar: MistCalendarEvent[];
-  settings: MistSettings; fulfillment:FulfillmentState; market:MarketState; platform:PlatformState; reviewerIds?:string[];
+  settings: MistSettings; fulfillment:FulfillmentState; market:MarketState; platform:PlatformState; email:EmailState; reviewerIds?:string[];
 };
 export type MistOrderInput = { type: 'garment' | 'fabric'; customerId: string; season: string; currency: string; due: string; owner: string; governance?:OrderGovernanceInput; lines: Array<Omit<MistOrderLine, 'id' | 'orderId' | 'made' | 'qc'>> };
-export type MistCommand = FulfillmentCommand | MarketCommand | PlatformCommand | OrderGovernanceCommand | OrderFundingCommand
+export type MistCommand = FulfillmentCommand | MarketCommand | PlatformCommand | EmailCommand | OrderGovernanceCommand | OrderFundingCommand
   | { type: 'development.saveDraft'; payload: { draftId?: string; values: DevelopmentValues; fileIds: string[] } }
   | { type: 'development.submit'; payload: { draftId?: string; values: DevelopmentValues; fileIds: string[] } }
   | { type: 'development.update'; payload: { devId: string; patch: Partial<DevelopmentValues> } }
@@ -314,6 +315,7 @@ export function createMistState(context: MistContext, seed: 'demo'|'empty' = 'de
   state.tasks=state.devs.slice(0,4).map(dev=>({id:context.id(),title:dev.name,due:dev.due,done:false,kind:'development',target:{view:'development/detail',id:dev.id,versionId:dev.currentVersionId||undefined}}));
   state.calendar=[{id:context.id(),title:'秋冬首样评审',date:iso('10/12',context),time:'14:00',note:'顾言、沈禾、QC 许言 · 30 分钟',target:{view:'development/detail',id:state.devs[0].id}}];
   state.notifications=[{id:context.id(),category:'qc',title:'首样评审报告已回传',detail:'查看当前版本的专业评审结果。',at:context.now,readAt:null,target:{view:'development/detail',id:state.devs[0].id,versionId:state.devs[0].currentVersionId||undefined}}];
+  seedEmailExamples(state,context);
   recalculate(state);
   return state;
 }
@@ -325,6 +327,7 @@ export function mistCommandPermission(command: MistCommand): string | null {
   if(command.type.startsWith('fulfillment.'))return fulfillmentCommandPermission(command as FulfillmentCommand);
   if(command.type.startsWith('market.'))return marketCommandPermission(command as MarketCommand);
   if(command.type.startsWith('platform.'))return platformCommandPermission(command as PlatformCommand);
+  if(command.type.startsWith('email.'))return emailCommandPermission(command as EmailCommand);
   if(command.type==='development.recordQc')return command.payload.domain==='fabric'?'qc:fabric_chain:write':'qc:garment_chain:write';
   if(command.type.startsWith('development.')||command.type.startsWith('fabric.')||command.type==='files.add')return 'products:write';
   if(command.type.startsWith('order.')||command.type.startsWith('production.'))return 'orders:write';
@@ -344,6 +347,7 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
   if(command.type.startsWith('fulfillment.')){const result=applyFulfillmentCommand(state,command as FulfillmentCommand,context);normalizeMistState(state,context);recalculate(state);return {state,result};}
   if(command.type.startsWith('market.')){const result=applyMarketCommand(state,command as MarketCommand,context);for(const order of state.orders)if(!original.orders.some(old=>old.id===order.id)&&!order.governance){order.governance=createOrderGovernance(context);order.state='订单草稿';order.tone='neutral';order.checklist=['拟发范围确认','收货与贸易条款确认','收款条件核对'].map((label,index)=>({id:order.id+'-check-'+index,label,done:false,note:''}));}normalizeMistState(state,context);recalculate(state);return {state,result};}
   if(command.type.startsWith('platform.')){const result=applyPlatformCommand(state,command as PlatformCommand,context);normalizeMistState(state,context);recalculate(state);return {state,result};}
+  if(command.type.startsWith('email.')){const result=applyEmailCommand(state,command as EmailCommand,context);normalizeMistState(state,context);recalculate(state);return {state,result};}
   const p:any=command.payload;
   let result:MistCommandResult={};
   switch(command.type){
@@ -604,8 +608,8 @@ export function normalizeMistState(state:MistState,context:MistContext):void {
     'market.attachment.set':'关联业务附件'
   };
   for(const event of state.events||[])if(eventLabels[event.text])event.text=eventLabels[event.text];
-  const defaults={fulfillment:createFulfillmentState(context,state),market:createMarketState(context,state),platform:createPlatformState(context,state),orderFunding:createOrderFundingState(context,state)};
-  for(const name of ['fulfillment','market','platform','orderFunding'] as const){
+  const defaults={fulfillment:createFulfillmentState(context,state),market:createMarketState(context,state),platform:createPlatformState(context,state),email:createEmailState(context,state),orderFunding:createOrderFundingState(context,state)};
+  for(const name of ['fulfillment','market','platform','email','orderFunding'] as const){
     if(!state[name]) (state as any)[name]=defaults[name];
     else for(const [key,value] of Object.entries(defaults[name])) if((state[name] as any)[key]===undefined)(state[name] as any)[key]=structuredClone(value);
   }

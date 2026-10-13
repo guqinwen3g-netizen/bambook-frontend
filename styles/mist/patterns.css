@@ -471,3 +471,41 @@
 .mist-line-track > button[data-state="blocked"] b, .mist-line-track > button[data-state="blocked"] small { color: var(--mist-bad-ink); }
 .mist-line-track > button[aria-pressed="true"] { outline: 2px solid var(--mist-accent); outline-offset: 1px; }
 @media (max-width: 640px) { .mist-line-track { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* 智能邮箱：邮箱与文件夹导航 + 列表 + 阅读区 */
+.mist-mail { display: grid; grid-template-columns: 224px minmax(0, 1fr); gap: var(--mist-gap); align-items: start; }
+.mist-mail-nav { display: flex; flex-direction: column; gap: 18px; padding: 14px 10px; position: sticky; top: 16px; }
+.mist-mail-navgroup { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mist-mail-navgroup > .mist-eyebrow { padding: 0 8px 4px; }
+.mist-mail-navitem { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 7px 8px; border-radius: var(--mist-r-md); color: var(--mist-ink-2); font-size: var(--mist-text-sm); text-align: left; transition: background var(--mist-dur) var(--mist-ease); }
+.mist-mail-navitem:hover { background: var(--mist-fill); }
+.mist-mail-navitem[data-active] { background: var(--mist-accent-tint); color: var(--mist-accent-ink); font-weight: var(--mist-fw-medium); }
+.mist-mail-navitem > b { margin-left: auto; font-size: var(--mist-text-2xs); font-weight: var(--mist-fw-medium); color: var(--mist-ink-3); }
+.mist-mail-navitem[data-active] > b { color: var(--mist-accent-ink); }
+.mist-mail-navlabel { min-width: 0; flex: 1; overflow: hidden; }
+.mist-mail-dot { flex: none; width: 8px; height: 8px; margin: 0 3px; border-radius: 50%; background: var(--mist-ink-3); }
+.mist-mail-dot[data-tone="ok"] { background: var(--mist-ok); }
+.mist-mail-dot[data-tone="warn"] { background: var(--mist-warn); }
+.mist-mail-dot[data-tone="accent"] { background: var(--mist-accent); }
+.mist-mail-ellipsis { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mist-mail-strong[data-unread] { font-weight: var(--mist-fw-medium); color: var(--mist-ink); }
+.mist-mail-snippet { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+.mist-mail-star { color: var(--mist-warn); flex: none; }
+.mist-mail-body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--mist-text-sm); line-height: 1.7; color: var(--mist-ink); padding: 14px 16px; border-radius: var(--mist-r-md); background: var(--mist-sunken); }
+.mist-mail-attachment, .mist-mail-link { gap: 8px; min-width: 0; padding: 6px 8px; border-radius: var(--mist-r-md); background: var(--mist-fill); }
+.mist-mail-picker { gap: 8px; flex-wrap: wrap; }
+.mist-mail-picker > .mist-input { flex: 1 1 140px; min-width: 0; }
+.mist-mail-files { gap: 6px; max-height: 220px; overflow: auto; }
+.mist-mail-flags { gap: 6px; flex-wrap: wrap; }
+.mist-mail-mobile-meta { display: none; }
+@media (max-width: 640px) { .mist-mail-mobile-meta { display: block; } }
+.mist-mail-addr { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+.mist-mail-cc { display: flex; align-items: flex-end; padding-bottom: 8px; }
+@media (max-width: 1180px) {
+  .mist-mail { grid-template-columns: minmax(0, 1fr); }
+  .mist-mail-nav { position: static; flex-direction: row; gap: 14px; padding: 8px; overflow-x: auto; }
+  .mist-mail-navgroup { flex-direction: row; flex: none; align-items: center; }
+  .mist-mail-navgroup > .mist-eyebrow { padding: 0 4px; }
+  .mist-mail-navitem { width: auto; flex: none; white-space: nowrap; }
+  .mist-mail-navitem .mist-mail-ellipsis { max-width: 160px; }
+}

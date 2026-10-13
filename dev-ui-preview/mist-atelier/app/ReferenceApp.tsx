@@ -31,6 +31,7 @@ import { MARKET_PAGES } from './pages/modules/MarketPages';
 import { PLATFORM_PAGES } from './pages/modules/PlatformPages';
 import { LocalAdminPanel } from './pages/modules/LocalAdminPanel';
 import { LocalMesPage } from './pages/modules/LocalMesPage';
+import { EmailsPage } from './pages/modules/EmailsPage';
 import { MistReviewButton } from './runtime/reviews';
 import { moduleSearchRecords } from './runtime/search';
 import { apiService } from '../../../services/apiService';
@@ -39,11 +40,11 @@ import { visibleMistNotifications, mistDailyDigest } from './runtime/notificatio
 
 const PAGES: Record<string, React.FC> = {
   ...FULFILLMENT_PAGES,...MARKET_PAGES,...PLATFORM_PAGES,
-  cockpit: HomePage, development: DevListPage, 'development/detail': DevDetailPage, 'development/new': DevCreatePage,
+  emails: EmailsPage, cockpit: HomePage, development: DevListPage, 'development/detail': DevDetailPage, 'development/new': DevCreatePage,
   orders: OrderListPage, 'orders/detail': OrderDetailPage, 'orders/new': OrderCreatePage, calendar: CalendarPage, 'payment-vouchers': FinancePage, crm: CustomerPage,
   'production-board': ProductionPage, 'system-settings': SettingsPage, settings: SettingsPage, states: StatesPage, 'design-system': DesignSystemPage,
 };
-const LIVE_VIEWS = new Set(['cockpit','development','development/detail','development/new','orders','orders/detail','orders/new','payment-vouchers','crm','production-board','calendar','system-settings','settings']);
+const LIVE_VIEWS = new Set(['emails','cockpit','development','development/detail','development/new','orders','orders/detail','orders/new','payment-vouchers','crm','production-board','calendar','system-settings','settings']);
 const ROUTE_KEYS = ['view','id','versionId','batchId','section','customerId','orderLineId','productionId','detail'] as const;
 const LABELS: Record<string, string> = { 'design-system': '设计系统', states: '空 / 加载 / 错误', 'system-settings': '系统设置', settings: '系统设置' };
 const GROUPS: Record<string, string> = { overview: '我的事务', customer: '客户与市场', fulfillment: '订单履约', finance: '财务与成本', platform: '平台' };
