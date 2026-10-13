@@ -13,74 +13,9 @@ import { useMistWorkspace } from '../../runtime/workspace';
 import { useMistSession } from '../../runtime/auth';
 import { Nav, useNav } from '../../nav';
 import { ModuleWorkbench, ModuleEditorDialog, ModuleEditorPage, downloadModuleCsv, type ModuleEditorSpec, type ModuleField, type ModuleValues } from './ModuleWorkbench';
-const today = () => new Date().toISOString().slice(0, 10);
-const localNow = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
-const status: Record<string, string> = { draft: '草稿', pending: '待审批', approved: '已批准', rejected: '已退回', preparing: '单证处理中', ready: '待实际出运', departed: '已出运', cancelled: '已取消', submitted: '已申报', cleared: '已清关', issued: '已签发', void: '已作废', working: '处理中', reported: '报告已回传', blocked: '质量阻断', awaiting_business: '待业务恢复' };
-const pill = (s: string) => <Pill tone={['approved', 'issued', 'cleared', 'departed', 'reported'].includes(s) ? 'ok' : ['rejected', 'blocked', 'void'].includes(s) ? 'bad' : ['pending', 'awaiting_business'].includes(s) ? 'warn' : 'neutral'}>{status[s] || s}</Pill>;
-const field = (key: string, label: string, type: ModuleField['type'] = 'text', required = true, options?: ModuleField['options']): ModuleField => ({ key, label, type, required, ...(type === 'number' ? { min: 0, step: '0.0001' } : {}), ...(options ? { options } : {}) });
-const choices = (values: string[]) => values.map(value => ({ value, label: value }));
-const emptyOption = { value: '', label: '请选择' };
-const text = (v: ModuleValues, key: string) => String(v[key] ?? '');
-const number = (v: ModuleValues, key: string) => Number(v[key]);
-function useEditor() { const [spec, set] = useRouteDraft<ModuleEditorSpec | null>(null); return { open: set, view: spec ? (spec.fields.length > 3 ? <ModuleEditorPage spec={spec} onClose={() => set(null)}/> : <ModuleEditorDialog spec={spec} onClose={() => set(null)}/>) : null, spec }; }
-function sourceOptions(s: MistState | null, versions = true) { return [emptyOption, ...(versions ? s?.versions.filter(v => v.returnedAt).map(v => ({ value: 'version:' + v.id, label: `${s.devs.find(d => d.id === v.devId)?.code} · ${v.label} · ${v.factory}` })) || [] : []), ...(s?.orderLines.map(l => ({ value: 'line:' + l.id, label: `${s.orders.find(o => o.id === l.orderId)?.code} · ${l.style} · ${l.name}` })) || []), ...(s?.productions.map(p => ({ value: 'production:' + p.id, label: `${p.order} · ${p.code} · ${p.factory}` })) || [])]; }
-function parseSource(s: MistState, value: string): Exclude<FulfillmentSource, {
-    kind: 'manual';
-}> { const [type, id] = value.split(':'); if (type === 'version') {
-    const v = s.versions.find(v => v.id === id);
-    if (v)
-        return { kind: 'version', devId: v.devId, versionId: v.id };
-} if (type === 'line') {
-    const l = s.orderLines.find(l => l.id === id);
-    if (l)
-        return { kind: 'orderLine', orderId: l.orderId, lineId: l.id };
-} if (type === 'production') {
-    const p = s.productions.find(p => p.id === id);
-    if (p)
-        return { kind: 'orderLine', orderId: p.orderId, lineId: p.lineId, productionId: p.id };
-} throw new Error('请重新选择当前工作区的准确来源'); }
-function sourceValue(source: FulfillmentSource) { return source.kind === 'version' ? 'version:' + source.versionId : source.kind === 'orderLine' ? source.productionId ? 'production:' + source.productionId : 'line:' + source.lineId : 'manual'; }
-function SourceLink({ source }: {
-    source: FulfillmentSource;
-}) { const { state } = useMistWorkspace(), { go } = useNav(); if (!state)
-    return null; if (source.kind === 'manual') return <span>{source.description}</span>; return <TextLink onClick={() => source.kind === 'version' ? go('development/detail', source.devId, { versionId: source.versionId }) : go('orders/detail', source.orderId, { orderLineId: source.lineId, productionId: source.productionId })}>{fulfillmentSourceLabel(state, source)}</TextLink>; }
-function shipmentReturnTarget(state:MistState|null,shipment:FulfillmentShipment){
-    const orderIds=new Set(shipment.lines.map(line=>line.orderId));
-    const order=state?.orders.find(order=>orderIds.size===1&&orderIds.has(order.id)&&order.customerId===shipment.customerId);
-    return order?{section:'order:'+order.id,customerId:order.customerId}:{customerId:shipment.customerId};
-}
-function RecordFiles({ ids, onAttach }: {
-    ids: string[];
-    onAttach?: (ids: string[]) => Promise<unknown>;
-}) { const { state, uploadFile, downloadFile, pending, saving } = useMistWorkspace(); const [failure, setFailure] = useRouteDraft(''), [busy, setBusy] = React.useState(false), [staged, setStaged] = useRouteDraft<MistFile[]>([]); const add = async (files: File[]) => { setBusy(true); setFailure(''); try {
-    const added = [...staged];
-    for (const file of files) {
-        added.push(await uploadFile(file));
-        setStaged([...added]);
-    }
-    setStaged(added);
-    await onAttach?.([...ids, ...added.map(f => f.id)]);
-    setStaged([]);
-}
-catch (e) {
-    setFailure(e instanceof Error ? e.message : '附件保存失败');
-}
-finally {
-    setBusy(false);
-} }; return <div className="mist-section">{failure && <Banner tone="bad" title="附件未完成保存">{failure}</Banner>}{ids.map(id => { const f = state?.files.find(f => f.id === id); return f ? <div className="mist-row" key={id}><span>{f.name}</span><TextLink icon={Download} onClick={() => void downloadFile(f).catch(e => setFailure(String(e)))}>下载</TextLink></div> : null; })}{onAttach && <UploadZone hint="上传当前记录的原始照片或附件" onFiles={files => { if (!busy && !saving && !pending)
-    void add(files); }}/>} {!!staged.length && <Button disabled={busy || saving || !!pending} onClick={() => void add([])}>重试关联已上传附件</Button>}</div>; }
-function Events({ entity, id }: {
-    entity: string;
-    id: string;
-}) { const { state } = useMistWorkspace(); return <Timeline events={(state?.events || []).filter(e => e.entityType === entity && e.entityId === id).map(e => ({ who: e.actor, when: new Date(e.at).toLocaleString(), text: e.text }))}/>; }
-function PositionSummary({ row }: { row: FulfillmentSample | FulfillmentStock }) {
-    const positions = fulfillmentPositions(row);
-    if (positions.length < 2) return null;
-    return <DataTable ariaLabel="实际位置余额" rows={positions} rowKey={position => position.location} columns={[
-        { key: 'location', header: '实际位置', render: position => position.location || '位置未记录' },
-        { key: 'available', header: '可用数量', align: 'right', render: position => `${position.available} ${row.unit}` },
-    ]}/>;
-}
+import { today, localNow, status, pill, field, choices, emptyOption, text, number, useEditor, sourceOptions, parseSource, sourceValue, SourceLink, shipmentReturnTarget, RecordFiles, Events, PositionSummary, exportRecords } from './fulfillmentKit';
+import { SamplesPage } from './SamplesPage';
+export { SamplesPage };
 function PurchaseHistory({ purchase }: { purchase: FulfillmentPurchase }) {
     if (!purchase.revisionHistory?.length) return null;
     return <><CardHeader title="承诺与审批版本"/><Timeline events={purchase.revisionHistory.slice().reverse().map(revision => ({
@@ -89,7 +24,6 @@ function PurchaseHistory({ purchase }: { purchase: FulfillmentPurchase }) {
         text: <><div>第 {revision.revision} 版 · {revision.decision ? status[revision.decision.decision] : '待审批'}</div><div>{revision.snapshot.supplier} · {revision.snapshot.description} · {revision.snapshot.quantity} {revision.snapshot.unit} × {revision.snapshot.price} {revision.snapshot.currency}</div><div>{revision.snapshot.terms} · {revision.snapshot.destination} · {revision.snapshot.due}</div>{revision.decision && <div>{revision.decision.note}</div>}<RecordFiles ids={revision.snapshot.fileIds}/></>,
     }))}/></>;
 }
-function exportRecords(name: string, headers: string[], rows: unknown[][]) { downloadModuleCsv(name + '.csv', headers, rows); }
 function downloadApprovedPurchase(root: MistState, p: FulfillmentPurchase) {
     if (p.state !== 'approved' || !p.decision)
         throw new Error('当前采购尚未批准');
@@ -101,35 +35,6 @@ function downloadApprovedPurchase(root: MistState, p: FulfillmentPurchase) {
     a.download = p.code + '.html';
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-export function SamplesPage() {
-    const { state, run, saving, pending } = useMistWorkspace(), session = useMistSession(), { go,route } = useNav(), editor = useEditor();
-    const [category, setCategory] = React.useState('all');
-    const [syncError,setSyncError] = React.useState(''),[syncing,setSyncing]=React.useState(false);
-    const synchronize=async()=>{if(syncing||saving||pending)return;setSyncing(true);setSyncError('');try{await run({type:'fulfillment.samples.sync',payload:{}});}catch(error){setSyncError(error instanceof Error?error.message:'来源实物同步失败');}finally{setSyncing(false);}};
-    const hasShipmentContext=route.section?.startsWith('shipment:')===true, shipmentId=hasShipmentContext?route.section!.slice(9):undefined;
-    const incomingShipment=state?.fulfillment.shipments.find(shipment=>shipment.id===shipmentId);
-    const sourceShipment=incomingShipment&&incomingShipment.state!=='cancelled'&&(!route.customerId||incomingShipment.customerId===route.customerId)?incomingShipment:undefined;
-    const shipmentProductions=(state?.productions||[]).filter(branch=>sourceShipment?.lines.some(line=>line.productionId===branch.id&&line.orderId===branch.orderId&&line.lineId===branch.lineId));
-    const uniqueProduction=shipmentProductions.length===1?shipmentProductions.find(()=>true):undefined;
-    const sourceProduction=route.productionId?shipmentProductions.find(branch=>branch.id===route.productionId):uniqueProduction;
-    const invalidShipment=hasShipmentContext&&!!state&&(!sourceShipment||!shipmentProductions.length);
-    const sourceHint=invalidShipment?'本票出运或准确生产来源已不可用，请重新选择出运。':hasShipmentContext&&route.productionId&&!sourceProduction?'指定工厂分支不属于本票，请明确选择本票实际来源。':hasShipmentContext&&shipmentProductions.length>1?'本票含多个生产分支，请明确选择本次船样实际来源。':undefined;
-    const sampleSources=hasShipmentContext?[emptyOption,...shipmentProductions.map(branch=>({value:'production:'+branch.id,label:`${branch.order} · ${branch.code} · ${branch.factory}`}))]:[{value:'manual',label:'手工 / 无系统来源'},...sourceOptions(state,true).filter(option=>option.value&&!option.value.startsWith('line:'))];
-    const rows = (state?.fulfillment.samples || []).filter(sample=>(!hasShipmentContext||!!sourceShipment&&sample.role==='shipping'&&sample.shipmentId===sourceShipment.id&&sample.source.kind==='orderLine'&&shipmentProductions.some(branch=>sample.source.kind==='orderLine'&&branch.id===sample.source.productionId&&branch.orderId===sample.source.orderId&&branch.lineId===sample.source.lineId))&&(category==='all'||sample.category===category)), can = session.hasPermission('products:write');
-    const sampleSpec: ModuleEditorSpec = { title: '登记实体样品', fields: [field('name', '名称'), field('category', '大类', 'select', true, choices(['成衣', '面料', '其他'])), field('categoryCustom','其他类别（选其他时填写）','text',false), field('form', '形态'), {...field('source','准确来源','select',true,sampleSources),hint:sourceHint}, field('sourceText', '手工来源说明', 'text', false), {...field('role','订单样品角色','select',hasShipmentContext,hasShipmentContext?[{value:'shipping',label:'船样'}]:[emptyOption,{value:'pp',label:'成衣产前样'},{value:'pioneer',label:'面料先锋样'},{value:'shipping',label:'船样'}]),readonly:hasShipmentContext}, {...field('shipmentId','船样对应出运批次','select',hasShipmentContext,hasShipmentContext?(sourceShipment?[{value:sourceShipment.id,label:sourceShipment.code}]:[emptyOption]):[emptyOption,...(state?.fulfillment.shipments||[]).filter(shipment=>shipment.state!=='cancelled').map(shipment=>({value:shipment.id,label:shipment.code}))]),readonly:hasShipmentContext}, field('quantity', '数量 / 长度', 'number'), field('unit', '单位', 'select', true, choices(['件', '米', '份'])), field('size', '尺码', 'text', false), field('color', '颜色', 'text', false), field('location', '自由文本位置', 'text', false), field('note', '备注', 'textarea', false)], initialValues: { name: '', category:sourceShipment?.domain==='fabric'?'面料':'成衣',categoryCustom:'',form:hasShipmentContext?'船样':'参考样',source:hasShipmentContext?(sourceProduction?'production:'+sourceProduction.id:''):route.productionId?'production:'+route.productionId:'manual', sourceText: '', role:hasShipmentContext?'shipping':route.productionId?(state?.orders.find(order=>order.id===state.productions.find(branch=>branch.id===route.productionId)?.orderId)?.type==='fabric'?'pioneer':'pp'):'', shipmentId:sourceShipment?.id||'', quantity: 1, unit: '件', size: '', color: '', location: '', note: '' }, submit: async (v) => { if (!state)
-            return; if(invalidShipment)throw new Error('本票出运或生产来源已不可用'); await run({ type: 'fulfillment.samples.create', payload: { name: text(v, 'name'), category: text(v, 'category')==='其他'?text(v,'categoryCustom'):text(v,'category'), form: text(v, 'form'), unit: text(v, 'unit'), quantity: number(v, 'quantity'), location: text(v, 'location'), size: text(v, 'size'), color: text(v, 'color'), note: text(v, 'note'), fileIds: [], ...(text(v,'role')?{role:text(v,'role') as FulfillmentSample['role']}:{}), ...(text(v,'shipmentId')?{shipmentId:text(v,'shipmentId')}:{}), source: text(v, 'source') === 'manual' ? { kind: 'manual', description: text(v, 'sourceText') } : parseSource(state, text(v, 'source')) } }); } };
-    const openSampleQc = (sample:FulfillmentSample) => {
-        const source=sample.source;if(source.kind==='manual')return;
-        const existing=state?.fulfillment.qcTasks.find(task=>task.sampleId===sample.id);
-        const qcTarget=sample.role==='shipping'&&sample.shipmentId?{section:'shipment:'+sample.shipmentId,productionId:source.kind==='orderLine'?source.productionId:undefined}:{section:'sample',...(source.kind==='orderLine'?{orderLineId:source.lineId,productionId:source.productionId}:{versionId:source.versionId})};
-        if(existing){go('qc-workbench',existing.id,qcTarget);return;}
-        editor.open({title:`送检 ${sample.code} · ${sample.role?fulfillmentSampleRoleLabel(sample.role):'开发样'}`,fields:[field('factory','工厂'),field('location','实际检查地点'),field('contact','现场联系人','text',false),field('due','预计检查日','date')],initialValues:{factory:source.kind==='orderLine'?state?.productions.find(branch=>branch.id===source.productionId)?.factory||'':state?.versions.find(version=>version.id===source.versionId)?.factory||'',location:sample.location,contact:'',due:today()},submit:async values=>{const domain=source.kind==='orderLine'?state?.orders.find(order=>order.id===source.orderId)?.type:state?.devs.find(dev=>dev.id===source.devId)?.values.category.includes('面料')?'fabric':'garment';const saved=await run({type:'fulfillment.qc.request',payload:{source,sampleId:sample.id,domain:domain||'garment',kind:'sample',factory:text(values,'factory'),location:text(values,'location'),contact:text(values,'contact'),due:text(values,'due')}});go('qc-workbench',String(saved.result.id||''),qcTarget);}});
-    };
-    const movement = (s: FulfillmentSample, kind: 'lend' | 'return' | 'send' | 'move') => { const loans = state?.fulfillment.sampleMovements.filter(m => m.sampleId === s.id && m.kind === 'lend' && sampleLoanRemaining(state!, m.id) > 0) || []; editor.open({ title: ({ lend: '登记借出', return: '登记分次归还', send: '登记永久寄出', move: '登记移位' })[kind], fields: [...(kind !== 'return' && fulfillmentPositions(s).length > 1 ? [field('sourceLocation', '本次出库位置', 'select', true, [{value:'__choose__',label:'请选择位置'},...fulfillmentPositions(s).map(position=>({value:position.location,label:`${position.location||'位置未记录'} · ${position.available}${s.unit}`}))])] : []), ...(kind === 'return' ? [field('loanId', '原借出', 'select', true, [emptyOption, ...loans.map(l => ({ value: l.id, label: `${l.person} · 未还 ${sampleLoanRemaining(state!, l.id)}${s.unit} · ${l.at.slice(0, 10)}` }))])] : []), ...(kind !== 'move' ? [field('quantity', `本次数量（${s.unit}）`, 'number')] : []), field('person', '借用人 / 收件人', 'text', kind === 'lend' || kind === 'send'), field('location', '新位置 / 去向', 'text', false), ...(kind === 'lend' ? [field('expectedReturn', '预计归还日', 'date', false)] : []), field('note', '交接说明', 'textarea', false)], initialValues: { quantity: kind === 'return' ? 0 : s.available, person: '', location: kind === 'return' || s.location === '多个位置' ? '' : s.location, note: '', loanId: '', expectedReturn: '', sourceLocation:'__choose__' }, submit: v => run({ type: 'fulfillment.samples.move', payload: { id: s.id, kind, quantity: kind === 'move' ? 0 : number(v, 'quantity'), person: text(v, 'person'), location: text(v, 'location'), note: text(v, 'note'), ...(text(v, 'loanId') ? { loanId: text(v, 'loanId') } : {}), ...(text(v, 'expectedReturn') ? { expectedReturn: text(v, 'expectedReturn') } : {}), ...(text(v,'sourceLocation') !== '__choose__' ? {sourceLocation:text(v,'sourceLocation')} : {}) } }) }); };
-    if (editor.spec)
-        return editor.view;
-    return <ModuleWorkbench title="样品仓库" eyebrow="订单履约 · 实体样品" description={sourceHint|| (sourceShipment?`${sourceShipment.code} · 只处理本票船样，准确绑定实际工厂分支与送审实物。`:'按准确版本和订单条目管理实物；成衣逐件，面料按形态与单位记录。')} rows={rows} preview create={can&&!invalidShipment ? sampleSpec : undefined} searchText={s => `${s.code} ${s.name} ${s.location} ${fulfillmentPositions(s).map(position=>position.location).join(' ')} ${fulfillmentSourceLabel(state!, s.source)}`} columns={[{ key: 'code', header: '实物 / 档案', render: s => <><Mono>{s.code}</Mono><div>{s.name}</div></> }, { key: 'source', header: '来源', render: s => <SourceLink source={s.source}/> }, { key: 'quantity', header: '可用', align: 'right', render: s => `${s.available} ${s.unit}` }, { key: 'location', header: '位置', render: s => s.location || '未记录' }]} toolbar={<>{sourceShipment&&<Button onClick={()=>go('shipments',sourceShipment.id,shipmentReturnTarget(state,sourceShipment))}>返回本票出运</Button>}{hasShipmentContext&&<Button onClick={()=>go('samples')}>查看全部样品</Button>}<Select aria-label="样品类别" value={category} onChange={e => setCategory(e.target.value)} options={[{ value: 'all', label: '全部类别' }, ...choices([...new Set((state?.fulfillment.samples || []).map(s => s.category))])]}/>{can&&!hasShipmentContext && <Button icon={RefreshCw} disabled={syncing||saving||!!pending} onClick={() => void synchronize()}>同步已返样版本</Button>}{syncError&&<Banner tone="bad" title="来源实物同步失败">{syncError}</Banner>}</>} exportRows={filtered => exportRecords('样品仓库', ['编号', '名称', '来源', '形态', '总量', '可用', '单位', '位置'], filtered.map(s => [s.code, s.name, fulfillmentSourceLabel(state!, s.source), s.form, s.quantity, s.available, s.unit, fulfillmentPositions(s).map(position=>`${position.location||'位置未记录'} ${position.available}${s.unit}`).join('；')]))} edit={can ? s => ({ title: '编辑样品资料', fields: [field('name','样品名称'),field('form','样品形态'),field('size','尺码','text',false),field('color','颜色','text',false),field('note', '备注', 'textarea', false)], initialValues: { name:s.name,form:s.form,size:s.size,color:s.color,location: s.location, note: s.note }, submit: v => run({ type: 'fulfillment.samples.edit', payload: { id: s.id, location: s.location,name:text(v,'name'),form:text(v,'form'),size:text(v,'size'),color:text(v,'color'), note: text(v, 'note'), fileIds: s.fileIds } }) }) : undefined} rowActions={can ? (['lend', 'return', 'send', 'move'] as const).map(kind => ({ label: ({ lend: '借出', return: '归还', send: '寄出', move: '移位' })[kind], disabled:(s:FulfillmentSample)=>kind==='return'?!state?.fulfillment.sampleMovements.some(m=>m.sampleId===s.id&&sampleLoanRemaining(state,m.id)>0):s.available<=0, run: (s: FulfillmentSample) => movement(s, kind) })) : []} detail={s => <><PositionSummary row={s}/><KeyValue items={[{ label: '样品角色', value: s.role?fulfillmentSampleRoleLabel(s.role):'参考 / 开发样品' }, {label:'准确出运批次',value:state?.fulfillment.shipments.find(shipment=>shipment.id===s.shipmentId)?.code||'不适用'}, { label: '形态', value: s.form }, { label: '规格', value: [s.size, s.color].filter(Boolean).join(' · ') || '未记录' }, { label: '来源', value: <SourceLink source={s.source}/> }, { label: '备注', value: s.note || '未记录' }]}/><RecordFiles key={s.id} ids={s.fileIds} onAttach={can ? ids => run({ type: 'fulfillment.samples.edit', payload: { id: s.id, location: s.location, note: s.note, fileIds: ids } }) : undefined}/><Timeline events={(state?.fulfillment.sampleMovements || []).filter(m => m.sampleId === s.id).slice().reverse().map(m => ({ who: m.actor, when: new Date(m.at).toLocaleString(), text: `${({ receive: '入库', lend: '借出', return: '归还', send: '寄出', move: '移位' })[m.kind]} ${m.quantity || ''}${m.quantity ? s.unit : ''} · ${m.person} · ${m.location} ${m.note}` }))}/>{s.source.kind!=='manual'&&<Button onClick={()=>openSampleQc(s)}>查看 / 发起本样品QC</Button>}</>}/>;
 }
 function QcReportEditor({ task, onClose }: {
     task: FulfillmentQcTask;
