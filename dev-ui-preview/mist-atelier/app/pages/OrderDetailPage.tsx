@@ -9,6 +9,7 @@ import { useMistWorkspace } from '../runtime/workspace';
 import { downloadMistCsv, mistDate } from './OrderListPage';
 import { formatOrderQuantity, orderAmounts, sumOrderMoney } from './orderAmounts';
 import {createOrderGovernance,type OrderGovernanceInput,type OrderGovernanceFields,type OrderGovernanceLine} from '../../../../server/src/shared/mistOrderGovernance';
+import { OrderLineFulfillment } from './OrderLineFulfillment';
 import {orderFundingCoveredAmount} from '../../../../server/src/shared/mistOrderFunding';
 
 function OrderContractDialog({order,open,onClose}:{order:MistOrder&{governance?:OrderGovernanceFields};open:boolean;onClose:()=>void}){
@@ -175,8 +176,8 @@ export function OrderDetailPage() {
         <Card><CardHeader title="收款" />{remaining === null ? <Banner tone="warn" title="待核对订单金额">金额核对完成后显示收款比例。</Banner> : <Donut centerLabel="已收" slices={[{ label: '已确认到账', value: received.total!, display: amountLabel(received.total), color: 'var(--mist-accent)' }, { label: '合同待收', value: remaining, display: amountLabel(remaining), color: 'transparent' }]} caption={<><span className="mist-note">已核销 {amountLabel(reconciled.total)} {order.currency}</span><Button variant="quiet" onClick={() => go('payment-vouchers',undefined,{section:'funding:'+order.id,customerId:order.customerId})}>查看收款核销</Button></>} />}</Card>
       </div>
     </section>
-    <Drawer open={!!selectedLine} onClose={() => {setLineId(null);go('orders/detail',order.id,{customerId:route.customerId,section:order.type});}} title={selectedLine?.name ?? '订单条目'} sub={selectedLine?.style}>
-      {selectedLine && <div className="mist-col" data-module-detail><KeyValue items={[{ label: '数量', value: `${formatOrderQuantity(selectedLine.qty)} ${selectedLine.unit}` }, { label: '单价', value: `${amountLabel(lineAmounts.get(selectedLine.id) == null ? null : selectedLine.price)} ${order.currency}` }, { label: '小计', value: `${amountLabel(lineAmounts.get(selectedLine.id))} ${order.currency}` }]} />
+    <Drawer open={!!selectedLine} onClose={() => {setLineId(null);go('orders/detail',order.id,{customerId:route.customerId,section:order.type});}} title={selectedLine?.name ?? '订单条目'} sub={selectedLine?.style} size="lg">
+      {selectedLine && <div className="mist-col" data-module-detail>{state&&<OrderLineFulfillment state={state} order={order} line={selectedLine} go={go}/>}<KeyValue items={[{ label: '数量', value: `${formatOrderQuantity(selectedLine.qty)} ${selectedLine.unit}` }, { label: '单价', value: `${amountLabel(lineAmounts.get(selectedLine.id) == null ? null : selectedLine.price)} ${order.currency}` }, { label: '小计', value: `${amountLabel(lineAmounts.get(selectedLine.id))} ${order.currency}` }]} />
         <Button icon={Pencil} disabled={busy||approvalPending} onClick={()=>setLineEditorId(selectedLine.id)}>编辑条目</Button>
         <CardHeader title="采购" /><Button block disabled={busy} onClick={()=>go('procurement',undefined,{orderLineId:selectedLine.id,section:'order:'+order.id,customerId:order.customerId})}>准备采购草稿</Button>
         {!approved&&<Banner tone="warn" title="仅可准备采购草稿">主单批准前不能提交采购承诺、发出合同或进入生产。</Banner>}

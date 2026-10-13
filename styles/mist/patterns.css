@@ -454,3 +454,19 @@
 @media (max-width: 760px) {
   .mist-unit-lines { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; column-gap: 10px; }
 }
+
+/* 订单条目阶段轨迹（抽屉内紧凑横向轨迹，窄屏两列） */
+.mist-line-track { display: grid; grid-template-columns: repeat(var(--mist-steps, 6), minmax(0, 1fr)); gap: 4px; }
+.mist-line-track > button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 10px; border-radius: var(--mist-r-md); background: var(--mist-fill); text-align: left; min-width: 0; color: var(--mist-ink-3); }
+.mist-line-track > button b { font-size: var(--mist-text-xs); font-weight: var(--mist-fw-medium); color: var(--mist-ink-2); }
+.mist-line-track > button small { font-size: var(--mist-text-2xs, 11px); line-height: 1.35; overflow-wrap: anywhere; max-width: 100%; }
+.mist-line-track > button[data-state="partial"] { background: var(--mist-fill-2); }
+.mist-line-track > button[data-state="partial"] b { color: var(--mist-accent-ink); }
+.mist-line-track > button[data-state="done"] { background: var(--mist-accent-tint); }
+.mist-line-track > button[data-state="done"] b { color: var(--mist-accent-ink); }
+.mist-line-track > button[data-state="now"] { background: var(--mist-accent); color: var(--mist-on-accent); }
+.mist-line-track > button[data-state="now"] b { color: var(--mist-on-accent); }
+.mist-line-track > button[data-state="blocked"] { background: var(--mist-bad-tint); }
+.mist-line-track > button[data-state="blocked"] b, .mist-line-track > button[data-state="blocked"] small { color: var(--mist-bad-ink); }
+.mist-line-track > button[aria-pressed="true"] { outline: 2px solid var(--mist-accent); outline-offset: 1px; }
+@media (max-width: 640px) { .mist-line-track { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

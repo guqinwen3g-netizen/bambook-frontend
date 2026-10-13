@@ -9,7 +9,10 @@ import { fmt } from '../data';
 import { formatOrderQuantity, orderAmounts } from './orderAmounts';
 import { createOrderGovernance, type OrderGovernanceInput } from '../../../../server/src/shared/mistOrderGovernance';
 const STEPS = [{ id: 'basic', label: '基本信息' }, { id: 'items', label: '产品条目' }, { id: 'plan', label: '交期与负责' }, { id: 'amounts', label: '核对金额' }, { id: 'review', label: '确认提交' }];
-type LineDraft = MistOrderInput['lines'][number] & { key: string };
+type LineOrigin = { sourceProductId?: string; sourceDevId?: string; sourceVersionId?: string };
+type LineDraft = MistOrderInput['lines'][number] & { key: string; origin?: LineOrigin };
+type DraftSource = { kind: 'version' | 'product'; label: string; detail: string; customerId?: string; line: LineDraft };
+const blankContract = () => createOrderGovernance({ id: () => '', now: '', actorName: '' }).contract;
 const newLine = (type: 'garment' | 'fabric'): LineDraft => ({ key: crypto.randomUUID(), name: '', style: '', img: type === 'garment' ? 'coat' : 'clay', qty: 1, unit: type === 'garment' ? '件' : '米', price: 0 });
 export function OrderCreatePage() {
   const { go, route } = useNav(), toast = useToast(), workspace=useMistWorkspace();
@@ -18,6 +21,15 @@ export function OrderCreatePage() {
   const alive=React.useRef(true);React.useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
   const locked=React.useRef(false);
   const initialType=route.section==='fabric'?'fabric':'garment';
+  const stateRef=React.useRef(state);stateRef.current=state;
+  const source=React.useMemo<DraftSource|null>(()=>{
+    if(!state)return null;
+    const unit=initialType==='garment'?'件':'米';
+    if(route.versionId){const version=state.versions.find(row=>row.id===route.versionId),dev=version&&state.devs.find(row=>row.id===version.devId);if(!version||!dev)return null;return{kind:'version',label:`开发版本 ${dev.code} · ${version.label}`,detail:`${dev.name} · ${dev.style} · ${version.factory||'工厂未填'}`,customerId:dev.customerId||undefined,line:{key:'source',name:dev.name,style:dev.style,img:version.img||dev.img,qty:1,unit,price:0,origin:{sourceDevId:dev.id,sourceVersionId:version.id}}};}
+    if(route.id?.startsWith('product:')){const market=(state as typeof state&{market?:{products:Array<{id:string;sku:string;name:string;specification:string;unit:string;sourceDevId:string;sourceVersionId:string}>}}).market,product=market?.products.find(row=>row.id===route.id!.slice(8));if(!product)return null;return{kind:'product',label:`数字档案 ${product.sku}`,detail:`${product.name}${product.specification?' · '+product.specification:''}`,line:{key:'source',name:product.name,style:product.sku,img:initialType==='garment'?'coat':'clay',qty:1,unit:product.unit||unit,price:0,origin:{sourceProductId:product.id,...(product.sourceDevId?{sourceDevId:product.sourceDevId}:{}),...(product.sourceVersionId?{sourceVersionId:product.sourceVersionId}:{})}}};}
+    return null;
+  },[!!state,route.versionId,route.id,initialType]);
+  const sourceMissing=!!state&&(!!route.versionId||!!route.id?.startsWith('product:'))&&!source;
   const [step, setStep] = React.useState('basic'), [done, setDone] = React.useState<Record<string, boolean>>({});
   const [form, setForm] = React.useState({ type: initialType as 'garment' | 'fabric', customerId: route.customerId ?? '', season: '', currency: 'USD', due: '', owner: '' });
   const [contract,setContract]=React.useState<OrderGovernanceInput>(()=>createOrderGovernance({id:()=>'',now:'',actorName:''}).contract);
@@ -27,7 +39,7 @@ export function OrderCreatePage() {
   const index = STEPS.findIndex(item => item.id === step);
   const customer = state?.customers.find(item => item.id === form.customerId);
   const amounts = orderAmounts(lines);
-  React.useEffect(()=>{locked.current=false;setWorking(false);setFailure('');setDone({});setStep('basic');setForm({type:initialType,customerId:route.customerId??'',season:'',currency:'USD',due:'',owner:state?.settings.profileName||''});setLines([newLine(initialType)]);setContract(createOrderGovernance({id:()=>'',now:'',actorName:''}).contract);},[scope]);
+  React.useEffect(()=>{locked.current=false;setWorking(false);setFailure('');setDone({});setStep('basic');setForm({type:initialType,customerId:route.customerId??source?.customerId??'',season:'',currency:'USD',due:'',owner:state?.settings.profileName||''});setLines([source?{...source.line,key:crypto.randomUUID()}:newLine(initialType)]);setContract(createOrderGovernance({id:()=>'',now:'',actorName:''}).contract);},[scope,source?.label]);
   React.useEffect(() => { if (state && !form.owner) setForm(previous => ({ ...previous, owner: state.settings.profileName })); }, [state?.settings.profileName]);
   const validation = (section: string) => {
     if (section === 'basic' && ((contract.kind==='external'&&!customer) || !form.season.trim() || !form.currency)) return '请选择客户，并填写季节与币种。';
@@ -44,10 +56,20 @@ export function OrderCreatePage() {
     if (message) { setFailure(message); return; }
     const bound=scope;locked.current=true;setWorking(true); setFailure('');
     try {
-      const receipt = await run({ type: 'order.create', payload: { ...form, governance:contract, lines: lines.map(({ key, ...line }) => line) } });
+      const receipt = await run({ type: 'order.create', payload: { ...form, governance:contract, lines: lines.map(({ key, origin, ...line }) => line) } });
       const id = receipt.result.orderId ?? receipt.result.id;
       if (!id) throw new Error('订单已提交，但回执缺少编号。请返回列表核对，勿重复创建。');
-      if(alive.current&&activeScope.current===bound){toast('订单草稿已创建，待主单审批'); go('orders/detail', id,{customerId:form.customerId,section:form.type});}
+      let linked='';
+      if(lines.some(line=>line.origin)){
+        try{
+          let created=stateRef.current?.orderLines.filter(line=>line.orderId===id)||[];
+          for(let attempt=0;attempt<40&&created.length!==lines.length;attempt++){await new Promise(resolve=>setTimeout(resolve,50));created=stateRef.current?.orderLines.filter(line=>line.orderId===id)||[];}
+          if(created.length!==lines.length)throw new Error('尚未读到新建条目');
+          const order=stateRef.current?.orders.find(row=>row.id===id) as {governance?:{contract:OrderGovernanceInput}}|undefined;
+          await run({type:'order.governance.saveDraft',payload:{orderId:id,input:order?.governance?.contract||contract,lines:created.map((line,index)=>({id:line.id,name:line.name,style:line.style,img:line.img,qty:line.qty,unit:line.unit,price:line.price,...(lines[index].origin||{})}))}});
+        }catch(problem){linked=problem instanceof Error?problem.message:'来源关联未写入';}
+      }
+      if(alive.current&&activeScope.current===bound){toast(linked?`订单草稿已创建；来源关联未写入（${linked}），请在条目中核对`:'订单草稿已创建，待主单审批'); go('orders/detail', id,{customerId:form.customerId,section:form.type});}
     } catch (problem) { if(alive.current&&activeScope.current===bound)setFailure(problem instanceof Error ? problem.message : '订单未能创建，请重试'); } finally { if(alive.current&&activeScope.current===bound){locked.current=false;setWorking(false);} }
   };
   const resolve=async()=>{if(working||saving||locked.current)return;const bound=scope;locked.current=true;setWorking(true);try{const receipt=await recover();if(alive.current&&activeScope.current===bound&&receipt){const id=receipt.result.orderId??receipt.result.id;if(id&&pending?.command?.type==='order.create')go('orders/detail',id,{customerId:form.customerId,section:form.type});}}catch(error){if(alive.current&&activeScope.current===bound)setFailure(error instanceof Error?error.message:'原请求核对失败');}finally{if(alive.current&&activeScope.current===bound){locked.current=false;setWorking(false);}}};
@@ -55,6 +77,8 @@ export function OrderCreatePage() {
   const setLine = (key: string, patch: Partial<LineDraft>) => setLines(items => items.map(item => item.key === key ? { ...item, ...patch } : item));
   return <MistPage>
     <BackLink onClick={() => go('orders',undefined,{customerId:form.customerId||undefined,section:form.type})}>订单管理</BackLink><PageHeader eyebrow="订单履约 · 订单" title="新建订单" description="先保存订单草稿，补齐合同依据后提交主单审批。批准前不能采购或履约。" />
+    {source&&<Banner tone="accent" title={`来源：${source.label}`} actions={<Button variant="quiet" onClick={()=>go('orders/new',undefined,{customerId:route.customerId,section:form.type})}>改为手工新建</Button>}>{source.detail}。已带入第一个条目的品名、款号与单位；数量、销售单价与交期请按客户 PO 填写，来源会随条目一起保存。</Banner>}
+    {sourceMissing&&<Banner tone="warn" title="来源记录不可用">指定的开发版本或数字档案不在当前工作空间，已按手工新建处理。</Banner>}
     {(failure || error) && <Banner tone="bad" title="订单尚未完成">{failure || error}</Banner>}
     {pending&&!saving&&<Banner tone="warn" title="上一次操作结果待核对" actions={<Button disabled={working||saving} onClick={()=>void resolve()}>核对原操作结果</Button>}>保留当前填写内容，先核对原请求。</Banner>}
     <div className="mist-wizard"><VerticalSteps current={step} onSelect={id => { if (done[id] || id === step) { setStep(id); setFailure(''); } }} steps={STEPS.map(item => ({ ...item, done: done[item.id] }))} />

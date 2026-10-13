@@ -4,12 +4,15 @@
  */
 import React from 'react';
 import { ChevronRight, ClipboardList, Download, Plus, SearchX, Ship, Wallet, AlertTriangle } from 'lucide-react';
-import { Avatar, Banner, Button, Card, DataTable, Dropdown, EmptyState, Icon, Meter, MistPage, Mono, ObjectCell, PageHeader, Pagination, Pill, SearchField, StatCard, StatGrid, Tabs, TextLink, Thumb, Toolbar, useToast, type Column } from '../../../../components/mist';
+import { Avatar, Banner, Button, Card, DataTable, Dropdown, EmptyState, Icon, MistPage, Mono, ObjectCell, PageHeader, Pagination, Pill, SearchField, StatCard, StatGrid, Tabs, TextLink, Thumb, Toolbar, useToast, type Column } from '../../../../components/mist';
 import { IMG, fmt } from '../data';
 import type { MistOrder } from '../../../../server/src/shared/mistWorkspace';
 import { useMistWorkspace } from '../runtime/workspace';
 import { useNav } from '../nav';
 import type {OrderGovernanceFields} from '../../../../server/src/shared/mistOrderGovernance';
+import { useMistSession } from '../runtime/auth';
+import { OrderSourceDialog } from './OrderSourceDialog';
+import { currentLineStage, orderLineFlags } from './orderLineTrack';
 const approvalOf=(order:MistOrder)=>(order as MistOrder&{governance?:OrderGovernanceFields}).governance?.status;
 const approvalLabel=(order:MistOrder)=>({draft:'订单草稿',pending:'待主单审批',approved:'主单已批准',rejected:'主单已退回'}[approvalOf(order)||'']||'待补主单审批');
 
@@ -41,6 +44,8 @@ export function OrderListPage() {
   const [status, setStatus] = React.useState('all');
   const [approvalFilter,setApprovalFilter]=React.useState('all');
   const [page, setPage] = React.useState(1);
+  const [createOpen, setCreateOpen] = React.useState(false);
+  const session = useMistSession(), canWrite = session.hasPermission('orders:write');
   const allOrders = state?.orders ?? [];
   React.useEffect(()=>{if(route.section==='fabric'||route.section==='garment'){setTab(route.section);setStatus('all');}},[route.section]);
   const customerId = route.customerId;
@@ -60,7 +65,8 @@ export function OrderListPage() {
     { key: 'id', header: '订单', width: 'minmax(220px,2fr)', sortValue: order => order.code, render: order => <ObjectCell thumb={<Thumb src={IMG[order.img]} size="sm" />} name={<Mono>{order.code}</Mono>} meta={`${order.customer} · ${order.season}`} /> },
     { key: 'qty', header: '数量', width: '90px', align: 'right', hideOnMobile: true, sortValue: order => order.qty, render: order => <><span className="mist-num">{quantityLabel(order)}</span><span className="mist-cell-sub">{order.lines} 个条目</span></> },
     { key: 'amt', header: '金额', width: '130px', align: 'right', sortValue: order => order.amount, render: order => <><b className="mist-cell-strong mist-num">{fmt(order.amount, 2)}</b><span className="mist-cell-sub">{order.currency}</span></> },
-    { key: 'prog', header: '进度', width: 'minmax(120px,1fr)', hideOnMobile: true, sortValue: order => order.progress, render: order => <Meter segments={[{ value: order.progress, tone: order.progress === 100 ? 'ok' : 'accent' }]} caption={`${order.progress}%`} /> },
+    { key: 'prog', header: '条目阶段', width: 'minmax(190px,1.6fr)', hideOnMobile: true, render: order => { if (!state) return null; const flags = orderLineFlags(state, order), shown = flags.tracks.slice(0, 2); const notes = [flags.business && `待业务动作 ${flags.business}`, flags.nok && `QC NOK ${flags.nok}`, flags.toShip && `待出运 ${flags.toShip}`].filter(Boolean) as string[];
+      return <div className="mist-col" style={{ gap: 4 }} data-order-stages={order.id}><div className="mist-row" style={{ gap: 4, flexWrap: 'wrap' }}>{shown.map(({ line, stages }) => { const stage = currentLineStage(stages); return <Pill key={line.id} tone={!stage ? 'ok' : stage.state === 'blocked' ? 'bad' : stage.state === 'now' ? 'accent' : 'neutral'}>{line.style} · {stage ? stage.label : '已出运'}</Pill>; })}{flags.tracks.length > 2 && <span className="mist-muted">+{flags.tracks.length - 2}</span>}</div>{notes.length > 0 && <span className={flags.nok ? 'mist-cell-sub mist-tone-bad' : 'mist-cell-sub'}>{notes.join(' · ')}</span>}</div>; } },
     { key: 'due', header: '交期', width: '70px', hideOnMobile: true, sortValue: order => order.due, render: order => <b className="mist-cell-strong" title={order.due}>{order.due.slice(-5).replace('-', '/')}</b> },
     { key: 'owner', header: '负责人', width: '56px', hideOnMobile: true, render: order => <Avatar name={order.owner} size="sm" /> },
     { key: 'state', header: '状态', width: '96px', render: order => <><Pill tone={approvalOf(order)==='approved'?order.tone:'warn'}>{approvalOf(order)==='approved'?order.state:approvalLabel(order)}</Pill>{approvalOf(order)==='approved'&&<span className="mist-cell-sub">主单已批准</span>}</> },
@@ -68,7 +74,8 @@ export function OrderListPage() {
   ];
   return <MistPage>
     <PageHeader eyebrow="订单履约 · 订单" title="订单管理" description={customerId ? `${state?.customers.find(customer => customer.id === customerId)?.name ?? '客户'}的订单` : '所有成衣与面料订单的履约进度、金额与交期。'}
-      actions={<><Button icon={Download} disabled={!state} onClick={() => { downloadMistCsv('订单台账.csv', ['订单', '客户', '季节', '数量', '币种', '金额', '交期', '负责人', '主单审批', '状态'], rows.map(order => [order.code, order.customer, order.season, quantityLabel(order), order.currency, order.amount, order.due, order.owner, approvalLabel(order), order.state])); toast('已导出订单台账'); }}>导出</Button><Button variant="primary" icon={Plus} onClick={() => go('orders/new', undefined, { customerId,section:tab })}>新建订单</Button></>} />
+      actions={<><Button icon={Download} disabled={!state} onClick={() => { downloadMistCsv('订单台账.csv', ['订单', '客户', '季节', '数量', '币种', '金额', '交期', '负责人', '主单审批', '状态'], rows.map(order => [order.code, order.customer, order.season, quantityLabel(order), order.currency, order.amount, order.due, order.owner, approvalLabel(order), order.state])); toast('已导出订单台账'); }}>导出</Button><Button variant="primary" icon={Plus} onClick={() => setCreateOpen(true)}>新建订单</Button></>} />
+    <OrderSourceDialog open={createOpen} onClose={() => setCreateOpen(false)} type={tab} customerId={customerId} canWrite={canWrite} />
     {error && <Banner tone="bad" title="订单读取失败" actions={<Button onClick={() => void refresh()}>重试</Button>}>{error}</Banner>}
     <StatGrid>
       <StatCard icon={ClipboardList} label="在途订单" value={active.length} unit="单" foot={[...unitTotals].map(([unit, quantity]) => `${fmt(quantity)} ${unit}`).join(' · ') || '暂无在途条目'} />
@@ -79,7 +86,7 @@ export function OrderListPage() {
     <Tabs<'garment' | 'fabric'> value={tab} onChange={value=>{setTab(value);setStatus('all');}} options={[{ value: 'garment', label: '成衣订单', count: allOrders.filter(order => order.type === 'garment'&&(!customerId||order.customerId===customerId)).length }, { value: 'fabric', label: '面料订单', count: allOrders.filter(order => order.type === 'fabric'&&(!customerId||order.customerId===customerId)).length }]} />
     <Toolbar><SearchField value={q} onChange={setQ} placeholder="订单号、客户或季节" /><Dropdown label="主单审批" value={approvalFilter} onChange={setApprovalFilter} options={[{value:'all',label:'全部'},{value:'draft',label:'草稿'},{value:'pending',label:'待审批'},{value:'approved',label:'已批准'},{value:'rejected',label:'已退回'}]}/><Dropdown label="状态" value={status} onChange={setStatus} options={[{ value: 'all', label: '全部' }, ...[...new Set(family.map(order => order.state))].map(value => ({ value, label: value }))]} />{customerId && <TextLink onClick={() => go('orders')}>清除客户筛选</TextLink>}</Toolbar>
     <Card><DataTable density={state?.settings.density} ariaLabel="订单" columns={cols} rows={rows.slice((currentPage - 1) * 20, currentPage * 20)} rowKey={order => order.id} loading={loading} onRowClick={order => go('orders/detail', order.id,{customerId,section:tab})}
-      empty={<EmptyState icon={SearchX} title={q || status !== 'all' ? '没有匹配的订单' : `还没有${tab === 'garment' ? '成衣' : '面料'}订单`} action={q || status !== 'all' ? <TextLink onClick={() => { setQ(''); setStatus('all'); }}>清除筛选</TextLink> : <Button icon={Plus} onClick={() => go('orders/new', undefined, { customerId,section:tab })}>新建订单</Button>} />}
+      empty={<EmptyState icon={SearchX} title={q || status !== 'all' ? '没有匹配的订单' : `还没有${tab === 'garment' ? '成衣' : '面料'}订单`} action={q || status !== 'all' ? <TextLink onClick={() => { setQ(''); setStatus('all'); }}>清除筛选</TextLink> : <Button icon={Plus} onClick={() => setCreateOpen(true)}>新建订单</Button>} />}
       footer={<><span>{rows.length} 个订单</span><Pagination page={currentPage} pages={pages} onChange={setPage} /></>} /></Card>
   </MistPage>;
 }
