@@ -425,3 +425,24 @@
 }
 
 .mist-card.mist-brief[data-tone="ai"] { background: var(--mist-ai-panel); }
+
+/* ════ 板块入口卡（面料 / 成衣顶层工作区） ════ */
+.mist-domains { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
+.mist-domain { padding: 16px 20px 18px; display: flex; flex-direction: column; gap: 14px; }
+.mist-domain[aria-selected="true"], .mist-domain[aria-selected="true"]:hover { background: var(--mist-accent-tint-2); }
+.mist-domain-h { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.mist-domain-h b { font-size: var(--mist-text-xl); font-weight: var(--mist-fw-medium); white-space: nowrap; }
+.mist-domain-nums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.mist-domain-nums > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mist-domain-nums small { font-size: var(--mist-text-2xs); color: var(--mist-ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mist-domain-nums b { font-size: var(--mist-text-2xl); font-weight: var(--mist-fw-light); line-height: 1.1; }
+.mist-task[aria-pressed="true"] { background: var(--mist-accent-tint); }
+@media (max-width: 760px) {
+  .mist-domains { gap: 10px; }
+  .mist-domain { padding: 12px 14px; gap: 8px; }
+  .mist-domain-h .mist-note { display: none; }
+  .mist-domain-h b { font-size: var(--mist-text-lg); }
+  .mist-domain-nums { grid-template-columns: 1fr; gap: 2px; }
+  .mist-domain-nums > span { flex-direction: row; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .mist-domain-nums b { font-size: var(--mist-text-base); font-weight: var(--mist-fw-medium); }
+}
