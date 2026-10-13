@@ -8,6 +8,7 @@ import { useNav } from '../nav';
 import { useMistWorkspace } from '../runtime/workspace';
 import { useMistSession } from '../runtime/auth';
 import { ModuleEditorPage, type ModuleEditorSpec } from './modules/ModuleWorkbench';
+import { CustomerMailPanel, FollowUpPanel, OpportunityPanel } from './CustomerRelations';
 
 export function CustomerPage() {
   const { go, route, openAI } = useNav(), toast = useToast(), session = useMistSession();
@@ -21,7 +22,7 @@ export function CustomerPage() {
   const [edit, setEdit] = React.useState<MistCustomer | null>(null);
   const [deleteContact, setDeleteContact] = React.useState(false), [frequency, setFrequency] = React.useState(false);
   const [busy, setBusy] = React.useState(false), [failure, setFailure] = React.useState('');
-  React.useEffect(() => { setTab('overview'); setContact(null); setEdit(null); setFailure(''); }, [customer?.id]);
+  React.useEffect(() => { setTab(route.section && ['followups', 'opportunities', 'mail'].includes(route.section) ? route.section : 'overview'); setContact(null); setEdit(null); setFailure(''); }, [customer?.id, route.section]);
   const orders = (state?.orders ?? []).filter(item => item.customerId === customer?.id);
   const devs = (state?.devs ?? []).filter(item => item.customerId === customer?.id);
   const contacts = (state?.contacts ?? []).filter(item => item.customerId === customer?.id);
@@ -72,7 +73,7 @@ export function CustomerPage() {
       facts={[{ label: '客户经理', value: <><Avatar name={customer.owner} size="xs" />{customer.owner}</> }, { label: '等级', value: <Pill tone="accent">{customer.grade}</Pill> }]}
       actions={<>{customerActions}<Button icon={Mail} disabled={!customerEmail} title={customerEmail?'使用本机邮件应用撰写，Bambook不会发送邮件':'请先添加含有效邮箱的联系人'} onClick={() => writeMail(customerEmail)}>写邮件</Button><Button variant="primary" icon={Plus} onClick={() => go('development/new', undefined, { customerId: customer.id })}>新建开发案</Button><IconButton icon={Ellipsis} label="编辑客户资料" onClick={() => { setEdit({ ...customer }); setFailure(''); }} /></>} />
     {(error || failure) && <Banner tone="bad" title="操作尚未完成">{failure || error}</Banner>}
-    <Tabs value={tab} onChange={setTab} options={[{ value: 'overview', label: '概览' }, { value: 'orders', label: '订单', count: orders.length }, { value: 'dev', label: '开发', count: devs.length }, { value: 'contacts', label: '联系人', count: contacts.length }, { value: 'files', label: '文件', count: files.length }]} />
+    <Tabs value={tab} onChange={setTab} options={[{ value: 'overview', label: '概览' }, { value: 'orders', label: '订单', count: orders.length }, { value: 'dev', label: '开发', count: devs.length }, { value: 'followups', label: '跟进', count: (state?.crm?.followUps ?? []).filter(row => row.customerId === customer.id).length }, { value: 'opportunities', label: '商机', count: (state?.crm?.opportunities ?? []).filter(row => row.customerId === customer.id && !['won', 'lost'].includes(row.stage)).length }, { value: 'mail', label: '邮件' }, { value: 'contacts', label: '联系人', count: contacts.length }, { value: 'files', label: '文件', count: files.length }]} />
     <StatGrid>
       <StatCard icon={BadgeDollarSign} label="今年下单" value={fmt(currencyOrders.filter(order => new Date(order.createdAt).getFullYear() === new Date().getFullYear()).reduce((sum, order) => sum + order.amount, 0), 2)} unit={customer.currency} foot={`共 ${orders.length} 个订单`} />
       <StatCard icon={ClipboardList} label="在途订单" value={active.length} unit="单" foot={active.map(order => order.code).join(' · ')} onClick={() => setTab('orders')} />
@@ -95,6 +96,9 @@ export function CustomerPage() {
             { key: 'st', header: '阶段', width: '120px', hideOnMobile: true, render: dev => <><StageProgress total={5} current={dev.stage} /><span className="mist-cell-sub" style={{ marginTop: 6 }}>{STAGES[dev.stage]}</span></> },
             { key: 's', header: '状态', width: '118px', render: dev => <Pill tone={dev.tone}>{dev.state}</Pill> },
           ]} /></Card>}
+        {state?.crm && (tab === 'overview' || tab === 'opportunities') && <OpportunityPanel customer={customer} state={state} can={canCreate} />}
+        {state?.crm && tab === 'followups' && <FollowUpPanel customer={customer} state={state} can={canCreate} />}
+        {state && tab === 'mail' && <CustomerMailPanel customer={customer} state={state} />}
         {tab === 'contacts' && <Card><CardHeader title="联系人" tools={<IconButton icon={Plus} label="添加联系人" onClick={() => { setContact({ name: '', role: '', email: '', phone: '' }); setFailure(''); }} />} />{contactList}</Card>}
         {tab === 'files' && <Card><CardHeader title="客户关联文件" /><DataTable density={state?.settings.density} rows={files} rowKey={file => file.id} onRowClick={file => { void downloadFile(file).catch(problem => setFailure(problem instanceof Error ? problem.message : '下载失败')); }} empty={<EmptyState compact title="还没有关联文件" description="开发案及沟通记录的附件会汇总到这里。" />} columns={[
           { key: 'name', header: '文件', render: file => file.name }, { key: 'size', header: '大小', render: file => `${Math.ceil(file.size / 1024)} KB` }, { key: 'download', header: '下载', render: () => <Download className="mist-icon" /> },
@@ -103,6 +107,7 @@ export function CustomerPage() {
       <div className="mist-detail-rail">
         <Card><CardHeader title="档案" /><KeyValue items={[{ label: '结算币种', value: customer.currency }, { label: '付款条款', value: customer.terms }, { label: '贸易术语', value: customer.incoterm }, { label: '主要品类', value: customer.categories }, { label: '信用额度', value: `${fmt(customer.creditLimit, 2)} ${customer.currency}` }]} /></Card>
         {tab !== 'contacts' && <Card><CardHeader title="联系人" tools={<IconButton icon={Plus} label="添加联系人" size="sm" onClick={() => { setContact({ name: '', role: '', email: '', phone: '' }); setFailure(''); }} />} />{contactList}</Card>}
+        {state?.crm && tab !== 'followups' && <FollowUpPanel customer={customer} state={state} can={canCreate} compact />}
         <Card><CardHeader title="沟通动态" tools={<IconButton icon={TrendingUp} label="业务动态统计" size="sm" onClick={() => setFrequency(true)} />} /><Timeline events={events.map(event => ({ who: event.actor, when: new Date(event.at).toLocaleString('zh-CN'), text: event.text }))} />{!events.length && <EmptyState compact title="暂无动态" />}</Card>
       </div>
     </div>
