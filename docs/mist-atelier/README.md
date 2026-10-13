@@ -28,6 +28,7 @@
 4. [`04-page-recipes.md`](./04-page-recipes.md) — T1–T13 页面模板配方（照抄）
 5. [`05-migration-playbook.md`](./05-migration-playbook.md) — 迁移步骤：Wave 0 外壳 → Wave 1–5 模块
 6. [`06-qa-checklist.md`](./06-qa-checklist.md) — 每个模块合入前的验收清单
+7. [`07-frontend-page-inventory.md`](./07-frontend-page-inventory.md) — 当前施工清单：前端先行，全站每页内容、交互与批次（含智能邮箱）
 7. [`module-map.md`](./module-map.md) — 35 个模块 → 模板 → 批次（进度勾选表）
 8. [`AGENT_BRIEF.md`](./AGENT_BRIEF.md) — 给编码 Agent 的完整指令
 
@@ -53,4 +54,4 @@ node scripts/gen-mist-docs.mjs
 
 用户最终明确：**项目只有 Mist Atelier 这一套前端，从这个已经完成的起点继续开发。** 原前端退役，仅按需查阅业务功能和控制逻辑。唯一运行源码是 `app/main.tsx` → `ReferenceApp.tsx` → `pages/*`；3001、3131、根 Web 构建和 Electron renderer 都导入同一份 Mist main。旧 `App.tsx` 与 Manager 页面不再是宿主或改造对象。
 
-字重采用 Mist 的 300 / 400 / 500；原页面、token、布局、材质和交互为锁定基线。在 Mist 页面的数据和动作槽位接业务适配器。当前34个MVP业务入口已注册实际页面并接独立本地持久化；邮箱按既有MVP边界不启用。初始样例仍是交接包演示数据，不能作为真实客户业务。功能、交互、渲染及外部服务边界分别记录，推进方式和当前证据见 [`05-migration-playbook.md`](./05-migration-playbook.md)。
+字重采用 Mist 的 300 / 400 / 500；原页面、token、布局、材质和交互为锁定基线。在 Mist 页面的数据和动作槽位接业务适配器。当前34个MVP业务入口已注册实际页面并接独立本地持久化；智能邮箱已于 2026-10-13 晚重新纳入，按 `07-frontend-page-inventory.md` 建设。初始样例仍是交接包演示数据，不能作为真实客户业务。功能、交互、渲染及外部服务边界分别记录，推进方式和当前证据见 [`05-migration-playbook.md`](./05-migration-playbook.md)。
