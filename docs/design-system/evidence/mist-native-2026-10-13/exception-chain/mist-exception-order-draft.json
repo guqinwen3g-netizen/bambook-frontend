@@ -1,0 +1,242 @@
+{
+  "readOnly": true,
+  "refundAudit": {
+    "phase": "snapshot",
+    "claim": null,
+    "dispositions": [],
+    "credits": [],
+    "goods": [],
+    "applications": [],
+    "payments": [],
+    "originalAllocated": 0,
+    "refundPaid": 0,
+    "netCash": 0,
+    "warehouseStockRows": 0
+  },
+  "refundBaselineSourceFacts": {
+    "order": {
+      "id": "e32ac965-6f99-44f9-ac41-56b1af4c8280",
+      "code": "SO-G-2026-0003",
+      "quantity": 4,
+      "amount": 48,
+      "currency": "USD",
+      "customerId": "7a41388a-c4c8-474e-9892-b397b94e4546"
+    },
+    "lines": [
+      {
+        "id": "4f9bcf2f-5883-4d7d-aeb6-416a3980e865",
+        "quantity": 4,
+        "price": 12,
+        "unit": "件"
+      }
+    ],
+    "invoices": [],
+    "allocations": [],
+    "receipts": [],
+    "shipments": [],
+    "documents": []
+  },
+  "samples": [],
+  "orderGovernance": [
+    {
+      "orderId": "e32ac965-6f99-44f9-ac41-56b1af4c8280",
+      "status": "draft",
+      "activeEffectiveVersion": 0,
+      "currentMatchesApproved": false,
+      "approvedSnapshot": null,
+      "rounds": []
+    }
+  ],
+  "productionFacts": [],
+  "sampleGates": [],
+  "orderDeposits": [
+    {
+      "orderId": "e32ac965-6f99-44f9-ac41-56b1af4c8280",
+      "status": "not_required",
+      "required": 0,
+      "received": 0,
+      "percent": null
+    }
+  ],
+  "orderFunding": [],
+  "workspace": {
+    "id": "96430896-74a5-4b29-8ac7-c9b014ba7cc7",
+    "name": "Mist 订单履约全链路验收",
+    "revision": 181,
+    "archived": false
+  },
+  "snapshotSha256": "41124fdb3994a7d6c3ddf61e4ead75602e9eac8aea5cb9a13c64ba737cdd61b1",
+  "stage": "snapshot",
+  "stageReady": {
+    "order": true,
+    "approval": false,
+    "deposit": true,
+    "procurement": false,
+    "production": false,
+    "qc": false,
+    "shipment": false,
+    "payment": false
+  },
+  "orders": [
+    {
+      "id": "e32ac965-6f99-44f9-ac41-56b1af4c8280",
+      "code": "SO-G-2026-0003",
+      "type": "garment",
+      "currency": "USD",
+      "quantity": 4,
+      "amount": 48,
+      "state": "订单草稿",
+      "progress": 0,
+      "handoffAt": null,
+      "checklist": [
+        {
+          "label": "拟发范围确认",
+          "done": false
+        },
+        {
+          "label": "收货与贸易条款确认",
+          "done": false
+        },
+        {
+          "label": "收款条件核对",
+          "done": false
+        }
+      ]
+    }
+  ],
+  "purchases": [],
+  "productions": [],
+  "qc": [],
+  "shipments": [],
+  "invoices": [],
+  "receipts": [
+    {
+      "id": "745a907d-5e4d-4776-a150-19a90aff9034",
+      "code": "BR-20261013-001",
+      "currency": "USD",
+      "amount": 36,
+      "remaining": 0,
+      "state": "matched"
+    },
+    {
+      "id": "a0826d91-03da-4ced-b92d-9aa20190d081",
+      "code": "BR-20261013-002",
+      "currency": "USD",
+      "amount": 84,
+      "remaining": 0,
+      "state": "matched"
+    },
+    {
+      "id": "d322d809-89a7-44d0-a75c-ec37d61e4d96",
+      "code": "BR-20261013-003",
+      "currency": "USD",
+      "amount": 30,
+      "remaining": 0,
+      "state": "matched"
+    },
+    {
+      "id": "ff19f753-34c2-4918-9c13-5343ea9ea37f",
+      "code": "BR-20261013-004",
+      "currency": "USD",
+      "amount": 60,
+      "remaining": 0,
+      "state": "matched"
+    },
+    {
+      "id": "00cdac3a-850a-4143-baf3-75d13329b8ca",
+      "code": "BR-20261013-005",
+      "currency": "USD",
+      "amount": 30,
+      "remaining": 0,
+      "state": "matched"
+    }
+  ],
+  "approvals": [],
+  "returnTargets": [
+    {
+      "category": "general",
+      "target": {
+        "view": "orders/detail",
+        "id": "e32ac965-6f99-44f9-ac41-56b1af4c8280"
+      }
+    }
+  ],
+  "fileChecks": [],
+  "checks": [
+    {
+      "key": "order.lines_count",
+      "ok": true,
+      "ids": [
+        "e32ac965-6f99-44f9-ac41-56b1af4c8280"
+      ]
+    },
+    {
+      "key": "order.quantity",
+      "ok": true,
+      "ids": [
+        "e32ac965-6f99-44f9-ac41-56b1af4c8280"
+      ]
+    },
+    {
+      "key": "order.amount",
+      "ok": true,
+      "ids": [
+        "e32ac965-6f99-44f9-ac41-56b1af4c8280"
+      ]
+    },
+    {
+      "key": "order.customer_exists",
+      "ok": true,
+      "ids": [
+        "e32ac965-6f99-44f9-ac41-56b1af4c8280"
+      ]
+    },
+    {
+      "key": "invoices.within_order_amount",
+      "ok": true,
+      "ids": [
+        "e32ac965-6f99-44f9-ac41-56b1af4c8280"
+      ]
+    },
+    {
+      "key": "receipt.remaining",
+      "ok": true,
+      "ids": [
+        "745a907d-5e4d-4776-a150-19a90aff9034"
+      ]
+    },
+    {
+      "key": "receipt.remaining",
+      "ok": true,
+      "ids": [
+        "a0826d91-03da-4ced-b92d-9aa20190d081"
+      ]
+    },
+    {
+      "key": "receipt.remaining",
+      "ok": true,
+      "ids": [
+        "d322d809-89a7-44d0-a75c-ec37d61e4d96"
+      ]
+    },
+    {
+      "key": "receipt.remaining",
+      "ok": true,
+      "ids": [
+        "ff19f753-34c2-4918-9c13-5343ea9ea37f"
+      ]
+    },
+    {
+      "key": "receipt.remaining",
+      "ok": true,
+      "ids": [
+        "00cdac3a-850a-4143-baf3-75d13329b8ca"
+      ]
+    },
+    {
+      "key": "funding.integrity",
+      "ok": true
+    }
+  ],
+  "ok": true
+}

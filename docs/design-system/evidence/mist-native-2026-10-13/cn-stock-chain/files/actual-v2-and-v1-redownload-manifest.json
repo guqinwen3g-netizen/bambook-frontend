@@ -1,0 +1,244 @@
+{
+  "actualApiFiles": true,
+  "readOnlyDownloadedFileAudit": true,
+  "syntheticQaSeparate": true,
+  "noCompanyEditClaim": true,
+  "revisionDeclaredByRoot": {
+    "draftV2": 295,
+    "issueV2": 296
+  },
+  "baselineFile": "actual-v1-byte-baseline.json",
+  "files": [
+    {
+      "kind": "draft-v2",
+      "sourceDownload": "/Users/qinwengu/Downloads/CLM-2026-0002-v2-DRAFT.pdf",
+      "evidenceFile": "CLM-2026-0002-v2-DRAFT.pdf",
+      "bytes": 236307,
+      "sha256": "6ac6a0ce45b6fcb172fc5656304c047851101ae22871b55d5aa572a84824d3ad",
+      "pdfPages": 1,
+      "dimensionsPt": [
+        [
+          595.92,
+          842.88
+        ]
+      ],
+      "textFile": "CLM-2026-0002-v2-DRAFT-text.txt",
+      "checks": [
+        {
+          "key": "binary_pdf_header_eof",
+          "ok": true
+        },
+        {
+          "key": "one_a4_page",
+          "ok": true
+        },
+        {
+          "key": "credit_note_title",
+          "ok": true
+        },
+        {
+          "key": "stable_cn_number_v2",
+          "ok": true
+        },
+        {
+          "key": "original_ci",
+          "ok": true
+        },
+        {
+          "key": "approved_return_30",
+          "ok": true
+        },
+        {
+          "key": "approved_allowance_3",
+          "ok": true
+        },
+        {
+          "key": "total_33",
+          "ok": true
+        },
+        {
+          "key": "currency_words_33",
+          "ok": true
+        },
+        {
+          "key": "actual_issuer_chinese",
+          "ok": true
+        },
+        {
+          "key": "actual_issuer_english",
+          "ok": true
+        },
+        {
+          "key": "return_quantity2",
+          "ok": true
+        },
+        {
+          "key": "original_unit_price15_explicit_approved_basis",
+          "ok": true
+        },
+        {
+          "key": "two_exact_approved_basis",
+          "ok": true
+        },
+        {
+          "key": "actual_local_operator",
+          "ok": true
+        },
+        {
+          "key": "draft_formal_distinction",
+          "ok": true
+        }
+      ],
+      "visualReview": {
+        "pngViewed": true,
+        "allPagesViewed": true,
+        "chineseReadable": true,
+        "noClippingOrOverlapObserved": true,
+        "formalOrDraftBannerMatches": true
+      },
+      "pngFiles": [
+        "CLM-2026-0002-v2-DRAFT-page-1.png"
+      ]
+    },
+    {
+      "kind": "formal-v2",
+      "sourceDownload": "/Users/qinwengu/Downloads/CLM-2026-0002-v2.pdf",
+      "evidenceFile": "CLM-2026-0002-v2.pdf",
+      "bytes": 235031,
+      "sha256": "54a8f7aa0ad49772b9484cc154d013fecf067444a22ca1f36e377ddb8c10e3c8",
+      "pdfPages": 1,
+      "dimensionsPt": [
+        [
+          595.92,
+          842.88
+        ]
+      ],
+      "textFile": "CLM-2026-0002-v2-text.txt",
+      "checks": [
+        {
+          "key": "binary_pdf_header_eof",
+          "ok": true
+        },
+        {
+          "key": "one_a4_page",
+          "ok": true
+        },
+        {
+          "key": "credit_note_title",
+          "ok": true
+        },
+        {
+          "key": "stable_cn_number_v2",
+          "ok": true
+        },
+        {
+          "key": "original_ci",
+          "ok": true
+        },
+        {
+          "key": "approved_return_30",
+          "ok": true
+        },
+        {
+          "key": "approved_allowance_3",
+          "ok": true
+        },
+        {
+          "key": "total_33",
+          "ok": true
+        },
+        {
+          "key": "currency_words_33",
+          "ok": true
+        },
+        {
+          "key": "actual_issuer_chinese",
+          "ok": true
+        },
+        {
+          "key": "actual_issuer_english",
+          "ok": true
+        },
+        {
+          "key": "return_quantity2",
+          "ok": true
+        },
+        {
+          "key": "original_unit_price15_explicit_approved_basis",
+          "ok": true
+        },
+        {
+          "key": "two_exact_approved_basis",
+          "ok": true
+        },
+        {
+          "key": "actual_local_operator",
+          "ok": true
+        },
+        {
+          "key": "draft_formal_distinction",
+          "ok": true
+        }
+      ],
+      "visualReview": {
+        "pngViewed": true,
+        "allPagesViewed": true,
+        "chineseReadable": true,
+        "noClippingOrOverlapObserved": true,
+        "formalOrDraftBannerMatches": true
+      },
+      "pngFiles": [
+        "CLM-2026-0002-v2-page-1.png"
+      ]
+    },
+    {
+      "kind": "redownload-v1",
+      "sourceDownload": "/Users/qinwengu/Downloads/CLM-2026-0002-v1 (2).pdf",
+      "evidenceFile": "CLM-2026-0002-v1-after-v2.pdf",
+      "bytes": 230615,
+      "sha256": "b2c86133b6e4ddf70191af722b851097adf7f0e3527eec82078c07bb3b3a9b6f",
+      "pdfPages": 1,
+      "dimensionsPt": [
+        [
+          595.92,
+          842.88
+        ]
+      ],
+      "textFile": "CLM-2026-0002-v1-after-v2-text.txt",
+      "checks": [
+        {
+          "key": "binary_pdf_header_eof",
+          "ok": true
+        },
+        {
+          "key": "one_a4_page",
+          "ok": true
+        },
+        {
+          "key": "exact_original_v1_sha_after_v2",
+          "ok": true
+        },
+        {
+          "key": "exact_original_v1_bytes_after_v2",
+          "ok": true
+        }
+      ],
+      "visualReview": {
+        "pngViewed": true,
+        "allPagesViewed": true,
+        "chineseReadable": true,
+        "noClippingOrOverlapObserved": true,
+        "formalOrDraftBannerMatches": true
+      },
+      "pngFiles": [
+        "CLM-2026-0002-v1-after-v2-page-1.png"
+      ]
+    }
+  ],
+  "ok": true,
+  "limitations": [
+    "No additional company edit was performed in actual UI; issuer freeze after company edit is covered by repository tests only.",
+    "Private archive SHA for V2 is independently audited by market worker; this report computes downloaded file SHA only.",
+    "Failed original V1 HTTP JSON transfers and synthetic renderer QA remain separate unchanged evidence."
+  ]
+}

@@ -1,0 +1,12 @@
+import {describe,it,expect,vi,beforeEach} from 'vitest';
+import {resolveQuotationBusinessLeader,canSelfConfirmQuotation} from '../quotationBusinessLeader';
+const permission=vi.hoisted(()=>vi.fn());
+vi.mock('../../auth/permissionService',()=>({createPermissionService:()=>({getUserPermissionContext:permission})}));
+function db(family='Fabric',heads=['head']) { return {quotation:{findUnique:vi.fn(async()=>({id:'q',quotationType:family,ownerId:'head'}))},userAccount:{findFirst:vi.fn(async({where}:any)=>({id:where.id,primaryDeptId:'dept',status:'active'}))},team:{findMany:vi.fn(async()=>heads.map(leaderId=>({id:leaderId,leaderId,status:'active',deletedAt:null,department:{id:'dept',parentId:'company',status:'active',metadata:{businessAttributes:['fabric_business']}}})))}}; }
+beforeEach(()=>permission.mockResolvedValue({scopes:['quotations:write']}));
+describe('quotation corresponding live business head',()=>{
+ it('resolves actual team owner and requires primary department',async()=>{const d=db();expect((await resolveQuotationBusinessLeader(d,'q')).reviewerId).toBe('head');expect(d.team.findMany.mock.calls[0][0].where.departmentId).toBe('dept');});
+ it('rejects missing/ambiguous head and wrong business family',async()=>{await expect(resolveQuotationBusinessLeader(db('Fabric',[]),'q')).rejects.toMatchObject({code:'NO_REVIEWER_RESOLVED'});await expect(resolveQuotationBusinessLeader(db('Fabric',['a','b']),'q')).rejects.toThrow('不唯一');await expect(resolveQuotationBusinessLeader(db('Garment'),'q')).rejects.toThrow('不唯一');});
+ it('rejects inactive account and removed write permission',async()=>{const d=db();d.userAccount.findFirst.mockResolvedValue(null as any);await expect(resolveQuotationBusinessLeader(d,'q')).rejects.toThrow('停用');permission.mockResolvedValue({scopes:[]});await expect(resolveQuotationBusinessLeader(db(),'q')).rejects.toThrow('权限');});
+ it('self confirmation is confined to own exact total approval by current head',async()=>{const own={actionType:'quotation:total_approve',targetType:'Quotation',targetId:'q',requesterId:'head',reviewerId:'head'};expect(await canSelfConfirmQuotation(db(),own,'head')).toBe(true);expect(await canSelfConfirmQuotation(db(),{...own,actionType:'order:approve'},'head')).toBe(false);expect(await canSelfConfirmQuotation(db(),{...own,requesterId:'business'},'head')).toBe(false);expect(await canSelfConfirmQuotation(db('Fabric',['new-head']),own,'head')).toBe(false);});
+});

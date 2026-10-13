@@ -1,0 +1,9 @@
+{
+  "viewport": [
+    1024,
+    576
+  ],
+  "sameViewport": true,
+  "sameText": true,
+  "sameDom": true
+}

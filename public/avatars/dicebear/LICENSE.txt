@@ -1,0 +1,15 @@
+DiceBear avatar presets, generated locally using @dicebear/core and @dicebear/styles v10.x.
+https://www.dicebear.com/styles/
+
+Modified by Bambook: colors adapted to Frost / Mist / Indigo Gray.
+
+Blobs, Disco, Glass, Squircles, Slice, Waves, Weave, Critters, Cameo, Line Face, Thumbs, Landscape:
+Copyright DiceBear. CC0 1.0 Universal
+https://creativecommons.org/publicdomain/zero/1.0/
+
+Glyphs (Abstract Avatars for All Creative Profile Use):
+Copyright Matt Houser. CC BY 4.0
+https://www.figma.com/community/file/1249154526125777853
+https://creativecommons.org/licenses/by/4.0/
+https://www.dicebear.com/styles/glyphs/
+Original attribution and license metadata is also preserved in generated SVG previews.

@@ -1,0 +1,405 @@
+{
+  "readOnly": true,
+  "capturedAt": "2026-10-13T05:01:53.780219+00:00",
+  "workspace": {
+    "id": "96430896-74a5-4b29-8ac7-c9b014ba7cc7",
+    "name": "Mist 订单履约全链路验收",
+    "revision": 189
+  },
+  "snapshotSha256": "bacb7d50f57c3c852fc2e4cd081ea80f1034e66f2731ad640029b6421e78bd47",
+  "phase": "second-approved",
+  "facts": {
+    "order": {
+      "id": "e32ac965-6f99-44f9-ac41-56b1af4c8280",
+      "code": "SO-G-2026-0003",
+      "type": "garment",
+      "customerId": "7a41388a-c4c8-474e-9892-b397b94e4546",
+      "customer": "Mist 合同验收客户",
+      "governance": {
+        "contract": {
+          "kind": "external",
+          "poNumber": "QA-EXCEPTION-PO-1013 R2",
+          "confirmationFileIds": [
+            "c4fa6f84-48de-488a-9b35-c86327126404",
+            "3a7b647b-dce9-478b-ae86-287cc91bed58"
+          ],
+          "internalPurpose": "",
+          "receiver": "",
+          "paymentMethod": "OA",
+          "depositPercent": null,
+          "paymentNote": "修订PO-v2生效后，4件×15USD=60；OA每票实际离港后30天付款，允许分批，v2取代初始报价。",
+          "incoterm": "FOB",
+          "deliveryPlace": "Shanghai / 本地异常验收目的港"
+        },
+        "status": "approved",
+        "rounds": [
+          {
+            "id": "75106f49-1243-42bd-be77-86c99899ea7d",
+            "kind": "initial",
+            "status": "approved",
+            "requesterId": "local-operator",
+            "reviewerIds": [
+              "local-operator",
+              "local-reviewer"
+            ],
+            "submittedAt": "2026-10-13T04:54:56.823Z",
+            "snapshot": {
+              "orderId": "e32ac965-6f99-44f9-ac41-56b1af4c8280",
+              "code": "SO-G-2026-0003",
+              "type": "garment",
+              "customerId": "7a41388a-c4c8-474e-9892-b397b94e4546",
+              "customer": "Mist 合同验收客户",
+              "season": "AW27 变更取消退款验收",
+              "currency": "USD",
+              "due": "2026-11-20",
+              "contract": {
+                "kind": "external",
+                "poNumber": "QA-EXCEPTION-PO-1013",
+                "confirmationFileIds": [
+                  "c4fa6f84-48de-488a-9b35-c86327126404"
+                ],
+                "internalPurpose": "",
+                "receiver": "",
+                "paymentMethod": "OA",
+                "depositPercent": null,
+                "paymentNote": "OA每票实际离港后30天付款，允许分批。初始合同4件×12USD；后续客户修订单价须另附PO并审批。",
+                "incoterm": "FOB",
+                "deliveryPlace": "Shanghai / 本地异常验收目的港"
+              },
+              "lines": [
+                {
+                  "id": "4f9bcf2f-5883-4d7d-aeb6-416a3980e865",
+                  "name": "异常流程验收羊毛外套",
+                  "style": "FLOW-EXCEPTION-1013",
+                  "img": "coat",
+                  "qty": 4,
+                  "unit": "件",
+                  "price": 12
+                }
+              ]
+            },
+            "reason": "",
+            "decidedBy": "local-operator",
+            "decidedName": "本地操作员",
+            "decidedAt": "2026-10-13T04:55:06.237Z",
+            "note": "QA-EX-INITIAL：核对初始PO，4件×12USD=48，OA条款，批准原始主单。"
+          },
+          {
+            "id": "fe0e08f2-acdd-4784-b7b7-2d6dac49b8ae",
+            "kind": "change",
+            "status": "approved",
+            "requesterId": "local-operator",
+            "reviewerIds": [
+              "local-operator",
+              "local-reviewer"
+            ],
+            "submittedAt": "2026-10-13T04:58:48.536Z",
+            "snapshot": {
+              "orderId": "e32ac965-6f99-44f9-ac41-56b1af4c8280",
+              "code": "SO-G-2026-0003",
+              "type": "garment",
+              "customerId": "7a41388a-c4c8-474e-9892-b397b94e4546",
+              "customer": "Mist 合同验收客户",
+              "season": "AW27 变更取消退款验收",
+              "currency": "USD",
+              "due": "2026-11-25",
+              "contract": {
+                "kind": "external",
+                "poNumber": "QA-EXCEPTION-PO-1013 R2",
+                "confirmationFileIds": [
+                  "c4fa6f84-48de-488a-9b35-c86327126404",
+                  "3a7b647b-dce9-478b-ae86-287cc91bed58"
+                ],
+                "internalPurpose": "",
+                "receiver": "",
+                "paymentMethod": "OA",
+                "depositPercent": null,
+                "paymentNote": "修订PO-v2生效后，4件×15USD=60；OA每票实际离港后30天付款，允许分批，v2取代初始报价。",
+                "incoterm": "FOB",
+                "deliveryPlace": "Shanghai / 本地异常验收目的港"
+              },
+              "lines": [
+                {
+                  "id": "4f9bcf2f-5883-4d7d-aeb6-416a3980e865",
+                  "name": "异常流程验收羊毛外套",
+                  "style": "FLOW-EXCEPTION-1013",
+                  "img": "coat",
+                  "qty": 4,
+                  "unit": "件",
+                  "price": 15
+                }
+              ]
+            },
+            "reason": "QA-EX-CHANGE-R2：修订PO-v2确认4件单价15USD、交期11月25日；合并保存已有价格与合同变更。",
+            "decidedBy": "local-operator",
+            "decidedName": "本地操作员",
+            "decidedAt": "2026-10-13T05:01:22.102Z",
+            "note": "QA-EX-APPROVE-R2：核对修订PO-v2，批准4件×15USD=60与11月25交期；保留初始48USD及原始PO历史。"
+          }
+        ],
+        "effectiveVersion": 2,
+        "approvedAt": "2026-10-13T05:01:22.102Z",
+        "approvedBy": "local-operator",
+        "approvedSnapshot": {
+          "orderId": "e32ac965-6f99-44f9-ac41-56b1af4c8280",
+          "code": "SO-G-2026-0003",
+          "type": "garment",
+          "customerId": "7a41388a-c4c8-474e-9892-b397b94e4546",
+          "customer": "Mist 合同验收客户",
+          "season": "AW27 变更取消退款验收",
+          "currency": "USD",
+          "due": "2026-11-25",
+          "contract": {
+            "kind": "external",
+            "poNumber": "QA-EXCEPTION-PO-1013 R2",
+            "confirmationFileIds": [
+              "c4fa6f84-48de-488a-9b35-c86327126404",
+              "3a7b647b-dce9-478b-ae86-287cc91bed58"
+            ],
+            "internalPurpose": "",
+            "receiver": "",
+            "paymentMethod": "OA",
+            "depositPercent": null,
+            "paymentNote": "修订PO-v2生效后，4件×15USD=60；OA每票实际离港后30天付款，允许分批，v2取代初始报价。",
+            "incoterm": "FOB",
+            "deliveryPlace": "Shanghai / 本地异常验收目的港"
+          },
+          "lines": [
+            {
+              "id": "4f9bcf2f-5883-4d7d-aeb6-416a3980e865",
+              "name": "异常流程验收羊毛外套",
+              "style": "FLOW-EXCEPTION-1013",
+              "img": "coat",
+              "qty": 4,
+              "unit": "件",
+              "price": 15
+            }
+          ]
+        }
+      },
+      "season": "AW27 变更取消退款验收",
+      "lines": 1,
+      "qty": 4,
+      "amount": 60,
+      "currency": "USD",
+      "due": "2026-11-25",
+      "progress": 0,
+      "state": "已批准待履约",
+      "tone": "ok",
+      "owner": "本地操作员",
+      "img": "coat",
+      "checklist": [
+        {
+          "id": "e32ac965-6f99-44f9-ac41-56b1af4c8280-check-0",
+          "label": "拟发范围确认",
+          "done": false,
+          "note": ""
+        },
+        {
+          "id": "e32ac965-6f99-44f9-ac41-56b1af4c8280-check-1",
+          "label": "收货与贸易条款确认",
+          "done": false,
+          "note": ""
+        },
+        {
+          "id": "e32ac965-6f99-44f9-ac41-56b1af4c8280-check-2",
+          "label": "收款条件核对",
+          "done": false,
+          "note": ""
+        }
+      ],
+      "handoffAt": null,
+      "createdAt": "2026-10-13T04:52:59.658Z",
+      "updatedAt": "2026-10-13T05:01:22.102Z"
+    },
+    "lines": [
+      {
+        "id": "4f9bcf2f-5883-4d7d-aeb6-416a3980e865",
+        "orderId": "e32ac965-6f99-44f9-ac41-56b1af4c8280",
+        "name": "异常流程验收羊毛外套",
+        "style": "FLOW-EXCEPTION-1013",
+        "img": "coat",
+        "qty": 4,
+        "unit": "件",
+        "price": 15,
+        "made": 0,
+        "qc": 0
+      }
+    ],
+    "purchases": [],
+    "fulfillmentReceipts": [],
+    "productions": [],
+    "productionFacts": [],
+    "samples": [],
+    "qcTasks": [],
+    "qcReports": [],
+    "shipments": [],
+    "shippingTerms": [],
+    "packing": [],
+    "customs": [],
+    "documents": [],
+    "invoices": [],
+    "allocations": [],
+    "funding": [],
+    "receipts": [],
+    "claims": [],
+    "credits": [],
+    "goods": [],
+    "creditApplications": [],
+    "refundPayments": []
+  },
+  "financialSummary": {
+    "historicalFaceAmount": "0",
+    "activeReceivableAmount": "0",
+    "activeOpenAmount": "0",
+    "voidFaceAmount": "0",
+    "allocated": "0"
+  },
+  "preservedOrders": [
+    {
+      "orderId": "8885a218-c5a0-4c95-a4c0-c9bce010e8a2",
+      "sha256": "24b370175da90de6938ba61005766362300dce70f49e1d61b8f91217a8e6c526",
+      "summary": {
+        "code": "SO-G-2026-0001",
+        "quantity": 10,
+        "amount": 120,
+        "shipped": "10",
+        "invoiceAmount": "120",
+        "invoiceOpen": "0",
+        "allocated": "120",
+        "receipts": [
+          {
+            "id": "745a907d-5e4d-4776-a150-19a90aff9034",
+            "amount": 36,
+            "remaining": 0
+          },
+          {
+            "id": "a0826d91-03da-4ced-b92d-9aa20190d081",
+            "amount": 84,
+            "remaining": 0
+          }
+        ]
+      }
+    },
+    {
+      "orderId": "873d79d1-fe97-4866-908e-d81fda26b404",
+      "sha256": "1109f5ff4eb1494919b85ed34e869dc5df1c02955b86cbae65ad3eeb8f832e1f",
+      "summary": {
+        "code": "SO-G-2026-0002",
+        "quantity": 10,
+        "amount": 120,
+        "shipped": "10",
+        "invoiceAmount": "120",
+        "invoiceOpen": "0",
+        "allocated": "120",
+        "receipts": [
+          {
+            "id": "00cdac3a-850a-4143-baf3-75d13329b8ca",
+            "amount": 30,
+            "remaining": 0
+          },
+          {
+            "id": "d322d809-89a7-44d0-a75c-ec37d61e4d96",
+            "amount": 30,
+            "remaining": 0
+          },
+          {
+            "id": "ff19f753-34c2-4918-9c13-5343ea9ea37f",
+            "amount": 60,
+            "remaining": 0
+          }
+        ]
+      }
+    }
+  ],
+  "files": [
+    {
+      "id": "3a7b647b-dce9-478b-ae86-287cc91bed58",
+      "bytes": 66580,
+      "sha256": "24241e2c6d5f53c3c7c2b008868140bda52f1294f9f67e6a9ceb8392258f6146"
+    },
+    {
+      "id": "c4fa6f84-48de-488a-9b35-c86327126404",
+      "bytes": 66307,
+      "sha256": "a2b8a3af3a74c8b9f4435609bfef54e29774d31283b52c092c240e32408af4d7"
+    }
+  ],
+  "checks": [
+    {
+      "key": "order.quantity_conserved",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "key": "order.amount_exact",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "key": "order.lines_have_exact_parent",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "key": "invoice.active_amount_within_order",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "key": "change.second_effective_version",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "key": "change.initial_12_then_15_history",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "key": "change.current_4_at_15",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "key": "change.same_line_identity",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "key": "completed_original.8885a218-c5a0-4c95-a4c0-c9bce010e8a2",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "key": "completed_original.873d79d1-fe97-4866-908e-d81fda26b404",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "key": "preserved.8885a218-c5a0-4c95-a4c0-c9bce010e8a2",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "key": "preserved.873d79d1-fe97-4866-908e-d81fda26b404",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "key": "file.size.3a7b647b-dce9-478b-ae86-287cc91bed58",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "key": "file.size.c4fa6f84-48de-488a-9b35-c86327126404",
+      "ok": true,
+      "detail": null
+    }
+  ],
+  "ok": true,
+  "limits": [
+    "Historical face amounts include void invoices and must not be reported as receivables.",
+    "Goods fulfillment records are not proof of warehouse stock movement.",
+    "Cash refund limit follows available credit-note balance, not original invoice collected amount."
+  ]
+}

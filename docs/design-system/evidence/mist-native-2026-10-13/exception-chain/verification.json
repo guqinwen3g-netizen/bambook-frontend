@@ -1,0 +1,151 @@
+{
+  "scope": "Mist local UI exception-chain acceptance; does not certify all modules or production external integrations",
+  "capturedAt": "2026-10-13T14:14:35.973326+08:00",
+  "workspaceId": "96430896-74a5-4b29-8ac7-c9b014ba7cc7",
+  "finalRevision": 278,
+  "writes": "Actual CUA UI; all audit scripts read-only",
+  "frontend": "Mist Atelier sole runtime; layout/material/type/tokens retained",
+  "objects": {
+    "order": "e32ac965-6f99-44f9-ac41-56b1af4c8280",
+    "line": "4f9bcf2f-5883-4d7d-aeb6-416a3980e865",
+    "formalShipment": "b1916208-faff-4eaa-a791-39f5b8f811bd",
+    "cancelledShipment": "e5ed4ee4-b455-4242-82ce-5f73118210b2",
+    "activeInvoice": "4cd30247-57ef-41ea-99c6-a8b45c616ab3",
+    "refundClaim": "870d849a-4066-4b0d-b27e-821eebe25737",
+    "cleanNotificationClaim": "9c3c1ec9-164c-4d20-99a2-6badbdff3998"
+  },
+  "results": {
+    "orderAmendment": {
+      "before": 48,
+      "afterApproved": 60,
+      "quantity": 4,
+      "originalHistoryPreserved": true
+    },
+    "cancellation": {
+      "cancelledQuantity": 2,
+      "reservationReleased": true,
+      "formalDepartedQuantity": 4
+    },
+    "documents": {
+      "v1OriginalFace": 60,
+      "v1VoidOpen": 0,
+      "v2ActiveAmount": 60,
+      "v2Open": 0,
+      "oldOriginalsAndSendPreserved": true,
+      "v2Resent": true
+    },
+    "returnRefund": {
+      "state": "Closed",
+      "creditAmount": 15,
+      "creditRemaining": 0,
+      "returnedQuantity": 1,
+      "goodsState": "Scrapped",
+      "received": 60,
+      "allocated": 60,
+      "refund": 15,
+      "netCash": 45,
+      "paymentReference": "CN-2026-34176268-5c94-4293-ad1a-012c166e9ea2 · QA-EX-REFUND-15"
+    },
+    "priorTwoOrdersUnchanged": true,
+    "reviewEvidence": {
+      "frozenFiles": 2,
+      "currentCaseFiles": 3,
+      "frozenSnapshotUnchanged": true
+    },
+    "notificationReturn": {
+      "workAndNotificationSameExactClaim": true,
+      "cleanProblem": "QA-NOTIFY-CLEAN",
+      "cleanDecision": "QA-NOTIFY-CLEAN-APPROVED",
+      "cleanCancel": "QA-NOTIFY-CLEAN-CANCEL-BEFORE-EXECUTION",
+      "bothTestCasesCancelledBeforeExecution": true,
+      "noAdditionalCreditGoodsOrPayment": true,
+      "workCompleted": true
+    }
+  },
+  "actualNegativeBranches": [
+    "booking blocks cancellation until explicitly removed",
+    "departed shipment cancellation disabled",
+    "actual departed V2 document void rejected",
+    "unapproved disposition has no execute entry; premature close rejected",
+    "refund before Received rejected without writes",
+    "refund16 greater than credit15 rejected without writes"
+  ],
+  "codeValidation": {
+    "frontend": {
+      "exitCode": 0,
+      "log": "/private/tmp/mist-exception-final-frontend.log",
+      "sha256": "69c8b743fe993b41b06c102eb6ee1868bf1b87556abd86a585c655e90cd567b6",
+      "files": 36,
+      "tests": 502
+    },
+    "backend": {
+      "exitCode": 0,
+      "log": "/private/tmp/mist-exception-final-backend.log",
+      "sha256": "57c8905d85c80361fa7ccc61512860dc080bc8326a669f2739e9344e7ce052dd",
+      "files": 21,
+      "tests": 272
+    },
+    "types": {
+      "exitCode": 0,
+      "log": "/private/tmp/mist-exception-final-types.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "server-types": {
+      "exitCode": 0,
+      "log": "/private/tmp/mist-exception-final-server-types.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "build": {
+      "exitCode": 0,
+      "log": "/private/tmp/mist-exception-final-build.log",
+      "sha256": "4f1ee51b715a3047ce8706e18af72c54f186619b8d4d2b9893aac2fc0c9800d3"
+    },
+    "check": {
+      "exitCode": 0,
+      "log": "/private/tmp/mist-exception-final-check.log",
+      "sha256": "d36dc82c35d187d058a9d00c0b277e90ce3ebeb481ec9ce268d6de6d28df5e23",
+      "files": 83,
+      "errors": 0,
+      "warnings": 0
+    }
+  },
+  "finalReadback": [
+    {
+      "file": "mist-exception-final-refund.json",
+      "ok": true,
+      "assertions": 75,
+      "sha256": "301493b44e2147a4adaa5fe4692b466d78ed36a9d6563d8bce408a59fb288995"
+    },
+    {
+      "file": "mist-exception-final-business.json",
+      "ok": true,
+      "assertions": 17,
+      "sha256": "b8d6596fd6e9baa4134faf360c6f68973824d62aad1dc31fdfe75de54344cbdf"
+    },
+    {
+      "file": "mist-exception-notification-clean-cancelled.json",
+      "ok": true,
+      "assertions": 20,
+      "sha256": "6c6a0c19abe709d4f8db3eaee421c9fd6ba5fb78177d0fb504c4ddc1e31bfc30"
+    }
+  ],
+  "renderEvidence": {
+    "viewport": "1024x576",
+    "theme": "light",
+    "screens": [
+      "claim-final-closed-top.png",
+      "claim-final-settled-return.png",
+      "claim-clean-approved-work-return.png",
+      "invoice-v1-original-face-void.png"
+    ]
+  },
+  "evidenceManifest": "mist-exception-phase-manifest.json",
+  "limits": [
+    "Local isolated test workspace only; no real external transport/customs/client send/bank transfer",
+    "Return goods are state/event records; not warehouse stock ledger integration",
+    "CLM/CN currently use UUID codes; professional sequential numbering remains a separate documented gap",
+    "Reissued rev248 retained 27/28: capture had progressed to ready while assertion expected preparing; final business readback verified",
+    "First notification test approval note contained unrelated live dictation; immutable cancelled history retained; separate CLEAN retest verified exact fields"
+  ],
+  "completeForRequestedExceptionBranches": true
+}

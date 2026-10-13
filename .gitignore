@@ -1,0 +1,170 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencies
+node_modules
+venv
+.venv
+
+# Build
+dist
+dist-ssr
+*.tsbuildinfo
+
+# Local env files
+*.local
+.env
+
+# Data & Cache
+.data
+data/*.db
+data/pdml-fabric-import/
+.vite
+coverage/
+
+# WorkBuddy AI workspace (memory + identity — 不进库，跨会话本地缓存)
+.workbuddy-ai/
+
+# Uploaded files
+uploads/
+
+# Private file store (email attachments / QC test reports — permission-gated only)
+private-files/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Python
+__pycache__
+*.pyc
+
+# ============ Bambook 扩展规则 ============
+
+# Electron build output
+out/
+
+# Generated business documents (shipping notices, etc.)
+output/
+
+# Prisma build output
+server/server/
+server/dist/
+
+# Knowledge API Python artifacts
+server/knowledge_api/__pycache__/
+server/knowledge_api/*.pyc
+server/knowledge_api/.env
+server/knowledge_api/venv/
+server/knowledge_api/.venv/
+
+# Knowledge base frontend build
+server/knowledge-base-frontend/node_modules/
+server/knowledge-base-frontend/dist/
+server/knowledge-base-frontend/.next/
+
+# Knowledge base scripts artifacts
+server/knowledge-base-scripts/__pycache__/
+
+# Local database files (all variants)
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Business documents with sensitive data
+样品发票重整/
+成份符号.xls
+
+# Agent/memory local data
+.agent/
+
+# Local agent/browser run artifacts
+.playwright-cli/
+.playwright-mcp/
+.superpowers/
+test-results/
+server.pid
+tmp-*
+tmp_*
+test-*.html
+/patch_*.py
+/undo_*.py
+/fix_*.py
+
+# Local source copies / generated image drafts
+/wallpaper/
+/ChatGPT Image*.png
+
+# Local diagnostics and reproducible intermediates
+/.dbg/
+/tmp/
+*.pid
+
+# Local collaboration evidence (source documents remain explicitly tracked)
+/.workbuddy/screenshots/
+
+# Cursor project files
+.cursor/
+
+# ML model files (>100MB, exceed GitHub limit)
+models/**/*.bin
+models/**/*.gguf
+models/**/*.onnx
+models/**/*.safetensors
+models/stt/
+
+# Generated RenderedDoc PDF files (test/dev artifacts)
+server/storage/rendered/
+
+# IDE generated documents
+.trae/documents/
+
+# Design exploration lab (local-only reference material)
+design-lab/
+
+# 本地产物（2026-08-27）
+.env.development
+dist-electron/
+.trae/backups/
+electron.vite.config.*.mjs
+scripts/_diag-*.png
+server/.env*.bak.*
+.zcode/
+.workbuddy/automations/
+
+# 批量验收的运行产物（每次跑会覆盖）
+scripts/.acceptance-matrix.json
+scripts/.acceptance-run.log
+scripts/.acceptance-deep-pages.jsonl
+# 走查报告产物（每次跑生成一份带时间戳的 md，不入 git）
+docs/acceptance-reports/
+
+# 清理前的数据备份（含真库行，不入 git）
+backups/
+
+# Runtime receipt for the local test environment; regenerated on apply.
+/public/bambook-test-version.json
+
+# Verified local raw acceptance history; per-file manifests remain tracked.
+/artifacts/acceptance-20261001/history-archive/local/
+.openbitfun/
+
+# Local Mist workspace data, private attachments and session signing key
+/server/private/mist-local/
+
+# Snapshot: per-machine Mist identities and storage
+server/private/

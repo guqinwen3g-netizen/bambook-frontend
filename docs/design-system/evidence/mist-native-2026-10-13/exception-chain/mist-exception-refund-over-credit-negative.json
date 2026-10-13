@@ -1,0 +1,71 @@
+{
+  "readOnly": true,
+  "kind": "over-credit",
+  "declaredUiAttemptAmount": "16",
+  "claimId": "870d849a-4066-4b0d-b27e-821eebe25737",
+  "beforeRevision": 263,
+  "afterRevision": 263,
+  "addedFileIds": [],
+  "inputs": [
+    {
+      "path": "/tmp/mist-exception-claim-received.json",
+      "sha256": "7d3e4e0f154c4117c10ca0f73303597e18d50f2382bab9a50bdc3fe16b0c58ae"
+    },
+    {
+      "path": "/tmp/mist-exception-refund-over-credit-after.json",
+      "sha256": "7d3e4e0f154c4117c10ca0f73303597e18d50f2382bab9a50bdc3fe16b0c58ae"
+    },
+    {
+      "path": "/tmp/mist-exception-refund-paid-baseline.json",
+      "sha256": "23514ad5da900819bcdb9e0070c9cb1800454d2d76df9762a59e6b530834e2f9"
+    }
+  ],
+  "checks": [
+    {
+      "key": "snapshots.pass_own_stage_checks",
+      "ok": true
+    },
+    {
+      "key": "snapshots.same_workspace",
+      "ok": true
+    },
+    {
+      "key": "rejection.exact_claim",
+      "ok": true
+    },
+    {
+      "key": "rejection.refund_state_unchanged",
+      "ok": true
+    },
+    {
+      "key": "rejection.original_paid_facts_unchanged",
+      "ok": true
+    },
+    {
+      "key": "rejection.invoice_totals_unchanged",
+      "ok": true
+    },
+    {
+      "key": "rejection.existing_file_hashes_unchanged",
+      "ok": true
+    },
+    {
+      "key": "precondition.independent_cn15",
+      "ok": true
+    },
+    {
+      "key": "precondition.no_cash_or_offset",
+      "ok": true
+    },
+    {
+      "key": "precondition.received_before_overlimit",
+      "ok": true
+    },
+    {
+      "key": "attempt.16_exceeds_cn15",
+      "ok": true
+    }
+  ],
+  "ok": true,
+  "limit": "This comparison does not execute or independently prove the rejection; pair with captured UI/server error evidence. Workspace revision changes and new case attachment files are informational; original paid facts, financial actions, goods events and existing file hashes must remain unchanged."
+}

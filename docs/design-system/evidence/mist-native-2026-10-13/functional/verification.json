@@ -1,0 +1,127 @@
+{
+  "verifiedAt": "2026-10-13T04:41:54.330396+08:00",
+  "scope": "Mist existing demo functionalization; not full site completion",
+  "frontend": {
+    "testFiles": 17,
+    "tests": 170,
+    "result": "pass",
+    "log": "/private/tmp/mist-functional-tests-final.log",
+    "lastShellAriaRegression": {
+      "tests": 14,
+      "result": "pass",
+      "log": "/private/tmp/mist-shell-final-tests.log"
+    }
+  },
+  "backend": {
+    "testFiles": 5,
+    "tests": 34,
+    "result": "pass",
+    "log": "/private/tmp/mist-domain-api-tests-final.log",
+    "testDatabase": "transaction adapter; actual local PostgreSQL separately used for UI flows"
+  },
+  "activeEntryTypecheck": {
+    "result": "pass",
+    "config": "/private/tmp/mist-current-tsconfig.json",
+    "log": "/private/tmp/mist-functional-types-final.log"
+  },
+  "build": {
+    "result": "pass",
+    "log": "/private/tmp/mist-functional-build-final.log"
+  },
+  "mistGuard": {
+    "files": 55,
+    "errors": 0,
+    "warnings": 0,
+    "log": "/private/tmp/mist-functional-guard-final.log"
+  },
+  "runtime": {
+    "frontend": "http://127.0.0.1:3001",
+    "referenceSameSource": "http://127.0.0.1:3131",
+    "api": "http://127.0.0.1:8082/api/health",
+    "health": "ok",
+    "retiredPort3000": true,
+    "temporaryReferencePortsStopped": [
+      3133,
+      3134
+    ]
+  },
+  "browserVerified": [
+    "development draft-save/reload/submit/sample/QC/confirmation",
+    "order create 1.005 x 1 => 1.01 and reload",
+    "CSV import 0.30 receipt",
+    "current workspace search",
+    "empty workspace recovery and switching",
+    "selected workspace reload retention",
+    "mobile account workspace entry",
+    "light/dark persistence"
+  ],
+  "screenshots": {
+    "home-1180-light.jpg": {
+      "cssViewport": [
+        1180,
+        800
+      ],
+      "image": [
+        1180,
+        800
+      ],
+      "theme": "light"
+    },
+    "home-390-dark.jpg": {
+      "cssViewport": [
+        390,
+        844
+      ],
+      "image": [
+        390,
+        843
+      ],
+      "theme": "dark"
+    },
+    "empty-home-390-dark-full.jpg": {
+      "cssViewport": [
+        390,
+        844
+      ],
+      "image": [
+        390,
+        843
+      ],
+      "theme": "dark"
+    },
+    "development-current-source.jpg": {
+      "cssViewport": [
+        1253,
+        894
+      ],
+      "image": [
+        1252,
+        894
+      ],
+      "theme": "light"
+    },
+    "development-original-source.jpg": {
+      "cssViewport": [
+        1253,
+        894
+      ],
+      "image": [
+        1252,
+        894
+      ],
+      "theme": "light"
+    }
+  },
+  "notVerified": [
+    "every page/state at all breakpoints",
+    "full-site modules",
+    "team collaboration",
+    "production deployment",
+    "model-backed AI"
+  ],
+  "limitations": [
+    "Some prior screenshots with 1440 in filename were captured through a cropped browser window; they are not full-width acceptance evidence.",
+    "QA empty workspace created under the prior API build was reconciled from verified unchanged durable state before UI recovery.",
+    "Whole-repo diagnostics in retired/non-running sources remain outside this active entry check."
+  ]
+}

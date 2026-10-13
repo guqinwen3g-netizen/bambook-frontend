@@ -1,0 +1,1315 @@
+{
+  "create": {
+    "actor": {
+      "userId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-owner",
+      "displayName": "Synthetic dispatcher",
+      "roles": [
+        "owner"
+      ],
+      "roleIds": [
+        "owner"
+      ],
+      "permissions": [
+        "orders:read",
+        "qc:read",
+        "qc:write"
+      ],
+      "departmentIds": [
+        "company"
+      ],
+      "authorizationLoaded": true
+    },
+    "input": {
+      "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-order",
+      "inspectionType": "final",
+      "qcUserId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-inspector",
+      "scopeType": "whole_order",
+      "productionBatchId": null,
+      "expectedScopeFingerprint": "03b2265ebe84bfc8169b676264d872f76ac19d94efaab8c6644098b3dc80d436",
+      "requestKey": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-request",
+      "locationId": null,
+      "dueDate": null,
+      "notes": null
+    },
+    "first": {
+      "ok": true,
+      "item": {
+        "id": "QCA__809caccc-b1cd-4e2d-ad92-0fc9e8388a0c",
+        "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-order",
+        "inspectionType": "final",
+        "scopeType": "whole_order",
+        "scopeKey": "whole_order",
+        "productionBatchId": null,
+        "productionBatchRevision": null,
+        "scopeSnapshot": {
+          "lines": [
+            {
+              "unit": "M",
+              "width": "147 cm",
+              "itemNo": "10",
+              "weight": null,
+              "styleNo": null,
+              "quantity": "100",
+              "colorName": null,
+              "lineNumber": 1,
+              "description": "Inspection input",
+              "orderLineId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-line",
+              "materialCode": "SYNTHETIC-FABRIC",
+              "specSnapshot": null,
+              "sizeBreakdown": null,
+              "confirmedSourceId": null,
+              "confirmedSourceType": null
+            }
+          ],
+          "batches": [],
+          "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-order",
+          "sourceCaseId": null,
+          "factoryRelationId": null,
+          "customerRelationId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-customer"
+        },
+        "scopeFingerprint": "03b2265ebe84bfc8169b676264d872f76ac19d94efaab8c6644098b3dc80d436",
+        "requestKey": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-request",
+        "commandHash": "d98b08ddadfb884708ed9eb60016ea655d4dd0be6f45ca864b0c6c3872c682c1",
+        "qcUserId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-inspector",
+        "locationId": null,
+        "factoryRelationId": null,
+        "status": "Assigned",
+        "dueDate": null,
+        "assignedAt": "1790976726516",
+        "assignedById": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-owner",
+        "completedAt": null,
+        "reportId": null,
+        "notes": null,
+        "createdAt": "1790976726516",
+        "updatedAt": "1790976726516",
+        "deletedAt": null
+      },
+      "receipt": {
+        "operation": "create",
+        "actorId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-owner",
+        "targetId": "QCA__809caccc-b1cd-4e2d-ad92-0fc9e8388a0c",
+        "requestKey": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-request",
+        "commandHash": "d98b08ddadfb884708ed9eb60016ea655d4dd0be6f45ca864b0c6c3872c682c1",
+        "commandSnapshot": {
+          "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-order",
+          "inspectionType": "final",
+          "qcUserId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-inspector",
+          "scopeType": "whole_order",
+          "productionBatchId": null,
+          "expectedScopeFingerprint": "03b2265ebe84bfc8169b676264d872f76ac19d94efaab8c6644098b3dc80d436",
+          "locationId": null,
+          "dueDate": null,
+          "notes": null
+        }
+      },
+      "replayed": false
+    }
+  },
+  "complete": {
+    "actor": {
+      "userId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-owner",
+      "displayName": "Synthetic dispatcher",
+      "roles": [
+        "owner"
+      ],
+      "roleIds": [
+        "owner"
+      ],
+      "permissions": [
+        "orders:read",
+        "qc:read",
+        "qc:write"
+      ],
+      "departmentIds": [
+        "company"
+      ],
+      "authorizationLoaded": true
+    },
+    "assignmentId": "QCA__aa6ca35c-5acf-40f2-bf1c-b27ca4ae46c3",
+    "input": {
+      "report": {
+        "result": "pass",
+        "inspectionDate": "2099-01-02",
+        "totalUnits": 100,
+        "passedUnits": 100,
+        "criticalDefects": 0,
+        "majorDefects": 0,
+        "minorDefects": 0,
+        "notes": "Actual native QC report"
+      },
+      "expectedScopeFingerprint": "adcb9dcf4d5b5f35612d3a1cc5d2ff5290f30e520f87c2bc14e2bfccd9a38a19",
+      "requestKey": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-complete"
+    },
+    "first": {
+      "ok": true,
+      "item": {
+        "id": "QCA__aa6ca35c-5acf-40f2-bf1c-b27ca4ae46c3",
+        "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-order",
+        "inspectionType": "final",
+        "scopeType": "whole_order",
+        "scopeKey": "whole_order",
+        "productionBatchId": null,
+        "productionBatchRevision": null,
+        "scopeSnapshot": {
+          "lines": [
+            {
+              "unit": "M",
+              "width": "147 cm",
+              "itemNo": "10",
+              "weight": null,
+              "styleNo": null,
+              "quantity": "100",
+              "colorName": null,
+              "lineNumber": 1,
+              "description": "Inspection input",
+              "orderLineId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-line",
+              "materialCode": "SYNTHETIC-FABRIC",
+              "specSnapshot": null,
+              "sizeBreakdown": null,
+              "confirmedSourceId": null,
+              "confirmedSourceType": null
+            }
+          ],
+          "batches": [],
+          "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-order",
+          "sourceCaseId": null,
+          "factoryRelationId": null,
+          "customerRelationId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-customer"
+        },
+        "scopeFingerprint": "adcb9dcf4d5b5f35612d3a1cc5d2ff5290f30e520f87c2bc14e2bfccd9a38a19",
+        "requestKey": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-request",
+        "commandHash": "14c73a8d0a66b875fac326f953963de1d42ee41b829d389ffd4400233ba18fb6",
+        "qcUserId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-inspector",
+        "locationId": null,
+        "factoryRelationId": null,
+        "status": "Completed",
+        "dueDate": null,
+        "assignedAt": "1790976726626",
+        "assignedById": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-owner",
+        "completedAt": "1790976726670",
+        "reportId": "INR__60f357e3-803d-4993-bdbf-a22708f6f229",
+        "notes": null,
+        "createdAt": "1790976726626",
+        "updatedAt": "1790976726670",
+        "deletedAt": null
+      },
+      "report": {
+        "id": "INR__60f357e3-803d-4993-bdbf-a22708f6f229",
+        "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-order",
+        "inspectionType": "final",
+        "scopeType": "whole_order",
+        "scopeKey": "whole_order",
+        "productionBatchId": null,
+        "productionBatchRevision": null,
+        "scopeSnapshot": {
+          "lines": [
+            {
+              "unit": "M",
+              "width": "147 cm",
+              "itemNo": "10",
+              "weight": null,
+              "styleNo": null,
+              "quantity": "100",
+              "colorName": null,
+              "lineNumber": 1,
+              "description": "Inspection input",
+              "orderLineId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-line",
+              "materialCode": "SYNTHETIC-FABRIC",
+              "specSnapshot": null,
+              "sizeBreakdown": null,
+              "confirmedSourceId": null,
+              "confirmedSourceType": null
+            }
+          ],
+          "batches": [],
+          "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-order",
+          "sourceCaseId": null,
+          "factoryRelationId": null,
+          "customerRelationId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-customer"
+        },
+        "scopeFingerprint": "adcb9dcf4d5b5f35612d3a1cc5d2ff5290f30e520f87c2bc14e2bfccd9a38a19",
+        "revision": 1,
+        "supersedesId": null,
+        "contentFingerprint": "2d96c0a429240cc87faa557d56ae21c46c501c59141f0eb005253a8deb830066",
+        "requestKey": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-complete",
+        "commandHash": "452fc930af00d0225e0ead81916a94bf93f5d0986d268db1f738298ff991f31b",
+        "totalUnits": 100,
+        "passedUnits": 100,
+        "inspectionDate": "2099-01-02",
+        "inspectorOrg": null,
+        "aqlLevel": null,
+        "lotSize": null,
+        "sampleSize": null,
+        "criticalDefects": 0,
+        "majorDefects": 0,
+        "minorDefects": 0,
+        "defectSummary": null,
+        "result": "pass",
+        "shipmentId": null,
+        "reportFile": null,
+        "inspectedBy": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-owner",
+        "approvedByBusiness": false,
+        "businessApprover": null,
+        "approvedAt": null,
+        "notes": "Actual native QC report",
+        "signatures": {},
+        "createdAt": "1790976726670",
+        "updatedAt": "1790976726670"
+      },
+      "receipt": {
+        "operation": "complete",
+        "actorId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-owner",
+        "targetId": "QCA__aa6ca35c-5acf-40f2-bf1c-b27ca4ae46c3",
+        "requestKey": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-complete",
+        "commandHash": "452fc930af00d0225e0ead81916a94bf93f5d0986d268db1f738298ff991f31b",
+        "commandSnapshot": {
+          "report": {
+            "result": "pass",
+            "inspectionDate": "2099-01-02",
+            "totalUnits": 100,
+            "passedUnits": 100,
+            "criticalDefects": 0,
+            "majorDefects": 0,
+            "minorDefects": 0,
+            "notes": "Actual native QC report"
+          },
+          "expectedScopeFingerprint": "adcb9dcf4d5b5f35612d3a1cc5d2ff5290f30e520f87c2bc14e2bfccd9a38a19"
+        }
+      },
+      "replayed": false
+    },
+    "board": {
+      "assigned": [
+        {
+          "id": "QCA__809caccc-b1cd-4e2d-ad92-0fc9e8388a0c",
+          "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-order",
+          "inspectionType": "final",
+          "scopeType": "whole_order",
+          "scopeKey": "whole_order",
+          "productionBatchId": null,
+          "productionBatchRevision": null,
+          "scopeSnapshot": {
+            "lines": [
+              {
+                "unit": "M",
+                "width": "147 cm",
+                "itemNo": "10",
+                "weight": null,
+                "styleNo": null,
+                "quantity": "100",
+                "colorName": null,
+                "lineNumber": 1,
+                "description": "Inspection input",
+                "orderLineId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-line",
+                "materialCode": "SYNTHETIC-FABRIC",
+                "specSnapshot": null,
+                "sizeBreakdown": null,
+                "confirmedSourceId": null,
+                "confirmedSourceType": null
+              }
+            ],
+            "batches": [],
+            "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-order",
+            "sourceCaseId": null,
+            "factoryRelationId": null,
+            "customerRelationId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-customer"
+          },
+          "scopeFingerprint": "03b2265ebe84bfc8169b676264d872f76ac19d94efaab8c6644098b3dc80d436",
+          "requestKey": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-request",
+          "commandHash": "d98b08ddadfb884708ed9eb60016ea655d4dd0be6f45ca864b0c6c3872c682c1",
+          "qcUserId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-inspector",
+          "locationId": null,
+          "factoryRelationId": null,
+          "status": "Assigned",
+          "dueDate": null,
+          "assignedAt": 1790976726516,
+          "assignedById": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-owner",
+          "completedAt": null,
+          "reportId": null,
+          "notes": null,
+          "createdAt": 1790976726516,
+          "updatedAt": 1790976726516,
+          "deletedAt": null,
+          "location": null,
+          "order": {
+            "poNumber": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-PO",
+            "customer": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-customer",
+            "product": "Synthetic fabric",
+            "dueDate": "2099-01-01",
+            "clientDate": null,
+            "businessLine": null
+          },
+          "qcUser": {
+            "id": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-inspector",
+            "displayName": "Synthetic assigned inspector"
+          }
+        }
+      ],
+      "inProgress": [],
+      "completed": [
+        {
+          "id": "QCA__aa6ca35c-5acf-40f2-bf1c-b27ca4ae46c3",
+          "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-order",
+          "inspectionType": "final",
+          "scopeType": "whole_order",
+          "scopeKey": "whole_order",
+          "productionBatchId": null,
+          "productionBatchRevision": null,
+          "scopeSnapshot": {
+            "lines": [
+              {
+                "unit": "M",
+                "width": "147 cm",
+                "itemNo": "10",
+                "weight": null,
+                "styleNo": null,
+                "quantity": "100",
+                "colorName": null,
+                "lineNumber": 1,
+                "description": "Inspection input",
+                "orderLineId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-line",
+                "materialCode": "SYNTHETIC-FABRIC",
+                "specSnapshot": null,
+                "sizeBreakdown": null,
+                "confirmedSourceId": null,
+                "confirmedSourceType": null
+              }
+            ],
+            "batches": [],
+            "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-order",
+            "sourceCaseId": null,
+            "factoryRelationId": null,
+            "customerRelationId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-customer"
+          },
+          "scopeFingerprint": "adcb9dcf4d5b5f35612d3a1cc5d2ff5290f30e520f87c2bc14e2bfccd9a38a19",
+          "requestKey": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-request",
+          "commandHash": "14c73a8d0a66b875fac326f953963de1d42ee41b829d389ffd4400233ba18fb6",
+          "qcUserId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-inspector",
+          "locationId": null,
+          "factoryRelationId": null,
+          "status": "Completed",
+          "dueDate": null,
+          "assignedAt": 1790976726626,
+          "assignedById": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-owner",
+          "completedAt": 1790976726670,
+          "reportId": "INR__60f357e3-803d-4993-bdbf-a22708f6f229",
+          "notes": null,
+          "createdAt": 1790976726626,
+          "updatedAt": 1790976726670,
+          "deletedAt": null,
+          "location": null,
+          "order": {
+            "poNumber": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-PO",
+            "customer": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-customer",
+            "product": "Synthetic fabric",
+            "dueDate": "2099-01-01",
+            "clientDate": null,
+            "businessLine": null
+          },
+          "qcUser": {
+            "id": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-inspector",
+            "displayName": "Synthetic assigned inspector"
+          }
+        }
+      ]
+    },
+    "reports": {
+      "items": [
+        {
+          "id": "INR__60f357e3-803d-4993-bdbf-a22708f6f229",
+          "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-order",
+          "inspectionType": "final",
+          "scopeType": "whole_order",
+          "scopeKey": "whole_order",
+          "productionBatchId": null,
+          "productionBatchRevision": null,
+          "scopeSnapshot": {
+            "lines": [
+              {
+                "unit": "M",
+                "width": "147 cm",
+                "itemNo": "10",
+                "weight": null,
+                "styleNo": null,
+                "quantity": "100",
+                "colorName": null,
+                "lineNumber": 1,
+                "description": "Inspection input",
+                "orderLineId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-line",
+                "materialCode": "SYNTHETIC-FABRIC",
+                "specSnapshot": null,
+                "sizeBreakdown": null,
+                "confirmedSourceId": null,
+                "confirmedSourceType": null
+              }
+            ],
+            "batches": [],
+            "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-order",
+            "sourceCaseId": null,
+            "factoryRelationId": null,
+            "customerRelationId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-customer"
+          },
+          "scopeFingerprint": "adcb9dcf4d5b5f35612d3a1cc5d2ff5290f30e520f87c2bc14e2bfccd9a38a19",
+          "revision": 1,
+          "supersedesId": null,
+          "contentFingerprint": "2d96c0a429240cc87faa557d56ae21c46c501c59141f0eb005253a8deb830066",
+          "requestKey": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-complete",
+          "commandHash": "452fc930af00d0225e0ead81916a94bf93f5d0986d268db1f738298ff991f31b",
+          "totalUnits": 100,
+          "passedUnits": 100,
+          "inspectionDate": "2099-01-02",
+          "inspectorOrg": null,
+          "aqlLevel": null,
+          "lotSize": null,
+          "sampleSize": null,
+          "criticalDefects": 0,
+          "majorDefects": 0,
+          "minorDefects": 0,
+          "defectSummary": null,
+          "result": "pass",
+          "shipmentId": null,
+          "reportFile": null,
+          "inspectedBy": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-owner",
+          "approvedByBusiness": false,
+          "businessApprover": null,
+          "approvedAt": null,
+          "notes": "Actual native QC report",
+          "signatures": {},
+          "createdAt": 1790976726670,
+          "updatedAt": 1790976726670,
+          "coverageCurrent": true,
+          "isCurrentRevision": true,
+          "canBusinessDecide": true,
+          "order": {
+            "poNumber": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-PO",
+            "customer": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-customer",
+            "product": "Synthetic fabric",
+            "dueDate": "2099-01-01",
+            "clientDate": null,
+            "businessLine": null
+          }
+        }
+      ],
+      "total": 1
+    }
+  },
+  "decision": {
+    "actor": {
+      "userId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-3-decision-envelope-owner",
+      "displayName": "Synthetic dispatcher",
+      "roles": [
+        "owner"
+      ],
+      "roleIds": [
+        "owner"
+      ],
+      "permissions": [
+        "orders:read",
+        "qc:read",
+        "qc:write"
+      ],
+      "departmentIds": [
+        "company"
+      ],
+      "authorizationLoaded": true
+    },
+    "reportId": "INR__c371aec2-fa30-4bb9-a20b-23d17f7be74a",
+    "input": {
+      "expectedRevision": 1,
+      "expectedScopeFingerprint": "3943132603deaaad663070a9cc0fa0a05afec6db69f67f4c6835414b5920d51e",
+      "expectedContentFingerprint": "2d96c0a429240cc87faa557d56ae21c46c501c59141f0eb005253a8deb830066",
+      "decision": "approved",
+      "reason": "Actual business decision",
+      "requestKey": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-3-decision-envelope-decision"
+    },
+    "first": {
+      "ok": true,
+      "item": {
+        "id": "INR__c371aec2-fa30-4bb9-a20b-23d17f7be74a",
+        "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-3-decision-envelope-order",
+        "inspectionType": "final",
+        "scopeType": "whole_order",
+        "scopeKey": "whole_order",
+        "productionBatchId": null,
+        "productionBatchRevision": null,
+        "scopeSnapshot": {
+          "lines": [
+            {
+              "unit": "M",
+              "width": "147 cm",
+              "itemNo": "10",
+              "weight": null,
+              "styleNo": null,
+              "quantity": "100",
+              "colorName": null,
+              "lineNumber": 1,
+              "description": "Inspection input",
+              "orderLineId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-3-decision-envelope-line",
+              "materialCode": "SYNTHETIC-FABRIC",
+              "specSnapshot": null,
+              "sizeBreakdown": null,
+              "confirmedSourceId": null,
+              "confirmedSourceType": null
+            }
+          ],
+          "batches": [],
+          "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-3-decision-envelope-order",
+          "sourceCaseId": null,
+          "factoryRelationId": null,
+          "customerRelationId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-3-decision-envelope-customer"
+        },
+        "scopeFingerprint": "3943132603deaaad663070a9cc0fa0a05afec6db69f67f4c6835414b5920d51e",
+        "revision": 1,
+        "supersedesId": null,
+        "contentFingerprint": "2d96c0a429240cc87faa557d56ae21c46c501c59141f0eb005253a8deb830066",
+        "requestKey": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-3-decision-envelope-complete",
+        "commandHash": "01df5396eba08c0316f3a2e83d91f4258537f0a3830c3500248c82346626f834",
+        "totalUnits": 100,
+        "passedUnits": 100,
+        "inspectionDate": "2099-01-02",
+        "inspectorOrg": null,
+        "aqlLevel": null,
+        "lotSize": null,
+        "sampleSize": null,
+        "criticalDefects": 0,
+        "majorDefects": 0,
+        "minorDefects": 0,
+        "defectSummary": null,
+        "result": "pass",
+        "shipmentId": null,
+        "reportFile": null,
+        "inspectedBy": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-3-decision-envelope-owner",
+        "approvedByBusiness": true,
+        "businessApprover": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-3-decision-envelope-owner",
+        "approvedAt": "1790976726913",
+        "notes": "Actual native QC report",
+        "signatures": {},
+        "createdAt": "1790976726878",
+        "updatedAt": "1790976726913"
+      },
+      "receipt": {
+        "operation": "decision",
+        "actorId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-3-decision-envelope-owner",
+        "targetId": "INR__c371aec2-fa30-4bb9-a20b-23d17f7be74a",
+        "requestKey": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-3-decision-envelope-decision",
+        "commandHash": "482e2d915ef546489e3eb8e4fce4371e3f9e12ac3874a6428c1ced85a812e050",
+        "commandSnapshot": {
+          "expectedRevision": 1,
+          "expectedScopeFingerprint": "3943132603deaaad663070a9cc0fa0a05afec6db69f67f4c6835414b5920d51e",
+          "expectedContentFingerprint": "2d96c0a429240cc87faa557d56ae21c46c501c59141f0eb005253a8deb830066",
+          "decision": "approved",
+          "reason": "Actual business decision"
+        }
+      },
+      "replayed": false
+    },
+    "reports": {
+      "items": [
+        {
+          "id": "INR__c371aec2-fa30-4bb9-a20b-23d17f7be74a",
+          "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-3-decision-envelope-order",
+          "inspectionType": "final",
+          "scopeType": "whole_order",
+          "scopeKey": "whole_order",
+          "productionBatchId": null,
+          "productionBatchRevision": null,
+          "scopeSnapshot": {
+            "lines": [
+              {
+                "unit": "M",
+                "width": "147 cm",
+                "itemNo": "10",
+                "weight": null,
+                "styleNo": null,
+                "quantity": "100",
+                "colorName": null,
+                "lineNumber": 1,
+                "description": "Inspection input",
+                "orderLineId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-3-decision-envelope-line",
+                "materialCode": "SYNTHETIC-FABRIC",
+                "specSnapshot": null,
+                "sizeBreakdown": null,
+                "confirmedSourceId": null,
+                "confirmedSourceType": null
+              }
+            ],
+            "batches": [],
+            "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-3-decision-envelope-order",
+            "sourceCaseId": null,
+            "factoryRelationId": null,
+            "customerRelationId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-3-decision-envelope-customer"
+          },
+          "scopeFingerprint": "3943132603deaaad663070a9cc0fa0a05afec6db69f67f4c6835414b5920d51e",
+          "revision": 1,
+          "supersedesId": null,
+          "contentFingerprint": "2d96c0a429240cc87faa557d56ae21c46c501c59141f0eb005253a8deb830066",
+          "requestKey": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-3-decision-envelope-complete",
+          "commandHash": "01df5396eba08c0316f3a2e83d91f4258537f0a3830c3500248c82346626f834",
+          "totalUnits": 100,
+          "passedUnits": 100,
+          "inspectionDate": "2099-01-02",
+          "inspectorOrg": null,
+          "aqlLevel": null,
+          "lotSize": null,
+          "sampleSize": null,
+          "criticalDefects": 0,
+          "majorDefects": 0,
+          "minorDefects": 0,
+          "defectSummary": null,
+          "result": "pass",
+          "shipmentId": null,
+          "reportFile": null,
+          "inspectedBy": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-3-decision-envelope-owner",
+          "approvedByBusiness": true,
+          "businessApprover": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-3-decision-envelope-owner",
+          "approvedAt": 1790976726913,
+          "notes": "Actual native QC report",
+          "signatures": {},
+          "createdAt": 1790976726878,
+          "updatedAt": 1790976726913,
+          "coverageCurrent": true,
+          "isCurrentRevision": true,
+          "canBusinessDecide": false,
+          "order": {
+            "poNumber": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-3-decision-envelope-PO",
+            "customer": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-3-decision-envelope-customer",
+            "product": "Synthetic fabric",
+            "dueDate": "2099-01-01",
+            "clientDate": null,
+            "businessLine": null
+          }
+        }
+      ],
+      "total": 1
+    }
+  },
+  "readback": {
+    "actor": {
+      "userId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-owner",
+      "displayName": "Synthetic dispatcher",
+      "roles": [
+        "owner"
+      ],
+      "roleIds": [
+        "owner"
+      ],
+      "permissions": [
+        "orders:read",
+        "qc:read",
+        "qc:write"
+      ],
+      "departmentIds": [
+        "company"
+      ],
+      "authorizationLoaded": true
+    },
+    "complete": {
+      "ok": true,
+      "item": {
+        "id": "QCA__750a28cb-30fd-4a13-a623-6cb72c68c6ad",
+        "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-order",
+        "inspectionType": "final",
+        "scopeType": "whole_order",
+        "scopeKey": "whole_order",
+        "productionBatchId": null,
+        "productionBatchRevision": null,
+        "scopeSnapshot": {
+          "lines": [
+            {
+              "unit": "M",
+              "width": "147 cm",
+              "itemNo": "10",
+              "weight": null,
+              "styleNo": null,
+              "quantity": "100",
+              "colorName": null,
+              "lineNumber": 1,
+              "description": "Inspection input",
+              "orderLineId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-line",
+              "materialCode": "SYNTHETIC-FABRIC",
+              "specSnapshot": null,
+              "sizeBreakdown": null,
+              "confirmedSourceId": null,
+              "confirmedSourceType": null
+            }
+          ],
+          "batches": [],
+          "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-order",
+          "sourceCaseId": null,
+          "factoryRelationId": null,
+          "customerRelationId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-customer"
+        },
+        "scopeFingerprint": "e514a55ce82fa5e1a48292108a3bf54ab1c7d4452747eee928d5b25f171b4ceb",
+        "requestKey": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-request",
+        "commandHash": "3389244801a3c258906da4fbb6c6c70ce3417b403bac0e3ab7ed3d98da7aea15",
+        "qcUserId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-inspector",
+        "locationId": null,
+        "factoryRelationId": null,
+        "status": "Completed",
+        "dueDate": null,
+        "assignedAt": "1790976727278",
+        "assignedById": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-owner",
+        "completedAt": "1790976727315",
+        "reportId": "INR__056d2f16-1a89-47b9-bf93-5755f291a0dd",
+        "notes": null,
+        "createdAt": "1790976727278",
+        "updatedAt": "1790976727315",
+        "deletedAt": null
+      },
+      "report": {
+        "id": "INR__056d2f16-1a89-47b9-bf93-5755f291a0dd",
+        "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-order",
+        "inspectionType": "final",
+        "scopeType": "whole_order",
+        "scopeKey": "whole_order",
+        "productionBatchId": null,
+        "productionBatchRevision": null,
+        "scopeSnapshot": {
+          "lines": [
+            {
+              "unit": "M",
+              "width": "147 cm",
+              "itemNo": "10",
+              "weight": null,
+              "styleNo": null,
+              "quantity": "100",
+              "colorName": null,
+              "lineNumber": 1,
+              "description": "Inspection input",
+              "orderLineId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-line",
+              "materialCode": "SYNTHETIC-FABRIC",
+              "specSnapshot": null,
+              "sizeBreakdown": null,
+              "confirmedSourceId": null,
+              "confirmedSourceType": null
+            }
+          ],
+          "batches": [],
+          "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-order",
+          "sourceCaseId": null,
+          "factoryRelationId": null,
+          "customerRelationId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-customer"
+        },
+        "scopeFingerprint": "e514a55ce82fa5e1a48292108a3bf54ab1c7d4452747eee928d5b25f171b4ceb",
+        "revision": 1,
+        "supersedesId": null,
+        "contentFingerprint": "2d96c0a429240cc87faa557d56ae21c46c501c59141f0eb005253a8deb830066",
+        "requestKey": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-complete",
+        "commandHash": "9442e14f3ec874528bb2a910e19f94973e00a6bcd3bbf04fe536b44f87538f98",
+        "totalUnits": 100,
+        "passedUnits": 100,
+        "inspectionDate": "2099-01-02",
+        "inspectorOrg": null,
+        "aqlLevel": null,
+        "lotSize": null,
+        "sampleSize": null,
+        "criticalDefects": 0,
+        "majorDefects": 0,
+        "minorDefects": 0,
+        "defectSummary": null,
+        "result": "pass",
+        "shipmentId": null,
+        "reportFile": null,
+        "inspectedBy": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-owner",
+        "approvedByBusiness": false,
+        "businessApprover": null,
+        "approvedAt": null,
+        "notes": "Actual native QC report",
+        "signatures": {},
+        "createdAt": "1790976727315",
+        "updatedAt": "1790976727315"
+      },
+      "receipt": {
+        "operation": "complete",
+        "actorId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-owner",
+        "targetId": "QCA__750a28cb-30fd-4a13-a623-6cb72c68c6ad",
+        "requestKey": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-complete",
+        "commandHash": "9442e14f3ec874528bb2a910e19f94973e00a6bcd3bbf04fe536b44f87538f98",
+        "commandSnapshot": {
+          "report": {
+            "result": "pass",
+            "inspectionDate": "2099-01-02",
+            "totalUnits": 100,
+            "passedUnits": 100,
+            "criticalDefects": 0,
+            "majorDefects": 0,
+            "minorDefects": 0,
+            "notes": "Actual native QC report"
+          },
+          "expectedScopeFingerprint": "e514a55ce82fa5e1a48292108a3bf54ab1c7d4452747eee928d5b25f171b4ceb"
+        }
+      },
+      "replayed": false
+    },
+    "board": {
+      "assigned": [
+        {
+          "id": "QCA__d135438a-dc4b-4d70-896f-79d360280f1d",
+          "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-4-complete-audit-order",
+          "inspectionType": "final",
+          "scopeType": "whole_order",
+          "scopeKey": "whole_order",
+          "productionBatchId": null,
+          "productionBatchRevision": null,
+          "scopeSnapshot": {
+            "lines": [
+              {
+                "unit": "M",
+                "width": "147 cm",
+                "itemNo": "10",
+                "weight": null,
+                "styleNo": null,
+                "quantity": "100",
+                "colorName": null,
+                "lineNumber": 1,
+                "description": "Inspection input",
+                "orderLineId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-4-complete-audit-line",
+                "materialCode": "SYNTHETIC-FABRIC",
+                "specSnapshot": null,
+                "sizeBreakdown": null,
+                "confirmedSourceId": null,
+                "confirmedSourceType": null
+              }
+            ],
+            "batches": [],
+            "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-4-complete-audit-order",
+            "sourceCaseId": null,
+            "factoryRelationId": null,
+            "customerRelationId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-4-complete-audit-customer"
+          },
+          "scopeFingerprint": "b8ee3cd5f5d5ba86ad612cdccdbde02169384f644f6af4ed7bef2b952cd9e2f9",
+          "requestKey": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-4-complete-audit-request",
+          "commandHash": "8ec0bc642be6fe2400856bde60ca14b78e917edc9a67f75eda1d61b45c97e783",
+          "qcUserId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-4-complete-audit-inspector",
+          "locationId": null,
+          "factoryRelationId": null,
+          "status": "Assigned",
+          "dueDate": null,
+          "assignedAt": 1790976727046,
+          "assignedById": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-4-complete-audit-owner",
+          "completedAt": null,
+          "reportId": null,
+          "notes": null,
+          "createdAt": 1790976727046,
+          "updatedAt": 1790976727046,
+          "deletedAt": null,
+          "location": null,
+          "order": {
+            "poNumber": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-4-complete-audit-PO",
+            "customer": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-4-complete-audit-customer",
+            "product": "Synthetic fabric",
+            "dueDate": "2099-01-01",
+            "clientDate": null,
+            "businessLine": null
+          },
+          "qcUser": {
+            "id": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-4-complete-audit-inspector",
+            "displayName": "Synthetic assigned inspector"
+          }
+        },
+        {
+          "id": "QCA__809caccc-b1cd-4e2d-ad92-0fc9e8388a0c",
+          "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-order",
+          "inspectionType": "final",
+          "scopeType": "whole_order",
+          "scopeKey": "whole_order",
+          "productionBatchId": null,
+          "productionBatchRevision": null,
+          "scopeSnapshot": {
+            "lines": [
+              {
+                "unit": "M",
+                "width": "147 cm",
+                "itemNo": "10",
+                "weight": null,
+                "styleNo": null,
+                "quantity": "100",
+                "colorName": null,
+                "lineNumber": 1,
+                "description": "Inspection input",
+                "orderLineId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-line",
+                "materialCode": "SYNTHETIC-FABRIC",
+                "specSnapshot": null,
+                "sizeBreakdown": null,
+                "confirmedSourceId": null,
+                "confirmedSourceType": null
+              }
+            ],
+            "batches": [],
+            "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-order",
+            "sourceCaseId": null,
+            "factoryRelationId": null,
+            "customerRelationId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-customer"
+          },
+          "scopeFingerprint": "03b2265ebe84bfc8169b676264d872f76ac19d94efaab8c6644098b3dc80d436",
+          "requestKey": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-request",
+          "commandHash": "d98b08ddadfb884708ed9eb60016ea655d4dd0be6f45ca864b0c6c3872c682c1",
+          "qcUserId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-inspector",
+          "locationId": null,
+          "factoryRelationId": null,
+          "status": "Assigned",
+          "dueDate": null,
+          "assignedAt": 1790976726516,
+          "assignedById": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-owner",
+          "completedAt": null,
+          "reportId": null,
+          "notes": null,
+          "createdAt": 1790976726516,
+          "updatedAt": 1790976726516,
+          "deletedAt": null,
+          "location": null,
+          "order": {
+            "poNumber": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-PO",
+            "customer": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-customer",
+            "product": "Synthetic fabric",
+            "dueDate": "2099-01-01",
+            "clientDate": null,
+            "businessLine": null
+          },
+          "qcUser": {
+            "id": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-1-create-envelope-inspector",
+            "displayName": "Synthetic assigned inspector"
+          }
+        }
+      ],
+      "inProgress": [],
+      "completed": [
+        {
+          "id": "QCA__750a28cb-30fd-4a13-a623-6cb72c68c6ad",
+          "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-order",
+          "inspectionType": "final",
+          "scopeType": "whole_order",
+          "scopeKey": "whole_order",
+          "productionBatchId": null,
+          "productionBatchRevision": null,
+          "scopeSnapshot": {
+            "lines": [
+              {
+                "unit": "M",
+                "width": "147 cm",
+                "itemNo": "10",
+                "weight": null,
+                "styleNo": null,
+                "quantity": "100",
+                "colorName": null,
+                "lineNumber": 1,
+                "description": "Inspection input",
+                "orderLineId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-line",
+                "materialCode": "SYNTHETIC-FABRIC",
+                "specSnapshot": null,
+                "sizeBreakdown": null,
+                "confirmedSourceId": null,
+                "confirmedSourceType": null
+              }
+            ],
+            "batches": [],
+            "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-order",
+            "sourceCaseId": null,
+            "factoryRelationId": null,
+            "customerRelationId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-customer"
+          },
+          "scopeFingerprint": "e514a55ce82fa5e1a48292108a3bf54ab1c7d4452747eee928d5b25f171b4ceb",
+          "requestKey": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-request",
+          "commandHash": "3389244801a3c258906da4fbb6c6c70ce3417b403bac0e3ab7ed3d98da7aea15",
+          "qcUserId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-inspector",
+          "locationId": null,
+          "factoryRelationId": null,
+          "status": "Completed",
+          "dueDate": null,
+          "assignedAt": 1790976727278,
+          "assignedById": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-owner",
+          "completedAt": 1790976727315,
+          "reportId": "INR__056d2f16-1a89-47b9-bf93-5755f291a0dd",
+          "notes": null,
+          "createdAt": 1790976727278,
+          "updatedAt": 1790976727315,
+          "deletedAt": null,
+          "location": null,
+          "order": {
+            "poNumber": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-PO",
+            "customer": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-customer",
+            "product": "Synthetic fabric",
+            "dueDate": "2099-01-01",
+            "clientDate": null,
+            "businessLine": null
+          },
+          "qcUser": {
+            "id": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-inspector",
+            "displayName": "Synthetic assigned inspector"
+          }
+        },
+        {
+          "id": "QCA__b486d81f-386e-4db2-80d8-5e9de9c43ec7",
+          "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-5-decision-audit-order",
+          "inspectionType": "final",
+          "scopeType": "whole_order",
+          "scopeKey": "whole_order",
+          "productionBatchId": null,
+          "productionBatchRevision": null,
+          "scopeSnapshot": {
+            "lines": [
+              {
+                "unit": "M",
+                "width": "147 cm",
+                "itemNo": "10",
+                "weight": null,
+                "styleNo": null,
+                "quantity": "100",
+                "colorName": null,
+                "lineNumber": 1,
+                "description": "Inspection input",
+                "orderLineId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-5-decision-audit-line",
+                "materialCode": "SYNTHETIC-FABRIC",
+                "specSnapshot": null,
+                "sizeBreakdown": null,
+                "confirmedSourceId": null,
+                "confirmedSourceType": null
+              }
+            ],
+            "batches": [],
+            "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-5-decision-audit-order",
+            "sourceCaseId": null,
+            "factoryRelationId": null,
+            "customerRelationId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-5-decision-audit-customer"
+          },
+          "scopeFingerprint": "13fdb58710eae5187a24c1e8ada73e2df1b8c10acd46de555a1668c8d24a45c5",
+          "requestKey": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-5-decision-audit-request",
+          "commandHash": "c8c5636f60a05d5f4e85f1d3fc5afc4d4e432454ba1a7f7d9549e8ff2d36e767",
+          "qcUserId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-5-decision-audit-inspector",
+          "locationId": null,
+          "factoryRelationId": null,
+          "status": "Completed",
+          "dueDate": null,
+          "assignedAt": 1790976727153,
+          "assignedById": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-5-decision-audit-owner",
+          "completedAt": 1790976727188,
+          "reportId": "INR__bed64101-e3ee-4713-a27f-7122ab8078fc",
+          "notes": null,
+          "createdAt": 1790976727153,
+          "updatedAt": 1790976727188,
+          "deletedAt": null,
+          "location": null,
+          "order": {
+            "poNumber": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-5-decision-audit-PO",
+            "customer": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-5-decision-audit-customer",
+            "product": "Synthetic fabric",
+            "dueDate": "2099-01-01",
+            "clientDate": null,
+            "businessLine": null
+          },
+          "qcUser": {
+            "id": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-5-decision-audit-inspector",
+            "displayName": "Synthetic assigned inspector"
+          }
+        },
+        {
+          "id": "QCA__4b43aded-f944-471a-a99a-7654db1332cd",
+          "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-3-decision-envelope-order",
+          "inspectionType": "final",
+          "scopeType": "whole_order",
+          "scopeKey": "whole_order",
+          "productionBatchId": null,
+          "productionBatchRevision": null,
+          "scopeSnapshot": {
+            "lines": [
+              {
+                "unit": "M",
+                "width": "147 cm",
+                "itemNo": "10",
+                "weight": null,
+                "styleNo": null,
+                "quantity": "100",
+                "colorName": null,
+                "lineNumber": 1,
+                "description": "Inspection input",
+                "orderLineId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-3-decision-envelope-line",
+                "materialCode": "SYNTHETIC-FABRIC",
+                "specSnapshot": null,
+                "sizeBreakdown": null,
+                "confirmedSourceId": null,
+                "confirmedSourceType": null
+              }
+            ],
+            "batches": [],
+            "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-3-decision-envelope-order",
+            "sourceCaseId": null,
+            "factoryRelationId": null,
+            "customerRelationId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-3-decision-envelope-customer"
+          },
+          "scopeFingerprint": "3943132603deaaad663070a9cc0fa0a05afec6db69f67f4c6835414b5920d51e",
+          "requestKey": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-3-decision-envelope-request",
+          "commandHash": "e3100761e35ee7fe6dc62687b61631e4e5ed0266cc353d461634bbc92f33b4f2",
+          "qcUserId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-3-decision-envelope-inspector",
+          "locationId": null,
+          "factoryRelationId": null,
+          "status": "Completed",
+          "dueDate": null,
+          "assignedAt": 1790976726838,
+          "assignedById": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-3-decision-envelope-owner",
+          "completedAt": 1790976726878,
+          "reportId": "INR__c371aec2-fa30-4bb9-a20b-23d17f7be74a",
+          "notes": null,
+          "createdAt": 1790976726838,
+          "updatedAt": 1790976726878,
+          "deletedAt": null,
+          "location": null,
+          "order": {
+            "poNumber": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-3-decision-envelope-PO",
+            "customer": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-3-decision-envelope-customer",
+            "product": "Synthetic fabric",
+            "dueDate": "2099-01-01",
+            "clientDate": null,
+            "businessLine": null
+          },
+          "qcUser": {
+            "id": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-3-decision-envelope-inspector",
+            "displayName": "Synthetic assigned inspector"
+          }
+        },
+        {
+          "id": "QCA__aa6ca35c-5acf-40f2-bf1c-b27ca4ae46c3",
+          "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-order",
+          "inspectionType": "final",
+          "scopeType": "whole_order",
+          "scopeKey": "whole_order",
+          "productionBatchId": null,
+          "productionBatchRevision": null,
+          "scopeSnapshot": {
+            "lines": [
+              {
+                "unit": "M",
+                "width": "147 cm",
+                "itemNo": "10",
+                "weight": null,
+                "styleNo": null,
+                "quantity": "100",
+                "colorName": null,
+                "lineNumber": 1,
+                "description": "Inspection input",
+                "orderLineId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-line",
+                "materialCode": "SYNTHETIC-FABRIC",
+                "specSnapshot": null,
+                "sizeBreakdown": null,
+                "confirmedSourceId": null,
+                "confirmedSourceType": null
+              }
+            ],
+            "batches": [],
+            "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-order",
+            "sourceCaseId": null,
+            "factoryRelationId": null,
+            "customerRelationId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-customer"
+          },
+          "scopeFingerprint": "adcb9dcf4d5b5f35612d3a1cc5d2ff5290f30e520f87c2bc14e2bfccd9a38a19",
+          "requestKey": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-request",
+          "commandHash": "14c73a8d0a66b875fac326f953963de1d42ee41b829d389ffd4400233ba18fb6",
+          "qcUserId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-inspector",
+          "locationId": null,
+          "factoryRelationId": null,
+          "status": "Completed",
+          "dueDate": null,
+          "assignedAt": 1790976726626,
+          "assignedById": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-owner",
+          "completedAt": 1790976726670,
+          "reportId": "INR__60f357e3-803d-4993-bdbf-a22708f6f229",
+          "notes": null,
+          "createdAt": 1790976726626,
+          "updatedAt": 1790976726670,
+          "deletedAt": null,
+          "location": null,
+          "order": {
+            "poNumber": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-PO",
+            "customer": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-customer",
+            "product": "Synthetic fabric",
+            "dueDate": "2099-01-01",
+            "clientDate": null,
+            "businessLine": null
+          },
+          "qcUser": {
+            "id": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-2-complete-envelope-inspector",
+            "displayName": "Synthetic assigned inspector"
+          }
+        }
+      ]
+    },
+    "reports": {
+      "items": [
+        {
+          "id": "INR__056d2f16-1a89-47b9-bf93-5755f291a0dd",
+          "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-order",
+          "inspectionType": "final",
+          "scopeType": "whole_order",
+          "scopeKey": "whole_order",
+          "productionBatchId": null,
+          "productionBatchRevision": null,
+          "scopeSnapshot": {
+            "lines": [
+              {
+                "unit": "M",
+                "width": "147 cm",
+                "itemNo": "10",
+                "weight": null,
+                "styleNo": null,
+                "quantity": "100",
+                "colorName": null,
+                "lineNumber": 1,
+                "description": "Inspection input",
+                "orderLineId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-line",
+                "materialCode": "SYNTHETIC-FABRIC",
+                "specSnapshot": null,
+                "sizeBreakdown": null,
+                "confirmedSourceId": null,
+                "confirmedSourceType": null
+              }
+            ],
+            "batches": [],
+            "orderId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-order",
+            "sourceCaseId": null,
+            "factoryRelationId": null,
+            "customerRelationId": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-customer"
+          },
+          "scopeFingerprint": "e514a55ce82fa5e1a48292108a3bf54ab1c7d4452747eee928d5b25f171b4ceb",
+          "revision": 1,
+          "supersedesId": null,
+          "contentFingerprint": "2d96c0a429240cc87faa557d56ae21c46c501c59141f0eb005253a8deb830066",
+          "requestKey": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-complete",
+          "commandHash": "9442e14f3ec874528bb2a910e19f94973e00a6bcd3bbf04fe536b44f87538f98",
+          "totalUnits": 100,
+          "passedUnits": 100,
+          "inspectionDate": "2099-01-02",
+          "inspectorOrg": null,
+          "aqlLevel": null,
+          "lotSize": null,
+          "sampleSize": null,
+          "criticalDefects": 0,
+          "majorDefects": 0,
+          "minorDefects": 0,
+          "defectSummary": null,
+          "result": "pass",
+          "shipmentId": null,
+          "reportFile": null,
+          "inspectedBy": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-owner",
+          "approvedByBusiness": false,
+          "businessApprover": null,
+          "approvedAt": null,
+          "notes": "Actual native QC report",
+          "signatures": {},
+          "createdAt": 1790976727315,
+          "updatedAt": 1790976727315,
+          "coverageCurrent": true,
+          "isCurrentRevision": true,
+          "canBusinessDecide": true,
+          "order": {
+            "poNumber": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-PO",
+            "customer": "acceptance-qc-users-494e2ffa-500f-410c-a4d6-347841cf4ae0-6-date-readback-customer",
+            "product": "Synthetic fabric",
+            "dueDate": "2099-01-01",
+            "clientDate": null,
+            "businessLine": null
+          }
+        }
+      ],
+      "total": 1
+    }
+  }
+}

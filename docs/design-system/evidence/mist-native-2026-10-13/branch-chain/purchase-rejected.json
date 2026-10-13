@@ -1,0 +1,455 @@
+{
+  "readOnly": true,
+  "samples": [],
+  "orderGovernance": [
+    {
+      "orderId": "873d79d1-fe97-4866-908e-d81fda26b404",
+      "status": "approved",
+      "activeEffectiveVersion": 1,
+      "currentMatchesApproved": true,
+      "approvedSnapshot": {
+        "orderId": "873d79d1-fe97-4866-908e-d81fda26b404",
+        "contract": {
+          "kind": "external",
+          "poNumber": "QA-PO-BRANCH-1013",
+          "confirmationFileIds": [
+            "0e28661b-64df-4a96-86de-e225a97b58a9"
+          ],
+          "internalPurpose": "",
+          "receiver": "",
+          "paymentMethod": "OA",
+          "depositPercent": null,
+          "paymentNote": "OA账期：每票实际离港日起30天内付清该票货款；允许分批6件和4件，不要求生产前定金。本地流程测试，PO单价12USD，初录11USD用于退回纠正验收。",
+          "incoterm": "FOB",
+          "deliveryPlace": "Shanghai / 本地分批验收目的港"
+        },
+        "lines": [
+          {
+            "id": "ee49ac55-a450-4540-abba-6ed7d18dcc63",
+            "qty": 10,
+            "price": 12,
+            "unit": "件"
+          }
+        ]
+      },
+      "rounds": [
+        {
+          "id": "70d92483-f7fc-47b2-bfe2-551a1f340958",
+          "kind": "initial",
+          "status": "rejected",
+          "requesterId": "local-operator",
+          "reviewerIds": [
+            "local-operator",
+            "local-reviewer"
+          ],
+          "decidedBy": "local-reviewer"
+        },
+        {
+          "id": "62546bb1-54fd-4ffc-b86f-36936fdb6659",
+          "kind": "initial",
+          "status": "approved",
+          "requesterId": "local-operator",
+          "reviewerIds": [
+            "local-operator",
+            "local-reviewer"
+          ],
+          "decidedBy": "local-reviewer"
+        }
+      ]
+    }
+  ],
+  "productionFacts": [],
+  "sampleGates": [],
+  "orderDeposits": [
+    {
+      "orderId": "873d79d1-fe97-4866-908e-d81fda26b404",
+      "status": "not_required",
+      "required": 0,
+      "received": 0,
+      "percent": null
+    }
+  ],
+  "orderFunding": [],
+  "workspace": {
+    "id": "96430896-74a5-4b29-8ac7-c9b014ba7cc7",
+    "name": "Mist 订单履约全链路验收",
+    "revision": 104,
+    "archived": false
+  },
+  "snapshotSha256": "8b9176202cc215f0c62f704e6fdc27dea4709b6ac196c502e0dd83bdabceaae6",
+  "stage": "snapshot",
+  "stageReady": {
+    "order": true,
+    "approval": true,
+    "deposit": true,
+    "procurement": false,
+    "production": false,
+    "qc": false,
+    "shipment": false,
+    "payment": false
+  },
+  "orders": [
+    {
+      "id": "873d79d1-fe97-4866-908e-d81fda26b404",
+      "code": "SO-G-2026-0002",
+      "type": "garment",
+      "currency": "USD",
+      "quantity": 10,
+      "amount": 120,
+      "state": "已批准待履约",
+      "progress": 0,
+      "handoffAt": null,
+      "checklist": [
+        {
+          "label": "拟发范围确认",
+          "done": false
+        },
+        {
+          "label": "收货与贸易条款确认",
+          "done": false
+        },
+        {
+          "label": "收款条件核对",
+          "done": false
+        }
+      ]
+    }
+  ],
+  "purchases": [
+    {
+      "id": "fa78c274-6bb5-4568-9b04-8199e23ce6f2",
+      "code": "PO-2026-00002",
+      "orderId": "873d79d1-fe97-4866-908e-d81fda26b404",
+      "lineId": "ee49ac55-a450-4540-abba-6ed7d18dcc63",
+      "kind": "processing",
+      "state": "rejected",
+      "quantity": 9,
+      "received": 0,
+      "rejected": 0,
+      "unit": "件",
+      "currency": "USD",
+      "amount": "27.00",
+      "requesterId": "local-operator",
+      "reviewerIds": [
+        "local-reviewer"
+      ],
+      "decidedBy": "local-reviewer",
+      "approvalVersions": [
+        {
+          "revision": 1,
+          "decision": "rejected",
+          "quantity": 9,
+          "due": "2026-11-20"
+        }
+      ]
+    }
+  ],
+  "productions": [],
+  "qc": [],
+  "shipments": [],
+  "invoices": [],
+  "receipts": [
+    {
+      "id": "745a907d-5e4d-4776-a150-19a90aff9034",
+      "code": "BR-20261013-001",
+      "currency": "USD",
+      "amount": 36,
+      "remaining": 0,
+      "state": "matched"
+    },
+    {
+      "id": "a0826d91-03da-4ced-b92d-9aa20190d081",
+      "code": "BR-20261013-002",
+      "currency": "USD",
+      "amount": 84,
+      "remaining": 0,
+      "state": "matched"
+    }
+  ],
+  "approvals": [
+    {
+      "id": "order:70d92483-f7fc-47b2-bfe2-551a1f340958",
+      "kind": "order",
+      "entityId": "873d79d1-fe97-4866-908e-d81fda26b404",
+      "status": "rejected",
+      "requesterId": "local-operator",
+      "reviewerIds": [
+        "local-operator",
+        "local-reviewer"
+      ],
+      "target": {
+        "view": "orders/detail",
+        "id": "873d79d1-fe97-4866-908e-d81fda26b404"
+      }
+    },
+    {
+      "id": "order:62546bb1-54fd-4ffc-b86f-36936fdb6659",
+      "kind": "order",
+      "entityId": "873d79d1-fe97-4866-908e-d81fda26b404",
+      "status": "approved",
+      "requesterId": "local-operator",
+      "reviewerIds": [
+        "local-operator",
+        "local-reviewer"
+      ],
+      "target": {
+        "view": "orders/detail",
+        "id": "873d79d1-fe97-4866-908e-d81fda26b404"
+      }
+    },
+    {
+      "id": "procurement:fa78c274-6bb5-4568-9b04-8199e23ce6f2",
+      "kind": "procurement",
+      "entityId": "fa78c274-6bb5-4568-9b04-8199e23ce6f2",
+      "status": "rejected",
+      "requesterId": "local-operator",
+      "reviewerIds": [
+        "local-reviewer"
+      ],
+      "target": {
+        "view": "procurement",
+        "id": "fa78c274-6bb5-4568-9b04-8199e23ce6f2"
+      }
+    }
+  ],
+  "returnTargets": [
+    {
+      "category": "general",
+      "target": {
+        "view": "procurement",
+        "id": "fa78c274-6bb5-4568-9b04-8199e23ce6f2"
+      }
+    },
+    {
+      "target": {
+        "view": "orders/detail",
+        "id": "873d79d1-fe97-4866-908e-d81fda26b404"
+      }
+    },
+    {
+      "target": {
+        "view": "orders/detail",
+        "id": "873d79d1-fe97-4866-908e-d81fda26b404"
+      }
+    },
+    {
+      "category": "general",
+      "target": {
+        "view": "orders/detail",
+        "id": "873d79d1-fe97-4866-908e-d81fda26b404"
+      }
+    }
+  ],
+  "fileChecks": [
+    {
+      "id": "0e28661b-64df-4a96-86de-e225a97b58a9",
+      "bytes": 64021,
+      "sha256": "09f1f8bfa747d94d9064602de84cedc487fa4a257dbc5e031ef7190f3c300638"
+    }
+  ],
+  "checks": [
+    {
+      "key": "order.lines_count",
+      "ok": true,
+      "ids": [
+        "873d79d1-fe97-4866-908e-d81fda26b404"
+      ]
+    },
+    {
+      "key": "order.quantity",
+      "ok": true,
+      "ids": [
+        "873d79d1-fe97-4866-908e-d81fda26b404"
+      ]
+    },
+    {
+      "key": "order.amount",
+      "ok": true,
+      "ids": [
+        "873d79d1-fe97-4866-908e-d81fda26b404"
+      ]
+    },
+    {
+      "key": "order.customer_exists",
+      "ok": true,
+      "ids": [
+        "873d79d1-fe97-4866-908e-d81fda26b404"
+      ]
+    },
+    {
+      "key": "invoices.within_order_amount",
+      "ok": true,
+      "ids": [
+        "873d79d1-fe97-4866-908e-d81fda26b404"
+      ]
+    },
+    {
+      "key": "purchase.exact_source",
+      "ok": true,
+      "ids": [
+        "fa78c274-6bb5-4568-9b04-8199e23ce6f2"
+      ]
+    },
+    {
+      "key": "purchase.received_matches_receipts",
+      "ok": true,
+      "ids": [
+        "fa78c274-6bb5-4568-9b04-8199e23ce6f2"
+      ]
+    },
+    {
+      "key": "receipt.remaining",
+      "ok": true,
+      "ids": [
+        "745a907d-5e4d-4776-a150-19a90aff9034"
+      ]
+    },
+    {
+      "key": "receipt.remaining",
+      "ok": true,
+      "ids": [
+        "a0826d91-03da-4ced-b92d-9aa20190d081"
+      ]
+    },
+    {
+      "key": "file.original_size",
+      "ok": true,
+      "ids": [
+        "0e28661b-64df-4a96-86de-e225a97b58a9"
+      ]
+    },
+    {
+      "key": "funding.integrity",
+      "ok": true
+    },
+    {
+      "key": "branch.order_quantity_currency",
+      "ok": true,
+      "ids": [
+        "873d79d1-fe97-4866-908e-d81fda26b404"
+      ]
+    },
+    {
+      "key": "branch.OA_30_days",
+      "ok": true,
+      "ids": [
+        "873d79d1-fe97-4866-908e-d81fda26b404"
+      ]
+    },
+    {
+      "key": "branch.no_advance_attribution",
+      "ok": true,
+      "ids": [
+        "873d79d1-fe97-4866-908e-d81fda26b404"
+      ]
+    },
+    {
+      "key": "branch.reserved_at_most_10",
+      "ok": true,
+      "ids": [
+        "873d79d1-fe97-4866-908e-d81fda26b404"
+      ],
+      "detail": {
+        "reserved": 0
+      }
+    },
+    {
+      "key": "branch.receipt_reference_unique",
+      "ok": true,
+      "detail": {
+        "ref": "QA-BRANCH-R1",
+        "count": 0
+      }
+    },
+    {
+      "key": "branch.receipt_reference_unique",
+      "ok": true,
+      "detail": {
+        "ref": "QA-BRANCH-R2",
+        "count": 0
+      }
+    },
+    {
+      "key": "branch.receipt_reference_unique",
+      "ok": true,
+      "detail": {
+        "ref": "QA-BRANCH-R3",
+        "count": 0
+      }
+    }
+  ],
+  "ok": true,
+  "branch": {
+    "phase": "snapshot",
+    "orderId": "873d79d1-fe97-4866-908e-d81fda26b404",
+    "currentLineFacts": [
+      {
+        "id": "ee49ac55-a450-4540-abba-6ed7d18dcc63",
+        "quantity": 10,
+        "unitPrice": 12,
+        "unit": "件"
+      }
+    ],
+    "currentOrderAmount": 120,
+    "plannedFinalUnitPrice": 12,
+    "matchesPlannedFinalPrice": true,
+    "paymentMethod": "OA",
+    "paymentNote": "OA账期：每票实际离港日起30天内付清该票货款；允许分批6件和4件，不要求生产前定金。本地流程测试，PO单价12USD，初录11USD用于退回纠正验收。",
+    "shipments": [],
+    "reserved": 0,
+    "departed": 0,
+    "invoiceSources": [],
+    "receipts": [
+      null,
+      null,
+      null
+    ],
+    "allocations": [],
+    "invoiceAmount": 0,
+    "invoiceOpen": 0,
+    "allocated": 0
+  },
+  "purchaseRejectionAssertions": {
+    "sameSnapshot": true,
+    "currentlyRejected9At3": true,
+    "firstRevision9Rejected": true,
+    "actualReviewer": true,
+    "returnReasonRetained": true,
+    "noProductionCreated": true
+  },
+  "purchaseRejectionEvidence": {
+    "id": "fa78c274-6bb5-4568-9b04-8199e23ce6f2",
+    "code": "PO-2026-00002",
+    "state": "rejected",
+    "quantity": 9,
+    "price": 3,
+    "currency": "USD",
+    "amount": 27,
+    "decision": {
+      "actorId": "local-reviewer",
+      "actor": "本地审批员",
+      "at": "2026-10-13T04:15:02.213Z",
+      "decision": "rejected",
+      "note": "QA-RETURN-PO-1013：本次委托加工应覆盖主单10件，当前仅9件；请修订为10件，保持3USD单价和真实来源，重提审批。"
+    },
+    "versions": [
+      {
+        "revision": 1,
+        "quantity": 9,
+        "unit": "件",
+        "price": 3,
+        "decision": {
+          "actorId": "local-reviewer",
+          "actor": "本地审批员",
+          "at": "2026-10-13T04:15:02.213Z",
+          "decision": "rejected",
+          "note": "QA-RETURN-PO-1013：本次委托加工应覆盖主单10件，当前仅9件；请修订为10件，保持3USD单价和真实来源，重提审批。"
+        },
+        "reviewerIds": [
+          "local-reviewer"
+        ]
+      }
+    ],
+    "sourceProductionCount": 0
+  }
+}

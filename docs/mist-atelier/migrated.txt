@@ -1,0 +1,4 @@
+# 已迁移到 Mist Atelier 的文件（每行一个路径或目录，scripts/check-mist.mjs 会检查它们）
+# 每完成一个模块就把它的文件加进来。示例：
+# components/CockpitManager.tsx
+# 多个模块共用一个入口文件时，可以按 view 登记进度：view:invoices（只影响 module-map 勾选，不参与 check-mist 检查）

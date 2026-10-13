@@ -1,0 +1,297 @@
+import { createHash, randomUUID } from 'node:crypto';
+import type { TokenPayload } from '../auth/service';
+import type { MistState, MistCommand, MistContext } from '../shared/mistWorkspace';
+import { freshMistAuthority, type FreshAuthority } from './authority';
+import { fail } from './errors';
+import { mistApprovalAuthority } from './context';
+import type { MistReviewTask } from '../shared/mistReview';
+import { hasScope } from '../auth/permissionService';
+import { buildLoadedAuthTokenPayload, loadUserWithRoles } from '../auth/tokenHelpers';
+import { MistPrivateFiles, validateFileInput, type MistFileInput, type MistStoredFile } from './files';
+import { prepareMistBusinessNumbers } from './businessNumbers';
+import { buildIssueArchive, bindIssueArchive, prepareCreditDocumentSnapshot, assertCreditIssuePayload, assertIssuedCreditArchive, type PreparedCreditIssueArchive } from './creditPrint';
+import { canonicalCreditDocument, creditDocumentFingerprint, creditSourceFingerprint, type MistBusinessNumberNeed, type MistCreditPrintSnapshot } from '../shared/mistCreditDocuments';
+export type MistContract = {
+  createMistState: (context: MistContext, seed?: 'demo' | 'empty') => MistState;
+  applyMistCommand: (state: MistState, command: MistCommand, context: MistContext) => { state: MistState; result: Record<string, unknown> };
+  mistCommandPermission: (command: MistCommand) => string | null;
+  getMistReviewTasks?: (state:MistState)=>MistReviewTask[];
+  normalizeMistState?: (state:MistState,context:MistContext)=>void;
+  getRequiredBusinessNumberPlan?: (state: MistState, command: MistCommand) => MistBusinessNumberNeed[];
+};
+export type MistWorkspaceRow = { id: string; ownerId: string; slug: string; name: string; revision: number; state: MistState; createdAt: Date; updatedAt: Date };
+export type MistCommandRequest = { requestId: string; expectedRevision: number; command: MistCommand };
+export type MistUploadRequest = { requestId: string; expectedRevision: number; claimId?: string };
+function canonical(value: any, depth = 0): string {
+  if (depth > 32) fail('INVALID_INPUT', '请求嵌套层级过深', 400);
+  if (value === null || typeof value === 'boolean' || typeof value === 'string') return JSON.stringify(value);
+  if (typeof value === 'number' && Number.isFinite(value)) return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(item => canonical(item, depth + 1)).join(',')}]`;
+  if (typeof value === 'object' && value && Object.getPrototypeOf(value) === Object.prototype) return `{${Object.keys(value).filter(key => value[key] !== undefined).sort().map(key => `${JSON.stringify(key)}:${canonical(value[key], depth + 1)}`).join(',')}}`;
+  fail('INVALID_INPUT', '请求必须是有效JSON', 400);
+}
+function identifier(value: unknown, label: string, maxLength = 120): string {
+  if (typeof value !== 'string' || !value.trim() || value !== value.trim() || value.length > maxLength) fail('INVALID_INPUT', `${label}无效`, 400);
+  return value;
+}
+function revision(value: unknown): number { if (!Number.isSafeInteger(value) || Number(value) < 0) fail('INVALID_INPUT', '工作区版本无效', 400); return Number(value); }
+function claimIdentifier(value:unknown):string { const id=identifier(value,'案件编号');if(!/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(id))fail('INVALID_INPUT','案件编号无效',400);return id; }
+function activeUploadClaim(state:MistState,claimId:string){
+  const claim=Array.isArray(state.platform?.claims)?state.platform.claims.find(item=>item.id===claimId):undefined;
+  if(!claim)fail('CLAIM_NOT_FOUND','案件不存在或不属于当前工作区',404);
+  if(claim!.state==='Closed'||claim!.state==='Cancelled')fail('CLAIM_CLOSED','案件已结束，不能上传新的案件凭据',409);
+}
+export function publicWorkspace(row: MistWorkspaceRow) { return { id: row.id, ownerId: row.ownerId, name: row.name, revision: row.revision, state: row.state }; }
+const archived=(row:MistWorkspaceRow)=>!!row.state.workspaceArchive;
+export class MistRepository {
+  constructor(private readonly prisma: any, private readonly contract: MistContract, private readonly files: MistPrivateFiles, private readonly authorize: FreshAuthority = freshMistAuthority, private readonly now = () => new Date(), private readonly creditArchiveBuilder: (snapshot: MistCreditPrintSnapshot, options?: {draft?: boolean}) => Promise<PreparedCreditIssueArchive> = buildIssueArchive) {}
+  private context(actor: TokenPayload): MistContext { return { id: randomUUID, now: this.now().toISOString(), actorName: actor.displayName || actor.userId, actorId:actor.userId }; }
+  private async own(db: any, prior: TokenPayload, id: string, permission?: string | null, lock = false, allowArchived = false): Promise<{ actor: TokenPayload; row: MistWorkspaceRow }> {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) fail('INVALID_INPUT', '工作区编号无效', 400);
+    const actor = await this.authorize(db, prior, permission);
+    if (lock) await db.$queryRawUnsafe('SELECT "id" FROM "MistWorkspace" WHERE "id" = $1::uuid AND "ownerId" = $2 FOR UPDATE', id, actor.userId);
+    const row = await db.mistWorkspace.findFirst({ where: { id, ownerId: actor.userId } });
+    if (!row) fail('NOT_FOUND', '工作区不存在或当前账号无权访问', 404);
+    if(archived(row)&&!allowArchived)fail('NOT_FOUND','工作区已移入回收站，请先恢复',404);
+    this.contract.normalizeMistState?.(row.state,this.context(actor));
+    return { actor, row };
+  }
+  private transact<T>(run: (db: any) => Promise<T>): Promise<T> { return this.prisma.$transaction(run, { isolationLevel: 'Serializable', maxWait: 5000, timeout: 30000 }); }
+  async list(prior: TokenPayload) { return this.transact(async db => { const actor = await this.authorize(db, prior); const rows = await db.mistWorkspace.findMany({ where: { ownerId: actor.userId }, orderBy: { updatedAt: 'desc' } }); return rows.filter((row:MistWorkspaceRow)=>!archived(row)).map((row:MistWorkspaceRow)=>{this.contract.normalizeMistState?.(row.state,this.context(actor));return publicWorkspace(row);}); }); }
+  async listArchived(prior:TokenPayload){return this.transact(async db=>{const actor=await this.authorize(db,prior);const rows: MistWorkspaceRow[]=await db.mistWorkspace.findMany({where:{ownerId:actor.userId},orderBy:{updatedAt:'desc'}});return rows.filter(archived).map(row=>({id:row.id,name:row.name,revision:row.revision,archivedAt:row.state.workspaceArchive!.at}));});}
+  private async activeWorkspace(db:any,actor:TokenPayload,preferredId?:string){const rows:MistWorkspaceRow[]=await db.mistWorkspace.findMany({where:{ownerId:actor.userId},orderBy:{updatedAt:'desc'}});const active=rows.filter(row=>!archived(row));const existing=active.find(row=>row.id===preferredId)??active[0];if(existing){this.contract.normalizeMistState?.(existing.state,this.context(actor));return existing;}const context=this.context(actor),state=this.contract.createMistState(context,'empty');state.settings.workspaceName='新的工作空间';return db.mistWorkspace.create({data:{id:randomUUID(),ownerId:actor.userId,slug:'continuation-'+randomUUID(),name:state.settings.workspaceName,revision:0,state}});}
+  async changeArchive(prior:TokenPayload,workspaceId:string,input:{requestId:string;expectedRevision:number},action:'archive'|'restore'){
+    identifier(input.requestId,'请求编号');revision(input.expectedRevision);const hash=createHash('sha256').update(canonical({actorId:prior.userId,action,expectedRevision:input.expectedRevision})).digest('hex');
+    return this.transact(async db=>{const{actor,row}=await this.own(db,prior,workspaceId,null,true,true);const previous=await db.mistCommandReceipt.findUnique({where:{workspaceId_requestId:{workspaceId,requestId:input.requestId}}});
+      if(previous){if(previous.actorId!==actor.userId||previous.inputHash!==hash)fail('REQUEST_CONFLICT','请求编号已用于另一项操作',409);const active=await this.activeWorkspace(db,actor,previous.result.result.activeWorkspaceId);return{workspace:publicWorkspace(active),receipt:{requestId:previous.requestId,...previous.result},replayed:true};}
+      if(row.revision!==input.expectedRevision)fail('REVISION_CONFLICT','工作区已更新，请刷新后重试',409);
+      if(action==='archive'&&archived(row)||action==='restore'&&!archived(row))fail('WORKSPACE_STATE_CONFLICT',action==='archive'?'工作区已在回收站':'工作区已恢复',409);
+      if(action==='archive'&&this.reviews(row.state).some(task=>task.status==='pending'))fail('PENDING_REVIEWS','请先处理或撤销工作区中的待审批事项，再移入回收站',409);
+      const state=structuredClone(row.state),context=this.context(actor);if(action==='archive')state.workspaceArchive={at:context.now,actorId:actor.userId};else delete state.workspaceArchive;
+      if(Array.isArray(state.events))state.events.unshift({id:context.id(),entityType:'workspace',entityId:row.id,actor:context.actorName,at:context.now,text:action==='archive'?'工作空间移入回收站':'工作空间从回收站恢复',fileIds:[]});
+      const saved=await db.mistWorkspace.update({where:{id:row.id},data:{state,revision:row.revision+1}});const active=action==='restore'?saved:await this.activeWorkspace(db,actor);
+      const result={revision:saved.revision,result:{workspaceId:row.id,action,activeWorkspaceId:active.id}};await db.mistCommandReceipt.create({data:{id:randomUUID(),workspaceId:row.id,requestId:input.requestId,actorId:actor.userId,inputHash:hash,expectedRevision:input.expectedRevision,result}});await this.authorize(db,prior);
+      return{workspace:publicWorkspace(active),receipt:{requestId:input.requestId,...result},replayed:false};
+    });
+  }
+  async get(prior: TokenPayload, id: string) { return this.transact(async db => publicWorkspace((await this.own(db, prior, id)).row)); }
+  async getForAssistant(prior:TokenPayload,id:string){return this.transact(async db=>{const {row,actor}=await this.own(db,prior,id,'ai:chat');return {workspace:publicWorkspace(row),actor};});}
+
+  async create(prior: TokenPayload, input: { name: string; slug?: string; seed?: 'demo' | 'empty' }, defaultOnly = false) {
+    const name = identifier(input.name, '工作区名称'), slug = defaultOnly ? 'default' : identifier(input.slug || randomUUID(), '工作区标识');
+    if (input.seed !== undefined && !['demo', 'empty'].includes(input.seed)) fail('INVALID_INPUT', '工作区初始方式无效', 400);
+    const seed = input.seed ?? 'demo', requestId = `create:${slug}`;
+    const inputHash = createHash('sha256').update(canonical({ type: 'workspace.create', actorId: prior.userId, name, seed })).digest('hex');
+    const create = () => this.transact(async db => {
+      const actor = await this.authorize(db, prior);
+      const found = await db.mistWorkspace.findUnique({ where: { ownerId_slug: { ownerId: actor.userId, slug } } });
+      if (found) {
+        if(archived(found)){if(defaultOnly)return publicWorkspace(await this.activeWorkspace(db,actor));fail('WORKSPACE_ARCHIVED','\u5de5\u4f5c\u533a\u5df2\u5728\u56de\u6536\u7ad9\uff0c\u8bf7\u5148\u6062\u590d',409);}
+        if (defaultOnly) {this.contract.normalizeMistState?.(found.state,this.context(actor));return publicWorkspace(found);}
+        const previous = await db.mistCommandReceipt.findUnique({ where: { workspaceId_requestId: { workspaceId: found.id, requestId } } });
+        if (!previous || previous.actorId !== actor.userId || previous.inputHash !== inputHash || previous.expectedRevision !== 0) fail('REQUEST_CONFLICT', '此创建请求已用于不同的工作区参数', 409);
+        await this.authorize(db, prior);
+        this.contract.normalizeMistState?.(found.state,this.context(actor));return publicWorkspace(found);
+      }
+      if (defaultOnly) {
+        // A default lookup selects an existing active workspace before creating
+        // anything. Named workspaces and archive continuations need not own the
+        // reserved default slug, and must not be replaced with another seed.
+        const rows: MistWorkspaceRow[] = await db.mistWorkspace.findMany({ where: { ownerId: actor.userId }, orderBy: { updatedAt: 'desc' } });
+        const active = rows.find(row => !archived(row));
+        if (active) {
+          this.contract.normalizeMistState?.(active.state, this.context(actor));
+          return publicWorkspace(active);
+        }
+      }
+      const state = this.contract.createMistState(this.context(actor), seed);
+      state.settings.workspaceName = name;
+      const row = await db.mistWorkspace.create({ data: { id: randomUUID(), ownerId: actor.userId, slug, name, revision: 0, state } });
+      if (!defaultOnly) await db.mistCommandReceipt.create({ data: { id: randomUUID(), workspaceId: row.id, requestId, actorId: actor.userId, inputHash, expectedRevision: 0, result: { revision: 0, result: { workspaceId: row.id } } } });
+      await this.authorize(db, prior);
+      return publicWorkspace(row);
+    });
+    try { return await create(); } catch (error: any) {
+      if (defaultOnly && ['P2002', 'P2034'].includes(error?.code)) return create();
+      // The competing transaction may already have committed this creation.
+      // A fresh serializable read must verify its durable input before replay.
+      if (['P2002', 'P2034'].includes(error?.code)) return create();
+      throw error;
+    }
+  }
+  async receipt(prior: TokenPayload, workspaceId: string, requestId: string) { return this.transact(async db => {
+    await this.own(db, prior, workspaceId,null,false,true);
+    const receipt = await db.mistCommandReceipt.findUnique({ where: { workspaceId_requestId: { workspaceId, requestId: identifier(requestId, '请求编号', typeof requestId === 'string' && requestId.startsWith('create:') ? 127 : 120) } } });
+    if (!receipt || receipt.actorId !== prior.userId) fail('NOT_FOUND', '请求回执不存在', 404);
+    return { requestId: receipt.requestId, ...receipt.result };
+  }); }
+  async execute(prior: TokenPayload, workspaceId: string, input: MistCommandRequest) {
+    if (!input.command || typeof input.command.type !== 'string' || !input.command.payload || typeof input.command.payload !== 'object' || Array.isArray(input.command.payload)) fail('INVALID_COMMAND', '业务命令格式无效', 400);
+    if (input.command.type === 'files.add') fail('INVALID_COMMAND', '附件只能通过真实上传接口添加', 400);
+    return this.executeInternal(prior, workspaceId, input, { command: input.command });
+  }
+  private async executeInternal(prior: TokenPayload, workspaceId: string, input: Omit<MistCommandRequest, 'command'> & { command?: any; claimId?: string }, hashPayload: any, upload?: MistFileInput) {
+    identifier(input.requestId, '请求编号'); revision(input.expectedRevision);
+    const hash = createHash('sha256').update(canonical({ actorId: prior.userId, expectedRevision: input.expectedRevision, ...hashPayload })).digest('hex');
+    let stored: MistStoredFile | undefined;
+    try { return await this.transact(async db => {
+      const permission = upload&&input.claimId!==undefined?'aftersales:write':this.contract.mistCommandPermission(input.command ?? { type: 'files.add', payload: {} });
+      const { actor, row } = await this.own(db, prior, workspaceId, permission, true);
+      const previous = await db.mistCommandReceipt.findUnique({ where: { workspaceId_requestId: { workspaceId, requestId: input.requestId } } });
+      if (previous) {
+        if (previous.actorId !== actor.userId || previous.inputHash !== hash || previous.expectedRevision !== input.expectedRevision) fail('REQUEST_CONFLICT', '此请求编号已用于另一项操作', 409);
+        return { workspace: publicWorkspace(row), receipt: { requestId: previous.requestId, ...previous.result }, replayed: true };
+      }
+      if (row.revision !== input.expectedRevision) fail('REVISION_CONFLICT', '工作区已更新，请刷新后重试', 409);
+      if(upload&&input.claimId!==undefined)activeUploadClaim(row.state,input.claimId);
+      const context = this.context(actor);
+      if(input.command) context.authority = await mistApprovalAuthority(db,actor,input.command.type);
+      const plan = input.command ? this.contract.getRequiredBusinessNumberPlan?.(row.state, input.command) ?? [] : [];
+      const numbers = await prepareMistBusinessNumbers(db, row.state, plan, context.now);
+      context.consumeBusinessNumber = prefix => numbers.consume(prefix);
+      if (upload) stored = await this.files.write(workspaceId, upload, context.now);
+      if (input.command?.type === 'platform.credit.issue') {
+        const payload = assertCreditIssuePayload(input.command.payload);
+        const credit = row.state.platform.credits.find(note => note.id === payload.creditId);
+        if (credit?.printVersions?.some(version => version.sourceVersionId === payload.versionId)) fail('CREDIT_ALREADY_ISSUED', '该来源版本已签发，请读取已归档的正式原件', 409);
+        const printSnapshot = prepareCreditDocumentSnapshot(row.state, payload.creditId, payload.versionId, context);
+        const prepared = await this.creditArchiveBuilder(printSnapshot);
+        stored = await this.files.write(workspaceId, prepared.file, context.now);
+        context.creditDocumentIssue = bindIssueArchive(prepared, stored, { id: context.id, workspaceId, requestId: input.requestId });
+      }
+      const command = upload ? { type: 'files.add', payload: { file: stored } } : input.command;
+      const applied = this.contract.applyMistCommand(structuredClone(row.state), command, context);
+      numbers.assertConsumed();
+      if(upload&&input.claimId!==undefined)applied.result={...applied.result,claimId:input.claimId};
+      if(this.contract.getMistReviewTasks)(applied.state as any).reviewerIds=[...new Set(this.contract.getMistReviewTasks(applied.state).flatMap(t=>t.reviewerIds))];
+      canonical(applied.state); canonical(applied.result);
+      const nextRevision = row.revision + 1;
+      const saved = await db.mistWorkspace.update({ where: { id: workspaceId }, data: { state: applied.state, name: identifier(applied.state.settings.workspaceName, '工作区名称'), revision: nextRevision } });
+      const result = { revision: nextRevision, result: applied.result };
+      await db.mistCommandReceipt.create({ data: { id: randomUUID(), workspaceId, requestId: input.requestId, actorId: actor.userId, inputHash: hash, expectedRevision: input.expectedRevision, result } });
+      await this.authorize(db, prior, permission);
+      return { workspace: publicWorkspace(saved), receipt: { requestId: input.requestId, ...result }, replayed: false };
+    }); } catch (error: any) {
+      if (stored) {
+        // A confirmed rollback removes its blob. Unknown commit outcomes retain
+        // the private blob until the durable request receipt can be checked.
+        try {
+          const receipt = await this.prisma.mistCommandReceipt.findUnique({ where: { workspaceId_requestId: { workspaceId, requestId: input.requestId } } });
+          if (!receipt) await this.files.remove(workspaceId, stored);
+        } catch { /* Do not delete a potentially committed attachment. */ }
+      }
+      if (['P2034', 'P2002'].includes(error?.code)) {
+        // A competing copy of this same request may have committed while this
+        // serializable transaction rolled back. Resolve its durable receipt.
+        return this.transact(async db => {
+          const permission = upload&&input.claimId!==undefined?'aftersales:write':this.contract.mistCommandPermission(input.command ?? { type: 'files.add', payload: {} });
+          const { row } = await this.own(db, prior, workspaceId, permission);
+          const receipt = await db.mistCommandReceipt.findUnique({ where: { workspaceId_requestId: { workspaceId, requestId: input.requestId } } });
+          if (receipt) {
+            if (receipt.actorId !== prior.userId || receipt.inputHash !== hash) fail('REQUEST_CONFLICT', '此请求编号已用于另一项操作', 409);
+            return { workspace: publicWorkspace(row), receipt: { requestId: receipt.requestId, ...receipt.result }, replayed: true };
+          }
+          fail('REVISION_CONFLICT', '工作区并发更新，请核对原请求回执后重试', 409);
+        });
+      }
+      throw error;
+    }
+  }
+  private reviews(state:MistState):MistReviewTask[]{return this.contract.getMistReviewTasks?.(state)||[];}
+  async listReviews(prior:TokenPayload){return this.transact(async db=>{
+    const actor=await this.authorize(db,prior);
+    const rows=await db.mistWorkspace.findMany({where:{OR:[{ownerId:actor.userId},{state:{path:['reviewerIds'],array_contains:[actor.userId]}}]},orderBy:{updatedAt:'desc'},take:200});
+    return rows.filter((row:MistWorkspaceRow)=>!archived(row)).flatMap((row:MistWorkspaceRow)=>this.reviews(row.state).filter(t=>row.ownerId===actor.userId||(t.reviewerIds.includes(actor.userId)&&hasScope(actor,t.requiredPermission as any))).map(t=>({workspaceId:row.id,workspaceName:row.name,revision:row.revision,canDecide:t.status==='pending'&&t.reviewerIds.includes(actor.userId)&&hasScope(actor,t.requiredPermission as any),files:(t.fileIds||[]).flatMap(id=>{const file=row.state.files.find(f=>f.id===id);return file?[{id:file.id,name:file.name,size:file.size}]:[];}),...t})));
+  });}
+  async reviewFile(prior:TokenPayload,workspaceId:string,reviewId:string,fileId:string){return this.transact(async db=>{
+    const actor=await this.authorize(db,prior),row=await db.mistWorkspace.findFirst({where:{id:workspaceId}});
+    if(!row||archived(row))fail('NOT_FOUND','审批不存在',404);
+    const task=this.reviews(row.state).find(t=>t.id===reviewId);
+    if(!task||(row.ownerId!==actor.userId&&(!task.reviewerIds.includes(actor.userId)||!hasScope(actor,task.requiredPermission as any))))fail('NOT_FOUND','该审批不属于当前账号',404);
+    if(!(task.fileIds||[]).includes(fileId))fail('FILE_NOT_FOUND','附件不在提交的审批快照中',404);
+    const file=row.state.files.find((f:MistStoredFile)=>f.id===fileId);if(!file)fail('FILE_NOT_FOUND','附件不存在',404);
+    const bytes=await this.files.read(workspaceId,file);await this.authorize(db,prior);return {file,bytes};
+  });}
+  async reviewReceipt(prior:TokenPayload,workspaceId:string,requestId:string){return this.transact(async db=>{
+    const actor=await this.authorize(db,prior);identifier(requestId,'请求编号');
+    const item=await db.mistCommandReceipt.findUnique({where:{workspaceId_requestId:{workspaceId,requestId}}});
+    if(!item||item.actorId!==actor.userId)fail('NOT_FOUND','原审批回执不存在',404);
+    return {requestId:item.requestId,...item.result};
+  });}
+  async decideReview(prior:TokenPayload,workspaceId:string,reviewId:string,input:{requestId:string;expectedRevision:number;decision:'approved'|'rejected';note:string}){
+    if(!/^[0-9a-f-]{36}$/i.test(workspaceId))fail('INVALID_INPUT','工作区编号无效',400);
+    identifier(input.requestId,'请求编号');revision(input.expectedRevision);identifier(reviewId,'审批编号');
+    if(!['approved','rejected'].includes(input.decision)||typeof input.note!=='string'||!input.note.trim()||input.note.length>4000)fail('INVALID_INPUT','请选择审批结论并填写意见',400);
+    const hash=createHash('sha256').update(canonical({actorId:prior.userId,reviewId,...input})).digest('hex');
+    return this.transact(async db=>{
+      const actor=await this.authorize(db,prior);
+      await db.$queryRawUnsafe('SELECT "id" FROM "MistWorkspace" WHERE "id" = $1::uuid FOR UPDATE',workspaceId);
+      const row=await db.mistWorkspace.findFirst({where:{id:workspaceId}});if(!row||archived(row))fail('NOT_FOUND','审批对象不存在',404);
+      const previous=await db.mistCommandReceipt.findUnique({where:{workspaceId_requestId:{workspaceId,requestId:input.requestId}}});
+      if(previous){if(previous.actorId!==actor.userId||previous.inputHash!==hash)fail('REQUEST_CONFLICT','原请求编号用于另一项决定',409);return {receipt:{requestId:previous.requestId,...previous.result},replayed:true};}
+      const task=this.reviews(row.state).find(t=>t.id===reviewId);
+      if(!task||!task.reviewerIds.includes(actor.userId))fail('NOT_FOUND','该审批不属于当前账号',404);
+      await this.authorize(db,prior,task.requiredPermission);
+      if(task.status!=='pending')fail('REVIEW_RESOLVED','审批已处理，请刷新记录',409);
+      if(row.revision!==input.expectedRevision)fail('REVISION_CONFLICT','业务记录已有更新，请刷新审批并重新核对',409);
+      let subject:TokenPayload;
+      if((actor as any).mistLocal===true && process.env.MIST_LOCAL_WORKSPACE==='1' && process.env.NODE_ENV!=='production'){
+        if(!['local-operator','local-reviewer'].includes(task.requesterId))fail('REQUESTER_UNAVAILABLE','本地申请身份无效',409);
+        subject={userId:task.requesterId,roles:['owner'],permissions:['*'],departmentIds:[],mistLocal:true} as TokenPayload;
+      }else{const requester=await loadUserWithRoles(db,task.requesterId);if(!requester||requester.status!=='active'||requester.deletedAt)fail('REQUESTER_UNAVAILABLE','申请账号当前不可核验，请联系管理员',409);subject=await buildLoadedAuthTokenPayload(db,requester);}
+      const type=task.kind==='procurement'?'fulfillment.procurement.decide':task.kind==='quotation'?'market.quotation.decide':task.kind==='order'?'order.governance.decide':'platform.claim.decide';
+      const command={type,payload:{id:task.entityId,decision:input.decision,note:input.note}} as MistCommand;
+      const context=this.context(actor);context.authority=await mistApprovalAuthority(db,subject,type);
+      const applied=this.contract.applyMistCommand(structuredClone(row.state),command,context);
+      (applied.state as any).reviewerIds=[...new Set(this.reviews(applied.state).flatMap(t=>t.reviewerIds))];
+      canonical(applied.state);canonical(applied.result);
+      const next=await db.mistWorkspace.update({where:{id:workspaceId},data:{state:applied.state,revision:{increment:1}}});
+      const result={revision:next.revision,result:{...applied.result,reviewId}};
+      await db.mistCommandReceipt.create({data:{id:randomUUID(),workspaceId,requestId:input.requestId,actorId:actor.userId,inputHash:hash,expectedRevision:input.expectedRevision,result}});
+      await this.authorize(db,prior,task.requiredPermission);
+      return {receipt:{requestId:input.requestId,...result},replayed:false};
+    });
+  }
+  async upload(prior: TokenPayload, workspaceId: string, input: MistUploadRequest, file: MistFileInput) {
+    const claimId=input.claimId===undefined?undefined:claimIdentifier(input.claimId);
+    const meta = validateFileInput(file);
+    return this.executeInternal(prior, workspaceId, {...input,claimId}, { upload: meta,...(claimId===undefined?{}:{claimId}) }, file);
+  }
+  async download(prior: TokenPayload, workspaceId: string, fileId: string) {
+    const result = await this.transact(async db => {
+      const { row } = await this.own(db, prior, workspaceId);
+      const file = Array.isArray(row.state.files) ? row.state.files.find((item: MistStoredFile) => item.id === fileId) : null;
+      if (!file) fail('FILE_NOT_FOUND', '附件不存在或不属于此工作区', 404);
+      const bytes = await this.files.read(workspaceId, file);
+      await this.authorize(db, prior);
+      return { file, bytes };
+    });
+    return result;
+  }
+  async previewCreditDocument(prior: TokenPayload, workspaceId: string, creditId: string, versionId: string) {
+    identifier(creditId, '贷项编号'); identifier(versionId, '来源版本编号');
+    return this.transact(async db => {
+      const { actor, row } = await this.own(db, prior, workspaceId, 'aftersales:read');
+      const snapshot = prepareCreditDocumentSnapshot(row.state, creditId, versionId, this.context(actor));
+      const prepared = await this.creditArchiveBuilder(snapshot, { draft: true });
+      await this.authorize(db, prior, 'aftersales:read');
+      return { name: prepared.file.name, bytes: Buffer.from(prepared.file.bytes), sha256: prepared.sha256 };
+    });
+  }
+  async downloadCreditDocument(prior: TokenPayload, workspaceId: string, creditId: string, versionId: string) {
+    identifier(creditId, '贷项编号'); identifier(versionId, '已签版本编号');
+    return this.transact(async db => {
+      const { row } = await this.own(db, prior, workspaceId, 'aftersales:read');
+      const credit = row.state.platform.credits.find(note => note.id === creditId);
+      const version = credit?.printVersions?.find(item => item.id === versionId);
+      const source = version && credit?.sourceVersions?.find(item => item.id === version.sourceVersionId);
+      if (!credit || !version || !source) fail('CREDIT_DOCUMENT_NOT_FOUND', '该贷项没有所选已签发版本', 404);
+      if (version!.snapshot.creditId !== credit!.id || version!.snapshot.sourceVersionId !== source!.id || version!.sourceFingerprint !== creditSourceFingerprint(source!) || version!.snapshotFingerprint !== creditDocumentFingerprint(version!.snapshot) || canonicalCreditDocument(version!.snapshot.sourceLines) !== canonicalCreditDocument(source!.lines)) fail('CREDIT_DOCUMENT_INVALID', '正式CN版本及冻结来源不一致', 422);
+      const file = row.state.files.find(item => item.id === version!.fileId);
+      if (!file || file.name !== version!.fileName || file.mimeType !== 'application/pdf' || file.size !== version!.bytes) fail('CREDIT_DOCUMENT_INVALID', '正式CN缺少匹配原件', 422);
+      const bytes = assertIssuedCreditArchive(version!, await this.files.read(workspaceId, file));
+      await this.authorize(db, prior, 'aftersales:read');
+      return { name: version!.fileName, bytes, sha256: version!.sha256 };
+    });
+  }
+}

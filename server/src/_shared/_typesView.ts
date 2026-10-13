@@ -1,0 +1,46 @@
+/**
+ * Shared View enum for server-side copy of rolePermissionMatrix.ts.
+ * 权威真源：根目录 types.ts。这里是快照拷贝，两端需保持同步（View 枚举值不常变）。
+ * 仅用于 server/src/_shared/rolePermissionMatrix.ts 中的 VIEW_TO_MAIN_SCOPES 映射。
+ * 服务器守卫运行时（permissionService/permissionGuard 热路径）不依赖 View enum。
+ */
+export enum View {
+  Dashboard = 'dashboard',
+  Cockpit = 'cockpit',
+  Assistant = 'assistant',
+  Relations = 'relations',
+  Products = 'products',
+  DataCenter = 'data-center',
+  Orders = 'orders',
+  ProductionBoard = 'production-board',
+  Quotations = 'quotations',
+  Procurement = 'procurement',
+  Inventory = 'inventory',
+  BOM = 'bom',
+  CRM = 'crm',
+  Suppliers = 'suppliers',
+  Seasons = 'seasons',
+  Risks = 'risks',
+  MES = 'mes',
+  Customs = 'customs',
+  DocumentCenter = 'document-center',
+  Invoices = 'invoices',
+  PaymentVouchers = 'payment-vouchers',
+  Shipments = 'shipments',
+  Development = 'development',
+  Emails = 'emails',
+  Settings = 'settings',
+  AccountSettings = 'account-settings',
+  SystemSettings = 'system-settings',
+  BusinessTools = 'business-tools',
+  UiLab = 'ui-lab',
+  AdminPanel = 'admin-panel',
+  HR = 'hr',
+  QcWorkbench = 'qc-workbench',
+  Pricing = 'pricing',
+  Marketing = 'marketing',
+  Reports = 'reports',
+  Calendar = 'calendar',
+  Claims = 'claims',
+  Samples = 'samples',
+}

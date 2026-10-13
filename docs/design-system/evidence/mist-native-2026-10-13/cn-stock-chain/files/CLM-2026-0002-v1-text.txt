@@ -1,0 +1,23 @@
+CREDIT NOTE CLM-2026-0002
+Version 1
+LOCAL QA TEST ISSUER - SOFTWARE ACCEPTANCE Issue date: 2026-10-13
+ISSUER CREDIT TO
+本地验收发⾏⽅（软件测试） Mist 合同验收客户
+本地软件验收地址，不⽤于真实客户单据 中国
+Original invoice: QA-EX-CI Order: SO-G-2026-0003
+Claim: CLM-2026-0001 Currency: USD
+CLM-2026-0002 / CREDIT NOTE / VERSION 1
+RETURN
+NO. DESCRIPTION AND APPROVED REASON CREDIT AMOUNT (USD)
+QUANTITY
+异常流程验收⽺⽑外套 / FLOW-EXCEPTION-1013
+1 QA-CN-STOCK-RETURN-2: two garments at USD15 each; receive 1+1 2 件 30.00
+and scrap both. Local test only.
+TOTAL CREDIT 30.00 USD
+SAY: USD THIRTY AND 00/100 ONLY
+This credit note records an approved customer credit. The original invoice and its collection history remain unchanged. Settlement by offset or
+refund is recorded separately.
+Issued by Source version 1
+Template version 1
+本地操作员
+2026-10-13T07:51:12.633Z

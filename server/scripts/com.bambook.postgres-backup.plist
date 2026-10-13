@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  com.bambook.postgres-backup — Bambook PostgreSQL 每日定时备份（launchd，每天 02:00）
+
+  安装（在 Mac Mini 上执行；部署后脚本真实路径为 ~/bambook-main-api/scripts/backup-postgres.sh）：
+    1. cp server/scripts/com.bambook.postgres-backup.plist ~/Library/LaunchAgents/
+    2. sed -i '' "s|CHANGE_ME_HOME|$HOME|g" ~/Library/LaunchAgents/com.bambook.postgres-backup.plist
+    3. launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.bambook.postgres-backup.plist
+       （旧版 macOS 用：launchctl load -w ~/Library/LaunchAgents/com.bambook.postgres-backup.plist）
+  手动触发一次验证：
+    launchctl kickstart gui/$(id -u)/com.bambook.postgres-backup
+  卸载：
+    launchctl bootout gui/$(id -u)/com.bambook.postgres-backup
+
+  密码说明：postgres 用户若设了密码，不要写进本 plist；
+  用 ~/.pgpass（内容 localhost:5432:pandahub:postgres:<密码>，chmod 600），
+  或在下方 EnvironmentVariables 中自行加入 PGPASSWORD（注意 plist 文件权限）。
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.bambook.postgres-backup</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>CHANGE_ME_HOME/bambook-main-api/scripts/backup-postgres.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>2</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Users/Shared/BambookBackups/backup.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/Shared/BambookBackups/backup.log</string>
+</dict>
+</plist>

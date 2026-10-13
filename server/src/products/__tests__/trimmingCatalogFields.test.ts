@@ -1,0 +1,9 @@
+import {describe,it,expect,vi} from 'vitest';
+import {normalizeTrimmingCatalogFields as normalize,assertTrimmingRelationReferences} from '../trimmingCatalogFields';
+describe('additive trimming catalog facts',()=>{
+ it('preserves unknown/legacy facts and separates commercial units',()=>{expect(normalize({})).toEqual({});expect(normalize({supplierArticleNo:'SUP-5',priceUnit:'100 pcs',moqUnit:'box',quoteDate:'2026-10-12'})).toMatchObject({supplierArticleNo:'SUP-5',priceUnit:'100 pcs',moqUnit:'box'});});
+ it('rejects invalid dates, executable links and foreign category fields',()=>{expect(()=>normalize({quoteDate:'2026-99-99'})).toThrow('日期');expect(()=>normalize({attachments:[{name:'file',url:'javascript:alert(1)'}]})).toThrow('附件');expect(()=>normalize({trimmingCategory:'buttons',categoryParameters:{slider:'A'}})).toThrow('类别');});
+ it('requires explicit compatible parameters when changing category',()=>{expect(()=>normalize({trimmingCategory:'buttons'},{trimmingCategory:'zippers',categoryParameters:{slider:'A'}})).toThrow('类别');expect(normalize({trimmingCategory:'buttons',categoryParameters:{dimensions:'18mm'}})).toEqual({categoryParameters:{dimensions:'18mm'}});});
+ it('supports clear without silently retaining old values',()=>{expect(normalize({categoryParameters:null,images:null,quoteDate:null,priceUnit:''})).toMatchObject({categoryParameters:null,images:null,quoteDate:null,priceUnit:null});});
+ it('manufacturer and supplier references each point to live relations',async()=>{const db={relation:{findFirst:vi.fn(async({where}:any)=>where.id==='maker'?{id:where.id}:null)}};await assertTrimmingRelationReferences(db,{manufacturerRelationId:'maker'});await expect(assertTrimmingRelationReferences(db,{supplierRelationId:'missing'})).rejects.toMatchObject({code:'VALIDATION_FAILED'});});
+});

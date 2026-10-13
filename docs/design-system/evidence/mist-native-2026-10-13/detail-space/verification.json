@@ -1,0 +1,37 @@
+{
+  "source": "Current Mist source; saved local test workspace",
+  "cssViewports": [
+    1440,
+    1180,
+    390
+  ],
+  "themes": [
+    "light",
+    "dark"
+  ],
+  "pages": [
+    "shipment",
+    "order-line",
+    "production",
+    "order",
+    "sample",
+    "supplier",
+    "ci"
+  ],
+  "combinations": 42,
+  "result": "No document/action horizontal overflow in checked states; stacked cards/sections use current 18px Mist gap.",
+  "nativeViewportPages": [
+    "shipment",
+    "order-line",
+    "production",
+    "order",
+    "supplier"
+  ],
+  "iframeViewportPages": [
+    "sample",
+    "ci"
+  ],
+  "note": "Browser zoom accounted for using actual CSS innerWidth; final sample/CI checked in fixed CSS iframe viewports to avoid hidden host-panel size overrides. Desktop iframe screenshots may clip outer capture; live DOM widths and overflow metrics verify the full child viewport.",
+  "finalIframeMeasurements": "final-viewport-measurements.json",
+  "scope": "Displayed saved state plus tested navigation; not a claim of all modules and all possible business states."
+}

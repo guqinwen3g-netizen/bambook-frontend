@@ -1,0 +1,11 @@
+Mac mini — 地址与 SSH（指针）
+
+机器一览（主机名、示例 IP、路径、日志文件）
+见：**../README.md** 章节「Mac mini 地址与路径（部署机一览）」与「SSH 登录 Mac mini（开发与运维）」。
+
+速查
+- Bonjour：PANDAdeMac-mini.local
+- 局域网 IP（示例，会变）：部署时曾为 192.168.110.19；现网以 mini 上 ipconfig getifaddr en0 为准
+- SSH：panda1@<当前IP>
+- 代码：~/bambook-knowledge-api
+- 外网 API：https://jiangsupanda.com/bambook（不依赖 IP）

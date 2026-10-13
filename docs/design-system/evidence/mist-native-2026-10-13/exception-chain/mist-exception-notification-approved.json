@@ -1,0 +1,176 @@
+{
+  "readOnly": true,
+  "phase": "notification-approved",
+  "workspace": {
+    "id": "96430896-74a5-4b29-8ac7-c9b014ba7cc7",
+    "revision": 270
+  },
+  "snapshotSha256": "1d5de9a06883459e15c89475c2254a89e9c5031e919ec4d2503ccb26ddad7f2e",
+  "claim": {
+    "id": "6b87433f-4260-43a7-9de5-4b4c0f47ebc2",
+    "code": "CLM-2026-6b87433f-4260-43a7-9de5-4b4c0f47ebc2",
+    "orderId": "e32ac965-6f99-44f9-ac41-56b1af4c8280",
+    "invoiceId": "4cd30247-57ef-41ea-99c6-a8b45c616ab3",
+    "problem": "QA-NOTIFY-ONLY: Local approval return-path test. Cancel before execution; no CN or payment.",
+    "fileIds": [
+      "d105aed0-81ef-4dba-bef2-e3d0e9baa762"
+    ],
+    "state": "Processing",
+    "createdAt": "2026-10-13T06:00:33.611Z",
+    "dispositions": [
+      {
+        "id": "6f222e18-b109-4500-a98f-abc56c0e5c05",
+        "kind": "Allowance",
+        "amount": 1,
+        "quantity": 0,
+        "unit": "",
+        "returnDisposition": "",
+        "basis": "QA-NOTIFY-ONLY: Approve for navigation test, then cancel before execution. No financial fulfillment.",
+        "fileIds": [
+          "d105aed0-81ef-4dba-bef2-e3d0e9baa762"
+        ],
+        "state": "approved",
+        "requesterId": "local-operator",
+        "reviewerId": "local-reviewer",
+        "submittedAt": "2026-10-13T06:00:35.455Z",
+        "reviewFileIds": [
+          "d105aed0-81ef-4dba-bef2-e3d0e9baa762"
+        ],
+        "snapshot": "{\"case\":\"CLM-2026-6b87433f-4260-43a7-9de5-4b4c0f47ebc2\",\"order\":\"SO-G-2026-0003\",\"invoice\":\"QA-EX-CI\",\"problem\":\"QA-NOTIFY-ONLY: Local approval return-path test. Cancel before execution; no CN or payment.\",\"kind\":\"Allowance\",\"amount\":1,\"currency\":\"USD\",\"quantity\":0,\"unit\":\"\",\"destination\":\"\",\"basis\":\"QA-NOTIFY-ONLY: Approve for navigation test, then cancel before execution. No financial fulfillment.\",\"attachments\":[\"QA-EXCEPTION-CI-v2.pdf\"]}",
+        "reviewDecision": "approved",
+        "decisionNote": "QA-NOTIFY-APPROVED: Local return-path acceptance; cancel before execution; no CN or payment.嗯，我觉得它的那个颜色能不能想一更好的方法？因为感觉目前的这"
+      }
+    ]
+  },
+  "outputs": {
+    "credits": [],
+    "goods": [],
+    "applications": [],
+    "payments": []
+  },
+  "tasks": [
+    {
+      "id": "51d2c0b3-b148-4119-931c-5547faf3add7",
+      "title": "生成售后履行单据 · CLM-2026-6b87433f-4260-43a7-9de5-4b4c0f47ebc2 · 折让",
+      "due": "",
+      "done": false,
+      "kind": "claim-execution:6f222e18-b109-4500-a98f-abc56c0e5c05",
+      "target": {
+        "view": "claims",
+        "id": "6b87433f-4260-43a7-9de5-4b4c0f47ebc2"
+      }
+    }
+  ],
+  "notifications": [
+    {
+      "id": "559f76bd-a561-48a8-8eee-68e1496571d8",
+      "title": "CLM-2026-6b87433f-4260-43a7-9de5-4b4c0f47ebc2 · 折让已批准",
+      "detail": "实际审批人 本地审批员 · QA-NOTIFY-APPROVED: Local return-path acceptance; cancel before execution; no CN or payment.嗯，我觉得它的那个颜色能不能想一更好的方法？因为感觉目前的这",
+      "at": "2026-10-13T06:01:26.771Z",
+      "readAt": null,
+      "target": {
+        "view": "claims",
+        "id": "6b87433f-4260-43a7-9de5-4b4c0f47ebc2"
+      },
+      "category": "general"
+    }
+  ],
+  "events": [
+    {
+      "id": "10ce4ec8-06ae-42d4-8eda-8b59efd5412b",
+      "entityType": "claim",
+      "entityId": "6b87433f-4260-43a7-9de5-4b4c0f47ebc2",
+      "at": "2026-10-13T06:01:26.771Z",
+      "actor": "本地审批员",
+      "text": "审批 approved：QA-NOTIFY-APPROVED: Local return-path acceptance; cancel before execution; no CN or payment.嗯，我觉得它的那个颜色能不能想一更好的方法？因为感觉目前的这",
+      "fileIds": []
+    },
+    {
+      "id": "33bc9e3b-d5d2-4551-87c9-2727484902be",
+      "entityType": "claim",
+      "entityId": "6b87433f-4260-43a7-9de5-4b4c0f47ebc2",
+      "at": "2026-10-13T06:00:35.455Z",
+      "actor": "本地操作员",
+      "text": "提交处置审批",
+      "fileIds": []
+    },
+    {
+      "id": "17425dc2-89a0-41f6-8b18-cd28b8831fcf",
+      "entityType": "claim",
+      "entityId": "6b87433f-4260-43a7-9de5-4b4c0f47ebc2",
+      "at": "2026-10-13T06:00:33.611Z",
+      "actor": "本地操作员",
+      "text": "登记客诉案件",
+      "fileIds": []
+    }
+  ],
+  "primaryRefund": {
+    "claimId": "870d849a-4066-4b0d-b27e-821eebe25737",
+    "state": "Closed",
+    "originalAllocated": 60,
+    "refundPaid": 15,
+    "netCash": 45
+  },
+  "preservedOrders": [
+    {
+      "orderId": "8885a218-c5a0-4c95-a4c0-c9bce010e8a2",
+      "sha256": "24b370175da90de6938ba61005766362300dce70f49e1d61b8f91217a8e6c526"
+    },
+    {
+      "orderId": "873d79d1-fe97-4866-908e-d81fda26b404",
+      "sha256": "1109f5ff4eb1494919b85ed34e869dc5df1c02955b86cbae65ad3eeb8f832e1f"
+    }
+  ],
+  "checks": [
+    {
+      "key": "notification.exact_case_source",
+      "ok": true
+    },
+    {
+      "key": "notification.one_allowance1_no_goods",
+      "ok": true
+    },
+    {
+      "key": "notification.not_executed_no_outputs",
+      "ok": true
+    },
+    {
+      "key": "notification.unique_precise_task_due_empty",
+      "ok": true
+    },
+    {
+      "key": "notification.real_approval_actor_note_time",
+      "ok": true
+    },
+    {
+      "key": "notification.approved_work_active",
+      "ok": true
+    },
+    {
+      "key": "primary.original_order_fulfillment_finance_unchanged",
+      "ok": true
+    },
+    {
+      "key": "primary.closed_case_unchanged",
+      "ok": true
+    },
+    {
+      "key": "primary.refund_records_unchanged",
+      "ok": true
+    },
+    {
+      "key": "primary.received60_refund15_net45",
+      "ok": true
+    },
+    {
+      "key": "preserved.8885a218-c5a0-4c95-a4c0-c9bce010e8a2",
+      "ok": true
+    },
+    {
+      "key": "preserved.873d79d1-fe97-4866-908e-d81fda26b404",
+      "ok": true
+    }
+  ],
+  "ok": true,
+  "limit": "This local sample audit proves stored return targets and facts, not browser navigation or external transfers."
+}

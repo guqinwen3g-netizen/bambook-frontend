@@ -1,0 +1,318 @@
+[
+  {
+    "view": "suppliers",
+    "height": 800,
+    "overflow": false,
+    "text": "M\n本\n客户与市场\n供应商管理\n已保存 · 工作空间\n问竹衍\n资源与支撑 · 供应商\n供应商管理\n\n查看供应商能力、生产地点、联系人及合作状态。\n\n导出\n新建\n供应商\n类型\n能力\n月产能\n状态\n本地验证工厂\nMIST-LOCAL-001\n成衣加工厂\n毛呢大衣、轻结构西装\n1000 件\n使用中\n1 条记录\n1 / 1",
+    "title": "供应商管理",
+    "width": 1180
+  },
+  {
+    "view": "products",
+    "height": 800,
+    "overflow": false,
+    "text": "M\n本\n订单履约\n数字档案\n已保存 · 工作空间\n问竹衍\n资源与支撑 · 产品\n数字档案\n\n维护产品身份、实际规格与准确开发来源。\n\n导出\n新建\n类别\n全部\n从开发版本建档\n产品\n类别\n规格\n季节\n状态\n还没有数字档案记录\n创建第一条记录后即可在这里查看和继续处理。\n新建\n0 条记录\n1 / 1\n记录详情\n选择一条记录\n选中后查看详情与可执行操作。",
+    "title": "数字档案",
+    "width": 1180
+  },
+  {
+    "view": "quotations",
+    "height": 800,
+    "overflow": false,
+    "text": "M\n本\n订单履约\n报价管理\n已保存 · 工作空间\n问竹衍\n客户与开拓 · 报价\n报价管理\n\n精确记录报价条目与版本，客户接受后由业务员明确转订单。\n\n导出\n状态\n全部\n新建报价\n报价\n总金额\n有效期\n审批\n状态\n还没有报价管理记录\n创建第一条记录后即可在这里查看和继续处理。\n0 条记录\n1 / 1",
+    "title": "报价管理",
+    "width": 1180
+  },
+  {
+    "view": "relations",
+    "height": 800,
+    "overflow": false,
+    "text": "M\n本\n客户与市场\n关系智库\n已保存 · 工作空间\n问竹衍\n客户与开拓 · 组织关系\n关系智库\n\n关联现有客户和供应商，集中维护组织别名与联系人。\n\n导出\n新建\n类别\n全部\n组织\n关系\n联系人\n状态\n本地验证工厂\n供应商\n0\n使用中\n1 条记录\n1 / 1\n记录详情\n选择一条记录\n选中后查看详情与可执行操作。",
+    "title": "关系智库",
+    "width": 1180
+  },
+  {
+    "view": "seasons",
+    "height": 800,
+    "overflow": false,
+    "text": "\n客户与市场\n季节性与趋势\n已保存 · 工作空间\n问竹衍\n客户与开拓 · 季节\n季节性与趋势\n\n按季节编码汇总当前工作区真实订单与开发记录。回顾快照保留生成时间，按币种分别汇总。\n\n导出\n新建\n季节回顾\n0\n趋势依据\n0\n展会\n0\n季节\n期间\n回顾生成时间\n状态\n还没有季节性与趋势记录\n创建第一条记录后即可在这里查看和继续处理。\n新建\n0 条记录\n1 / 1",
+    "title": "季节性与趋势",
+    "width": 1180
+  },
+  {
+    "view": "marketing",
+    "height": 800,
+    "overflow": false,
+    "text": "M\n本\n客户与市场\n营销推广\n已保存 · 工作空间\n问竹衍\n客户与开拓 · 营销\n营销推广\n\n按活动状态组织推广工作，线索与客户主线相连。\n\n创建活动\n导出\n营销活动\n0\n产品画册\n0\n尚无营销活动\n创建活动后，预算、状态和线索结果会保存在当前工作区。\n创建活动",
+    "title": "营销推广",
+    "width": 1180
+  },
+  {
+    "view": "samples",
+    "height": 800,
+    "overflow": false,
+    "text": "M\n本\n订单履约\n样品仓库\n已保存 · 工作空间\n问竹衍\n订单履约 · 实体样品\n样品仓库\n\n按准确版本和订单条目管理实物；成衣逐件，面料按形态与单位记录。\n\n导出\n新建\n全部类别\n同步已返样版本\n实物 / 档案\n来源\n可用\n位置\n还没有样品仓库记录\n创建第一条记录后即可在这里查看和继续处理。\n新建\n0 条记录\n1 / 1\n记录详情\n选择一条记录\n选中后查看详情与可执行操作。",
+    "title": "样品仓库",
+    "width": 1180
+  },
+  {
+    "view": "qc-workbench",
+    "height": 800,
+    "overflow": false,
+    "text": "M\n本\n订单履约\nQC 工作台\n已保存 · 工作空间\n问竹衍\nQC 工作台\n\n先选择专业团队，再处理准确样品与生产分支。报告回到业务来源，由业务员继续主线。\n\n从来源发起QC\n成衣QC\n0\n面料QC\n0\n样品评审\n生产检验\n暂无当前范围的QC任务\n业务员在准确开发版本、订单条目或生产分支发起送检。",
+    "title": "QC 工作台",
+    "width": 1180
+  },
+  {
+    "view": "procurement",
+    "height": 800,
+    "overflow": false,
+    "text": "M\n本\n订单履约\n采购管理\n已保存 · 工作空间\n问竹衍\n采购管理\n\n从准确订单条目形成采购承诺，批准后逐次登记真实交付与收货路径。\n\n导出\n新建\n全部状态\n草稿\n待审批\n已批准\n已退回\n采购单\n供应商\n数量 / 单价\n累计交付\n状态\n还没有采购管理记录\n创建第一条记录后即可在这里查看和继续处理。\n新建\n0 条记录\n1 / 1",
+    "title": "采购管理",
+    "width": 1180
+  },
+  {
+    "view": "inventory",
+    "height": 800,
+    "overflow": false,
+    "text": "M\n本\n订单履约\n库存与仓储\n已保存 · 工作空间\n问竹衍\n库存与仓储\n\n从真实采购收货生成来源批次，按原单位登记交接与退回，保留货权和订单归属。\n\n导出\n来源批次\n订单来源\n可用 / 入库\n位置 / 货权\n还没有库存与仓储记录\n创建第一条记录后即可在这里查看和继续处理。\n0 条记录\n1 / 1",
+    "title": "库存与仓储",
+    "width": 1180
+  },
+  {
+    "view": "shipments",
+    "height": 800,
+    "overflow": false,
+    "text": "M\n本\n订单履约\n货运管理\n已保存 · 工作空间\n问竹衍\n货运管理\n\n先核对逐条目数量与质量门禁，再完成单证、清关、对客发送和实际离港登记。\n\n导出\n新建出运\n核对合同收货条款\n出运请求\n运输\n来源条目\n计划日期\n状态\n还没有货运管理记录\n创建第一条记录后即可在这里查看和继续处理。\n0 条记录\n1 / 1",
+    "title": "货运管理",
+    "width": 1180
+  },
+  {
+    "view": "customs",
+    "height": 800,
+    "overflow": false,
+    "text": "M\n本\n订单履约\n外贸与报关\n已保存 · 工作空间\n问竹衍\n外贸与报关\n\n保存实际外部申报和清关依据；本系统不代替海关或单一窗口申报。\n\n导出\n新建\n报关记录\n出运\n报关单号\nHS编码\n状态\n还没有外贸与报关记录\n创建第一条记录后即可在这里查看和继续处理。\n新建\n0 条记录\n1 / 1",
+    "title": "外贸与报关",
+    "width": 1180
+  },
+  {
+    "view": "document-center",
+    "height": 800,
+    "overflow": false,
+    "text": "M\n本\n订单履约\n单据中心\n已保存 · 工作空间\n问竹衍\n单据中心\n\n按准确出运和合同保留单据版本、原件与签发记录；CI签发回到财务应收。\n\n导出\n新建\n单据\n类型 / 版本\n出运\n状态\n还没有单据中心记录\n创建第一条记录后即可在这里查看和继续处理。\n新建\n0 条记录\n1 / 1\n记录详情\n选择一条记录\n选中后查看详情与可执行操作。",
+    "title": "单据中心",
+    "width": 1180
+  },
+  {
+    "view": "mes",
+    "height": 800,
+    "overflow": false,
+    "text": "M\n本\n平台\n历史加工记录\n已保存 · 工作空间\n问竹衍\n平台 · 加工履行\n历史加工记录\n\n当前本地工作空间中已批准的加工合同及实际交付记录。\n\n导出\n加工合同\n加工方\n加工内容\n合同数量\n已交付\n交期\n状态\n还没有历史加工记录记录\n创建第一条记录后即可在这里查看和继续处理。\n0 条记录\n1 / 1",
+    "title": "历史加工记录",
+    "width": 1180
+  },
+  {
+    "view": "invoices",
+    "height": 800,
+    "overflow": false,
+    "text": "5\n已签发\nINV-G-2026-0388\nSO-G-2026-012\nMaison Lune\n25,200.00 EUR\n0.00\n2026-10-10\n已签发\nINV-G-2026-0405\nSO-G-2026-017\nNorthwind Atelier\n12,555.00 USD\n12,555.00\n2026-10-30\n已签发\n4 条记录\n1 / 1",
+    "title": "发票管理",
+    "width": 1180
+  },
+  {
+    "view": "pricing",
+    "height": 800,
+    "overflow": false,
+    "text": "9 · Northwind Atelier\n汇率、税率和成本依据\n保存定价记录\n计算结果\n净美元成本\n等待完整输入\n加成金额\n—\n佣金金额\n—\n建议美元单价\n—\n估算与实际利润分别核实\n\n这里保存定价依据。未形成完整实际采购与履约成本证据前，不把估算称为实际利润。\n\n已保存的定价依据\n订单\n美元单价\n依据\n记录时间\n还没有定价记录\n完成左侧参数与依据后保存。",
+    "title": "定价与利润",
+    "width": 1180
+  },
+  {
+    "view": "bom",
+    "height": 800,
+    "overflow": false,
+    "text": "M\n本\n财务与成本\nBOM 成本核算\n已保存 · 工作空间\n问竹衍\nBOM 成本核算\n\n按每件用量、损耗、人工和费用形成可追溯成本。确认后保留原始成本版本。\n\n导出\n新建\nBOM\n产品 / 说明\n单位总成本\n状态\n还没有BOM 成本核算记录\n创建第一条记录后即可在这里查看和继续处理。\n新建\n0 条记录\n1 / 1",
+    "title": "BOM 成本核算",
+    "width": 1180
+  },
+  {
+    "view": "risks",
+    "height": 800,
+    "overflow": false,
+    "text": "M\n本\n财务与成本\n风险管理与合规\n已保存 · 工作空间\n问竹衍\n风险管理与合规\n\n记录来自订单的真实风险，明确责任人与依据；确认、处理后保留解决事实。\n\n导出\n新建\n风险\n等级\n责任人\n状态\n还没有风险管理与合规记录\n创建第一条记录后即可在这里查看和继续处理。\n新建\n0 条记录\n1 / 1",
+    "title": "风险管理与合规",
+    "width": 1180
+  },
+  {
+    "view": "claims",
+    "height": 800,
+    "overflow": false,
+    "text": "M\n本\n财务与成本\n售后索赔\n已保存 · 工作空间\n问竹衍\n售后索赔\n\n围绕真实订单和发票登记客诉，审批处置，再分别结清款项与货物。\n\n导出\n新建\n案件\n客诉问题\n处置\n状态\n还没有售后索赔记录\n创建第一条记录后即可在这里查看和继续处理。\n新建\n0 条记录\n1 / 1",
+    "title": "售后索赔",
+    "width": 1180
+  },
+  {
+    "view": "reports",
+    "height": 800,
+    "overflow": false,
+    "text": "\n按订单创建日期统计当前工作空间业务，同币种汇总，保留订单与应收回程。\n\n导出当前报表\n订单创建起日\n订单创建止日\n币种\n全部币种\nUSD\nEUR\n币种\n订单数\n订单金额\n已开票\n未收\nUSD\n4\n367,350.00\n101,205.00\n81,315.00\nEUR\n1\n25,200.00\n25,200.00\n0.00\n查看来源订单\n查看发票\n查看核销明细",
+    "title": "报表中心",
+    "width": 1180
+  },
+  {
+    "view": "dashboard",
+    "height": 800,
+    "overflow": false,
+    "text": "0\n进行中客诉\n0\n订单履行\n订单\n客户\n交期\n履行进度\n当前状态\nSO-G-2026-018\nCedar & Crown\n2026-11-08\n59%\n生产中\nSO-G-2026-017\nNorthwind Atelier\n2026-10-30\n88%\n尾期 QC\nSO-G-2026-015\nCedar & Crown\n2026-12-20\n12%\n采购中",
+    "title": "业务全景",
+    "width": 1180
+  },
+  {
+    "view": "data-center",
+    "height": 800,
+    "overflow": false,
+    "text": "象\n记录数\n来源\n订单\n5\n查看\n客户\n3\n查看\n发票\n4\n查看\n到账流水\n5\n查看\n文件\n0\n查看\n关联完整性\n对象\n标识\n问题\n已检查关联没有发现问题\n覆盖订单条目、发票来源及核销双方关联；不代表未实现模块已通过验收。\n最近业务记录\n时间\n操作人\n事实\n2026-10-13T01:32:34.584Z\n本地操作员\nmarket.supplier.save",
+    "title": "数据中心",
+    "width": 1180
+  },
+  {
+    "view": "hr",
+    "height": 800,
+    "overflow": false,
+    "text": "M\n本\n平台\n人事管理\n已保存 · 工作空间\n问竹衍\n人事管理\n\n维护当前工作空间的业务人员与岗位档案。档案不会创建登录账号，也不会授予系统权限。\n\n导出\n新建\n姓名\n部门 / 岗位\n联系方式\n在岗\n还没有人事管理记录\n创建第一条记录后即可在这里查看和继续处理。\n新建\n0 条记录\n1 / 1",
+    "title": "人事管理",
+    "width": 1180
+  },
+  {
+    "view": "business-tools",
+    "height": 800,
+    "overflow": false,
+    "text": "业务数据，并进入定价、成本或单据工作。\n\n长度换算\n采用国际码与英寸定义；本地计算不会写入订单。\n原始长度\n原单位\nm\nyd\ncm\nin\n目标单位\nm\nyd\ncm\nin\n换算结果\n输入非负长度\n常用业务计算\n\n成本和定价结果关联订单，并保存参数与计算依据。\n\n退税美元定价\nBOM成本核算\n\n开具与收付业务从真实订单和发票继续。\n\n商业发票\n收款核销\n业务报表",
+    "title": "业务工具",
+    "width": 1180
+  },
+  {
+    "view": "admin-panel",
+    "height": 800,
+    "overflow": false,
+    "text": "管理后台\n已保存 · 工作空间\n问竹衍\n平台 · 本地工作空间\n管理后台\n\n维护当前本地空间的公司抬头、出口方和收款资料。\n\n本地开发模式\n公司抬头\n出口与收款\n当前空间\n本地使用\n公司抬头与联系方式\n\n按实际公司资料填写。未录入的信息保持空白。\n\n公司中文抬头\n公司英文抬头\n中文地址\n英文地址\n联系电话\n公司联系邮箱\n保存后应用于当前本地工作空间\n保存资料",
+    "title": "管理后台",
+    "width": 1180
+  },
+  {
+    "view": "assistant",
+    "height": 800,
+    "overflow": false,
+    "text": "G-2026-015 · Cedar & Crown\n采购中 · 118,400.00 USD\n加入问题\n打开来源\nSO-G-2026-012 · Maison Lune\n已出运 · 25,200.00 EUR\n加入问题\n打开来源\nSO-G-2026-009 · Northwind Atelier\n待收尾款 · 66,300.00 USD\n加入问题\n打开来源",
+    "title": "竹衍助手",
+    "width": 1180
+  },
+  {
+    "view": "inventory",
+    "recordState": "http-e2e-workspace",
+    "height": 800,
+    "overflow": false,
+    "text": "本\n本\n订单履约\n库存与仓储\n已保存 · 工作空间\n问竹衍\n库存与仓储\n\n从真实采购收货生成来源批次，按原单位登记交接与退回，保留货权和订单归属。\n\n导出\n来源批次\n订单来源\n可用 / 入库\n位置 / 货权\n本地测试材料（库存联调）\nb64b05d3-5d26-4456-ae34-36b4e502fe86\nSO-G-2026-0001 · LOCAL-TEST-01\n17 / 20 米\n本地测试仓A · 公司\n1 条记录\n1 / 1",
+    "title": "库存与仓储",
+    "width": 1180
+  },
+  {
+    "view": "production-board",
+    "recordState": "http-e2e-workspace",
+    "height": 800,
+    "overflow": false,
+    "text": "本\n本\n订单履约\n生产进度\n已保存 · 工作空间\n问竹衍\n订单履约 · 生产\n生产进度\n\n按工序看每个生产单走到哪一步。拖动卡片即可更新工序。\n\n本周\n本月\n甘特图\n订单\n全部\n本周没有计划中的生产单\n查看本月全部生产单",
+    "title": "生产进度",
+    "width": 1180
+  },
+  {
+    "view": "qc-workbench",
+    "recordState": "http-e2e-workspace",
+    "height": 800,
+    "overflow": false,
+    "text": "本\n本\n订单履约\nQC 工作台\n已保存 · 工作空间\n问竹衍\nQC 工作台\n\n先选择专业团队，再处理准确样品与生产分支。报告回到业务来源，由业务员继续主线。\n\n从来源发起QC\n成衣QC\n1\n面料QC\n0\n样品评审\n生产检验\n暂无当前范围的QC任务\n业务员在准确开发版本、订单条目或生产分支发起送检。",
+    "title": "QC 工作台",
+    "width": 1180
+  },
+  {
+    "view": "shipments",
+    "recordState": "http-e2e-workspace",
+    "height": 800,
+    "overflow": false,
+    "text": "本\n本\n订单履约\n货运管理\n已保存 · 工作空间\n问竹衍\n货运管理\n\n先核对逐条目数量与质量门禁，再完成单证、清关、对客发送和实际离港登记。\n\n导出\n新建出运\n核对合同收货条款\n出运请求\n运输\n来源条目\n计划日期\n状态\nSHP-2026-00001\n本地联调验收客户（仅测试）\n海运 · 本地测试起运港 → 本地测试目的港\n1 条\n2026-10-13\n已出运\n1 条记录\n1 / 1",
+    "title": "货运管理",
+    "width": 1180
+  },
+  {
+    "view": "customs",
+    "recordState": "http-e2e-workspace",
+    "height": 800,
+    "overflow": false,
+    "text": "本\n本\n订单履约\n外贸与报关\n已保存 · 工作空间\n问竹衍\n外贸与报关\n\n保存实际外部申报和清关依据；本系统不代替海关或单一窗口申报。\n\n导出\n新建\n报关记录\n出运\n报关单号\nHS编码\n状态\nCUS-2026-00001\nSHP-2026-00001\nLOCAL-TEST-CUSTOMS-052c561f\nLOCAL-TEST\n已清关\n1 条记录\n1 / 1",
+    "title": "外贸与报关",
+    "width": 1180
+  },
+  {
+    "view": "document-center",
+    "recordState": "http-e2e-workspace",
+    "height": 800,
+    "overflow": false,
+    "text": "本\n本\n订单履约\n单据中心\n已保存 · 工作空间\n问竹衍\n单据中心\n\n按准确出运和合同保留单据版本、原件与签发记录；CI签发回到财务应收。\n\n导出\n新建\n单据\n类型 / 版本\n出运\n状态\nLOCAL-TEST-CI-052c561f\n本地联调验收CI（仅测试，不对外）\nCI · V1\nSHP-2026-00001\n已签发\nLOCAL-TEST-PL-052c561f\n本地联调验收PL（仅测试，不对外）\nPL · V1\nSHP-2026-00001\n已签发\n2 条记录\n1 / 1\n记录详情\n选择一条记录\n选中后查看详情与可执行操作。",
+    "title": "单据中心",
+    "width": 1180
+  },
+  {
+    "view": "invoices",
+    "recordState": "http-e2e-workspace",
+    "height": 800,
+    "overflow": false,
+    "text": "本\n本\n财务与成本\n发票管理\n已保存 · 工作空间\n问竹衍\n发票管理\n\n从真实订单形成商业发票，再由财务登记到账与核销。\n\n导出\n新建\n发票\n来源订单\n客户\n金额\n未收\n到期日\n状态\nLOCAL-TEST-CI-052c561f\nSO-G-2026-0001\n本地联调验收客户（仅测试）\n120.00 USD\n120.00\n2026-11-12\n已签发\n1 条记录\n1 / 1",
+    "title": "发票管理",
+    "width": 1180
+  },
+  {
+    "view": "crm",
+    "recordState": "http-e2e-workspace",
+    "height": 800,
+    "overflow": false,
+    "text": "120.00 USD\n2026-11-12\n待安排\n进行中的开发\n0 个开发案\n开发与寻样\n开发对象\n阶段\n状态\n还没有开发案\n档案\n结算币种\nUSD\n付款条款\n本地测试30天\n贸易术语\nFOB\n主要品类\n本地测试成衣\n信用额度\n0.00 USD\n联系人\n还没有联系人\n添加联系人\n沟通动态\n本\n本地操作员 · 2026/10/13 09:38:33\n\n登记已核实合同收货与分批条款\n\n本\n本地操作员 · 2026/10/13 09:38:33\n\n交接后勤：本地联调验收交接，不发生真实物流\n\n本\n本地操作员 · 2026/10/13 09:38:33\n\n创建订单 SO-G-2026-0001\n\n本\n本地操作员 · 2026/10/13 09:38:33\n\n创建客户档案 本地联调验收客户（仅测试）",
+    "title": "本地联调验收客户（仅测试）",
+    "width": 1180
+  },
+  {
+    "view": "procurement",
+    "recordState": "mobile-dark",
+    "height": 844,
+    "overflow": false,
+    "theme": "dark",
+    "title": "采购管理",
+    "width": 390
+  },
+  {
+    "view": "inventory",
+    "recordState": "mobile-dark",
+    "height": 844,
+    "overflow": false,
+    "theme": "dark",
+    "title": "库存与仓储",
+    "width": 390
+  },
+  {
+    "view": "admin-panel",
+    "recordState": "mobile-dark",
+    "height": 844,
+    "overflow": false,
+    "theme": "dark",
+    "title": "管理后台",
+    "width": 390
+  },
+  {
+    "view": "assistant",
+    "recordState": "mobile-dark",
+    "height": 844,
+    "overflow": false,
+    "theme": "dark",
+    "title": "竹衍助手",
+    "width": 390
+  }
+]

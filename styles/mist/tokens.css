@@ -1,0 +1,233 @@
+/* ═══════════════════════════════════════════════════════════════════
+   MIST ATELIER — Design Tokens  (styles/mist/tokens.css)
+   ───────────────────────────────────────────────────────────────────
+   Bambook 竹衍 · Flat Frost 设计语言的唯一数值来源。
+   规则（不要改，只引用）：
+   1. 组件/页面只能用 var(--mist-*)，禁止写裸 hex / 裸 px 阴影。
+   2. 所有 token 都挂在 .mist-root 作用域内，不污染旧 BDS（--accent 等）。
+   3. 深色由本文件统一覆盖；组件内禁止出现 dark: 或 isDarkMode 三元。
+   4. Flat Frost：静态面 = 零描边 + 零投影。层级只靠「填充深浅 + 磨砂」。
+      唯一允许的阴影是 --mist-shadow-overlay（命令面板/抽屉/弹窗）。
+   ═══════════════════════════════════════════════════════════════════ */
+
+.mist-root {
+  /* ── 品牌原色（主题无关，勿直接用于组件；组件用下方语义 token）── */
+  --mist-brand-mist-1: #7FA3B3;
+  --mist-brand-mist-2: #A2C0CD;
+  --mist-brand-mist-3: #C6DAE3;
+  --mist-brand-deep-1: #101C35;
+  --mist-brand-deep-2: #162640;
+  --mist-brand-deep-3: #213551;
+  --mist-brand-cyan: #8DD5DE;
+  --mist-brand-wisteria: #C8B8E0;
+
+  /* ── 字体 ── */
+  --mist-font: Urbanist, "HarmonyOS Sans SC", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+  --mist-font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+
+  /* 字重：项目历史纪律为全局 300。Mist 用 300/400/500 三档表达层级。
+     如需回到「全 300」，只改这三行即可全站生效。 */
+  --mist-fw-light: 300;   /* 大数字、展示标题 */
+  --mist-fw-regular: 400; /* 页面标题 h1 */
+  --mist-fw-medium: 500;  /* 卡片标题、强调文字、按钮 */
+
+  /* 字号阶梯（px）。正文 14，最小 11.5（仅辅助说明）。 */
+  --mist-text-2xs: 11.5px; /* 辅助标签、表头小注 */
+  --mist-text-xs: 12px;    /* 次要信息、表头 */
+  --mist-text-sm: 13px;    /* 次要正文 */
+  --mist-text-md: 13.5px;  /* 控件、列表正文 */
+  --mist-text-base: 14px;  /* 正文 */
+  --mist-text-lg: 14.5px;  /* 行标题 */
+  --mist-text-xl: 17px;    /* 卡片标题 h2 */
+  --mist-text-2xl: 24px;   /* 区块数字 */
+  --mist-text-3xl: 30px;   /* 详情页标题 */
+  --mist-text-4xl: 34px;   /* 页面标题 h1 */
+  --mist-text-5xl: 40px;   /* 首页问候 */
+  --mist-text-stat: 38px;  /* 统计卡大数字 */
+  --mist-leading: 1.5;
+  --mist-tracking-tight: -.015em;
+  --mist-tracking-caps: .08em;
+
+  /* ── 间距（4 基）── */
+  --mist-space-1: 4px;
+  --mist-space-2: 8px;
+  --mist-space-3: 12px;
+  --mist-space-4: 16px;
+  --mist-space-5: 20px;
+  --mist-space-6: 24px;
+  --mist-space-7: 28px;
+  --mist-space-8: 32px;
+  --mist-space-10: 40px;
+  --mist-space-12: 48px;
+  --mist-gap: 18px;          /* 卡片之间的统一间距 */
+  --mist-card-pad-x: 22px;   /* 卡片内左右留白 */
+  --mist-card-pad-y: 20px;
+
+  /* ── 圆角（同心：内 = 外 − 内边距）── */
+  --mist-r-xs: 7px;     /* 角标、kbd、版本号 */
+  --mist-r-sm: 9px;     /* 小按钮内块、徽标 */
+  --mist-r-md: 12px;    /* 按钮、输入框、列表行 */
+  --mist-r-lg: 16px;    /* 选择卡、嵌套块 */
+  --mist-r-card: 22px;  /* 标准卡片 */
+  --mist-r-hero: 26px;  /* 焦点大卡、抽屉 */
+  --mist-r-canvas: 30px;/* 主画布 */
+  --mist-r-pill: 999px;
+
+  /* ── 尺寸 ── */
+  --mist-control-h: 40px;     /* 默认按钮/输入高度 */
+  --mist-control-h-sm: 32px;
+  --mist-control-h-lg: 44px;
+  --mist-side-w: 248px;
+  --mist-side-w-collapsed: 76px;
+  --mist-topbar-h: 64px;
+  --mist-page-max: 1240px;
+  --mist-canvas-inset: 10px;
+
+  /* ── 动效 ── */
+  --mist-ease: cubic-bezier(.22, 1, .36, 1);
+  --mist-dur-fast: .15s;
+  --mist-dur: .25s;
+  --mist-dur-slow: .45s;
+
+  /* ── 层级 ── */
+  --mist-z-sticky: 10;
+  --mist-z-overlay: 40;
+  --mist-z-toast: 60;
+  --mist-z-splash: 100;
+
+  /* ════════ 语义色 · 浅色（Light Mist）════════ */
+  --mist-shell: radial-gradient(120% 90% at 0% 0%, rgba(255,255,255,.28), rgba(255,255,255,0) 52%),
+                linear-gradient(160deg, var(--mist-brand-mist-1) 0%, var(--mist-brand-mist-2) 48%, var(--mist-brand-mist-3) 100%);
+  --mist-hero: radial-gradient(110% 140% at 10% -10%, rgba(255,255,255,.34), rgba(255,255,255,0) 55%),
+               linear-gradient(150deg, #6F97A9 0%, #8FB3C2 46%, #BBD3DE 100%);
+  --mist-object-stage: radial-gradient(60% 60% at 50% 42%, rgba(255,255,255,.8), transparent 72%), linear-gradient(170deg, #DCE7EC, #EEF3F5);
+
+  --mist-canvas: #F2F5F7;   /* 主画布底 */
+  --mist-card: #FFFFFF;     /* 卡片 */
+  --mist-card-2: #F7F9FA;   /* 卡片内悬停/次级块 */
+  --mist-sunken: #EAF0F3;   /* 下沉块（分段器底、进度槽） */
+  --mist-fill: rgba(16,42,58,.045);   /* 控件填充：输入框、ghost 按钮、chip */
+  --mist-fill-2: rgba(16,42,58,.075); /* 控件悬停 / 未选中圆点 */
+  --mist-line: rgba(16,42,58,.075);   /* 唯一允许的分隔线（1px，只用于列表行之间） */
+  --mist-line-2: rgba(16,42,58,.12);
+
+  --mist-ink: #0E1A21;
+  --mist-ink-2: rgba(14,26,33,.60);
+  --mist-ink-3: rgba(14,26,33,.42);
+  --mist-ink-4: rgba(14,26,33,.16);
+
+  /* 侧栏（坐在 shell 渐变上） */
+  --mist-side-ink: #FFFFFF;
+  --mist-side-ink-2: rgba(255,255,255,.80);
+  --mist-side-ink-3: rgba(255,255,255,.62);
+  --mist-frost: rgba(255,255,255,.22);   /* 磨砂底：工作空间、AI 卡 */
+  --mist-frost-2: rgba(255,255,255,.30); /* 磨砂选中：导航激活项 */
+  --mist-side-hover: rgba(255,255,255,.14);
+  --mist-side-badge: rgba(255,255,255,.92);
+  --mist-side-badge-ink: #275768;
+  --mist-blur: blur(12px);
+
+  --mist-accent: #34768D;
+  --mist-accent-hover: #2C6377;
+  --mist-accent-ink: #275768;
+  --mist-on-accent: #FFFFFF;
+  --mist-accent-tint: rgba(52,118,141,.09);
+  --mist-accent-tint-2: rgba(52,118,141,.16);
+
+  --mist-ok: #409660;   --mist-ok-tint: rgba(64,150,96,.12);   --mist-ok-ink: #2F7A4B;
+  --mist-warn: #C4A445; --mist-warn-tint: rgba(196,164,69,.16); --mist-warn-ink: #866C1E;
+  --mist-bad: #BC4950;  --mist-bad-tint: rgba(188,73,80,.11);   --mist-bad-ink: #9F383F;
+  --mist-ai: #57998D;   --mist-ai-tint: rgba(135,191,179,.20);  --mist-ai-ink: #2D625D;
+  --mist-ai-badge: #B9DED2; --mist-ai-badge-ink: #204E49;
+  --mist-ai-pearl: #E9DCB8; --mist-ai-blush: #E8BDC3;
+  --mist-ai-ice: #9CC8E4; --mist-ai-lilac: #D6CEE9;
+  --mist-ai-refract-ice: #6095B8; --mist-ai-refract-coral: #BA8284;
+  /* AI 光感：冰蓝与珊瑚分区折射，香槟提亮；竹青保留为文字与轻底色。 */
+  --mist-ai-sheen: radial-gradient(100% 120% at 100% 0%, rgba(156,200,228,.20), transparent 76%),
+                   radial-gradient(100% 115% at 100% 100%, rgba(232,189,195,.18), transparent 76%),
+                   radial-gradient(90% 115% at 0% 0%, rgba(233,220,184,.15), transparent 72%),
+                   radial-gradient(75% 90% at 0% 100%, rgba(214,206,233,.08), transparent 70%);
+  --mist-ai-surface: var(--mist-ai-sheen), linear-gradient(120deg, rgba(135,191,179,.04), rgba(135,191,179,.01) 64%), var(--mist-card);
+  --mist-ai-panel: var(--mist-ai-sheen), radial-gradient(110% 90% at 30% 35%, rgba(135,191,179,.045), transparent 72%), var(--mist-card);
+
+  /* 媒体上的文字（hero 卡等深色/渐变底） */
+  --mist-on-media: #FFFFFF;
+  --mist-on-media-2: rgba(255,255,255,.86);
+  --mist-on-media-3: rgba(255,255,255,.74);
+  --mist-on-media-frost: rgba(255,255,255,.20);
+  --mist-hero-cta-bg: #FFFFFF;
+  --mist-hero-cta-ink: #16384A;
+  --mist-hero-progress: rgba(255,255,255,.9);
+
+  --mist-scrim: rgba(10,24,34,.28);
+  --mist-overlay-bg: color-mix(in srgb, var(--mist-card) 86%, transparent);
+  --mist-shadow-overlay: 0 30px 80px -30px rgba(10,30,45,.35); /* 唯一阴影 */
+  --mist-object-shadow: drop-shadow(0 24px 28px rgba(10,30,45,.16)); /* 仅用于抠图商品 */
+  --mist-focus: 0 0 0 2px var(--mist-accent);
+
+  color-scheme: light;
+}
+
+/* ════════ 语义色 · 深色（Deep Night）════════ */
+.mist-root[data-theme="dark"],
+:is(.dark, [data-theme="dark"]) .mist-root:not([data-theme="light"]) {
+  --mist-shell: radial-gradient(120% 90% at 0% 0%, rgba(141,213,222,.10), rgba(141,213,222,0) 50%),
+                linear-gradient(160deg, var(--mist-brand-deep-1) 0%, var(--mist-brand-deep-2) 50%, var(--mist-brand-deep-3) 100%);
+  --mist-hero: radial-gradient(110% 140% at 8% -10%, rgba(141,213,222,.22), rgba(141,213,222,0) 55%),
+               linear-gradient(150deg, #14284A 0%, #1B3557 52%, #25476A 100%);
+  --mist-object-stage: radial-gradient(60% 60% at 50% 42%, rgba(141,213,222,.12), transparent 72%), linear-gradient(170deg, #0F1D35, #162843);
+
+  --mist-canvas: #0C1629;
+  --mist-card: #132139;
+  --mist-card-2: #172843;
+  --mist-sunken: #0A1324;
+  --mist-fill: rgba(190,225,240,.05);
+  --mist-fill-2: rgba(190,225,240,.085);
+  --mist-line: rgba(190,225,240,.08);
+  --mist-line-2: rgba(190,225,240,.14);
+
+  --mist-ink: #EEF4F6;
+  --mist-ink-2: rgba(238,244,246,.64);
+  --mist-ink-3: rgba(238,244,246,.44);
+  --mist-ink-4: rgba(238,244,246,.14);
+
+  --mist-side-ink: #EEF4F6;
+  --mist-side-ink-2: rgba(238,244,246,.74);
+  --mist-side-ink-3: rgba(238,244,246,.50);
+  --mist-frost: rgba(141,213,222,.07);
+  --mist-frost-2: rgba(141,213,222,.12);
+  --mist-side-hover: rgba(141,213,222,.07);
+  --mist-side-badge: #8DD5DE;
+  --mist-side-badge-ink: #101C35;
+
+  --mist-accent: #8DD5DE;
+  --mist-accent-hover: #A8E1E8;
+  --mist-accent-ink: #9FDDE5;
+  --mist-on-accent: #0B1A2C;
+  --mist-accent-tint: rgba(141,213,222,.10);
+  --mist-accent-tint-2: rgba(141,213,222,.18);
+
+  --mist-ok: #7DCA99;   --mist-ok-tint: rgba(125,202,153,.13); --mist-ok-ink: #92D3AA;
+  --mist-warn: #D6BC71; --mist-warn-tint: rgba(214,188,113,.14); --mist-warn-ink: #DCC98F;
+  --mist-bad: #CF7D82;  --mist-bad-tint: rgba(207,125,130,.14); --mist-bad-ink: #DD979B;
+  --mist-ai: #639D90;   --mist-ai-tint: rgba(143,198,184,.14); --mist-ai-ink: #BFE4D7;
+  --mist-ai-badge: #315B57; --mist-ai-badge-ink: #CCECE2;
+  --mist-ai-pearl: #E9DCB8; --mist-ai-blush: #E8BDC3;
+  --mist-ai-ice: #9CC8E4; --mist-ai-lilac: #D6CEE9;
+  --mist-ai-refract-ice: #6095B8; --mist-ai-refract-coral: #BA8284;
+  --mist-ai-sheen: radial-gradient(100% 120% at 100% 0%, rgba(156,200,228,.14), transparent 76%),
+                   radial-gradient(100% 115% at 100% 100%, rgba(232,189,195,.13), transparent 76%),
+                   radial-gradient(90% 115% at 0% 0%, rgba(233,220,184,.10), transparent 72%),
+                   radial-gradient(75% 90% at 0% 100%, rgba(214,206,233,.06), transparent 70%);
+  --mist-ai-surface: var(--mist-ai-sheen), linear-gradient(120deg, rgba(143,198,184,.025), rgba(143,198,184,.01) 64%), var(--mist-card);
+  --mist-ai-panel: var(--mist-ai-sheen), radial-gradient(110% 90% at 30% 35%, rgba(143,198,184,.03), transparent 72%), var(--mist-card);
+
+  --mist-hero-cta-bg: #8DD5DE;
+  --mist-hero-cta-ink: #101C35;
+  --mist-hero-progress: #8DD5DE;
+
+  --mist-scrim: rgba(2,8,18,.5);
+  --mist-shadow-overlay: 0 30px 80px -30px rgba(0,0,0,.6);
+  --mist-object-shadow: drop-shadow(0 24px 28px rgba(0,0,0,.35));
+  color-scheme: dark;
+}

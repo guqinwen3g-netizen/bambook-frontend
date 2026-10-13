@@ -1,0 +1,598 @@
+{
+  "run": "MTBAAL9V",
+  "database": "panda_hub_local",
+  "executedAt": "2026-08-27T08:52:01.113Z",
+  "totals": {
+    "steps": 44,
+    "PASS": 36,
+    "BLOCK_expected": 8,
+    "DEADEND": 0
+  },
+  "walkthroughData": {
+    "fabricOrder": "WA3F-MTBAAL9V",
+    "garmentOrder": "WA3G-MTBAAL9V",
+    "l2Order": "WA3L-MTBAAL9V",
+    "garmentShipment": "SH-2026-0011",
+    "declarationNumber": "CD-2026-0003"
+  },
+  "deadEnds": [],
+  "records": [
+    {
+      "phase": "P0-数据准备",
+      "step": "创建三张走查订单（面料/成衣/L2 专用）+ 各 1 行明细",
+      "call": "prisma.order.create ×3 + orderLine ×3",
+      "params": {
+        "OF": "WA3F-MTBAAL9V",
+        "OG": "WA3G-MTBAAL9V",
+        "OL2": "WA3L-MTBAAL9V"
+      },
+      "assertion": "三订单落库且 businessLine/type 链别正确",
+      "verdict": "PASS",
+      "note": "source=w-a-3-walkthrough 可溯源清理"
+    },
+    {
+      "phase": "P0-数据准备",
+      "step": "创建汇率快照应收发票 + HS 编码（退税率 13%）",
+      "call": "invoice.create + customsService.createHsCode",
+      "assertion": "L10 退税核算取数链就绪（发票汇率 7.12 / HS 退税率 0.13）",
+      "verdict": "PASS"
+    },
+    {
+      "phase": "P1-QC",
+      "step": "A链：面料订单建 Final 验货任务",
+      "call": "qcService.createAssignment",
+      "params": {
+        "orderId": "WA3F-MTBAAL9V",
+        "inspectionType": "final"
+      },
+      "returned": {
+        "id": "QCA__HDJPXU8Y",
+        "status": "Assigned"
+      },
+      "assertion": "任务 status=Assigned 且 factoryRelationId 快照自订单",
+      "verdict": "PASS"
+    },
+    {
+      "phase": "P1-QC",
+      "step": "A链：任务开始",
+      "call": "qcService.startAssignment",
+      "assertion": "Assigned → InProgress",
+      "verdict": "PASS"
+    },
+    {
+      "phase": "P1-QC",
+      "step": "A链：录入 fail 验货报告",
+      "call": "qcService.completeAssignment(report=fail)",
+      "returned": {
+        "reportId": "INR__WA3F-MTBAAL9V",
+        "result": "fail"
+      },
+      "assertion": "任务 Completed + 报告 INR__{orderId} 落库 result=fail + 报告归档可查",
+      "verdict": "PASS"
+    },
+    {
+      "phase": "P1-QC",
+      "step": "A链：fail 后出运资格判定",
+      "call": "qcService.checkShipmentEligibility",
+      "returned": {
+        "eligible": false,
+        "missingGates": [
+          "BULK_QC_NOT_PASSED",
+          "SS_NOT_CONFIRMED"
+        ]
+      },
+      "assertion": "eligible=false 且 missingGates 含 BULK_QC_NOT_PASSED（fail 报告卡住出运）",
+      "verdict": "PASS"
+    },
+    {
+      "phase": "P1-QC",
+      "step": "A链：fail 未闭环直接建 Shipped 运单",
+      "call": "shipmentMutationService.createShipment(status=Shipped)",
+      "returned": {
+        "code": "GATE_BLOCKED",
+        "message": "出运放行门禁未通过：订单 WA3F-MTBAAL9V 出运放行门禁未通过（BULK_QC_NOT_PASSED, SS_NOT_CONFIRMED）。可按 DR-013 发起受控例外申请：POST /api/v1/exceptions（scope exception:dr013:create）",
+        "gateDetails": {
+          "blockingReasons": [
+            "WA3F-MTBAAL9V:BULK_QC_NOT_PASSED",
+            "WA3F-MTBAAL9V:SS_NOT_CONFIRMED"
+          ],
+          "orders": [
+            {
+              "orderId": "WA3F-MTBAAL9V",
+              "chain": "fabric",
+              "eligible": false,
+              "blockingReasons": [
+                "BULK_QC_NOT_PASSED",
+                "SS_NOT_CONFIRMED"
+              ]
+            }
+          ],
+          "exceptionReason": "NO_ACTIVE_EXCEPTION",
+          "exceptionEntryHint": "可按 DR-013 发起受控例外申请：POST /api/v1/exceptions（scope exception:dr013:create）"
+        }
+      },
+      "assertion": "被出运放行门禁拦截（error.code=GATE_BLOCKED，路由层映射 409）",
+      "verdict": "BLOCK",
+      "note": "验收锚点①：QC fail 未整改闭环前无法流转放行"
+    },
+    {
+      "phase": "P1-QC",
+      "step": "登记第三方测试委托",
+      "call": "testRequestService.createTestRequest",
+      "returned": {
+        "trNo": "TR-20260827-003"
+      },
+      "assertion": "委托落库 result=pending",
+      "verdict": "PASS"
+    },
+    {
+      "phase": "P1-QC",
+      "step": "fail 结论缺 failItems",
+      "call": "testRequestService.updateTestRequest(result=fail, 无 failItems)",
+      "returned": {
+        "code": "FAIL_ITEMS_REQUIRED",
+        "message": "fail 结论必须登记失败项（failItems）",
+        "status": 400
+      },
+      "assertion": "400 FAIL_ITEMS_REQUIRED（fail 项强制登记）",
+      "verdict": "BLOCK"
+    },
+    {
+      "phase": "P1-QC",
+      "step": "fail 结论缺整改措施",
+      "call": "testRequestService.updateTestRequest(result=fail + failItems, 无 correctiveAction)",
+      "returned": {
+        "code": "CA_REQUIRED",
+        "message": "fail 结论必须同步登记整改措施（correctiveAction）或已有未闭环整改记录",
+        "status": 400
+      },
+      "assertion": "400 CA_REQUIRED（fail 必须 ≥1 条 open 整改跟踪闭环）",
+      "verdict": "BLOCK"
+    },
+    {
+      "phase": "P1-QC",
+      "step": "fail 结论 + failItems + 整改同步登记",
+      "call": "testRequestService.updateTestRequest(+ correctiveAction)",
+      "assertion": "结论落 fail 且整改 open 生成",
+      "verdict": "PASS"
+    },
+    {
+      "phase": "P1-QC",
+      "step": "整改 open 状态全景可见",
+      "call": "testRequestService.listTestRequests(summary)",
+      "returned": {
+        "total": 1,
+        "pass": 0,
+        "fail": 1,
+        "pending": 0,
+        "openCorrectiveActions": 1
+      },
+      "assertion": "summary.openCorrectiveActions ≥ 1（未闭环整改挂账）",
+      "verdict": "PASS"
+    },
+    {
+      "phase": "P1-QC",
+      "step": "整改闭环 open→closed",
+      "call": "testRequestService.closeCorrectiveAction",
+      "returned": {
+        "total": 1,
+        "pass": 0,
+        "fail": 1,
+        "pending": 0,
+        "openCorrectiveActions": 0
+      },
+      "assertion": "整改闭环成功且 openCorrectiveActions 归 0（100% 闭环）",
+      "verdict": "PASS"
+    },
+    {
+      "phase": "P1-QC",
+      "step": "A链：整改后复验合格（修正通道）",
+      "call": "production/stageService.saveInspectionReport(final, pass)",
+      "assertion": "同一报告锚点 INR__{orderId} 结论翻为 pass（upsert 修正而非另起报告）",
+      "verdict": "PASS",
+      "note": "completeAssignment 对既有报告 fail-closed 拒绝重复创建，修正走生产域 upsert 通道"
+    },
+    {
+      "phase": "P1-QC",
+      "step": "A链：SS 船样寄送 + 客户确认 approved",
+      "call": "fabricShipmentSampleService.register→ship→confirm",
+      "returned": {
+        "eligible": true,
+        "missingGates": []
+      },
+      "assertion": "DR-014 三条件全部满足 eligible=true（大货QC pass ∥ SS approved ∥ RC 未启用豁免）",
+      "verdict": "PASS"
+    },
+    {
+      "phase": "P1-QC",
+      "step": "B链：成衣 Final 验货 pass",
+      "call": "qcService.createAssignment→start→complete(report=pass)",
+      "returned": {
+        "reportId": "INR__WA3G-MTBAAL9V",
+        "eligible": true
+      },
+      "assertion": "REL-14-A4 单条件满足 eligible=true",
+      "verdict": "PASS"
+    },
+    {
+      "phase": "P1-QC",
+      "step": "A/B 链报告归档可查",
+      "call": "qcService.listReportsByOrder / getReport",
+      "returned": {
+        "A": [
+          {
+            "id": "INR__WA3F-MTBAAL9V",
+            "result": "pass"
+          }
+        ],
+        "B": [
+          {
+            "id": "INR__WA3G-MTBAAL9V",
+            "result": "pass"
+          }
+        ]
+      },
+      "assertion": "两链报告均可按订单检索（A链含 fail→pass 修正留痕，B链 pass）",
+      "verdict": "PASS"
+    },
+    {
+      "phase": "P2-货运",
+      "step": "A链：建运单 Draft",
+      "call": "shipmentMutationService.createShipment(status=Draft)",
+      "returned": {
+        "shipmentNumber": "SH-2026-0010",
+        "lines": 1
+      },
+      "assertion": "运单落库 SH-YYYY-NNNN 自动取号 + C4 建单首装自动带出装运行",
+      "verdict": "PASS"
+    },
+    {
+      "phase": "P2-货运",
+      "step": "A链：Draft 直跳 Shipped（越级）",
+      "call": "shipmentMutationService.updateShipment(Draft→Shipped)",
+      "returned": {
+        "code": "INVALID_TRANSITION",
+        "message": "Shipment cannot transition from 'Draft' to 'Shipped'. Allowed: Booked, Cancelled"
+      },
+      "assertion": "400 INVALID_TRANSITION（线性物流流不可越级）",
+      "verdict": "BLOCK"
+    },
+    {
+      "phase": "P2-货运",
+      "step": "A链：Draft → Booked",
+      "call": "updateShipment(status=Booked)",
+      "assertion": "订舱成功 status=Booked",
+      "verdict": "PASS"
+    },
+    {
+      "phase": "P2-货运",
+      "step": "A链：Booked → Shipped（门禁放行）",
+      "call": "updateShipment(status=Shipped)",
+      "returned": {
+        "status": "Shipped"
+      },
+      "assertion": "DR-014 三条件已过 → 放行 Shipped",
+      "verdict": "PASS"
+    },
+    {
+      "phase": "P2-货运",
+      "step": "A链：物流节点时间轴",
+      "call": "shipmentEvent.findMany",
+      "returned": [
+        "null→Draft",
+        "Draft→Booked",
+        "Booked→Shipped"
+      ],
+      "assertion": "F3 节点事件 append-only 完整（null→Draft→Booked→Shipped）",
+      "verdict": "PASS"
+    },
+    {
+      "phase": "P2-货运",
+      "step": "B链：运单 Draft→Booked→Shipped",
+      "call": "createShipment + updateShipment ×2",
+      "returned": {
+        "shipmentNumber": "SH-2026-0011"
+      },
+      "assertion": "REL-14-A4 Final QC pass → 全链路放行至 Shipped",
+      "verdict": "PASS"
+    },
+    {
+      "phase": "P2-货运",
+      "step": "录入运费 5000 USD",
+      "call": "updateShipment(freightAmount=5000) 后读 OrderProfitSheet",
+      "returned": {
+        "version": 1,
+        "freightCost": 0,
+        "baseline": 0
+      },
+      "assertion": "已落库利润表不被静默改写（version/freightCost 保持原值）",
+      "verdict": "PASS",
+      "note": "验收锚点④：不应看到运费录入后利润表被静默改写"
+    },
+    {
+      "phase": "P2-货运",
+      "step": "海运费 ×2 重估预览",
+      "call": "profitSheetService.reestimateFreightImpact(multiplier=2)",
+      "returned": {
+        "baseline": {
+          "grossProfit": 17800,
+          "grossMargin": 100,
+          "freightCost": 0,
+          "source": "persisted"
+        },
+        "reestimated": {
+          "grossProfit": -53400,
+          "grossMargin": -300,
+          "freightCost": 71200
+        },
+        "deltaProfit": -71200,
+        "advice": "renegotiate"
+      },
+      "assertion": "预览命中受影响订单且 freightCost 翻倍、deltaProfit<0，但利润表仍不落库",
+      "verdict": "PASS",
+      "note": "DR-054-② 只读预览；预览后利润表 version 不变即未写库"
+    },
+    {
+      "phase": "P2-货运",
+      "step": "显式重生成利润表",
+      "call": "profitSheetService.generateOrderProfitSheet（显式调用）",
+      "returned": {
+        "version": 2,
+        "freightCost": 35600
+      },
+      "assertion": "写库只发生在显式生成：version+1 且 freightCost=5000×7.12=35600 CNY",
+      "verdict": "PASS"
+    },
+    {
+      "phase": "P2-货运",
+      "step": "L2：模拟生产完工事件",
+      "call": "publishBusinessEvent(ProductionCompleted) → L2_create_shipment",
+      "returned": {
+        "shipmentNumber": "SHP-WA3-PO-L-MTBAAL9V-20260827165156",
+        "status": "Draft"
+      },
+      "assertion": "自动创建 Draft 发货草稿（不自动订舱/发运）",
+      "verdict": "PASS"
+    },
+    {
+      "phase": "P2-货运",
+      "step": "L2：重复完工事件幂等",
+      "call": "再次 publishBusinessEvent(ProductionCompleted)",
+      "returned": {
+        "shipmentCount": 1
+      },
+      "assertion": "同订单仅一份发货草稿（in-process 幂等 key + 业务层 existing 双保险）",
+      "verdict": "PASS"
+    },
+    {
+      "phase": "P3-报关",
+      "step": "建报关单（关联运单/订单）",
+      "call": "customsService.createDeclaration",
+      "returned": {
+        "declarationNumber": "CD-2026-0003",
+        "shipmentId": "SHP__mtbaalgl7270",
+        "orderId": "WA3G-MTBAAL9V",
+        "shipmentBackfill": "CD-2026-0003"
+      },
+      "assertion": "Draft 落库 CD-YYYY-NNNN 取号 + shipmentId/orderId 引用正确 + C4 关单闭环回填运单报关单号",
+      "verdict": "PASS"
+    },
+    {
+      "phase": "P3-报关",
+      "step": "报关明细行落库",
+      "call": "customsService.getDeclaration（含 lines）",
+      "assertion": "行明细 1 行且 HS 编码 52093900 带出（退税率核算源）",
+      "verdict": "PASS"
+    },
+    {
+      "phase": "P3-报关",
+      "step": "报关状态机 Draft→Submitted→Declared→Inspecting→Released",
+      "call": "transitionDeclarationStatus ×4",
+      "assertion": "全链路流转至 Released",
+      "verdict": "PASS"
+    },
+    {
+      "phase": "P3-报关",
+      "step": "Released 后再流转（终态越权）",
+      "call": "transitionDeclarationStatus(Released→Cancelled)",
+      "returned": "非法报关单状态转换: Released → Cancelled（允许: 无）",
+      "assertion": "400 语义拒绝：非法报关单状态转换（Released 为终态）",
+      "verdict": "BLOCK"
+    },
+    {
+      "phase": "P3-报关",
+      "step": "放行后三方引用互见",
+      "call": "shipment.findUnique + declaration.get",
+      "returned": {
+        "customsDeclarationNumber": "CD-2026-0003",
+        "customsClearanceDate": "2026-08-27"
+      },
+      "assertion": "运单 customsDeclarationNumber=报关单号 且 customsClearanceDate=当日；报关单 shipmentId/orderId 不变",
+      "verdict": "PASS",
+      "note": "验收锚点②：报关单 ↔ 运单 ↔ 订单三方引用互见"
+    },
+    {
+      "phase": "P3-报关",
+      "step": "L10：放行自动生成退税申报草稿",
+      "call": "CustomsCleared → L10_create_tax_refund_draft → createTaxRefundFromDeclaration",
+      "returned": {
+        "refundNumber": "TRA-CD-2026-0003",
+        "status": "Draft",
+        "fxRate": 7.12,
+        "exportAmountFob": 2500,
+        "refundableVat": 2314,
+        "refundAmount": 2314
+      },
+      "assertion": "TaxRefund Draft 生成：refundNumber=TRA-{报关单号} + declarationId/orderId 回链 + FOB2500×7.12×13%≈2314 CNY",
+      "verdict": "PASS",
+      "note": "验收锚点④：不应看到退税草稿未生成"
+    },
+    {
+      "phase": "P3-报关",
+      "step": "退税草稿重复生成拦截（幂等）",
+      "call": "customsService.createTaxRefundFromDeclaration（再次调用）",
+      "returned": "报关单已存在退税申报 TRA-CD-2026-0003，不可重复生成",
+      "assertion": "拒绝重复生成（同一报关单仅一份退税申报）",
+      "verdict": "BLOCK"
+    },
+    {
+      "phase": "P4-单据",
+      "step": "同一运单生成四类单据",
+      "call": "tradeDocumentLifecycleService.generateTradeDocumentsFromShipment",
+      "returned": {
+        "created": [
+          {
+            "id": "TD_1787820718668_npiyxj",
+            "documentNumber": "PL-2026-0004",
+            "type": "PackingList"
+          },
+          {
+            "id": "TD_1787820718682_bqekxa",
+            "documentNumber": "CI-2026-0005",
+            "type": "CommercialInvoice"
+          },
+          {
+            "id": "TD_1787820718689_9ho4oy",
+            "documentNumber": "CO-2026-0004",
+            "type": "CertificateOfOrigin"
+          },
+          {
+            "id": "TD_1787820718698_u3v0do",
+            "documentNumber": "BL-2026-0002",
+            "type": "BillOfLading"
+          }
+        ],
+        "missing": []
+      },
+      "assertion": "箱单/发票/产地证/提单 4 张 Draft 登记（生成即登记 + v1 快照）",
+      "verdict": "PASS",
+      "note": "装配数据完整度 missing=[]"
+    },
+    {
+      "phase": "P4-单据",
+      "step": "重复生成幂等",
+      "call": "generateTradeDocumentsFromShipment（再次调用）",
+      "returned": [
+        {
+          "type": "PackingList",
+          "id": "TD_1787820718668_npiyxj",
+          "documentNumber": "PL-2026-0004",
+          "reason": "EXISTS"
+        },
+        {
+          "type": "CommercialInvoice",
+          "id": "TD_1787820718682_bqekxa",
+          "documentNumber": "CI-2026-0005",
+          "reason": "EXISTS"
+        },
+        {
+          "type": "CertificateOfOrigin",
+          "id": "TD_1787820718689_9ho4oy",
+          "documentNumber": "CO-2026-0004",
+          "reason": "EXISTS"
+        },
+        {
+          "type": "BillOfLading",
+          "id": "TD_1787820718698_u3v0do",
+          "documentNumber": "BL-2026-0002",
+          "reason": "EXISTS"
+        }
+      ],
+      "assertion": "同 shipmentId+type 全部 skipped(EXISTS)，不重复登记",
+      "verdict": "PASS"
+    },
+    {
+      "phase": "P4-单据",
+      "step": "单据字段自动带出（无空白关键字段）",
+      "call": "tradeDocument.findUnique ×4",
+      "returned": "[{\"type\":\"PackingList\",\"no\":\"PL-2026-0004\",\"consignee\":\"WA3 Walkthrough Customer AB\",\"currency\":\"USD\",\"totalAmount\":2500,\"orderId\":\"WA3G-MTBAAL9V\",\"shipmentId\":\"SHP__mtbaalgl7270\"},{\"type\":\"CommercialInvoice\",\"no\":\"CI-2026-0005\",\"consignee\":\"WA3 Walkthrough Customer AB\",\"currency\":\"USD\",\"totalAmount\":2500,\"orderId\":\"WA3G-MTBAAL9V\",\"shipmentId\":\"SHP__mtbaalgl7270\"},{\"type\":\"CertificateOfOrigin\",\"no\":\"CO-2026-0004\",\"consignee\":\"WA3 Walkthrough Customer AB\",\"currency\":\"USD\",\"totalAmount\":2500,\"orderId\":\"WA3G-MTBAAL9V\",\"shipmentId\":\"SHP__mtbaalgl7270\"},{\"type\":\"BillOfLading\",\"no\":\"BL-2026-0002\",\"c…(截断)",
+      "assertion": "四张单据 orderId/shipmentId/consignee/currency=USD/totalAmount=2500 全部自动带出，无需手工重录",
+      "verdict": "PASS",
+      "note": "三否决项③：不跳系统手工——字段从订单/运单/报关单自动带出"
+    },
+    {
+      "phase": "P4-单据",
+      "step": "v1 版本快照（documentSet 冻结）",
+      "call": "documentVersion.findFirst ×4",
+      "assertion": "四张单据 v1 快照均含 documentSet 装配 JSON（渲染数据源）",
+      "verdict": "PASS"
+    },
+    {
+      "phase": "P4-单据",
+      "step": "四类单据 HTML 渲染 + 无模板变量残留",
+      "call": "renderTradeDocumentServerHtml ×4 + 残留扫描 {var}/{{var}}",
+      "returned": [
+        {
+          "type": "PackingList",
+          "residue": []
+        },
+        {
+          "type": "CommercialInvoice",
+          "residue": []
+        },
+        {
+          "type": "CertificateOfOrigin",
+          "residue": []
+        },
+        {
+          "type": "BillOfLading",
+          "residue": []
+        }
+      ],
+      "assertion": "4/4 渲染成功且零 {xxx} 残留（残留即死胡同）",
+      "verdict": "PASS",
+      "note": "验收锚点③：PDF/单据内无未替换模板变量"
+    },
+    {
+      "phase": "P4-单据",
+      "step": "旁证：InspectionCert 服务端渲染路径",
+      "call": "renderTradeDocumentServerHtml(InspectionCert)",
+      "assertion": "返回 null = 服务端模板未注册（registry 待 B6+ 迁移），单据生成走前端渲染兜底——登记为架构缺口而非本卡死胡同",
+      "verdict": "BLOCK",
+      "note": "PL/CI/CO/BL 已注册服务端模板；InspectionCert/PhytosanitaryCert/Other 未注册"
+    },
+    {
+      "phase": "P4-单据",
+      "step": "箱单 PDF 生成 + 落盘归档",
+      "call": "generateTradeDocumentFile(PackingList)",
+      "returned": {
+        "fileName": "PL-2026-0004-v1.pdf",
+        "fileSize": 230821,
+        "filePath": "trade-documents/TD_1787820718668_npiyxj-PL-2026-0004-v1.pdf",
+        "textResidue": [],
+        "textHit": "运单号入 PDF"
+      },
+      "assertion": "PDF 落盘 %PDF 魔数正确、>1KB、filePath 回写、提取文本零模板残留",
+      "verdict": "PASS"
+    },
+    {
+      "phase": "P4-单据",
+      "step": "GRS TC 三段链登记 + 一键校验",
+      "call": "tcCertificateService.createTc ×3 + verifyChain",
+      "returned": {
+        "verdict": "complete",
+        "byStage": {
+          "materialKg": 1000,
+          "factoryKg": 950,
+          "ourKg": 900
+        },
+        "missingStages": []
+      },
+      "assertion": "原料1000≥工厂950≥我方900、三段齐、未过期 → verdict=complete",
+      "verdict": "PASS",
+      "note": "TC 证书为订单维度 GRS 监管链（TcCertificate 独立模型），非 TradeDocument 类型——任务卡「TC 证书」按系统真源对齐此域"
+    },
+    {
+      "phase": "P4-单据",
+      "step": "TC 证书编号重复拦截",
+      "call": "tcCertificateService.createTc（重复 tcNo）",
+      "returned": {
+        "code": "TC_NO_DUP",
+        "message": "证书编号 WA3TC-A-MTBAAL9V 已存在",
+        "status": 409
+      },
+      "assertion": "409 TC_NO_DUP（证书编号唯一）",
+      "verdict": "BLOCK"
+    }
+  ]
+}

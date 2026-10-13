@@ -1,0 +1,2919 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index 8743218..1d05e3e 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -6070,6 +6070,7 @@ dependencies = [
+  "openbitfun-app-server-client",
+  "openbitfun-app-server-protocol",
+  "openbitfun-core",
++ "openbitfun-events",
+  "openbitfun-product-domains",
+  "openbitfun-runtime-ports",
+  "serde",
+diff --git a/src/apps/server/Cargo.toml b/src/apps/server/Cargo.toml
+index 4d63af3..6a67250 100644
+--- a/src/apps/server/Cargo.toml
++++ b/src/apps/server/Cargo.toml
+@@ -15,7 +15,7 @@ openbitfun-core = { path = "../../crates/assembly/core", features = ["product-fu
+ # App-server surface: an in-process JSON-RPC server/client pair over an
+ # in-memory channel transport. The websocket handler routes agent kernel RPCs
+ # through this client so agent interfaces uniformly go through app-server.
+-openbitfun-app-server = { path = "../../crates/interfaces/app-server" }
++openbitfun-app-server = { path = "../../crates/interfaces/app-server", features = ["bambook-host"] }
+ openbitfun-agent-runtime = { path = "../../crates/execution/agent-runtime", features = ["agent-runtime"] }
+ openbitfun-events = { path = "../../crates/contracts/events" }
+ 
+diff --git a/src/apps/server/src/app_server.rs b/src/apps/server/src/app_server.rs
+index a3df797..d5b8d75 100644
+--- a/src/apps/server/src/app_server.rs
++++ b/src/apps/server/src/app_server.rs
+@@ -33,6 +33,8 @@ pub(crate) fn build(
+     product_search: Arc<openbitfun_core::product_runtime::CoreAgentRuntimeCompatibility>,
+ ) -> OpenBitFunAppServer {
+     let app_runtime =
+-        OpenBitFunAppRuntime::new(runtime, event_source).with_product_search(product_search);
++        OpenBitFunAppRuntime::new(runtime, event_source)
++            .with_bambook_compatibility(product_search.clone())
++            .with_product_search(product_search);
+     OpenBitFunAppServer::new(app_runtime)
+ }
+diff --git a/src/apps/server/src/main.rs b/src/apps/server/src/main.rs
+index 0fc1821..af83259 100644
+--- a/src/apps/server/src/main.rs
++++ b/src/apps/server/src/main.rs
+@@ -87,10 +87,16 @@ async fn health_check() -> Json<HealthResponse> {
+     })
+ }
+ 
++// ACP 0.12.1 recursively Debug-formats already formatted handler-chain strings.
++// Deep chains can expand exponentially on WARN (incoming_actor.rs). Suppress
++// only that module's expensive diagnostic path; RPC errors and other host
++// warnings remain intact. Keep the resource guard: this is not a heap quota.
++const LOCAL_LOG_FILTER: &str = "info,agent_client_protocol::jsonrpc::incoming_actor=error";
++
+ #[tokio::main]
+ async fn main() -> Result<()> {
+     tracing_subscriber::fmt()
+-        .with_max_level(tracing::Level::INFO)
++        .with_env_filter(tracing_subscriber::EnvFilter::new(LOCAL_LOG_FILTER))
+         .init();
+ 
+     tracing::info!("OpenBitFun Server v{}", env!("CARGO_PKG_VERSION"));
+@@ -142,7 +148,9 @@ async fn main() -> Result<()> {
+             server_state.scheduler.clone(),
+         ),
+     );
+-    let openbitfun_app_server = app_server::build(agent_runtime, event_source, product_search);
++    let management = Arc::new(openbitfun_app_server::AppManagementService::load_for_local_host(None).await?);
++    let openbitfun_app_server = app_server::build(agent_runtime, event_source, product_search)
++        .with_management(management);
+ 
+     tracing::info!(
+         "App-server ready; each WebSocket connection drives one in-process serve over native JSON-RPC"
+@@ -278,6 +286,18 @@ pub(crate) fn normalize_browser_origin(value: &str) -> Result<String> {
+ mod tests {
+     use super::*;
+ 
++    #[test]
++    fn unsafe_acp_diagnostics_are_filtered_without_hiding_host_warnings() {
++        let subscriber = tracing_subscriber::fmt()
++            .with_env_filter(tracing_subscriber::EnvFilter::new(LOCAL_LOG_FILTER))
++            .with_writer(std::io::sink).finish();
++        tracing::subscriber::with_default(subscriber, || {
++            assert!(!tracing::enabled!(target: "agent_client_protocol::jsonrpc::incoming_actor", tracing::Level::WARN));
++            assert!(tracing::enabled!(target: "agent_client_protocol::jsonrpc::incoming_actor", tracing::Level::ERROR));
++            assert!(tracing::enabled!(target: "openbitfun_server::routes::websocket", tracing::Level::WARN));
++        });
++    }
++
+     #[test]
+     fn browser_origins_are_normalized_for_exact_matching() {
+         assert_eq!(
+diff --git a/src/apps/server/src/routes/websocket.rs b/src/apps/server/src/routes/websocket.rs
+index dde3a33..0f0cc20 100644
+--- a/src/apps/server/src/routes/websocket.rs
++++ b/src/apps/server/src/routes/websocket.rs
+@@ -85,8 +85,9 @@ fn browser_origin_allowed(headers: &HeaderMap, state: &AppState) -> bool {
+ /// streams. The task ends when the WS transport closes.
+ async fn handle_socket(socket: WebSocket, openbitfun_app_server: OpenBitFunAppServer) {
+     tracing::info!("WebSocket connection established");
+-    let lines = super::ws_transport::ws_lines(socket);
+-    let result = openbitfun_app_server.serve(lines).await;
++    let disconnect = std::sync::Arc::new(openbitfun_app_server::AppServerDisconnect::default());
++    let lines = super::ws_transport::ws_lines(socket, disconnect.clone());
++    let result = openbitfun_app_server.with_disconnect(disconnect).serve(lines).await;
+     match &result {
+         Ok(()) => tracing::info!("WebSocket app-server connection ended cleanly"),
+         Err(error) => tracing::warn!(
+diff --git a/src/apps/server/src/routes/ws_transport.rs b/src/apps/server/src/routes/ws_transport.rs
+index 6ce6c5a..1aec368 100644
+--- a/src/apps/server/src/routes/ws_transport.rs
++++ b/src/apps/server/src/routes/ws_transport.rs
+@@ -15,7 +15,9 @@
+ 
+ use std::io;
+ use std::pin::Pin;
++use std::sync::Arc;
+ use std::task::{Context, Poll};
++use openbitfun_app_server::AppServerDisconnect;
+ 
+ use agent_client_protocol::Lines;
+ use axum::extract::ws::{Message, WebSocket};
+@@ -29,9 +31,9 @@ use futures_util::{SinkExt, StreamExt};
+ /// The WebSocket is split; the outgoing half becomes the `Lines` sink (one
+ /// `String` per WS text frame), the incoming half becomes the stream (text
+ /// frames only; binary/control frames surface as a stream end or `io::Error`).
+-pub(crate) fn ws_lines(socket: WebSocket) -> Lines<WSSink, WSStream> {
++pub(crate) fn ws_lines(socket: WebSocket, disconnect: Arc<AppServerDisconnect>) -> Lines<WSSink, WSStream> {
+     let (sink, stream) = socket.split();
+-    Lines::new(WSSink { sink }, WSStream { stream })
++    Lines::new(WSSink { sink }, WSStream { stream, disconnect })
+ }
+ 
+ /// Outgoing adapter: `futures::Sink<String, Error = io::Error>` -> axum
+@@ -78,32 +80,72 @@ impl Sink<String> for WSSink {
+ /// Incoming adapter: `futures::Stream<Item = io::Result<String>>` from axum
+ /// `Message::Text`. Binary frames surface as `io::Error`; control frames close
+ /// the stream (axum handles ping/pong internally).
+-pub(crate) struct WSStream {
+-    stream: SplitStream<WebSocket>,
++pub(crate) struct WSStream<S = SplitStream<WebSocket>> {
++    stream: S,
++    disconnect: Arc<AppServerDisconnect>,
+ }
+ 
+-impl Unpin for WSStream {}
++impl<S> Drop for WSStream<S> {
++    fn drop(&mut self) { self.disconnect.signal(); }
++}
++
++impl<S: Unpin> Unpin for WSStream<S> {}
+ 
+-impl Stream for WSStream {
++impl<S: Stream<Item = Result<Message, axum::Error>> + Unpin> Stream for WSStream<S> {
+     type Item = io::Result<String>;
+ 
+     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+         let this = self.get_mut();
+-        match Stream::poll_next(Pin::new(&mut this.stream), cx) {
+-            Poll::Ready(None) => Poll::Ready(None),
+-            Poll::Ready(Some(Err(_))) => Poll::Ready(Some(Err(io::Error::new(
+-                io::ErrorKind::ConnectionAborted,
+-                "ws recv failed",
+-            )))),
+-            Poll::Ready(Some(Ok(Message::Text(text)))) => Poll::Ready(Some(Ok(text.to_string()))),
+-            Poll::Ready(Some(Ok(Message::Binary(_)))) => Poll::Ready(Some(Err(io::Error::new(
+-                io::ErrorKind::InvalidData,
+-                "binary ws frames not supported",
+-            )))),
+-            Poll::Ready(Some(Ok(Message::Ping(_) | Message::Pong(_) | Message::Close(_)))) => {
+-                Poll::Ready(None)
++        loop {
++            match Stream::poll_next(Pin::new(&mut this.stream), cx) {
++                Poll::Ready(None) | Poll::Ready(Some(Ok(Message::Close(_)))) => {
++                    this.disconnect.signal();
++                    return Poll::Ready(None);
++                }
++                Poll::Ready(Some(Err(_))) => {
++                    this.disconnect.signal();
++                    return Poll::Ready(Some(Err(io::Error::new(io::ErrorKind::ConnectionAborted, "ws recv failed"))));
++                }
++                Poll::Ready(Some(Ok(Message::Text(text)))) => return Poll::Ready(Some(Ok(text.to_string()))),
++                Poll::Ready(Some(Ok(Message::Binary(_)))) => {
++                    this.disconnect.signal();
++                    return Poll::Ready(Some(Err(io::Error::new(io::ErrorKind::InvalidData, "binary ws frames not supported"))));
++                }
++                // Heartbeats are not disconnects. Keep polling for an application frame.
++                Poll::Ready(Some(Ok(Message::Ping(_) | Message::Pong(_)))) => continue,
++                Poll::Pending => return Poll::Pending,
+             }
+-            Poll::Pending => Poll::Pending,
+         }
+     }
+ }
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    fn stream(messages: Vec<Result<Message, axum::Error>>, disconnect: Arc<AppServerDisconnect>)
++        -> WSStream<impl Stream<Item = Result<Message, axum::Error>> + Unpin> {
++        WSStream { stream: futures::stream::iter(messages), disconnect }
++    }
++
++    #[tokio::test]
++    async fn eof_close_and_invalid_frames_signal_disconnect() {
++        for messages in [vec![], vec![Ok(Message::Close(None))], vec![Ok(Message::Binary(vec![1].into()))],
++            vec![Err(axum::Error::new(io::Error::other("fixture")))]] {
++            let disconnect = Arc::new(AppServerDisconnect::default());
++            let mut stream = stream(messages, disconnect.clone());
++            let _ = stream.next().await;
++            assert!(disconnect.is_signaled());
++        }
++    }
++
++    #[tokio::test]
++    async fn heartbeats_do_not_close_the_application_stream() {
++        let disconnect = Arc::new(AppServerDisconnect::default());
++        let mut stream = stream(vec![Ok(Message::Ping(vec![].into())), Ok(Message::Pong(vec![].into())),
++            Ok(Message::Text("fixture".into()))], disconnect.clone());
++        assert_eq!(stream.next().await.unwrap().unwrap(), "fixture");
++        assert!(!disconnect.is_signaled());
++        drop(stream);
++        assert!(disconnect.is_signaled());
++    }
++}
+diff --git a/src/crates/interfaces/app-server/Cargo.toml b/src/crates/interfaces/app-server/Cargo.toml
+index e5a4ac5..ff2978f 100644
+--- a/src/crates/interfaces/app-server/Cargo.toml
++++ b/src/crates/interfaces/app-server/Cargo.toml
+@@ -16,6 +16,7 @@ openbitfun-app-server-protocol = { path = "../app-server-protocol" }
+ # protocol surface must not inherit the broad openbitfun-core/product-full union.
+ openbitfun-core = { path = "../../assembly/core", features = ["external-sources", "git", "i18n-runtime", "remote-connect", "web-tools"] }
+ openbitfun-agent-runtime = { path = "../../execution/agent-runtime", features = ["agent-runtime"] }
++openbitfun-events = { path = "../../contracts/events" }
+ openbitfun-product-domains = { path = "../../contracts/product-domains", features = ["external-sources"] }
+ openbitfun-runtime-ports = { path = "../../contracts/runtime-ports", features = ["agent-api", "product-search"] }
+ dunce = { workspace = true }
+@@ -29,6 +30,7 @@ url = { workspace = true }
+ 
+ [features]
+ default = []
++bambook-host = ["openbitfun-core/subscription-auth", "openbitfun-core/workspace-runtime"]
+ # Compatibility feature for existing callers. TypeScript schemas are owned and
+ # exported by `openbitfun-app-server-protocol`.
+ ts = ["openbitfun-app-server-protocol/ts"]
+diff --git a/src/crates/interfaces/app-server/src/agent.rs b/src/crates/interfaces/app-server/src/agent.rs
+index 2ac32fc..3ca75f8 100644
+--- a/src/crates/interfaces/app-server/src/agent.rs
++++ b/src/crates/interfaces/app-server/src/agent.rs
+@@ -26,6 +26,8 @@ pub struct OpenBitFunAppRuntime {
+     event_source: AgentEventSource,
+     context_reload: Option<Arc<dyn AgentContextReloadPort>>,
+     product_search: Option<Arc<dyn ProductSearchPort>>,
++    #[cfg(feature = "bambook-host")]
++    pub(crate) bambook_compatibility: Option<Arc<openbitfun_core::product_runtime::CoreAgentRuntimeCompatibility>>,
+ }
+ 
+ impl std::fmt::Debug for OpenBitFunAppRuntime {
+@@ -47,9 +49,17 @@ impl OpenBitFunAppRuntime {
+             event_source,
+             context_reload: None,
+             product_search: None,
++            #[cfg(feature = "bambook-host")]
++            bambook_compatibility: None,
+         }
+     }
+ 
++    #[cfg(feature = "bambook-host")]
++    pub fn with_bambook_compatibility(mut self, owner: Arc<openbitfun_core::product_runtime::CoreAgentRuntimeCompatibility>) -> Self {
++        self.bambook_compatibility = Some(owner);
++        self
++    }
++
+     pub fn with_context_reload(mut self, context_reload: Arc<dyn AgentContextReloadPort>) -> Self {
+         self.context_reload = Some(context_reload);
+         self
+diff --git a/src/crates/interfaces/app-server/src/server.rs b/src/crates/interfaces/app-server/src/server.rs
+index c73e20f..79c3bec 100644
+--- a/src/crates/interfaces/app-server/src/server.rs
++++ b/src/crates/interfaces/app-server/src/server.rs
+@@ -4,6 +4,8 @@
+ //! module owns the server lifecycle, handler integration order, transport
+ //! connection, and event forwarding.
+ 
++#[cfg(feature = "bambook-host")]
++mod bambook_host;
+ mod event_forwarder;
+ mod fallback;
+ mod handlers;
+@@ -187,7 +189,7 @@ impl OpenBitFunAppServer {
+             .with_connection_builder(handlers::git::builder())
+             .with_connection_builder(handlers::config::builder())
+             .with_connection_builder(handlers::i18n::builder())
+-            .with_connection_builder(fallback::builder())
++            .with_connection_builder(fallback::builder(runtime.clone()))
+             .connect_with(transport, async move |cx: ConnectionTo<AppClient>| {
+                 event_forwarder::run(runtime, management, cx, event_state, disconnect).await
+             })
+diff --git a/src/crates/interfaces/app-server/src/server/event_forwarder.rs b/src/crates/interfaces/app-server/src/server/event_forwarder.rs
+index 20a1d09..f51d4b6 100644
+--- a/src/crates/interfaces/app-server/src/server/event_forwarder.rs
++++ b/src/crates/interfaces/app-server/src/server/event_forwarder.rs
+@@ -82,6 +82,14 @@ pub(super) async fn run(
+             }
+             recv = rx.recv() => match recv {
+                 Ok(envelope) => {
++                    // Keep typed/cursor delivery intact, and use the shared product
++                    // projector for the existing desktop-derived browser UI.
++                    #[cfg(feature = "bambook-host")]
++                    if let Some(projected) = openbitfun_events::project_agentic_frontend_event(envelope.event.clone()) {
++                        let _ = cx.send_notification(crate::schema::FrontendEventNotification {
++                            event: projected.event_name, payload: projected.payload,
++                        });
++                    }
+                     let notification = SessionEventNotification {
+                         cursor: event_state.next_cursor(EventStream::Agent),
+                         event: envelope,
+diff --git a/src/crates/interfaces/app-server/src/server/fallback.rs b/src/crates/interfaces/app-server/src/server/fallback.rs
+index 0244fad..ca2017c 100644
+--- a/src/crates/interfaces/app-server/src/server/fallback.rs
++++ b/src/crates/interfaces/app-server/src/server/fallback.rs
+@@ -9,7 +9,7 @@ const EXTERNAL_SOURCE_METHOD_MARKERS: &[&str] = &[
+     "external_integration",
+ ];
+ 
+-pub(super) fn builder() -> Builder<AppServer, impl HandleDispatchFrom<AppClient>> {
++pub(super) fn builder(_runtime: std::sync::Arc<crate::agent::OpenBitFunAppRuntime>) -> Builder<AppServer, impl HandleDispatchFrom<AppClient>> {
+     AppServer
+         .builder()
+         .name("dispatch fallback")
+@@ -19,6 +19,26 @@ pub(super) fn builder() -> Builder<AppServer, impl HandleDispatchFrom<AppClient>
+                     Dispatch::Request(request, _) => request.method().to_string(),
+                     _ => String::new(),
+                 };
++                #[cfg(feature = "bambook-host")]
++                if super::bambook_host::supports(&method) {
++                    if let Dispatch::Request(request, responder) = message {
++                        let result = if matches!(method.as_str(), "restore_session_view" | "load_persisted_session_metadata" | "ensure_coordinator_session") {
++                            super::bambook_host::session_read(&_runtime, &method, request.params().clone()).await
++                        } else if method == "list_persisted_sessions_page" {
++                            super::bambook_host::session_page(&_runtime, request.params().clone()).await
++                        } else if method == "manage_dialog_queue" {
++                            super::bambook_host::dialog_queue(&_runtime, request.params().clone()).await
++                        } else if method == "bambook/createSession" {
++                            super::bambook_host::create_session(&_runtime, request.params().clone()).await
++                        } else if method == "bambook/updateSessionModel" {
++                            super::bambook_host::update_model(&_runtime, request.params().clone()).await
++                        } else {
++                            super::bambook_host::handle(&method, request.params().clone()).await
++                        };
++                        return responder.respond_with_result(result);
++                    }
++                    return Ok(());
++                }
+                 let error = if EXTERNAL_SOURCE_METHOD_MARKERS
+                     .iter()
+                     .any(|marker| method.contains(marker))
+diff --git a/src/crates/interfaces/app-server/tests/agent_kernel.rs b/src/crates/interfaces/app-server/tests/agent_kernel.rs
+index bc7f365..30bb09d 100644
+--- a/src/crates/interfaces/app-server/tests/agent_kernel.rs
++++ b/src/crates/interfaces/app-server/tests/agent_kernel.rs
+@@ -1733,6 +1733,62 @@ struct UnknownAgentRequest;
+ )]
+ struct UnknownAgentResponse;
+ 
++#[cfg(feature = "bambook-host")]
++mod model_discovery_tests {
++    use super::*;
++    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, agent_client_protocol::JsonRpcRequest)]
++    #[request(method = "list_ai_models_by_config", response = DiscoveryResponse)]
++    struct DiscoveryRequest(serde_json::Value);
++    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, agent_client_protocol::JsonRpcResponse)]
++    struct DiscoveryResponse(Vec<serde_json::Value>);
++
++    #[tokio::test(flavor = "current_thread")]
++    async fn transient_model_discovery_uses_real_owner_and_redacts_failures() {
++        // This test must never initialize configuration in the employee namespace.
++        assert_eq!(std::env::var("OPENBITFUN_E2E_STORAGE_GUARD").as_deref(), Ok("1"));
++        assert!(std::env::var_os("OPENBITFUN_E2E_HOME").is_some());
++        assert!(std::env::var_os("OPENBITFUN_E2E_USER_ROOT").is_some());
++        openbitfun_core::service::config::initialize_global_config().await.unwrap();
++        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
++        let port = listener.local_addr().unwrap().port();
++        let fixture = std::thread::spawn(move || {
++            use std::io::{Read, Write};
++            for (status, body) in [
++                ("200 OK", r#"{"data":[{"id":"offline-fixture-model"}]}"#),
++                ("401 Unauthorized", "dummy-sensitive-provider-response"),
++            ] {
++                let (mut socket, _) = listener.accept().unwrap();
++                socket.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
++                let mut request = [0; 8192];
++                let count = socket.read(&mut request).unwrap();
++                assert!(String::from_utf8_lossy(&request[..count]).starts_with("GET /v1/models"));
++                write!(socket, "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
++            }
++        });
++        LocalSet::new().run_until(async {
++            let (server_transport, client_transport) = transport::in_memory_channel_pair();
++            spawn_server(build_app_runtime(), server_transport);
++            AppClient.builder().connect_with(client_transport, async |cx: ConnectionTo<AppServer>| {
++                let invalid = recv(cx.send_request(DiscoveryRequest(serde_json::json!({})))).await.unwrap_err();
++                assert_eq!(invalid.code, ErrorCode::InvalidParams);
++                let config = serde_json::json!({"config": {
++                    "id": "offline-discovery", "name": "Offline discovery", "provider": "openai",
++                    "model_name": "model-discovery", "base_url": format!("http://127.0.0.1:{port}/v1"),
++                    "api_key": "not-a-secret-test-fixture", "enabled": true, "category": "general_chat",
++                    "capabilities": ["text_chat"], "context_window": 128000, "metadata": {}, "auth": {"type":"api_key"}
++                }});
++                let response = recv(cx.send_request(DiscoveryRequest(config.clone()))).await?;
++                assert_eq!(response.0[0]["id"], "offline-fixture-model");
++                let failure = recv(cx.send_request(DiscoveryRequest(config))).await.unwrap_err();
++                assert_eq!(failure.data.as_ref().unwrap()["reason"], "model_discovery_failed");
++                assert!(!serde_json::to_string(&failure).unwrap().contains("dummy-sensitive-provider-response"));
++                Ok(())
++            }).await.unwrap();
++        }).await;
++        fixture.join().unwrap();
++    }
++}
++
+ #[allow(dead_code)]
+ fn _document_run_response_shape_in_tests(_r: RunResponse) {}
+ /// The Server Host drives the app-server through the real
+diff --git a/src/web-ui/index.html b/src/web-ui/index.html
+index f13e894..6f22a90 100644
+--- a/src/web-ui/index.html
++++ b/src/web-ui/index.html
+@@ -2,11 +2,10 @@
+ <html lang="zh-CN">
+   <head>
+     <meta charset="UTF-8" />
+-    <link rel="icon" type="image/png" href="/brand/openbitfun-app-icon.png" />
+-    <link rel="icon" type="image/png" sizes="16x16" href="/brand/openbitfun-app-icon-16.png" />
+-    <link rel="icon" type="image/png" sizes="32x32" href="/brand/openbitfun-app-icon-32.png" />
++    <link rel="icon" type="image/png" sizes="32x32" data-bambook-icon="png" href="/brand/bambook-v3-favicon-32.png?v=4" />
++    <link rel="icon" type="image/svg+xml" sizes="any" data-bambook-icon="svg" href="/brand/bambook-v3-favicon.svg?v=4" />
+     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+-    <title>OpenBitFun - AI Code Assistant</title>
++    <title>Bambook AI 助手</title>
+     <!-- OPENBITFUN_STARTUP_I18N_START -->
+     <!-- This block is generated by scripts/generate-i18n-contract.mjs from Web UI common locale resources. -->
+     <script id="openbitfun-startup-i18n" type="application/json">
+@@ -150,6 +149,8 @@
+       }
+ 
+       #openbitfun-startup-overlay {
++        /* Bambook owns connection feedback; never paint a second launch show. */
++        visibility: hidden;
+         position: fixed;
+         inset: 0;
+         z-index: 9999;
+@@ -240,8 +241,8 @@
+         height: 120px;
+         background-color: var(--openbitfun-color-content-on-light);
+         transform: translate(-50%, -50%);
+-        -webkit-mask: url('/brand/openbitfun-mark.svg') center / contain no-repeat;
+-        mask: url('/brand/openbitfun-mark.svg') center / contain no-repeat;
++        -webkit-mask: url('/brand/bambook-v3-mark.svg') center / contain no-repeat;
++        mask: url('/brand/bambook-v3-mark.svg') center / contain no-repeat;
+         user-select: none;
+         -webkit-user-select: none;
+       }
+@@ -366,6 +367,7 @@
+   </head>
+ 
+   <body>
++    <script type="module" src="/src/bambookPreload.tsx"></script>
+     <script type="module" src="/src/main.tsx"></script>
+     <div id="root"></div>
+     <div id="openbitfun-startup-overlay">
+diff --git a/src/web-ui/src/app/App.tsx b/src/web-ui/src/app/App.tsx
+index 096bb51..f859b86 100644
+--- a/src/web-ui/src/app/App.tsx
++++ b/src/web-ui/src/app/App.tsx
+@@ -1,4 +1,5 @@
+ import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
++import { BAMBOOK_PRODUCT } from '@/bambookProduct';
+ import { importWithRetry } from '@/shared/utils/moduleLoader';
+ import { lazy, Suspense, useEffect, useCallback, useLayoutEffect, useState, useRef } from 'react';
+ import { ChatProvider } from '../infrastructure/contexts/ChatProvider';
+@@ -95,7 +96,7 @@ const LazyGlobalSearchRoot = lazyWithRecovery(() => import('./global-search/Glob
+  * - Header is always present; elements toggle by state
+  */
+ // Minimum time (ms) the splash is shown, so the handoff remains intentional without delaying a ready shell.
+-const MIN_SPLASH_MS = 650;
++const MIN_SPLASH_MS = BAMBOOK_PRODUCT ? 0 : 650;
+ // Keep hidden tray setup out of the first post-handoff interaction window.
+ // Close-to-tray initializes it on demand if the user closes earlier.
+ const DEFERRED_TRAY_INIT_DELAY_MS = 1500;
+@@ -982,9 +983,9 @@ function App() {
+             <RealtimeVoiceCallProvider>
+               <ToolbarModeProvider>
+               {/* One shell-owned command/search surface for every scene and nav mode. */}
+-              <Suspense fallback={null}>
++              {!BAMBOOK_PRODUCT && <Suspense fallback={null}>
+                 <LazyGlobalSearchRoot />
+-              </Suspense>
++              </Suspense>}
+ 
+               {/* Unified app layout with startup/workspace modes */}
+               <Suspense fallback={null}>
+diff --git a/src/web-ui/src/app/components/AboutDialog/AboutDialog.scss b/src/web-ui/src/app/components/AboutDialog/AboutDialog.scss
+index 214f6a0..8ccb6b6 100644
+--- a/src/web-ui/src/app/components/AboutDialog/AboutDialog.scss
++++ b/src/web-ui/src/app/components/AboutDialog/AboutDialog.scss
+@@ -37,17 +37,8 @@
+   min-width: 0;
+ }
+ 
+-.openbitfun-about-dialog__brand-statement {
+-  margin: 0;
+-  color: var(--openbitfun-color-content-muted);
+-  font-family: var(--openbitfun-type-label-sm-font-family);
+-  font-size: var(--openbitfun-type-meta-font-size);
+-  font-weight: var(--openbitfun-type-body-sm-font-weight);
+-  line-height: var(--openbitfun-type-modifier-leading-loose-line-height);
+-  letter-spacing: var(--openbitfun-type-modifier-tracking-expanded-letter-spacing);
+-  text-align: center;
+-  white-space: pre-line;
+-}
++/* The caption uses the exact shared Icon Lab wordmark metrics. */
++.openbitfun-about-dialog__brand-statement { margin: 0; }
+ 
+ .openbitfun-about-dialog__artwork {
+   width: 100%;
+diff --git a/src/web-ui/src/app/components/AboutDialog/AboutDialog.tsx b/src/web-ui/src/app/components/AboutDialog/AboutDialog.tsx
+index 519994f..186f5a4 100644
+--- a/src/web-ui/src/app/components/AboutDialog/AboutDialog.tsx
++++ b/src/web-ui/src/app/components/AboutDialog/AboutDialog.tsx
+@@ -28,6 +28,7 @@ import { createLogger } from '@/shared/utils/logger';
+ import { systemAPI } from '@/infrastructure/api';
+ import { isTauriRuntime } from '@/infrastructure/update/tauriEnv';
+ import { OpenBitFunBrandMotion } from '@openbitfun/ui/brand';
++import { BambookBrandCaption } from '@bambook/brand';
+ import './AboutDialog.scss';
+ 
+ const log = createLogger('AboutDialog');
+@@ -112,7 +113,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
+         onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}
+         size="xl"
+         className="openbitfun-about-dialog"
+-        aria-label={t('about.dialogTitle')}
++        aria-label="Bambook Agent"
+         data-testid="about-dialog-modal"
+       >
+         <DialogClose className="openbitfun-about-dialog__close" />
+@@ -132,9 +133,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
+                 <div className="openbitfun-about-dialog__artwork">
+                   <OpenBitFunBrandMotion className="openbitfun-about-dialog__brand-mark" active={isOpen} />
+                 </div>
+-                <p className="openbitfun-about-dialog__brand-statement">
+-                  {t('about.brandStatement')}
+-                </p>
++                <BambookBrandCaption className="openbitfun-about-dialog__brand-statement" />
+               </div>
+ 
+               <section
+@@ -149,9 +148,9 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
+                     data-openbitfun-component="about-dialog"
+                     data-openbitfun-part="title"
+                   >
+-                    {version.name}
++                    Bambook Agent
+                   </DialogTitle>
+-                  <p className="openbitfun-about-dialog__tagline">{t('about.tagline')}</p>
++                  <p className="openbitfun-about-dialog__tagline">{t('about.tagline')} · Powered by OpenBitFun</p>
+                 </header>
+ 
+                 <FieldGroup className="openbitfun-about-dialog__details" appearance="plain" dividers={false}>
+diff --git a/src/web-ui/src/app/components/NavBar/NavBar.tsx b/src/web-ui/src/app/components/NavBar/NavBar.tsx
+index 861f13d..4acca21 100644
+--- a/src/web-ui/src/app/components/NavBar/NavBar.tsx
++++ b/src/web-ui/src/app/components/NavBar/NavBar.tsx
+@@ -10,6 +10,7 @@
+  */
+ 
+ import React, { useCallback, useMemo, useRef } from 'react';
++import { BAMBOOK_PRODUCT } from '@/bambookProduct';
+ 
+ import { useNavSceneStore } from '../../stores/navSceneStore';
+ import { getSceneNavTitleKey } from '../../scenes/nav-registry';
+@@ -49,7 +50,7 @@ const NavBar: React.FC<NavBarProps> = ({
+   const canGoBack    = showSceneNav && !!navSceneId;
+   const canGoForward = !showSceneNav && !!navSceneId;
+   const titleKey = showSceneNav && navSceneId ? getSceneNavTitleKey(navSceneId) : null;
+-  const title = titleKey ? t(titleKey) : null;
++  const title = BAMBOOK_PRODUCT ? null : titleKey ? t(titleKey) : null;
+   const lastMouseDownTimeRef = useRef<number>(0);
+ 
+   const handleBarMouseDown = useCallback((e: React.MouseEvent) => {
+@@ -113,8 +114,8 @@ const NavBar: React.FC<NavBarProps> = ({
+         </button>
+       </Tooltip>
+ 
+-      {/* Back / Forward */}
+-      <Tooltip content={t('nav.backShortcut')} placement="bottom" followCursor disabled={!canGoBack}>
++      {/* General-purpose IDE history is not part of the employee rail. */}
++      {!BAMBOOK_PRODUCT && <><Tooltip content={t('nav.backShortcut')} placement="bottom" followCursor disabled={!canGoBack}>
+         <button
+           type="button"
+           className={`openbitfun-nav-bar__btn${!canGoBack ? ' is-inactive' : ''}`}
+@@ -140,7 +141,7 @@ const NavBar: React.FC<NavBarProps> = ({
+         >
+           <Icon name="arrow-right" size="sm" />
+         </button>
+-      </Tooltip>
++      </Tooltip></>}
+ 
+       {title && (
+         <OverflowText
+diff --git a/src/web-ui/src/app/components/NavPanel/NavPanel.tsx b/src/web-ui/src/app/components/NavPanel/NavPanel.tsx
+index 07f4403..188141f 100644
+--- a/src/web-ui/src/app/components/NavPanel/NavPanel.tsx
++++ b/src/web-ui/src/app/components/NavPanel/NavPanel.tsx
+@@ -1,127 +1,12 @@
+-/**
+- * NavPanel — navigation sidebar container.
+- *
+- * All scene navigation shares a short paired crossfade/translation for pointer
+- * input. Keyboard and programmatic navigation stay immediate. WorkspaceBody
+- * owns the background material beneath both layers.
+- *
+- * MainNav is always mounted so its state is preserved across transitions.
+- */
+-
+-import React, {
+-  Suspense,
+-  startTransition,
+-  useState,
+-  useEffect,
+-  useRef,
+-} from 'react';
++import BambookNav from './BambookNav';
+ import { useI18n } from '@/infrastructure/i18n';
+-import { useNavSceneStore } from '../../stores/navSceneStore';
+-import { getSceneNav, preloadSceneNav } from '../../scenes/nav-registry';
+-import type { SceneTabId } from '../SceneBar/types';
+-import { NavigationTransitionBoundary } from '@/app/navigation/NavigationTransitionBoundary';
+-import type { InteractionMotion } from '@/shared/utils/motionPreference';
+-import MainNav from './MainNav';
+-import PersistentFooterActions from './components/PersistentFooterActions';
+ import './NavPanel.scss';
+ 
+-interface NavPanelProps {
+-  className?: string;
+-}
+-
+-const NavPanel: React.FC<NavPanelProps> = ({ className = '' }) => {
++/** A single employee conversation rail; no nested upstream product navigation. */
++export default function NavPanel({className = ''}: {className?: string}) {
+   const { t } = useI18n('common');
+-  const showSceneNav = useNavSceneStore(s => s.showSceneNav);
+-  const navSceneId = useNavSceneStore(s => s.navSceneId);
+-  const navigationMotion = useNavSceneStore(s => s.navigationMotion);
+-
+-  // Retain the scene while its layer exits, including when navSceneId clears.
+-  const [mountedSceneId, setMountedSceneId] = useState<SceneTabId | null>(navSceneId);
+-  const [mountedSceneMotion, setMountedSceneMotion] = useState<InteractionMotion>(navigationMotion);
+-  const sceneRequestRef = useRef(0);
+-  useEffect(() => {
+-    const requestId = ++sceneRequestRef.current;
+-    if (!navSceneId) return;
+-
+-    const commit = () => {
+-      if (sceneRequestRef.current !== requestId) return;
+-      // React keeps the currently painted navigation visible if the cached
+-      // lazy component still suspends for a final promise microtask.
+-      startTransition(() => {
+-        setMountedSceneId(navSceneId);
+-        setMountedSceneMotion(navigationMotion);
+-      });
+-    };
+-    void preloadSceneNav(navSceneId).then(commit, commit);
+-  }, [navSceneId, navigationMotion]);
+-
+-  const SceneNavComponent = mountedSceneId ? getSceneNav(mountedSceneId) : null;
+-
+-  const hasMountedSceneNav = showSceneNav && SceneNavComponent !== null;
+-
+-  const contentCls = [
+-    'openbitfun-nav-panel__content',
+-    hasMountedSceneNav && 'is-scene',
+-    (showSceneNav ? mountedSceneMotion : navigationMotion) === 'pointer' && 'has-pointer-motion',
+-  ].filter(Boolean).join(' ');
+-
+-  const sceneCls = [
+-    'openbitfun-nav-panel__layer openbitfun-nav-panel__layer--scene',
+-    hasMountedSceneNav && 'is-active',
+-  ].filter(Boolean).join(' ');
+-
+-  return (
+-    <div
+-      data-openbitfun-component="nav-panel"
+-      data-openbitfun-part="root"
+-      data-openbitfun-state={hasMountedSceneNav ? 'scene' : ''}
+-      data-openbitfun-theme-scope="chrome"
+-      className={`openbitfun-nav-panel ${className}`}
+-      aria-label={t('nav.aria.mainNav')}
+-      data-testid="nav-panel"
+-    >
+-      <div className={contentCls} data-openbitfun-component="nav-panel" data-openbitfun-part="content">
+-
+-        <div
+-          className="openbitfun-nav-panel__layer openbitfun-nav-panel__layer--main"
+-          data-openbitfun-component="nav-panel"
+-          data-openbitfun-part="mainLayer"
+-          data-openbitfun-layer="main"
+-          aria-hidden={hasMountedSceneNav || undefined}
+-          {...(hasMountedSceneNav ? { inert: '' } : {})}
+-        >
+-          <MainNav />
+-        </div>
+-
+-        {SceneNavComponent && (
+-          <div
+-            className={sceneCls}
+-            data-openbitfun-component="nav-panel"
+-            data-openbitfun-part="sceneLayer"
+-            data-openbitfun-layer="scene"
+-            data-openbitfun-state={hasMountedSceneNav ? 'active' : ''}
+-            aria-hidden={!hasMountedSceneNav || undefined}
+-            {...(!hasMountedSceneNav ? { inert: '' } : {})}
+-          >
+-            <Suspense fallback={null}>
+-              <NavigationTransitionBoundary
+-                transitionKey={mountedSceneId ?? 'main'}
+-                motion={showSceneNav && mountedSceneMotion === 'pointer' ? 'pointer' : 'none'}
+-                className="openbitfun-nav-panel__scene-transition"
+-                layerClassName="openbitfun-nav-panel__scene-inner"
+-                data-openbitfun-component="nav-panel"
+-                data-openbitfun-part="sceneContent"
+-              >
+-                <SceneNavComponent />
+-              </NavigationTransitionBoundary>
+-            </Suspense>
+-          </div>
+-        )}
+-
+-      </div>
+-      <PersistentFooterActions />
+-    </div>
+-  );
+-};
+-
+-export default NavPanel;
++  return <nav className={`openbitfun-nav-panel ${className}`} aria-label={t('bambook.navigation')}
++    data-openbitfun-component="nav-panel" data-openbitfun-part="root" data-openbitfun-theme-scope="chrome" data-testid="nav-panel">
++    <BambookNav />
++  </nav>;
++}
+diff --git a/src/web-ui/src/app/components/NavPanel/sections/sessions/SessionsSection.tsx b/src/web-ui/src/app/components/NavPanel/sections/sessions/SessionsSection.tsx
+index bd65f94..2674a77 100644
+--- a/src/web-ui/src/app/components/NavPanel/sections/sessions/SessionsSection.tsx
++++ b/src/web-ui/src/app/components/NavPanel/sections/sessions/SessionsSection.tsx
+@@ -1,4 +1,5 @@
+ import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
++import { loadBambookHistoryPage, type BambookHistoryPosition } from '@/bambookProduct';
+ import { useDeviceDirectory, resolveDeviceName } from '@/infrastructure/account/deviceDirectory';
+ import { requireSessionOwningWorkspaceId } from '@/flow_chat/utils/sessionOrdering';
+ /**
+@@ -54,7 +55,7 @@ import { isDefaultSessionTitle, resolveSessionTitle } from '@/flow_chat/utils/se
+ import { useSessionTitleNumbers } from '@/flow_chat/hooks/useSessionTitleNumbers';
+ import { SessionTitleNumber } from '@/flow_chat/components/SessionTitleNumber';
+ import { useSessionComposerStore } from '@/flow_chat/store/sessionComposerStore';
+-import { getActiveSurfaceId, surfaceScopedKey } from '@/infrastructure/peer-device/deviceSurface';
++import { getActiveSurfaceId, getActiveSurfaceScope, onSurfaceActivated, surfaceScopedKey } from '@/infrastructure/peer-device/deviceSurface';
+ import { isSessionNavRowActive } from './sessionNavSelection';
+ import { isSessionRowPointerTarget } from './sessionOpenPointer';
+ import {
+@@ -202,6 +203,8 @@ interface SessionsSectionProps {
+   workspacePath?: string;
+   isActiveWorkspace?: boolean;
+   showCreateActions?: boolean;
++  /** Employee-facing history keeps rename/export/archive/delete, not IDE utilities. */
++  compactProduct?: boolean;
+   /** Product presentation for assistant-owned sessions. Project sessions use the compact row. */
+   presentation?: AssistantSessionPresentation;
+   /** Prevents startup metadata fetching while the surrounding section is collapsed. */
+@@ -229,10 +232,11 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
+   useWorkspaceViewPreferences = false,
+   workspaceScopes,
+   layout = 'nested',
++  compactProduct = false,
+ }) => {
+   useDeviceDirectory();
+   const { t } = useI18n('common');
+-  useEffect(() => { ensureCronJobCountsListener(); }, []);
++  useEffect(() => { if (!compactProduct) ensureCronJobCountsListener(); }, [compactProduct]);
+   const storedSessionOrdering = useWorkspaceSessionViewStore(state => state.ordering);
+   const storedSessionShow = useWorkspaceSessionViewStore(state => state.show);
+   const storedSessionFilters = useWorkspaceSessionViewStore(state => state.filters);
+@@ -290,6 +294,8 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
+     failedScopeCount: 0,
+   }));
+   const [aggregateReloadRequestId, setAggregateReloadRequestId] = useState(0);
++  const compactPosition = useRef<{ key: string; position: BambookHistoryPosition }>({ key: '', position: { scopeIndex: 0 } });
++  const [compactHasMore, setCompactHasMore] = useState(false);
+   const [openMenuSessionId, setOpenMenuSessionId] = useState<string | null>(null);
+   /** Second level of the session menu: pick what a Markdown export includes. */
+   const [isExportScopeMenu, setIsExportScopeMenu] = useState(false);
+@@ -395,13 +401,15 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
+     });
+   }, [workspaceId]);
+ 
++  const historySurface = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceScope, getActiveSurfaceScope);
+   const workspaceScopesKey = useMemo(
+-    () => workspaceScopes?.map(scope => scope.workspaceId).join('|') ?? '',
+-    [workspaceScopes],
++    () => JSON.stringify([historySurface.epoch, ...(workspaceScopes?.map(scope => scope.workspaceId) ?? [])]),
++    [workspaceScopes, historySurface.epoch],
+   );
+ 
+   useEffect(() => {
+     if (!isVisible || !workspaceScopes?.length) {
++      setCompactHasMore(false);
+       setAggregateLoadState({ isLoading: false, failedScopeCount: 0 });
+       return;
+     }
+@@ -409,6 +417,25 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
+     let cancelled = false;
+     setAggregateLoadState({ isLoading: true, failedScopeCount: 0 });
+ 
++    if (compactProduct) {
++      if (compactPosition.current.key !== workspaceScopesKey) {
++        compactPosition.current = { key: workspaceScopesKey, position: { scopeIndex: 0 } };
++      }
++      void loadBambookHistoryPage(workspaceScopes, compactPosition.current.position,
++        (id, limit, cursor) => flowChatStore.loadSessionMetadataPage(id, limit, cursor, 'bambook_history_page'),
++      ).then(position => {
++        if (cancelled) return;
++        compactPosition.current = { key: workspaceScopesKey, position };
++        setCompactHasMore(position.scopeIndex < workspaceScopes.length);
++        setAggregateLoadState({ isLoading: false, failedScopeCount: 0 });
++      }).catch(error => {
++        if (cancelled) return;
++        log.warn('Failed to load Bambook history page', { error });
++        setAggregateLoadState({ isLoading: false, failedScopeCount: 1 });
++      });
++      return () => { cancelled = true; };
++    }
++
+     const loadAllScopes = async () => {
+       const results = await Promise.allSettled(workspaceScopes.map(async scope => {
+         let cursor: string | undefined;
+@@ -455,9 +482,10 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
+     return () => { cancelled = true; };
+   }, [
+     aggregateReloadRequestId,
++    compactProduct,
+     isVisible,
+     sessionFilters.hideArchived,
+-    workspaceScopes,
++    // Identity/activation changes restart loading; new array references must not advance a page.
+     workspaceScopesKey,
+   ]);
+ 
+@@ -1455,7 +1483,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
+         : null
+     : null;
+ 
+-  if (allTopLevelSessions.length === 0) {
++  if (allTopLevelSessions.length === 0 && !(compactProduct && compactHasMore)) {
+     if (aggregateLoadStatus) {
+       return (
+         <div data-openbitfun-component="sessions-section" data-openbitfun-part="root" className={sessionListClassName}>
+@@ -1514,7 +1542,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
+     );
+   }
+ 
+-  if (topLevelSessions.length === 0) {
++  if (topLevelSessions.length === 0 && !(compactProduct && compactHasMore)) {
+     if (aggregateLoadState.isLoading && aggregateLoadStatus) {
+       return (
+         <div className={sessionListClassName}>
+@@ -1832,7 +1860,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
+                         />
+                       </span>
+                         ) : null}
+-                        {sessionWorkspaceScope && !isChildSession ? (
++                        {!compactProduct && sessionWorkspaceScope && !isChildSession ? (
+                           <OverflowText className="openbitfun-nav-panel__inline-item-workspace-name">
+                             {sessionWorkspaceScope.workspaceName}
+                           </OverflowText>
+@@ -1929,7 +1957,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
+                           >
+                             <span>{t('nav.sessions.rename')}</span>
+                           </MenuItem>
+-                          <MenuItem
++                          {!compactProduct && (<MenuItem
+                             type="button"
+                             leading={<Icon name="duplicate" size="sm" />}
+                             onClick={e => { closeSessionMenu(); void handleCopySessionId(e, session.sessionId); }}
+@@ -1937,8 +1965,8 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
+                             data-session-id={session.sessionId}
+                           >
+                             <span>{t('nav.sessions.copySessionId')}</span>
+-                          </MenuItem>
+-                          <MenuItem
++                          </MenuItem>)}
++                          {!compactProduct && (<MenuItem
+                             type="button"
+                             leading={<Icon glyph={FolderOpen} size="sm" />}
+                             onClick={e => { void handleRevealSessionStorageDirectory(e, session); }}
+@@ -1952,7 +1980,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
+                             data-session-id={session.sessionId}
+                           >
+                             <span>{t('nav.sessions.openStorageDirectory')}</span>
+-                          </MenuItem>
++                          </MenuItem>)}
+                           <MenuItem
+                             type="button"
+                             onClick={e => {
+@@ -1968,7 +1996,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
+                           >
+                             <span>{t('nav.sessions.exportMarkdown')}</span>
+                           </MenuItem>
+-                          <MenuItem
++                          {!compactProduct && (<MenuItem
+                             type="button"
+                             leading={<Icon name="clock" size="sm" />}
+                             onClick={e => {
+@@ -1981,7 +2009,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
+                             data-session-id={session.sessionId}
+                           >
+                             <span>{t('nav.scheduledJobs.open')}</span>
+-                          </MenuItem>
++                          </MenuItem>)}
+                           <MenuItem
+                             type="button"
+                             leading={<Icon glyph={Archive} size="sm" />}
+@@ -1991,7 +2019,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
+                           >
+                             <span>{t('nav.sessions.archive')}</span>
+                           </MenuItem>
+-                          <MenuItem
++                          {!compactProduct && (<MenuItem
+                             type="button"
+                             leading={<Icon glyph={ListChecks} size="sm" />}
+                             disabled={!workspaceId && !session.projectWorkspaceId && !session.workspaceId}
+@@ -2012,8 +2040,8 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
+                             data-testid="nav-session-menu-manage-sessions"
+                           >
+                             <span>{t('nav.sessions.manage')}</span>
+-                          </MenuItem>
+-                          {worktreeIsolated && worktreeRootPath ? (
++                          </MenuItem>)}
++                          {!compactProduct && worktreeIsolated && worktreeRootPath ? (
+                             <MenuItem
+                               type="button"
+                               leading={<Icon glyph={FolderGit2} size="sm" />}
+@@ -2059,6 +2087,12 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
+         })}
+ 
+       {aggregateLoadStatus}
++      {compactProduct && compactHasMore && (
++        <button type="button" className="openbitfun-nav-panel__inline-toggle" data-testid="bambook-history-more"
++          disabled={aggregateLoadState.isLoading} onClick={() => setAggregateReloadRequestId(value => value + 1)}>
++          <OverflowText>{t('nav.sessions.showMoreLabel')}</OverflowText>
++        </button>
++      )}
+ 
+       {!showAllWithoutLimit && expandLevel === 2 && topLevelSessions.length > sessionDisplayLimit && (
+         <button data-overflow-trigger
+diff --git a/src/web-ui/src/app/components/SceneTopBar/SceneTopBar.tsx b/src/web-ui/src/app/components/SceneTopBar/SceneTopBar.tsx
+index a5feaea..4fb0f42 100644
+--- a/src/web-ui/src/app/components/SceneTopBar/SceneTopBar.tsx
++++ b/src/web-ui/src/app/components/SceneTopBar/SceneTopBar.tsx
+@@ -1,4 +1,5 @@
+ import React, { useCallback } from 'react';
++import { BAMBOOK_PRODUCT } from '@/bambookProduct';
+ import { Toolbar, ToolbarSeparator } from '@openbitfun/ui';
+ import { WindowControls } from '@/app/components/WindowControls';
+ import { startNativeWindowDragging, supportsNativeWindowDragging } from '@/infrastructure/runtime';
+@@ -63,20 +64,20 @@ const SceneTopBar: React.FC<SceneTopBarProps> = ({
+ 
+   return (
+     <Toolbar
+-      bordered={hasTabs}
++      bordered={!BAMBOOK_PRODUCT && hasTabs}
+       className={`openbitfun-scene-top-bar ${className}`.trim()}
+       onMouseDown={handleMouseDown}
+       onDoubleClick={handleDoubleClick}
+       data-openbitfun-scene="workbench"
+       data-openbitfun-part="topBar"
+-      leading={<SceneBar />}
++      leading={BAMBOOK_PRODUCT ? undefined : <SceneBar />}
+       size="md"
+       trailing={<>
+-        <SceneChromeHost
++        {!BAMBOOK_PRODUCT && <SceneChromeHost
+           className="openbitfun-scene-top-bar__actions"
+           data-openbitfun-scene="workbench"
+           data-openbitfun-part="sceneActions"
+-        />
++        />}
+         {hasWindowControls ? (
+           <>
+             <ToolbarSeparator className="openbitfun-scene-top-bar__actions-divider" />
+diff --git a/src/web-ui/src/app/layout/AppLayout.tsx b/src/web-ui/src/app/layout/AppLayout.tsx
+index 999cab5..5c51d9a 100644
+--- a/src/web-ui/src/app/layout/AppLayout.tsx
++++ b/src/web-ui/src/app/layout/AppLayout.tsx
+@@ -12,6 +12,7 @@ import { OverflowText } from '@openbitfun/ui';
+ 
+ import React, { useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useContext, Suspense } from 'react';
+ import { useWorkspaceContext } from '../../infrastructure/contexts/WorkspaceContext';
++import { BAMBOOK_PRODUCT, BAMBOOK_AGENT_MODE, resolveBambookWorkspace } from '@/bambookProduct';
+ import { useWindowControls } from '../hooks/useWindowControls';
+ import { useFullscreenChrome } from '../hooks/useFullscreenChrome';
+ import { isWindowFullscreenShortcut } from '../hooks/windowFullscreenShortcut';
+@@ -95,6 +96,8 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
+     openWorkspace,
+     switchWorkspace,
+     recentWorkspaces,
++    openedWorkspacesList,
++    setActiveWorkspace,
+     loading,
+   } = useWorkspaceContext();
+   const sshContext = useContext(SSHContext);
+@@ -254,8 +257,8 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
+ 
+   // Listen for nav-panel events dispatched by the workspace area
+   useEffect(() => {
+-    const onOpenProject = () => { void handleOpenProject(); };
+-    const onNewProject = () => handleNewProject();
++    const onOpenProject = () => { if (!BAMBOOK_PRODUCT) void handleOpenProject(); };
++    const onNewProject = () => { if (!BAMBOOK_PRODUCT) handleNewProject(); };
+     window.addEventListener('nav:open-project', onOpenProject);
+     window.addEventListener('nav:new-project', onNewProject);
+     window.addEventListener('nav:show-about', handleShowAbout);
+@@ -268,7 +271,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
+ 
+   // macOS native menubar events (previously in TitleBar)
+   useEffect(() => {
+-    if (!isMacOS) return;
++    if (!isMacOS || BAMBOOK_PRODUCT) return;
+     let unlistenFns: Array<() => void> = [];
+     void (async () => {
+       try {
+@@ -308,7 +311,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
+         }
+ 
+         const initializationPreferredMode =
+-          currentWorkspace.workspaceKind === WorkspaceKind.Assistant
++          BAMBOOK_PRODUCT ? undefined : currentWorkspace.workspaceKind === WorkspaceKind.Assistant
+             ? 'Claw'
+             : explicitPreferredMode;
+ 
+@@ -325,7 +328,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
+         }
+         if (!hasHistoricalSessions) {
+           const initialSessionMode =
+-            currentWorkspace.workspaceKind === WorkspaceKind.Assistant
++            BAMBOOK_PRODUCT ? BAMBOOK_AGENT_MODE : currentWorkspace.workspaceKind === WorkspaceKind.Assistant
+               ? 'Claw'
+               : explicitPreferredMode;
+           sessionId = await flowChatManager.createChatDraft(
+@@ -580,18 +583,19 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
+   // Create one unified project session using the user's default Harness policy.
+   const handleCreateFlowChatSession = React.useCallback(async () => {
+     try {
+-      if (!currentWorkspace?.id) {
+-        log.warn('Cannot create FlowChat session without an active workspace');
++      const owner = BAMBOOK_PRODUCT ? resolveBambookWorkspace(openedWorkspacesList) : currentWorkspace;
++      if (!owner?.id) {
++        notificationService.error(tCommon('bambook.notReady'));
+         return;
+       }
+       const flowChatManager = FlowChatManager.getInstance();
+-      const sessionConfig = flowChatSessionConfigForWorkspace(currentWorkspace);
+-      const sessionId = await flowChatManager.createChatDraft(sessionConfig);
+-      await openMainSession(sessionId);
++      const sessionConfig = flowChatSessionConfigForWorkspace(owner);
++      const sessionId = await flowChatManager.createChatDraft(sessionConfig, BAMBOOK_PRODUCT ? BAMBOOK_AGENT_MODE : undefined);
++      await openMainSession(sessionId, { workspaceId: owner.id, activateWorkspace: setActiveWorkspace });
+     } catch (error) {
+       log.error('Failed to create FlowChat session', error);
+     }
+-  }, [currentWorkspace]);
++  }, [currentWorkspace, openedWorkspacesList, setActiveWorkspace, tCommon]);
+ 
+   React.useEffect(() => {
+     const handler = () => {
+@@ -603,6 +607,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
+ 
+   React.useEffect(() => {
+     const handler = (e: Event) => {
++      if (BAMBOOK_PRODUCT) return;
+       const clientId = (e as CustomEvent<{ clientId?: string }>).detail?.clientId?.trim();
+       if (!clientId) return;
+       const config = currentWorkspace ? flowChatSessionConfigForWorkspace(currentWorkspace) : {};
+@@ -758,10 +763,10 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
+           />
+         </main>
+ 
+-        {/* Hello stays available across every client scene, including Welcome. */}
+-        <Suspense fallback={null}>
++        {/* Bambook has one conversation surface; the upstream launcher can cover Send. */}
++        {!BAMBOOK_PRODUCT && <Suspense fallback={null}>
+           <FloatingMiniChat />
+-        </Suspense>
++        </Suspense>}
+       </div>
+ 
+       {/* Dialogs (previously owned by TitleBar) */}
+diff --git a/src/web-ui/src/app/layout/WorkspaceBody.presentation.test.ts b/src/web-ui/src/app/layout/WorkspaceBody.presentation.test.ts
+index 3804b96..ba839de 100644
+--- a/src/web-ui/src/app/layout/WorkspaceBody.presentation.test.ts
++++ b/src/web-ui/src/app/layout/WorkspaceBody.presentation.test.ts
+@@ -28,6 +28,10 @@ const layoutStylesheet = readFileSync(
+ ).replace(/\r\n/g, '\n');
+ 
+ describe('WorkspaceBody presentation contract', () => {
++  it('does not mount the upstream floating chat launcher over the Bambook composer', () => {
++    const appLayout = readFileSync(fileURLToPath(new URL('./AppLayout.tsx', import.meta.url)), 'utf8');
++    expect(appLayout).toMatch(/!BAMBOOK_PRODUCT\s*&&\s*<Suspense[^>]*>\s*<FloatingMiniChat\s*\/\s*>/);
++  });
+   it('starts the navigation at 300px while retaining its resize range', () => {
+     expect(componentSource).toContain('const NAV_DEFAULT_WIDTH = 300;');
+     expect(componentSource).toContain('const NAV_MIN_WIDTH = 216;');
+diff --git a/src/web-ui/src/app/layout/WorkspaceBody.tsx b/src/web-ui/src/app/layout/WorkspaceBody.tsx
+index b355c21..cba09b3 100644
+--- a/src/web-ui/src/app/layout/WorkspaceBody.tsx
++++ b/src/web-ui/src/app/layout/WorkspaceBody.tsx
+@@ -16,7 +16,6 @@ import { NavBar } from '../components/NavBar';
+ import NavPanel from '../components/NavPanel/NavPanel';
+ import { SceneChromeProvider, SceneTopBar } from '../components/SceneTopBar';
+ import { SceneViewport } from '../scenes';
+-import TerminalActionBridge from '../scenes/terminal/TerminalActionBridge';
+ import { useApp } from '../hooks/useApp';
+ import { selectActiveSceneId, useSceneStore } from '../stores/sceneStore';
+ import './WorkspaceBody.scss';
+@@ -168,7 +167,6 @@ const WorkspaceBody: React.FC<WorkspaceBodyProps> = ({
+         <div data-openbitfun-creation-slot="sidebar-footer" />
+       </div>
+ 
+-      <TerminalActionBridge />
+ 
+       {/* Resize divider — placed at workspace-body level to avoid overflow:hidden clipping */}
+       {!isNavCollapsed && (
+diff --git a/src/web-ui/src/app/scenes/settings/pages/ai/ModelSettingsPage.loading.test.tsx b/src/web-ui/src/app/scenes/settings/pages/ai/ModelSettingsPage.loading.test.tsx
+index 91b75b3..a3b44c1 100644
+--- a/src/web-ui/src/app/scenes/settings/pages/ai/ModelSettingsPage.loading.test.tsx
++++ b/src/web-ui/src/app/scenes/settings/pages/ai/ModelSettingsPage.loading.test.tsx
+@@ -3,12 +3,18 @@
+ import React, { act } from 'react';
+ import { createRoot, type Root } from 'react-dom/client';
+ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+-import { aiApi } from '@/infrastructure/api';
++import { aiApi, systemAPI } from '@/infrastructure/api';
+ import { configManager } from '@/infrastructure/config/services/ConfigManager';
+ import type { AIModelConfig } from '@/infrastructure/config/types';
+ import { i18nService } from '@/infrastructure/i18n';
+ import ModelSettingsPage from './ModelSettingsPage';
+ 
++const notices = vi.hoisted(() => ({ success: vi.fn(), info: vi.fn(), error: vi.fn() }));
++vi.mock('@/shared/notification-system', async importOriginal => ({
++  ...await importOriginal<typeof import('@/shared/notification-system')>(),
++  useNotification: () => notices,
++}));
++
+ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+ 
+ function deferred() {
+@@ -53,6 +59,7 @@ describe('ModelSettingsPage independent loading', () => {
+   });
+ 
+   beforeEach(() => {
++    Object.values(notices).forEach(notice => notice.mockReset());
+     configManager.clearCache();
+     reads = new Map([
+       'ai.models', 'ai.default_models', 'ai.proxy',
+@@ -80,6 +87,64 @@ describe('ModelSettingsPage independent loading', () => {
+     vi.restoreAllMocks();
+   });
+ 
++  const authUrl = 'https://authorization-fixture.invalid/authorize?state=dummy-not-a-secret';
++  const authButton = (key: string) => [...document.querySelectorAll<HTMLButtonElement>('button')]
++    .find(element => element.textContent === copy(key))!;
++  async function beginAuthorization(method: 'browser' | 'device', url = authUrl) {
++    vi.mocked(aiApi.listSubscriptionAccounts).mockResolvedValue([{
++      provider: 'codex', display_label: 'ChatGPT fixture', connected: false,
++      suggested_format: 'responses', suggested_base_url: '', suggested_model: '', api_offerings: [],
++    }]);
++    vi.spyOn(aiApi, 'startSubscriptionLogin').mockImplementation(async (provider, sessionId) => ({
++      provider, session_id: sessionId, method, authorization_url: url,
++      user_code: method === 'device' ? 'DUMMY-CODE' : null, instructions: '',
++    }));
++    vi.spyOn(aiApi, 'getSubscriptionLoginStatus').mockImplementation(() => new Promise(() => {}));
++    vi.spyOn(aiApi, 'cancelSubscriptionLogin').mockResolvedValue(undefined);
++    vi.spyOn(systemAPI, 'openExternal').mockRejectedValue(new Error('Fixture opener unavailable'));
++    vi.spyOn(systemAPI, 'setClipboard').mockResolvedValue(undefined);
++    await act(async () => {
++      root.render(<ModelSettingsPage />);
++      reads.get('ai.models')!.resolve([]);
++      reads.get('ai.default_models')!.resolve({});
++    });
++    await act(async () => button('acquisition.import').click());
++    await act(async () => authButton('subscriptionAuth.login').click());
++  }
++
++  it.each(['browser', 'device'] as const)('keeps %s authorization copyable when opening the browser fails', async method => {
++    await beginAuthorization(method);
++    expect(notices.info).toHaveBeenCalledWith(copy('subscriptionAuth.openAuthorizationFailed'));
++    const field = document.querySelector<HTMLInputElement>(`input[aria-label="${copy('subscriptionAuth.authorizationLink')}"]`)!;
++    expect(field.readOnly).toBe(true);
++    expect(field.value).toBe(authUrl);
++    act(() => field.focus());
++    expect(field.selectionEnd! - field.selectionStart!).toBe(authUrl.length);
++    await act(async () => authButton('subscriptionAuth.copyAuthorizationLink').click());
++    expect(systemAPI.setClipboard).toHaveBeenCalledWith(authUrl);
++    expect(notices.success).toHaveBeenCalledWith(copy('subscriptionAuth.authorizationLinkCopied'));
++    if (method === 'device') expect(authButton('subscriptionAuth.copyCode')).toBeDefined();
++    expect(aiApi.cancelSubscriptionLogin).not.toHaveBeenCalled();
++  });
++
++  it('retains manual selection and gives actionable feedback when copying is denied', async () => {
++    await beginAuthorization('browser');
++    vi.mocked(systemAPI.setClipboard).mockRejectedValueOnce(new Error('Fixture clipboard denied'));
++    await act(async () => authButton('subscriptionAuth.copyAuthorizationLink').click());
++    expect(notices.error).toHaveBeenCalledWith(copy('subscriptionAuth.copyAuthorizationLinkFailed'));
++    expect(document.querySelector<HTMLInputElement>('input[readonly]')?.value).toBe(authUrl);
++    expect(document.querySelector('[data-openbitfun-status="pending"]')).not.toBeNull();
++    expect(aiApi.cancelSubscriptionLogin).not.toHaveBeenCalled();
++  });
++
++  it('does not expose empty authorization copy actions', async () => {
++    await beginAuthorization('device', '');
++    expect(authButton('subscriptionAuth.copyAuthorizationLink')).toBeUndefined();
++    expect(authButton('subscriptionAuth.openAuthorization')).toBeUndefined();
++    expect(authButton('subscriptionAuth.copyCode')).toBeDefined();
++    expect(systemAPI.openExternal).not.toHaveBeenCalled();
++  });
++
+   it('renders a warm model pool immediately without starting a read that could overwrite edits', () => {
+     const values: Record<string, unknown> = {
+       'ai.models': [model], 'ai.default_models': { primary: model.id },
+diff --git a/src/web-ui/src/app/scenes/settings/pages/ai/ModelSettingsPage.tsx b/src/web-ui/src/app/scenes/settings/pages/ai/ModelSettingsPage.tsx
+index ce816cc..0253f10 100644
+--- a/src/web-ui/src/app/scenes/settings/pages/ai/ModelSettingsPage.tsx
++++ b/src/web-ui/src/app/scenes/settings/pages/ai/ModelSettingsPage.tsx
+@@ -1429,18 +1429,11 @@ const ModelSettingsPage: React.FC = () => {
+       if (started.authorization_url) {
+         try {
+           await systemAPI.openExternal(started.authorization_url);
+-        } catch (openError) {
+-          // Keep polling: the backend login session is already running. Surface
+-          // the URL so the user can open it manually (relative URLs / opener
+-          // policy failures must not abort an otherwise valid login).
+-          log.warn('Failed to open subscription authorization URL', {
+-            provider,
+-            url: started.authorization_url,
+-            error: String(openError),
+-          });
+-          notification.info(
+-            t('subscriptionAuth.openUrlManually', { url: started.authorization_url }),
+-          );
++        } catch {
++          // Keep polling and leave the pending panel's copy/manual-select
++          // actions available. Authorization URLs must not enter diagnostics.
++          log.warn('Failed to open subscription authorization URL', { provider });
++          notification.info(t('subscriptionAuth.openAuthorizationFailed'));
+         }
+       }
+       if (!loginCoordinatorRef.current.isCurrent(operation)) {
+@@ -1568,12 +1561,21 @@ const ModelSettingsPage: React.FC = () => {
+     if (!url) return;
+     try {
+       await systemAPI.openExternal(url);
+-    } catch (error) {
+-      log.warn('Failed to open subscription authorization URL from pending card', {
+-        url,
+-        error: String(error),
+-      });
+-      notification.info(t('subscriptionAuth.openUrlManually', { url }));
++    } catch {
++      log.warn('Failed to open subscription authorization URL from pending card');
++      notification.info(t('subscriptionAuth.openAuthorizationFailed'));
++    }
++  }, [notification, t]);
++
++  const handleCopySubscriptionAuthorization = useCallback(async (url: string) => {
++    if (!url) return;
++    try {
++      await systemAPI.setClipboard(url);
++      notification.success(t('subscriptionAuth.authorizationLinkCopied'));
++    } catch {
++      // Keep the read-only field selectable when clipboard access is denied.
++      log.warn('Failed to copy subscription authorization URL');
++      notification.error(t('subscriptionAuth.copyAuthorizationLinkFailed'));
+     }
+   }, [notification, t]);
+ 
+@@ -3687,6 +3689,16 @@ const ModelSettingsPage: React.FC = () => {
+                       </div>
+                     )}
+ 
++                    {loginPanel.status === 'pending' && loginPanel.authorizationUrl && (
++                      <Input
++                        size="sm"
++                        readOnly
++                        aria-label={t('subscriptionAuth.authorizationLink')}
++                        value={loginPanel.authorizationUrl}
++                        onFocus={(event) => event.target.select()}
++                      />
++                    )}
++
+                     {loginPanel.status === 'pending' && (
+                       <div className="openbitfun-model-settings__subscription-login-actions" data-openbitfun-component="model-settings" data-openbitfun-part="subscriptionActions">
+                         {loginPanel.userCode && (
+@@ -3708,6 +3720,16 @@ const ModelSettingsPage: React.FC = () => {
+                             {t('subscriptionAuth.openAuthorization')}
+                           </Button>
+                         )}
++                        {loginPanel.authorizationUrl && (
++                          <Button
++                            size="sm"
++                            variant="text"
++                            onClick={() => void handleCopySubscriptionAuthorization(loginPanel.authorizationUrl)}
++                            leadingIcon={<Icon name="copy" size="sm" aria-hidden="true" />}
++                          >
++                            {t('subscriptionAuth.copyAuthorizationLink')}
++                          </Button>
++                        )}
+                       </div>
+                     )}
+                   </div>
+diff --git a/src/web-ui/src/app/scenes/settings/settingsStore.ts b/src/web-ui/src/app/scenes/settings/settingsStore.ts
+index 5a1d936..aed0d71 100644
+--- a/src/web-ui/src/app/scenes/settings/settingsStore.ts
++++ b/src/web-ui/src/app/scenes/settings/settingsStore.ts
+@@ -2,7 +2,7 @@ import { requestSettingsNavigation } from '@/infrastructure/config/settingsDraft
+ import type { InteractionMotion } from '@/shared/utils/motionPreference';
+ import { create } from 'zustand';
+ import { resolveSettingsDestination, type SettingsDestinationInput } from './settingsDestination';
+-import { DEFAULT_SETTINGS_PAGE_ID } from './settingsRegistry';
++import { BAMBOOK_MODEL_SETTINGS } from '@/bambookProduct';
+ import type {
+   SettingsPageId,
+   SettingsSectionId,
+@@ -25,7 +25,7 @@ interface SettingsState {
+ }
+ 
+ export const useSettingsStore = create<SettingsState>((set, get) => ({
+-  activePageId: DEFAULT_SETTINGS_PAGE_ID,
++  activePageId: BAMBOOK_MODEL_SETTINGS,
+   activeViewId: null,
+   activeSectionId: null,
+   navigationRequestId: 0,
+@@ -36,6 +36,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
+ 
+   openDestination: (destination, motion = 'instant') => {
+     const resolvedDestination = resolveSettingsDestination(destination);
++    if (resolvedDestination.pageId !== BAMBOOK_MODEL_SETTINGS) return;
+     const nextViewId = resolvedDestination.viewId ?? null;
+     const current = get();
+     requestSettingsNavigation(
+diff --git a/src/web-ui/src/app/scenes/welcome/WelcomeScene.tsx b/src/web-ui/src/app/scenes/welcome/WelcomeScene.tsx
+index c0e6bb7..2d31a37 100644
+--- a/src/web-ui/src/app/scenes/welcome/WelcomeScene.tsx
++++ b/src/web-ui/src/app/scenes/welcome/WelcomeScene.tsx
+@@ -1,152 +1,12 @@
+-/**
+- * WelcomeScene — the lightweight, tabless landing surface shown by
+- * SceneViewport until the user opens a scene.
+- */
+-
+-import React, { useEffect, useMemo, useState } from 'react';
++import { BambookBrandMark } from '@bambook/brand';
+ import { useI18n } from '@/infrastructure/i18n';
+-import { isReducedMotionPreferred } from '@/shared/utils/motionPreference';
+-import { OpenBitFunMark } from '@openbitfun/ui/brand';
+-import './WelcomeScene.scss';
+-
+-const TYPE_MS = 100;
+-const DELETE_MS = 55;
+-const PHRASE_HOLD_MS = 2200;
+-const PHRASE_GAP_MS = 450;
+-const YOUR_WORD_INDEX = 2;
+ 
+-const WelcomeScene: React.FC = () => {
++/** Resting conversation canvas, not a second launch animation or product advertisement. */
++export default function WelcomeScene() {
+   const { t } = useI18n('common');
+-  const [text, setText] = useState('');
+-  const [reducedMotion, setReducedMotion] = useState(isReducedMotionPreferred);
+-  const impossible = t('welcomeScene.phrases.impossible');
+-  const dreams = t('welcomeScene.phrases.dreams');
+-  const your = t('welcomeScene.space.your');
+-  const suffix = t('welcomeScene.space.suffix');
+-  const think = t('welcomeScene.phrases.think');
+-  const ideas = t('welcomeScene.phrases.ideas');
+-  const create = t('welcomeScene.phrases.create');
+-  const explore = t('welcomeScene.phrases.explore');
+-  const phrases = useMemo(
+-    () => [
+-      impossible,
+-      dreams,
+-      `${your}${suffix}`,
+-      think,
+-      ideas,
+-      create,
+-      explore,
+-    ],
+-    [impossible, dreams, your, suffix, think, ideas, create, explore],
+-  );
+-
+-  useEffect(() => {
+-    const media = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+-    const handleMotionChange = () => setReducedMotion(isReducedMotionPreferred());
+-    media?.addEventListener('change', handleMotionChange);
+-    return () => media?.removeEventListener('change', handleMotionChange);
+-  }, []);
+-
+-  useEffect(() => {
+-    if (reducedMotion) return;
+-
+-    // Reset on locale changes; keep the full phrase, including punctuation, in the loop.
+-    const characters = phrases.map(phrase => Array.from(phrase));
+-    let phraseIndex = 0;
+-    let characterCount = 0;
+-    let deleting = false;
+-    let nextDelay = PHRASE_GAP_MS;
+-    let timer: number | undefined;
+-    setText('');
+-
+-    const schedule = () => {
+-      if (!document.hidden) timer = window.setTimeout(tick, nextDelay);
+-    };
+-    function tick() {
+-      const phrase = characters[phraseIndex];
+-      characterCount += deleting ? -1 : 1;
+-      setText(phrase.slice(0, characterCount).join(''));
+-
+-      if (!deleting && characterCount === phrase.length) {
+-        deleting = true;
+-        nextDelay = PHRASE_HOLD_MS;
+-      } else if (deleting && characterCount === 0) {
+-        deleting = false;
+-        phraseIndex = (phraseIndex + 1) % characters.length;
+-        nextDelay = PHRASE_GAP_MS;
+-      } else {
+-        nextDelay = deleting ? DELETE_MS : TYPE_MS;
+-      }
+-      schedule();
+-    }
+-    const handleVisibilityChange = () => {
+-      window.clearTimeout(timer);
+-      schedule();
+-    };
+-
+-    schedule();
+-    document.addEventListener('visibilitychange', handleVisibilityChange);
+-    return () => {
+-      window.clearTimeout(timer);
+-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+-    };
+-  }, [phrases, reducedMotion]);
+-
+-  return (
+-    <section
+-      className="welcome-scene"
+-      data-testid="welcome-scene"
+-      data-openbitfun-scene="welcome"
+-      data-openbitfun-part="root"
+-      aria-labelledby="welcome-scene-title"
+-    >
+-      <div className="welcome-scene__content" data-openbitfun-scene="welcome" data-openbitfun-part="content">
+-        <div
+-          className="welcome-scene__greeting"
+-          data-openbitfun-scene="welcome"
+-          data-openbitfun-part="greeting"
+-        >
+-          <h1
+-            id="welcome-scene-title"
+-            className="welcome-scene__brand"
+-            data-openbitfun-scene="welcome"
+-            data-openbitfun-part="title"
+-          >
+-            <span
+-              className="welcome-scene__logo"
+-              data-openbitfun-scene="welcome"
+-              data-openbitfun-part="logo"
+-              aria-hidden="true"
+-            >
+-              <OpenBitFunMark style={{ width: '100%', height: '100%' }} />
+-            </span>
+-            <span className="welcome-scene__brand-name">
+-              OpenBitFun{t('welcomeScene.space.separator')}
+-            </span>
+-          </h1>
+-          <h2
+-            className="welcome-scene__tagline"
+-            data-openbitfun-scene="welcome"
+-            data-openbitfun-part="subtitle"
+-            aria-label={phrases[YOUR_WORD_INDEX]}
+-          >
+-            <span className="welcome-scene__phrase-slot" aria-hidden="true">
+-              {/* Reserve the longest phrase so the brand never shifts while typing. */}
+-              {phrases.map((phrase, index) => (
+-                <span className="welcome-scene__phrase-sizer" key={index}>
+-                  {phrase}
+-                </span>
+-              ))}
+-              <span className="welcome-scene__typed-phrase">
+-                {reducedMotion ? phrases[YOUR_WORD_INDEX] : text}
+-                <span className="welcome-scene__cursor" />
+-              </span>
+-            </span>
+-          </h2>
+-        </div>
+-      </div>
+-    </section>
+-  );
+-};
+-
+-export default WelcomeScene;
++  return <section className="bambook-agent-welcome" data-testid="welcome-scene" aria-labelledby="welcome-scene-title">
++    <BambookBrandMark size={56} state="still" />
++    <h1 id="welcome-scene-title">{t('bambook.name')}</h1>
++    <p>{t('bambook.greeting')}</p>
++  </section>;
++}
+diff --git a/src/web-ui/src/app/startup/startupPerformanceContract.test.ts b/src/web-ui/src/app/startup/startupPerformanceContract.test.ts
+index 7ef1062..be968d0 100644
+--- a/src/web-ui/src/app/startup/startupPerformanceContract.test.ts
++++ b/src/web-ui/src/app/startup/startupPerformanceContract.test.ts
+@@ -52,10 +52,10 @@ describe('startup performance contract', () => {
+   it('keeps the pre-React startup fallback vector-only', () => {
+     const source = readSource('../../../index.html');
+ 
+-    expect(source).toContain('<link rel="icon" type="image/png" href="/brand/openbitfun-app-icon.png" />');
++    expect(source).toContain('<link rel="icon" type="image/svg+xml" sizes="any" data-bambook-icon="svg" href="/brand/bambook-v3-favicon.svg?v=4" />');
+     expect(source).not.toContain('rel="preload" as="image"');
+     expect(source).toContain('class="openbitfun-preload__logo"');
+-    expect(source).toContain("url('/brand/openbitfun-mark.svg')");
++    expect(source).toContain("url('/brand/bambook-v3-mark.svg')");
+     expect(source).not.toContain('src="/brand/openbitfun-mark-dark-128.png"');
+     expect(source).not.toContain('src="/brand/openbitfun-mark-light-128.png"');
+     expect(source).not.toContain('Loading workspace...');
+@@ -68,13 +68,14 @@ describe('startup performance contract', () => {
+   });
+ 
+   it('keeps the startup mark as a reusable transparent vector asset', () => {
+-    const asset = readSource('../../../public/brand/openbitfun-mark.svg');
+-
+-    expect(asset).toContain('viewBox="0 0 120 120"');
+-    expect(asset).toContain('fill="none"');
+-    expect(asset).toContain('stroke="currentColor"');
+-    expect(asset.match(/<path\b/g)).toHaveLength(15);
+-    expect(asset).not.toContain('<rect');
++    const asset = readSource('../../../../../../../../public/brand/bambook-v3-mark.svg');
++
++    expect(asset).toContain('viewBox="0 0 200 200"');
++    expect(asset.match(/<mask\b/g)).toHaveLength(6);
++    expect(asset.match(/<g mask=/g)).toHaveLength(6);
++    expect(asset.match(/<path\b/g)).toHaveLength(12);
++    // Mask rectangles establish transparent seams; there is no background tile.
++    expect(asset.split('</defs>')[1]).not.toContain('<rect');
+   });
+ 
+   it('uses semantic startup tones and the reference mark geometry', () => {
+diff --git a/src/web-ui/src/flow_chat/components/ChatInput.tsx b/src/web-ui/src/flow_chat/components/ChatInput.tsx
+index ad2536d..65a5181 100644
+--- a/src/web-ui/src/flow_chat/components/ChatInput.tsx
++++ b/src/web-ui/src/flow_chat/components/ChatInput.tsx
+@@ -1,3 +1,4 @@
++import { BAMBOOK_PRODUCT } from '@/bambookProduct';
+ import { useDeviceDirectory, resolveDeviceNameFrom } from '@/infrastructure/account/deviceDirectory';
+ import { ChatInputAttachments } from './ChatInputAttachments';
+ import { useExcerptComposerActions } from '../selection/useExcerptComposerActions';
+@@ -285,13 +286,13 @@ import {
+ import { useChatInputTargets } from '../hooks/useChatInputTargets';
+ import type { BtwSessionPanelData } from '../services/btwSessionPane';
+ import { Menu, MenuItem, MenuSeparator, Icon } from '@openbitfun/ui';
++import { ChatComposerActionButton } from '@openbitfun/ui/flow-chat';
+ import {
+-  ChatComposer,
+-  ChatComposerActionButton,
+-  ChatComposerContent,
+-  ChatComposerEndActions,
+-  ChatComposerStartActions,
+-} from '@openbitfun/ui/flow-chat';
++  BambookComposer as ChatComposer,
++  BambookComposerContent as ChatComposerContent,
++  BambookComposerEndActions as ChatComposerEndActions,
++  BambookComposerStartActions as ChatComposerStartActions,
++} from '@bambook/agent-composer';
+ 
+ const log = createLogger('ChatInput');
+ 
+@@ -815,7 +816,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
+   // New sessions start expanded. Once the first Turn has been submitted, this
+   // returns to content-driven measurement (newlines, attachments, or wrapping).
+   const compactComposer = conversationScope?.presentation === 'compact';
+-  const [isMultiLine, setIsMultiLine] = useState(compactComposer ? false : isNewSessionComposer);
++  const [isMultiLine, setIsMultiLine] = useState(BAMBOOK_PRODUCT || (compactComposer ? false : isNewSessionComposer));
+   // showPlaceholder is true when the editor DOM is truly empty (value empty AND no residual <br>)
+   const [showPlaceholder, setShowPlaceholder] = useState(true);
+   const liveCapsuleInputWidthRef = useRef<number | null>(null);
+@@ -847,6 +848,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
+       return null;
+     }
+ 
++    // The BDS editor has no capsule layout to measure or off-screen clone to maintain.
++    if (BAMBOOK_PRODUCT) return editorEl?.getBoundingClientRect().width ?? null;
++
+     const clone = containerEl.cloneNode(true) as HTMLElement;
+     clone.style.position = 'fixed';
+     clone.style.left = '-100000px';
+@@ -904,7 +908,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
+   // Shared measurement: temporarily unconstrain the editor and use the capsule input
+   // width so the result is consistent between capsule ↔ multi-line transitions.
+   const measureIsMultiLine = useCallback((source: 'value-effect' | 'mutation-observer' | 'collapse-confirmation' | 'layout-change' = 'value-effect') => {
+-    if (isNewSessionComposer && !compactComposer) { setIsMultiLine(true); return; }
++    if (BAMBOOK_PRODUCT || (isNewSessionComposer && !compactComposer)) { setIsMultiLine(true); return; }
+     const hasNewline = inputState.value.includes('\n');
+     if (hasNewline || hasAttachments || showTargetSwitcher) {
+       setIsMultiLine(true);
+@@ -1323,7 +1327,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
+     }),
+     [activeSessionMode, currentMode, isAcpTargetSession, isAssistantWorkspace],
+   );
+-  const canSwitchModes = chatInputModePolicy.canSwitchModes && !isSubagentInputTarget && currentSession?.mode !== 'OpenBitFun';
++  const canSwitchModes = !BAMBOOK_PRODUCT && chatInputModePolicy.canSwitchModes && !isSubagentInputTarget && currentSession?.mode !== 'OpenBitFun';
+   const selectedHarnessProfile = resolveSelectedComposerExecutionLevel({
+     currentMode,
+   });
+@@ -6254,7 +6258,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
+     );
+   };
+ 
+-  const workspaceStripVisible = presentation !== 'conversation' && Boolean(
++  const workspaceStripVisible = !BAMBOOK_PRODUCT && presentation !== 'conversation' && Boolean(
+     chatStripWorkspaceLabel.trim()
+     || dispatchControl
+     || showPermissionModeControl
+@@ -6818,7 +6822,15 @@ export const ChatInput: React.FC<ChatInputProps> = ({
+                 </div>
+               </ChatComposerContent>
+ 
+-              {presentation !== 'conversation' && <ChatComposerStartActions>
++              {BAMBOOK_PRODUCT && <ChatComposerStartActions>
++                <Tooltip content={t('chatInput.boostAddContext')}>
++                  <ChatComposerActionButton aria-label={t('chatInput.boostAddContext')} icon={<Icon name="files" size="sm" />} onClick={handleBoostOpenAtContext} data-testid="bambook-add-context" />
++                </Tooltip>
++                <Tooltip content={t('input.addImage')}>
++                  <ChatComposerActionButton aria-label={t('input.addImage')} icon={<Icon name="image" size="sm" />} onClick={handleBoostPickImage} data-testid="bambook-add-image" />
++                </Tooltip>
++              </ChatComposerStartActions>}
++              {!BAMBOOK_PRODUCT && presentation !== 'conversation' && <ChatComposerStartActions>
+               <div className="openbitfun-chat-input__actions-left" data-openbitfun-component="chat-input" data-openbitfun-part="actionsLeft">
+                 <div
+                   className="openbitfun-chat-input__agent-boost"
+diff --git a/src/web-ui/src/flow_chat/components/WelcomePanel.test.tsx b/src/web-ui/src/flow_chat/components/WelcomePanel.test.tsx
+index 75a6823..4212d97 100644
+--- a/src/web-ui/src/flow_chat/components/WelcomePanel.test.tsx
++++ b/src/web-ui/src/flow_chat/components/WelcomePanel.test.tsx
+@@ -15,6 +15,11 @@ import type { WorkspaceInfo } from '@/shared/types';
+ 
+ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+ 
++// Exercise the native boundary and retain legacy workspace coverage.
++const product = vi.hoisted(() => ({ enabled: false }));
++vi.mock('@/bambookProduct', () => ({ get BAMBOOK_PRODUCT() { return product.enabled; } }));
++vi.mock('@/app/scenes/welcome/WelcomeScene', () => ({ default: () => <div data-testid="native-welcome" /> }));
++
+ const gitApiMock = vi.hoisted(() => ({
+   isGitRepository: vi.fn(),
+   getStatus: vi.fn(),
+@@ -136,6 +141,7 @@ describe('WelcomePanel Git summary loading', () => {
+   let root: Root;
+ 
+   beforeEach(() => {
++    product.enabled = false;
+     vi.clearAllMocks();
+     workspaceMocks.selectDraftWorkspace.mockReset();
+     workspaceMocks.gitScopes.length = 0;
+@@ -159,6 +165,14 @@ describe('WelcomePanel Git summary loading', () => {
+     container.remove();
+   });
+ 
++  it('mounts only the native welcome without registering Git polling in Bambook', async () => {
++    product.enabled = true;
++    await act(async () => root.render(<WelcomePanel session={newDraft()} />));
++    expect(container.querySelector('[data-testid="native-welcome"]')).not.toBeNull();
++    expect(container.querySelector('[data-openbitfun-product-part="workspaceAction"]')).toBeNull();
++    expect(workspaceMocks.gitScopes).toEqual([]);
++  });
++
+   it('renders the git branch chip when a workspace is open', async () => {
+     await act(async () => {
+       root.render(<WelcomePanel sessionMode='Standard' />);
+diff --git a/src/web-ui/src/flow_chat/components/WelcomePanel.tsx b/src/web-ui/src/flow_chat/components/WelcomePanel.tsx
+index 4839f06..e8a95e5 100644
+--- a/src/web-ui/src/flow_chat/components/WelcomePanel.tsx
++++ b/src/web-ui/src/flow_chat/components/WelcomePanel.tsx
+@@ -19,6 +19,8 @@ import { useGitState } from '@/tools/git/hooks/useGitState';
+ import { useSessionWorkspaceSelection } from '../hooks/useSessionWorkspaceSelection';
+ import type { Session } from '../types/flow-chat';
+ import { sessionWorkspaceId } from '../utils/sessionWorkspace';
++import { BAMBOOK_PRODUCT } from '@/bambookProduct';
++import WelcomeScene from '@/app/scenes/welcome/WelcomeScene';
+ import './WelcomePanel.css';
+ import './WelcomePanelSurface.scss';
+ 
+@@ -34,7 +36,12 @@ interface WelcomePanelProps {
+   workspacePath?: string;
+ }
+ 
+-export const WelcomePanel: React.FC<WelcomePanelProps> = ({
++export const WelcomePanel: React.FC<WelcomePanelProps> = (props) => {
++  if (BAMBOOK_PRODUCT) return <div className={`bambook-conversation-welcome ${props.className ?? ''}`}><WelcomeScene /></div>;
++  return <LegacyWelcomePanel {...props} />;
++};
++
++const LegacyWelcomePanel: React.FC<WelcomePanelProps> = ({
+   onQuickAction,
+   className = '',
+   session,
+diff --git a/src/web-ui/src/flow_chat/components/modern/ExportImageButton.tsx b/src/web-ui/src/flow_chat/components/modern/ExportImageButton.tsx
+index 8b80934..1b0d416 100644
+--- a/src/web-ui/src/flow_chat/components/modern/ExportImageButton.tsx
++++ b/src/web-ui/src/flow_chat/components/modern/ExportImageButton.tsx
+@@ -93,10 +93,10 @@ const ExportContent: React.FC<ExportContentProps> = ({ dialogTurn, expandThinkin
+           className={`export-content__logo ${LOGO_PLACEHOLDER_CLASS}`}
+           data-openbitfun-product-component="export-image"
+           data-openbitfun-product-part="logo"
+-          aria-label="OpenBitFun"
++          aria-label="Bambook"
+         />
+         <div className="export-content__title-group" data-openbitfun-product-component="export-image" data-openbitfun-product-part="title">
+-          <div className="export-content__title">OpenBitFun</div>
++          <div className="export-content__title">Bambook Agent</div>
+           <div className="export-content__subtitle">{i18nService.t('flow-chat:exportImage.subtitle').replace(/ /g, '\u00A0')}</div>
+         </div>
+         <div className="export-content__timestamp" data-openbitfun-product-component="export-image" data-openbitfun-product-part="timestamp">
+@@ -273,10 +273,11 @@ export const ExportImageButton: React.FC<ExportImageButtonProps> = ({
+             img.onload = () => resolve(img);
+             img.onerror = reject;
+             // Cache-bust to avoid stale decoded copies when re-exporting.
+-            const colorScheme = document.documentElement.getAttribute('data-color-scheme');
++            const colorScheme = document.documentElement.dataset.bambookTheme
++              || document.documentElement.getAttribute('data-color-scheme');
+             const logoPath = colorScheme === 'dark'
+-              ? '/brand/openbitfun-mark-light.png'
+-              : '/brand/openbitfun-mark-dark.png';
++              ? '/brand/bambook-v3-mark-light.svg'
++              : '/brand/bambook-v3-mark.svg';
+             img.src = `${logoPath}?t=${Date.now()}`;
+           }),
+           3_000,
+diff --git a/src/web-ui/src/infrastructure/api/adapters/websocket-adapter.test.ts b/src/web-ui/src/infrastructure/api/adapters/websocket-adapter.test.ts
+index 3846027..615f7d6 100644
+--- a/src/web-ui/src/infrastructure/api/adapters/websocket-adapter.test.ts
++++ b/src/web-ui/src/infrastructure/api/adapters/websocket-adapter.test.ts
+@@ -19,7 +19,9 @@ describe('resolveWsMethod', () => {
+     // `AGENT_COMMAND_SCHEMA` table (web transport only -- desktop/CLI call Tauri
+     // commands directly). If one is added/removed on the Rust side, update the
+     // table and this case in lockstep.
+-    expect(resolveWsMethod('create_session')).toBe('agent/createSession');
++    // Preserve the reserved draft identity through the Bambook host extension.
++    expect(resolveWsMethod('create_session')).toBe('bambook/createSession');
++    expect(resolveWsMethod('update_session_model')).toBe('bambook/updateSessionModel');
+     expect(resolveWsMethod('list_sessions')).toBe('agent/listSessions');
+     expect(resolveWsMethod('delete_session')).toBe('agent/deleteSession');
+     expect(resolveWsMethod('fork_session')).toBe('session/forkAtTurn');
+@@ -156,11 +158,12 @@ describe('resolveWsMethod', () => {
+     // The read-only Git ownership-trust probe makes 35, and this branch's
+     // session-content search makes 36 — the two arrived on separate branches,
+     // so the count only reaches 36 once main is merged in. The three
+-    // device-local WebSearch credential commands make 39.
++    // device-local WebSearch credential commands make 39; Bambook's atomic
++    // session model-selection adapter makes 40.
+     expect(AGENT_COMMAND_SCHEMA.start_dialog_turn.method).toBe(
+       'agent/submitDialogTurn'
+     );
+-    expect(Object.keys(AGENT_COMMAND_SCHEMA).length).toBe(39);
++    expect(Object.keys(AGENT_COMMAND_SCHEMA).length).toBe(40);
+ 
+     // Touch the locals so noUnusedLocals does not flag them under vitest's
+     // transformed build (tsc --noEmit is the real gate; this is belt-and-suspenders).
+@@ -298,6 +301,13 @@ describe('encodeRequestBody', () => {
+     });
+   });
+ 
++  it('encodes the profile lookup using the app-server snake_case contract', () => {
++    expect(encodeRequestBody('get_agent_profile_config', { agentId: 'Standard' }))
++      .toEqual({ agent_id: 'Standard' });
++    expect(encodeRequestBody('get_agent_profile_config', { agent_id: 'Custom' }))
++      .toEqual({ agent_id: 'Custom' });
++  });
++
+   it('passes unknown actions through unchanged', () => {
+     const body = { foo: 'bar' };
+     expect(encodeRequestBody('some_unknown_action', body)).toBe(body);
+@@ -313,6 +323,20 @@ describe('encodeRequestBody', () => {
+ });
+ 
+ describe('decodeWsNotification', () => {
++  it('unwraps sequenced config events without exposing the cursor as configuration', () => {
++    const event = { kind: 'modelConfigurationUpdated' };
++    expect(decodeWsNotification({ method: 'config/event', params: {
++      cursor: { connectionId: 'fixture', stream: 'config', sequence: 1 }, event,
++    } })).toEqual({ event: 'config://updated', payload: event });
++  });
++
++  it('routes runtime permission events into the existing permission UI', () => {
++    const event = { type: 'asked', request: { requestId: 'fixture' } };
++    expect(decodeWsNotification({ method: 'agent/permissionEvent', params: {
++      cursor: { connectionId: 'fixture', stream: 'permission', sequence: 1 }, event,
++    } })).toEqual({ event: 'permission://event', payload: event });
++  });
++
+   it('projects typed config notifications to a stable frontend event', () => {
+     expect(decodeWsNotification({
+       jsonrpc: '2.0',
+@@ -349,6 +373,17 @@ describe('decodeResponseBody', () => {
+     })).toEqual({ success: true, message: 'Dialog turn queued' });
+   });
+ 
++  it('unwraps configuration envelopes into the existing desktop service contracts', () => {
++    const models = [{ id: 'local-fixture', enabled: true }];
++    const configs = { 'ai.models': models, 'ai.default_models': { primary: 'local-fixture' } };
++    const profiles = { Standard: { profile_id: 'Standard' } };
++    expect(decodeResponseBody('get_model_configs', { models })).toEqual(models);
++    expect(decodeResponseBody('get_configs', { configs })).toEqual(configs);
++    expect(decodeResponseBody('get_agent_profile_configs', { profiles })).toEqual(profiles);
++    expect(decodeResponseBody('get_model_configs', models)).toEqual(models);
++    expect(decodeResponseBody('get_configs', configs)).toEqual(configs);
++  });
++
+   it('unwraps list_sessions into a bare array', () => {
+     expect(decodeResponseBody('list_sessions', { sessions: [{ sessionId: 's1' }] }))
+       .toEqual([{ sessionId: 's1' }]);
+diff --git a/src/web-ui/src/infrastructure/api/adapters/websocket-adapter.ts b/src/web-ui/src/infrastructure/api/adapters/websocket-adapter.ts
+index 75d3188..6cd8147 100644
+--- a/src/web-ui/src/infrastructure/api/adapters/websocket-adapter.ts
++++ b/src/web-ui/src/infrastructure/api/adapters/websocket-adapter.ts
+@@ -70,7 +70,9 @@ interface AgentCommandEntry {
+ }
+ 
+ export const AGENT_COMMAND_SCHEMA = {
+-  create_session: { method: 'agent/createSession' },
++  // The desktop draft reserves an ID. The generic create RPC cannot carry it.
++  create_session: { method: 'bambook/createSession' },
++  update_session_model: { method: 'bambook/updateSessionModel' },
+   list_sessions: {
+     method: 'agent/listSessions',
+     response: null as unknown as ListSessionsResponse,
+@@ -249,6 +251,8 @@ export function resolveWsMethod(action: string): string {
+ export function encodeRequestBody(action: string, body: any): any {
+   if (!body || typeof body !== 'object') return body ?? {};
+   switch (action) {
++    case 'get_agent_profile_config':
++      return { agent_id: body.agent_id ?? body.agentId };
+     case 'start_dialog_turn': {
+       const { userInput, originalUserInput, imageContexts, userMessageMetadata, ...rest } = body;
+       return {
+@@ -311,6 +315,12 @@ export function decodeResponseBody(action: string, result: any): any {
+       }
+       return result;
+     }
++    case 'get_model_configs':
++      return unwrapArray(result, 'models');
++    case 'get_configs':
++      return result?.configs ?? result;
++    case 'get_agent_profile_configs':
++      return result?.profiles ?? result;
+     case 'list_sessions':
+       return unwrapArray(result, 'sessions');
+     case 'list_pending_permission_requests':
+@@ -404,9 +414,12 @@ export function decodeWsNotification(message: any): DecodedWsNotification | null
+   if (message?.method === 'config/event' && message.params) {
+     return {
+       event: 'config://updated',
+-      payload: message.params as ConfigUpdate,
++      payload: (message.params.event ?? message.params) as ConfigUpdate,
+     };
+   }
++  if (message?.method === 'agent/permissionEvent' && message.params?.event) {
++    return { event: 'permission://event', payload: message.params.event };
++  }
+   return null;
+ }
+ 
+diff --git a/src/web-ui/src/infrastructure/api/service-api/SystemAPI.test.ts b/src/web-ui/src/infrastructure/api/service-api/SystemAPI.test.ts
+index 070da9c..26d626e 100644
+--- a/src/web-ui/src/infrastructure/api/service-api/SystemAPI.test.ts
++++ b/src/web-ui/src/infrastructure/api/service-api/SystemAPI.test.ts
+@@ -143,6 +143,23 @@ describe('SystemAPI', () => {
+     expect(invokeMock).not.toHaveBeenCalled();
+   });
+ 
++  it('opens web authorization URLs without a privileged host call or opener', async () => {
++    vi.stubEnv('MODE', 'web');
++    const open = vi.fn();
++    vi.stubGlobal('window', { open });
++    await systemAPI.openExternal('https://example.test/authorize');
++    expect(open).toHaveBeenCalledWith('https://example.test/authorize', '_blank', 'noopener,noreferrer');
++    expect(invokeMock).not.toHaveBeenCalled();
++  });
++
++  it.each(['javascript:alert(1)', 'file:///tmp/private', 'data:text/html,unsafe'])('rejects unsafe external web URLs: %s', async url => {
++    vi.stubEnv('MODE', 'web');
++    const open = vi.fn();
++    vi.stubGlobal('window', { open });
++    await expect(systemAPI.openExternal(url)).rejects.toThrow('Unsupported external URL scheme');
++    expect(open).not.toHaveBeenCalled();
++  });
++
+   it('checks path existence on the active host', async () => {
+     invokeMock.mockResolvedValueOnce(true);
+ 
+diff --git a/src/web-ui/src/infrastructure/api/service-api/SystemAPI.ts b/src/web-ui/src/infrastructure/api/service-api/SystemAPI.ts
+index 5958162..63b9fe8 100644
+--- a/src/web-ui/src/infrastructure/api/service-api/SystemAPI.ts
++++ b/src/web-ui/src/infrastructure/api/service-api/SystemAPI.ts
+@@ -157,6 +157,17 @@ export class SystemAPI {
+ 
+    
+   async openExternal(url: string): Promise<void> {
++    if (import.meta.env.MODE === 'web') {
++      const target = new URL(url);
++      if (target.protocol !== 'https:' && target.protocol !== 'http:') {
++        throw new Error('Unsupported external URL scheme');
++      }
++      // Subscription authorization remains in the system browser, never in
++      // Bambook's privileged top frame. The login panel retains a manual link
++      // for browsers that block an asynchronously opened popup.
++      window.open(target.href, '_blank', 'noopener,noreferrer');
++      return;
++    }
+     try {
+       await openUrl(url);
+     } catch (error) {
+diff --git a/src/web-ui/src/infrastructure/design-system/DesignSystemViteIntegration.test.ts b/src/web-ui/src/infrastructure/design-system/DesignSystemViteIntegration.test.ts
+index dd2570f..05f2b06 100644
+--- a/src/web-ui/src/infrastructure/design-system/DesignSystemViteIntegration.test.ts
++++ b/src/web-ui/src/infrastructure/design-system/DesignSystemViteIntegration.test.ts
+@@ -8,7 +8,7 @@ import viteConfig, {
+ import type { SourceWatchPlugin } from '../../../../../design-system/tooling/vite/watch-source.mjs';
+ 
+ describe('design-system Vite integration', () => {
+-  it('resolves UI package entry points to source only while serving for HMR', () => {
++  it('resolves one source graph for HMR and the embedded production brand adapter', () => {
+     const serveAliases = createDesignSystemSourceAliases('serve');
+ 
+     expect(serveAliases).toHaveLength(5);
+@@ -25,7 +25,17 @@ describe('design-system Vite integration', () => {
+     expect(path.normalize(serveAliases[4].replacement)).toContain(
+       path.normalize('design-system/packages/ui/src/index.ts'),
+     );
+-    expect(createDesignSystemSourceAliases('build')).toEqual([]);
++    expect(createDesignSystemSourceAliases('build')).toEqual(serveAliases);
++  });
++
++  it('uses the same shared Bambook composer source in dev and production', () => {
++    for (const command of ['serve', 'build'] as const) {
++      const config = viteConfig({ command, mode: 'web' });
++      const aliases = config.resolve?.alias as { find: string | RegExp; replacement: string }[];
++      const composer = aliases.find(alias => alias.find === '@bambook/agent-composer');
++      expect(composer?.replacement).toMatch(/components[/\\]agent[/\\]BambookComposer\.tsx$/);
++      expect(config.server?.fs?.allow).toContain(path.dirname(composer!.replacement));
++    }
+   });
+ 
+   it('prevents persistent module caching in desktop development webviews', () => {
+diff --git a/src/web-ui/src/locales/en-US/common.json b/src/web-ui/src/locales/en-US/common.json
+index 700941e..d47667b 100644
+--- a/src/web-ui/src/locales/en-US/common.json
++++ b/src/web-ui/src/locales/en-US/common.json
+@@ -1,4 +1,16 @@
+ {
++  "bambook": {
++    "name": "Bambook Assistant",
++    "newConversation": "New conversation",
++    "creating": "Creating",
++    "history": "Conversations",
++    "models": "Models and accounts",
++    "about": "About Bambook",
++    "notReady": "The local assistant is not ready. Please reconnect.",
++    "createFailed": "Could not create the conversation. Please retry.",
++    "greeting": "What would you like to work on?",
++    "navigation": "Bambook assistant navigation"
++  },
+   "app": {
+     "version": "Version",
+     "loading": "Loading...",
+diff --git a/src/web-ui/src/locales/en-US/settings/models.json b/src/web-ui/src/locales/en-US/settings/models.json
+index a421ed2..b535393 100644
+--- a/src/web-ui/src/locales/en-US/settings/models.json
++++ b/src/web-ui/src/locales/en-US/settings/models.json
+@@ -86,6 +86,11 @@
+     "codeCopied": "Verification code copied",
+     "copyCodeFailed": "Could not copy the verification code",
+     "openAuthorization": "Open authorization page",
++    "authorizationLink": "Authorization link",
++    "copyAuthorizationLink": "Copy authorization link",
++    "authorizationLinkCopied": "Authorization link copied",
++    "copyAuthorizationLinkFailed": "Could not copy. Select the authorization link and copy it manually.",
++    "openAuthorizationFailed": "Could not open the authorization page. Copy the link and open it in your browser.",
+     "retryLogin": "Try again",
+     "loginNeedsRetry": "This sign-in did not complete",
+     "loginFailedInline": "{{error}}",
+diff --git a/src/web-ui/src/locales/zh-CN/common.json b/src/web-ui/src/locales/zh-CN/common.json
+index b1f3ff3..8bbfc3e 100644
+--- a/src/web-ui/src/locales/zh-CN/common.json
++++ b/src/web-ui/src/locales/zh-CN/common.json
+@@ -1,4 +1,16 @@
+ {
++  "bambook": {
++    "name": "Bambook 助手",
++    "newConversation": "新建对话",
++    "creating": "正在创建",
++    "history": "对话",
++    "models": "模型与账号",
++    "about": "关于 Bambook",
++    "notReady": "本机助手尚未就绪，请重新连接。",
++    "createFailed": "新建对话失败，请重试。",
++    "greeting": "今天需要处理什么？",
++    "navigation": "Bambook 助手导航"
++  },
+   "app": {
+     "version": "版本",
+     "loading": "加载中...",
+diff --git a/src/web-ui/src/locales/zh-CN/settings/models.json b/src/web-ui/src/locales/zh-CN/settings/models.json
+index 39f985a..5ccb74e 100644
+--- a/src/web-ui/src/locales/zh-CN/settings/models.json
++++ b/src/web-ui/src/locales/zh-CN/settings/models.json
+@@ -86,6 +86,11 @@
+     "codeCopied": "验证码已复制",
+     "copyCodeFailed": "复制验证码失败",
+     "openAuthorization": "打开授权页面",
++    "authorizationLink": "授权链接",
++    "copyAuthorizationLink": "复制授权链接",
++    "authorizationLinkCopied": "授权链接已复制",
++    "copyAuthorizationLinkFailed": "复制失败，请选中授权链接手动复制。",
++    "openAuthorizationFailed": "无法打开授权页面，请复制链接到浏览器中打开。",
+     "retryLogin": "重新登录",
+     "loginNeedsRetry": "本次登录未完成",
+     "loginFailedInline": "{{error}}",
+diff --git a/src/web-ui/src/locales/zh-TW/common.json b/src/web-ui/src/locales/zh-TW/common.json
+index 38d2a50..c4c8b6d 100644
+--- a/src/web-ui/src/locales/zh-TW/common.json
++++ b/src/web-ui/src/locales/zh-TW/common.json
+@@ -1,4 +1,16 @@
+ {
++  "bambook": {
++    "name": "Bambook 助手",
++    "newConversation": "新增對話",
++    "creating": "正在建立",
++    "history": "對話",
++    "models": "模型與帳號",
++    "about": "關於 Bambook",
++    "notReady": "本機助手尚未就緒，請重新連線。",
++    "createFailed": "無法建立對話，請重試。",
++    "greeting": "今天需要處理什麼？",
++    "navigation": "Bambook 助手導覽"
++  },
+   "app": {
+     "version": "版本",
+     "loading": "載入中...",
+diff --git a/src/web-ui/src/locales/zh-TW/settings/models.json b/src/web-ui/src/locales/zh-TW/settings/models.json
+index 8b2e62e..d147180 100644
+--- a/src/web-ui/src/locales/zh-TW/settings/models.json
++++ b/src/web-ui/src/locales/zh-TW/settings/models.json
+@@ -86,6 +86,11 @@
+     "codeCopied": "驗證碼已複製",
+     "copyCodeFailed": "複製驗證碼失敗",
+     "openAuthorization": "開啟授權頁面",
++    "authorizationLink": "授權連結",
++    "copyAuthorizationLink": "複製授權連結",
++    "authorizationLinkCopied": "授權連結已複製",
++    "copyAuthorizationLinkFailed": "複製失敗，請選取授權連結手動複製。",
++    "openAuthorizationFailed": "無法開啟授權頁面，請複製連結到瀏覽器中開啟。",
+     "retryLogin": "重新登入",
+     "loginNeedsRetry": "本次登入未完成",
+     "loginFailedInline": "{{error}}",
+diff --git a/src/web-ui/src/main.tsx b/src/web-ui/src/main.tsx
+index 22dfa5d..0b23877 100644
+--- a/src/web-ui/src/main.tsx
++++ b/src/web-ui/src/main.tsx
+@@ -7,6 +7,11 @@ import { STARTUP_OVERLAY_HIDDEN_EVENT } from "./app/startup/startupSignals";
+ import { I18nProvider } from "./infrastructure/i18n/providers/I18nProvider";
+ import { OpenBitFunDesignSystemProvider } from "./infrastructure/design-system";
+ import "./app/styles/index.scss";
++import '@bambook/agent-theme';
++import { installBambookAppearance } from './bambookAppearance';
++
++const disposeBambookAppearance = installBambookAppearance();
++if (import.meta.hot) import.meta.hot.dispose(disposeBambookAppearance);
+ 
+ // The build-selected font profile is linked from index.html before first paint.
+ // Apple uses system faces; non-Apple bundles HarmonyOS Sans and Fira Code.
+diff --git a/src/web-ui/tsconfig.json b/src/web-ui/tsconfig.json
+index 71d131b..58df243 100644
+--- a/src/web-ui/tsconfig.json
++++ b/src/web-ui/tsconfig.json
+@@ -28,6 +28,8 @@
+     "baseUrl": ".",
+     "ignoreDeprecations": "5.0",
+     "paths": {
++      "@bambook/brand": ["../../../../../components/brand/BambookBrandMark.tsx"],
++      "@bambook/agent-composer": ["../../../../../components/agent/BambookComposer.tsx"],
+       "@/*": ["src/*"],
+       "@/shared/*": ["src/shared/*"],
+       "@/core/*": ["src/core/*"],
+diff --git a/src/web-ui/vite.config.ts b/src/web-ui/vite.config.ts
+index 37e7e24..1b7373b 100644
+--- a/src/web-ui/vite.config.ts
++++ b/src/web-ui/vite.config.ts
+@@ -1,4 +1,5 @@
+ import { readFileSync } from "node:fs";
++import { createBambookBrandPlugin } from '../../../../../scripts/bambook-brand-vite.mjs';
+ import { createRequire } from "node:module";
+ import { defineConfig, type Plugin } from "vite";
+ import react from "@vitejs/plugin-react";
+@@ -18,6 +19,7 @@ import {
+ import { resolveDevServerPorts } from '../../scripts/dev-server-ports.mjs';
+ 
+ const host = process.env.TAURI_DEV_HOST;
++const bambookUiRoot = process.env.BAMBOOK_UI_ROOT || path.resolve(__dirname, '../../../../..');
+ const requireFromWebUi = createRequire(path.join(__dirname, 'package.json'));
+ const { port: devPort, hmrPort } = resolveDevServerPorts();
+ const designSystemUiSourceDirectory = path.resolve(
+@@ -84,15 +86,11 @@ export function createWebFontProfilePlugin(
+ }
+ 
+ /**
+- * Product development consumes the design-system source so Vite can preserve
+- * React Fast Refresh and CSS-module HMR. Production builds deliberately return
+- * no aliases and resolve the package's published `dist` exports instead.
++ * The embedded product consumes one design-system source graph in dev and build.
++ * This lets the host brand adapter reach internal tool indicators, while keeping
++ * shared UI contexts single-instance (never mix source and published dist).
+  */
+-export function createDesignSystemSourceAliases(command: 'serve' | 'build') {
+-  if (command !== 'serve') {
+-    return [];
+-  }
+-
++export function createDesignSystemSourceAliases(_command: 'serve' | 'build') {
+   return [
+     {
+       find: /^@openbitfun\/ui\/brand$/,
+@@ -166,6 +164,7 @@ export default defineConfig(({ mode, command }) => {
+     // In-process generators use their own config and cache directory.
+     cacheDir: path.resolve(__dirname, 'node_modules/.vite', `dev-${devPort}`),
+     plugins: [
++      createBambookBrandPlugin({root: bambookUiRoot, designSystemSource: designSystemUiSourceDirectory}),
+       createWebFontProfilePlugin(fontProfile, command),
+       react(),
+       watchSourcePlugin(designSystemUiSourceDirectory),
+@@ -177,6 +176,9 @@ export default defineConfig(({ mode, command }) => {
+     resolve: {
+       dedupe: ['react', 'react-dom', 'lucide-react'],
+       alias: [
++        { find: '@bambook/agent-theme', replacement: path.resolve(bambookUiRoot, 'styles/bds/agent-theme.css') },
++        { find: '@bambook/agent-composer', replacement: path.resolve(bambookUiRoot, 'components/agent/BambookComposer.tsx') },
++        { find: '@bambook/brand', replacement: path.resolve(bambookUiRoot, 'components/brand/BambookBrandMark.tsx') },
+         // @xterm/headless 6.1.0-beta.141 advertises a missing lib/xterm.mjs.
+         // Resolve its published ESM entry for both dev optimization and builds.
+         {
+@@ -225,6 +227,11 @@ export default defineConfig(({ mode, command }) => {
+     fs: {
+       allow: [
+         path.resolve(__dirname, '../../'), // Workspace root
++        path.join(bambookUiRoot, 'styles/bds'),
++        path.join(bambookUiRoot, 'components/brand'),
++        path.join(bambookUiRoot, 'components/agent'),
++        ...['harmonyos-sans-sc-webfont-splitted', '@fontsource/urbanist', '@fontsource/jetbrains-mono']
++          .map(name => path.join(bambookUiRoot, 'node_modules', name)),
+       ],
+     },
+     watch: {
+diff --git a/src/crates/interfaces/app-server/src/server/bambook_host.rs b/src/crates/interfaces/app-server/src/server/bambook_host.rs
+new file mode 100644
+index 0000000..f8d481f
+--- /dev/null
++++ b/src/crates/interfaces/app-server/src/server/bambook_host.rs
+@@ -0,0 +1,426 @@
++//! Local-only Bambook host compatibility for the existing desktop model UI.
++//! No credentials are imported from another application or returned to Bambook.
++use agent_client_protocol::Error;
++use openbitfun_core::infrastructure::subscription_auth as auth;
++use serde::Deserialize;
++use serde_json::Value;
++
++pub(super) fn supports(method: &str) -> bool {
++    matches!(method, "get_ai_model_catalog" | "get_local_models_dev_catalogs" | "list_ai_models_by_config"
++        | "get_models_dev_catalog_status" | "refresh_models_dev_catalog_now"
++        | "list_subscription_accounts" | "start_subscription_login"
++        | "get_subscription_login_status" | "cancel_subscription_login"
++        | "logout_subscription_account" | "refresh_subscription_account"
++        | "initialize_workspace_startup_state" | "get_current_workspace"
++        | "get_recent_workspaces" | "get_opened_workspaces" | "get_assistant_workspaces"
++        | "get_primary_assistant_workspace" | "list_persisted_sessions_page"
++        | "initialize_mcp_servers" | "initialize_mcp_servers_non_destructive"
++        | "get_available_modes" | "manage_dialog_queue" | "bambook/createSession"
++        | "bambook/updateSessionModel" | "get_session_permission_mode"
++        | "restore_session_view" | "load_persisted_session_metadata" | "ensure_coordinator_session")
++}
++
++#[derive(Deserialize)]
++#[serde(rename_all = "camelCase")]
++struct LoginRequest {
++    provider: auth::SubscriptionProvider,
++    session_id: String,
++    #[serde(default)]
++    method: Option<auth::SubscriptionLoginMethod>,
++}
++#[derive(Deserialize)]
++struct ProviderRequest { provider: auth::SubscriptionProvider }
++
++fn encode(value: impl serde::Serialize) -> Result<Value, Error> {
++    serde_json::to_value(value).map_err(|_| Error::internal_error())
++}
++fn failure(_: impl std::fmt::Display) -> Error {
++    // Provider responses can contain sensitive details; do not echo them.
++    Error::internal_error().data(serde_json::json!({"reason": "host_operation_failed"}))
++}
++async fn http_options() -> Result<auth::SubscriptionHttpOptions, Error> {
++    let service = openbitfun_core::service::config::get_global_config_service().await.map_err(failure)?;
++    let config: openbitfun_core::service::config::GlobalConfig = service.get_config(None).await.map_err(failure)?;
++    Ok(auth::SubscriptionHttpOptions::new(config.ai.proxy.enabled.then_some(config.ai.proxy), false))
++}
++
++#[derive(Deserialize)]
++struct ModelDiscoveryRequest {
++    config: openbitfun_core::service::config::types::AIModelConfig,
++}
++
++async fn discover_models(body: Value) -> Result<Value, Error> {
++    use openbitfun_core::infrastructure::ai::{client_factory, AIClient};
++    let request: ModelDiscoveryRequest = serde_json::from_value(body)
++        .map_err(|_| Error::invalid_params())?;
++    // Same transient client contract as desktop; never persist discovery drafts
++    // or expose the subscription credential resolved by the shared owner.
++    let operation = async {
++        let service = openbitfun_core::service::config::get_global_config_service().await.map_err(failure)?;
++        let global: openbitfun_core::service::config::GlobalConfig = service.get_config(None).await.map_err(failure)?;
++        let stream = openbitfun_core::infrastructure::ai::build_stream_options_for_model(&global.ai, Some(&request.config));
++        let identity = request.config.auth.clone();
++        let mut config: openbitfun_core::util::types::AIConfig = request.config.try_into().map_err(failure)?;
++        let proxy = global.ai.proxy.enabled.then_some(global.ai.proxy);
++        let options = auth::SubscriptionHttpOptions::new(proxy.clone(), config.skip_ssl_verify);
++        client_factory::apply_subscription_auth_with_options(&identity, &mut config, &options).await.map_err(failure)?;
++        let client = client_factory::apply_subscription_request_profile(&identity,
++            AIClient::new_with_runtime_options(config, proxy, stream));
++        encode(client.list_models().await.map_err(|_| Error::internal_error()
++            .data(serde_json::json!({"reason": "model_discovery_failed"})))?)
++    };
++    tokio::time::timeout(std::time::Duration::from_secs(30), operation).await
++        .map_err(|_| Error::internal_error().data(serde_json::json!({"reason": "model_discovery_timeout"})))?
++}
++
++fn workspace_dto(info: openbitfun_core::service::workspace::WorkspaceInfo) -> Result<Value, Error> {
++    use openbitfun_core::service::workspace::{WorkspaceKind, WorkspaceType};
++    let kind = match info.workspace_kind {
++        WorkspaceKind::Normal => "normal",
++        WorkspaceKind::Assistant => "assistant",
++        WorkspaceKind::Remote => "remote",
++    };
++    let workspace_type = if info.workspace_type == WorkspaceType::Other { "other" } else { "singleProject" };
++    let mut value = encode(&info)?;
++    value["workspaceKind"] = Value::from(kind);
++    value["workspaceType"] = Value::from(workspace_type);
++    // Persistence metadata is not part of the desktop presentation contract.
++    value.as_object_mut().unwrap().remove("metadata");
++    Ok(value)
++}
++fn workspace_list(items: Vec<openbitfun_core::service::workspace::WorkspaceInfo>) -> Result<Value, Error> {
++    items.into_iter().map(workspace_dto).collect::<Result<Vec<_>, _>>().map(Value::Array)
++}
++async fn workspace_read(method: &str) -> Result<Value, Error> {
++    let service = openbitfun_core::service::workspace::get_global_workspace_service()
++        .ok_or_else(Error::internal_error)?;
++    let current = async { service.get_current_workspace().await.map(workspace_dto).transpose().map(|v| v.unwrap_or(Value::Null)) };
++    match method {
++        "get_current_workspace" => current.await,
++        "get_recent_workspaces" => workspace_list(service.get_recent_workspaces().await),
++        "get_opened_workspaces" => workspace_list(service.get_opened_workspaces().await),
++        "get_assistant_workspaces" => workspace_list(service.get_assistant_workspaces().await),
++        "get_primary_assistant_workspace" => service.get_primary_assistant_workspace().await.map(workspace_dto).transpose().map(|v| v.unwrap_or(Value::Null)),
++        "initialize_workspace_startup_state" => Ok(serde_json::json!({
++            "cleanupRemovedCount": 0,
++            "currentWorkspace": current.await?,
++            "recentWorkspaces": workspace_list(service.get_recent_workspaces().await)?,
++            "openedWorkspaces": workspace_list(service.get_opened_workspaces().await)?,
++            "assistantWorkspaces": workspace_list(service.get_assistant_workspaces().await)?,
++            "primaryAssistantWorkspaceId": service.get_primary_assistant_workspace().await.map(|v| v.id),
++            "legacyRemoteWorkspace": null
++        })),
++        _ => Err(Error::method_not_found()),
++    }
++}
++
++#[derive(Deserialize)]
++struct SessionPageRequest {
++    workspace_id: String,
++    limit: usize,
++    cursor: Option<String>,
++    session_ids: Option<Vec<String>>,
++}
++pub(super) async fn session_page(runtime: &crate::agent::OpenBitFunAppRuntime, params: Value) -> Result<Value, Error> {
++    let request: SessionPageRequest = serde_json::from_value(params.get("request").unwrap_or(&params).clone())
++        .map_err(|_| Error::invalid_params())?;
++    if request.limit == 0 || request.limit > 128 { return Err(Error::invalid_params()); }
++    let service = openbitfun_core::service::workspace::get_global_workspace_service().ok_or_else(Error::internal_error)?;
++    let workspace = service.require_workspace(&request.workspace_id).await.map_err(failure)?;
++    if workspace.workspace_kind == openbitfun_core::service::workspace::WorkspaceKind::Remote {
++        return Err(Error::invalid_params());
++    }
++    let owner = runtime.bambook_compatibility.as_ref().ok_or_else(Error::internal_error)?;
++    let mut page = owner.list_persisted_sessions_page_with_activity(runtime.runtime(), &workspace.root_path,
++        request.cursor.as_deref(), request.limit, request.session_ids.as_deref()).await.map_err(failure)?;
++    for session in &mut page.sessions { session.workspace_id.get_or_insert_with(|| workspace.id.clone()); }
++    encode(page)
++}
++
++#[derive(Default, Deserialize)]
++#[serde(rename_all = "camelCase")]
++struct ModeRequest {
++    workspace_id: Option<String>,
++    workspace_path: Option<String>,
++}
++
++async fn available_modes(body: Value) -> Result<Value, Error> {
++    let request: ModeRequest = serde_json::from_value(body).map_err(|_| Error::invalid_params())?;
++    let service = openbitfun_core::service::workspace::get_global_workspace_service().ok_or_else(Error::internal_error)?;
++    let has_scope = request.workspace_id.is_some() || request.workspace_path.is_some();
++    let workspace = service.resolve_legacy_workspace_reference(request.workspace_id.as_deref(),
++        request.workspace_path.as_deref().unwrap_or_default(), None, None).await.map_err(failure)?;
++    if has_scope && workspace.is_none() { return Err(Error::invalid_params()); }
++    if workspace.as_ref().is_some_and(|w| w.workspace_kind == openbitfun_core::service::workspace::WorkspaceKind::Remote) {
++        return Err(Error::invalid_params());
++    }
++    // The local registry owns builtin/custom modes. Do not advertise external
++    // plugin routes before their activation lifecycle is supported by this host.
++    let modes = openbitfun_core::agentic::agents::get_agent_registry()
++        .get_modes_info_for_workspace(workspace.as_ref().map(|w| w.id.as_str()), false).await;
++    let mut values = Vec::with_capacity(modes.len());
++    for mode in modes {
++        let profile = mode.config_profile_id.clone().unwrap_or_else(|| mode.id.clone());
++        let mut value = encode(mode)?;
++        value["configProfileId"] = Value::from(profile);
++        values.push(value);
++    }
++    Ok(Value::Array(values))
++}
++
++#[derive(Deserialize)]
++#[serde(rename_all = "camelCase")]
++struct SessionReadRequest {
++    #[serde(alias = "session_id")]
++    session_id: String,
++    #[serde(alias = "workspace_id")]
++    workspace_id: String,
++    #[serde(alias = "remote_connection_id")]
++    remote_connection_id: Option<String>,
++    #[serde(alias = "remote_ssh_host")]
++    remote_ssh_host: Option<String>,
++    #[serde(alias = "tail_turn_count")]
++    tail_turn_count: Option<usize>,
++    #[serde(default, alias = "include_internal")]
++    include_internal: bool,
++}
++
++pub(super) async fn session_read(runtime: &crate::agent::OpenBitFunAppRuntime, method: &str, params: Value) -> Result<Value, Error> {
++    let request: SessionReadRequest = serde_json::from_value(
++        params.get("request").unwrap_or(&params).clone()).map_err(|_| Error::invalid_params())?;
++    // Resolve only registered local workspace identities. Never trust a path
++    // supplied by a browser, and never silently fall back from a remote scope.
++    if request.remote_connection_id.is_some() || request.remote_ssh_host.is_some() {
++        return Err(Error::invalid_params());
++    }
++    let service = openbitfun_core::service::workspace::get_global_workspace_service().ok_or_else(Error::internal_error)?;
++    let workspace = service.require_workspace(&request.workspace_id).await.map_err(failure)?;
++    if workspace.workspace_kind == openbitfun_core::service::workspace::WorkspaceKind::Remote {
++        return Err(Error::invalid_params());
++    }
++    let owner = runtime.bambook_compatibility.as_ref().ok_or_else(Error::internal_error)?;
++    let scope = openbitfun_runtime_ports::SessionStoragePathRequest {
++        workspace_path: workspace.root_path.clone(), remote_connection_id: None, remote_ssh_host: None,
++    };
++    owner.ensure_workspace_runtime_ownership(&scope).map_err(failure)?;
++    if method == "ensure_coordinator_session" {
++        // Same readiness owner as desktop: reuse a loaded session, or restore
++        // its persisted context. Never recreate it or reset earlier turns.
++        let storage_path = owner.resolve_persisted_session_storage_path(scope).await.map_err(failure)?;
++        owner.ensure_session_loaded_from_storage_path(
++            &storage_path, &request.session_id, request.include_internal,
++        ).await.map_err(failure)?;
++        return Ok(Value::Null);
++    }
++    if method == "load_persisted_session_metadata" {
++        return encode(owner.load_persisted_session_metadata(&workspace.root_path, &request.session_id).await.map_err(failure)?);
++    }
++    let tail = request.tail_turn_count.unwrap_or(16).clamp(1, 16);
++    let (mut session, turns, total, catalog, timings) = owner.restore_session_view_for_workspace(
++        scope, &request.session_id, false, Some(tail)).await.map_err(failure)?;
++    if let Some(live) = owner.loaded_session_snapshot(&request.session_id).map_err(failure)? {
++        session.state = live.state;
++    }
++    let context_usage = owner.load_persisted_session_metadata(&workspace.root_path, &request.session_id)
++        .await.map_err(failure)?.and_then(|metadata| metadata.current_context_usage);
++    let snapshot = runtime.runtime().session_event_projection_snapshot(&request.session_id).map(|snapshot| {
++        let events: Vec<Value> = snapshot.events.into_iter()
++            .filter_map(openbitfun_events::project_agentic_frontend_event)
++            .map(|event| serde_json::json!({"eventName": event.event_name, "payload": event.payload})).collect();
++        serde_json::json!({"sessionId": snapshot.session_id, "streamId": snapshot.stream_id,
++            "cursor": snapshot.cursor, "activeTurnId": snapshot.active_turn_id, "events": events})
++    });
++    let loaded = turns.len();
++    Ok(serde_json::json!({
++        "session": {
++            "sessionId": session.session_id, "sessionName": session.session_name,
++            "agentType": session.agent_type, "modelName": session.config.model_id,
++            "reasoningPreset": session.config.reasoning_preset,
++            "lastUserDialogAgentType": session.last_user_dialog_agent_type,
++            "lastSubmittedAgentType": session.last_submitted_agent_type,
++            "state": format!("{:?}", session.state), "turnCount": total,
++            "createdAt": session.created_at.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
++        },
++        "turns": turns,
++        "interactionSnapshot": runtime.runtime().session_interaction_snapshot(&request.session_id),
++        "runtimeEventSnapshot": snapshot, "currentContextUsage": context_usage,
++        "turnCatalog": catalog, "contextRestoreState": "pending",
++        "isPartial": loaded < total, "loadedTurnCount": loaded, "totalTurnCount": total,
++        "timings": timings,
++    }))
++}
++
++#[derive(Deserialize)]
++#[serde(rename_all = "camelCase")]
++struct LocalSessionRequest {
++    session_id: Option<String>,
++    config: Option<Value>,
++    #[serde(flatten)]
++    request: openbitfun_runtime_ports::AgentSessionCreateRequest,
++}
++
++pub(super) async fn create_session(runtime: &crate::agent::OpenBitFunAppRuntime, params: Value) -> Result<Value, Error> {
++    let mut request: LocalSessionRequest = serde_json::from_value(
++        params.get("request").unwrap_or(&params).clone()).map_err(|_| Error::invalid_params())?;
++    if request.request.model_id.is_none() {
++        request.request.model_id = request.config.as_ref().and_then(|v| v.get("modelName"))
++            .and_then(Value::as_str).filter(|s| !s.trim().is_empty()).map(str::to_owned);
++    }
++    let result = match request.session_id {
++        Some(id) if id.trim().is_empty() => return Err(Error::invalid_params()),
++        Some(id) => runtime.runtime().create_session_with_id(id, request.request).await,
++        None => runtime.runtime().create_session(request.request).await,
++    };
++    encode(result.map_err(failure)?)
++}
++
++#[derive(Deserialize)]
++#[serde(rename_all = "camelCase")]
++struct ModelSelectionRequest {
++    session_id: String,
++    model_name: String,
++    reasoning_preset: Option<String>,
++}
++
++pub(super) async fn update_model(runtime: &crate::agent::OpenBitFunAppRuntime, params: Value) -> Result<Value, Error> {
++    use openbitfun_runtime_ports::{AgentSessionModelSelection, AgentSessionModelSelectionUpdateRequest, AgentSessionModelUpdateRequest};
++    let body = params.get("request").unwrap_or(&params);
++    let request: ModelSelectionRequest = serde_json::from_value(body.clone()).map_err(|_| Error::invalid_params())?;
++    if body.get("reasoningPreset").is_some() {
++        runtime.runtime().update_session_model_selection(AgentSessionModelSelectionUpdateRequest {
++            session_id: request.session_id,
++            selection: AgentSessionModelSelection { model_id: request.model_name, reasoning_preset: request.reasoning_preset },
++        }).await.map_err(failure)?;
++    } else {
++        runtime.runtime().update_session_model(AgentSessionModelUpdateRequest {
++            session_id: request.session_id, model_id: request.model_name,
++        }).await.map_err(failure)?;
++    }
++    Ok(Value::Null)
++}
++
++pub(super) async fn dialog_queue(runtime: &crate::agent::OpenBitFunAppRuntime, params: Value) -> Result<Value, Error> {
++    let request: openbitfun_runtime_ports::DialogQueueRequest = serde_json::from_value(
++        params.get("request").unwrap_or(&params).clone()).map_err(|_| Error::invalid_params())?;
++    // Delegate epoch fencing, idempotency, attachments and execution to the same
++    // AgentRuntime owner used by Desktop. Never emulate a successful queue receipt.
++    encode(runtime.runtime().manage_dialog_queue(request).await.map_err(failure)?)
++}
++
++#[derive(Deserialize)]
++#[serde(rename_all = "camelCase")]
++struct PermissionModeRequest { session_id: String, turn_id: Option<String> }
++
++fn permission_mode(body: Value) -> Result<Value, Error> {
++    use openbitfun_core::agentic::core::SessionState;
++    let request: PermissionModeRequest = serde_json::from_value(body).map_err(|_| Error::invalid_params())?;
++    let owner = openbitfun_core::agentic::coordination::get_global_coordinator().ok_or_else(Error::internal_error)?;
++    let manager = owner.get_session_manager();
++    let session = manager.get_session(&request.session_id).ok_or_else(Error::invalid_params)?;
++    let active = request.turn_id.filter(|turn_id| matches!(&session.state,
++        SessionState::Processing { current_turn_id, .. } if current_turn_id == turn_id));
++    Ok(serde_json::json!({
++        "mode": manager.session_permission_mode(&request.session_id),
++        "turnMode": active.as_deref().and_then(|id| manager.active_turn_permission_mode(&request.session_id, id)),
++        "activeTurnId": active,
++    }))
++}
++
++pub(super) async fn handle(method: &str, params: Value) -> Result<Value, Error> {
++    let body = params.get("request").unwrap_or(&params).clone();
++    match method {
++        "get_available_modes" => available_modes(body).await,
++        "get_session_permission_mode" => permission_mode(body),
++        "initialize_workspace_startup_state" | "get_current_workspace" | "get_recent_workspaces"
++        | "get_opened_workspaces" | "get_assistant_workspaces" | "get_primary_assistant_workspace" => workspace_read(method).await,
++        "initialize_mcp_servers" | "initialize_mcp_servers_non_destructive" => {
++            let service = openbitfun_core::service::mcp::get_global_mcp_service().ok_or_else(Error::internal_error)?;
++            service.server_manager().initialize_non_destructive().await.map_err(failure)?;
++            Ok(Value::Null)
++        }
++        "list_ai_models_by_config" => discover_models(body).await,
++        "get_ai_model_catalog" => encode(openbitfun_core::get_remote_model_catalog().await.map_err(failure)?),
++        "get_local_models_dev_catalogs" => encode(openbitfun_core::get_local_models_dev_catalogs().await.map_err(failure)?),
++        "get_models_dev_catalog_status" => encode(openbitfun_core::get_models_dev_catalog_status().await),
++        "refresh_models_dev_catalog_now" => encode(openbitfun_core::refresh_models_dev_catalog_now().await.map_err(failure)?),
++        "list_subscription_accounts" => encode(auth::list_accounts().await),
++        "start_subscription_login" | "get_subscription_login_status" | "cancel_subscription_login" => {
++            let request: LoginRequest = serde_json::from_value(body).map_err(|_| Error::invalid_params())?;
++            match method {
++                "start_subscription_login" => encode(auth::start_login_with_method_and_options(request.provider, request.session_id, request.method, http_options().await?).await.map_err(failure)?),
++                "get_subscription_login_status" => encode(auth::login_status(request.provider, &request.session_id).await.map_err(failure)?),
++                _ => { auth::cancel_login(request.provider, &request.session_id).await.map_err(failure)?; Ok(Value::Null) }
++            }
++        }
++        "logout_subscription_account" | "refresh_subscription_account" => {
++            let request: ProviderRequest = serde_json::from_value(body).map_err(|_| Error::invalid_params())?;
++            if method == "logout_subscription_account" { encode(auth::logout(request.provider).await.map_err(failure)?) }
++            else { encode(auth::refresh_account_with_options(request.provider, &http_options().await?).await.map_err(failure)?) }
++        }
++        _ => Err(Error::method_not_found()),
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    #[test]
++    fn narrow_host_surface() {
++        assert!(supports("start_subscription_login"));
++        assert!(!supports("exec"));
++        assert!(!supports("read_credentials"));
++    }
++    #[test]
++    fn workspace_read_surface_and_page_contract_are_explicit() {
++        assert!(supports("initialize_workspace_startup_state"));
++        assert!(supports("list_persisted_sessions_page"));
++        assert!(supports("get_available_modes"));
++        assert!(supports("manage_dialog_queue"));
++        assert!(!supports("open_remote_workspace"));
++        assert!(serde_json::from_value::<SessionPageRequest>(serde_json::json!({"workspace_path":"/arbitrary", "limit":10})).is_err());
++        let request: SessionPageRequest = serde_json::from_value(serde_json::json!({"workspace_id":"local", "limit":10})).unwrap();
++        assert_eq!(request.workspace_id, "local");
++        assert!(request.session_ids.is_none());
++    }
++    #[test]
++    fn session_reads_require_registered_identity_not_browser_paths() {
++        assert!(supports("restore_session_view"));
++        assert!(supports("load_persisted_session_metadata"));
++        assert!(supports("ensure_coordinator_session"));
++        assert!(serde_json::from_value::<SessionReadRequest>(serde_json::json!({
++            "sessionId": "session", "workspacePath": "/arbitrary"
++        })).is_err());
++        for value in [
++            serde_json::json!({"sessionId": "session", "workspaceId": "workspace"}),
++            serde_json::json!({"session_id": "session", "workspace_id": "workspace"}),
++        ] {
++            let request: SessionReadRequest = serde_json::from_value(value).unwrap();
++            assert_eq!(request.workspace_id, "workspace");
++            assert!(request.remote_connection_id.is_none());
++            assert!(!request.include_internal);
++        }
++        let internal: SessionReadRequest = serde_json::from_value(serde_json::json!({
++            "sessionId": "session", "workspaceId": "workspace", "includeInternal": true
++        })).unwrap();
++        assert!(internal.include_internal);
++    }
++    #[tokio::test]
++    async fn model_discovery_requires_a_config_not_a_saved_pool_request() {
++        assert!(supports("list_ai_models_by_config"));
++        for body in [Value::Null, serde_json::json!({"request": {}}),
++            serde_json::json!({"request": {"config": {"auth": {"type": "subscription", "provider": "invalid"}}}})] {
++            let error = handle("list_ai_models_by_config", body).await.unwrap_err();
++            assert_eq!(error.code, Error::invalid_params().code);
++        }
++    }
++    #[test]
++    fn errors_do_not_expose_provider_details() {
++        let error = encode(failure("dummy-sensitive-provider-response")).unwrap();
++        assert!(!error.to_string().contains("dummy-sensitive-provider-response"));
++    }
++    #[tokio::test]
++    async fn login_requires_a_typed_request() {
++        assert!(handle("start_subscription_login", serde_json::json!({})).await.is_err());
++        assert!(handle("exec", Value::Null).await.is_err());
++    }
++}
+diff --git a/src/web-ui/src/bambookAppearance.ts b/src/web-ui/src/bambookAppearance.ts
+new file mode 100644
+index 0000000..de5b638
+--- /dev/null
++++ b/src/web-ui/src/bambookAppearance.ts
+@@ -0,0 +1,35 @@
++/** Appearance-only host integration. Never imports account or runtime services. */
++const PARENT_ORIGINS = new Set([
++  'http://localhost:3000', 'http://127.0.0.1:3000',
++  'http://localhost:4173', 'http://127.0.0.1:4173',
++  'null', // Electron's file:// parent; still requires exact parent identity.
++]);
++
++export function installBambookAppearance(target: Window = window): () => void {
++  if (target.parent === target) return () => {};
++  const root = target.document.documentElement;
++  let hostTheme: 'light' | 'dark' | undefined;
++  const apply = () => {
++    if (!hostTheme) return;
++    if (root.dataset.bambookHost !== 'true') root.dataset.bambookHost = 'true';
++    if (root.dataset.bambookTheme !== hostTheme) root.dataset.bambookTheme = hostTheme;
++    if (root.dataset.openbitfunAppearanceMode !== hostTheme) root.dataset.openbitfunAppearanceMode = hostTheme;
++    root.style.colorScheme = hostTheme;
++  };
++  // Upstream appearance initialization can finish after the parent handshake.
++  // Observe only root mode flags, never subtree/content or account state.
++  const observer = new MutationObserver(apply);
++  observer.observe(root, { attributes: true, attributeFilter: ['data-bambook-theme', 'data-openbitfun-appearance-mode'] });
++  const receive = (event: MessageEvent) => {
++    if (event.source !== target.parent || !PARENT_ORIGINS.has(event.origin)) return;
++    const data = event.data;
++    if (!data || data.type !== 'bambook:appearance' || data.version !== 1
++        || (data.theme !== 'light' && data.theme !== 'dark')) return;
++    hostTheme = data.theme;
++    apply();
++  };
++  target.addEventListener('message', receive);
++  // This constant notification carries no application data or authority.
++  target.parent.postMessage({ type: 'bambook:appearance-ready', version: 1 }, '*');
++  return () => { target.removeEventListener('message', receive); observer.disconnect(); };
++}
+diff --git a/src/web-ui/src/bambookPreload.tsx b/src/web-ui/src/bambookPreload.tsx
+new file mode 100644
+index 0000000..0129567
+--- /dev/null
++++ b/src/web-ui/src/bambookPreload.tsx
+@@ -0,0 +1,17 @@
++import '@bambook/agent-theme';
++// This is the Bambook build: use one canvas and no second in-frame splash.
++document.documentElement.dataset.bambookHost = 'true';
++document.documentElement.dataset.bambookTheme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
++document.getElementById('openbitfun-startup-overlay')?.remove();
++document.title = 'Bambook 助手';
++for (const [kind, type, href] of [
++  ['png', 'image/png', '/brand/bambook-v3-favicon-32.png?v=4'],
++  ['svg', 'image/svg+xml', '/brand/bambook-v3-favicon.svg?v=4'],
++]) {
++  let link = document.querySelector<HTMLLinkElement>(`link[data-bambook-icon="${kind}"]`);
++  if (!link) { link = document.createElement('link'); document.head.append(link); }
++  link.rel = 'icon'; link.type = type; link.href = href; link.dataset.bambookIcon = kind;
++  link.sizes.value = kind === 'png' ? '32x32' : 'any';
++  document.head.append(link); // SVG last: prefer the transparent, light/dark-aware vector.
++}
++document.querySelectorAll('link[rel="icon"]:not([data-bambook-icon])').forEach(link => link.remove());
+diff --git a/src/web-ui/src/bambookProduct.ts b/src/web-ui/src/bambookProduct.ts
+new file mode 100644
+index 0000000..dac7e77
+--- /dev/null
++++ b/src/web-ui/src/bambookProduct.ts
+@@ -0,0 +1,33 @@
++import type { WorkspaceInfo } from '@/shared/types/global-state';
++
++/** This checkout is the Bambook product surface, not the upstream general-purpose IDE. */
++export const BAMBOOK_PRODUCT = true;
++export const BAMBOOK_AGENT_MODE = 'Standard' as const;
++export const BAMBOOK_MODEL_SETTINGS = 'ai.models' as const;
++export const BAMBOOK_HISTORY_PAGE_SIZE = 30;
++
++export interface BambookHistoryPosition { scopeIndex: number; cursor?: string }
++
++/** One bounded request per user action; never walk every page at startup. */
++export async function loadBambookHistoryPage(
++  scopes: readonly { workspaceId: string }[],
++  position: BambookHistoryPosition,
++  load: (workspaceId: string, limit: number, cursor?: string) => Promise<{ hasMore: boolean; nextCursor?: string | null }>,
++): Promise<BambookHistoryPosition> {
++  const scope = scopes[position.scopeIndex];
++  if (!scope) return position;
++  const page = await load(scope.workspaceId, BAMBOOK_HISTORY_PAGE_SIZE, position.cursor);
++  if (page.hasMore) {
++    if (!page.nextCursor || page.nextCursor === position.cursor) throw new Error('Bambook history cursor did not advance');
++    return { scopeIndex: position.scopeIndex, cursor: page.nextCursor };
++  }
++  return { scopeIndex: position.scopeIndex + 1 };
++}
++
++/** Resolve an existing local owner; never invent an ID, open a directory, or rebind history. */
++export function resolveBambookWorkspace(workspaces: readonly WorkspaceInfo[]): WorkspaceInfo | null {
++  const local = workspaces.filter(workspace => workspace.workspaceKind !== 'remote' && workspace.workspaceKind !== 'assistant');
++  const configured = local.filter(workspace => /(?:^|\/)(?:openbitfun-workspace|agent-workspace)\/?$/.test(workspace.rootPath.replace(/\\/g, '/')));
++  if (configured.length === 1) return configured[0];
++  return local.length === 1 ? local[0] : null;
++}
+diff --git a/src/web-ui/src/bambookProduct.test.ts b/src/web-ui/src/bambookProduct.test.ts
+new file mode 100644
+index 0000000..0944826
+--- /dev/null
++++ b/src/web-ui/src/bambookProduct.test.ts
+@@ -0,0 +1,48 @@
++import { describe, expect, it, vi } from 'vitest';
++import { WorkspaceKind, type WorkspaceInfo } from '@/shared/types/global-state';
++import { BAMBOOK_AGENT_MODE, loadBambookHistoryPage, resolveBambookWorkspace } from './bambookProduct';
++const local = (id: string, rootPath = `/projects/${id}`): WorkspaceInfo => ({ id, rootPath, name: id, workspaceKind: WorkspaceKind.Normal });
++describe('Bambook bounded history', () => {
++  const scopes = [{ workspaceId: 'default' }, { workspaceId: 'legacy' }];
++  it('loads only one 30-entry metadata page per action, not all workspace histories', async () => {
++    const load = vi.fn().mockResolvedValue({ hasMore: true, nextCursor: 'next' });
++    expect(await loadBambookHistoryPage(scopes, { scopeIndex: 0 }, load)).toEqual({ scopeIndex: 0, cursor: 'next' });
++    expect(load).toHaveBeenCalledExactlyOnceWith('default', 30, undefined);
++  });
++  it('visits legacy owners separately after finishing the default owner', async () => {
++    const load = vi.fn().mockResolvedValue({ hasMore: false });
++    const next = await loadBambookHistoryPage(scopes, { scopeIndex: 0, cursor: 'next' }, load);
++    expect(next).toEqual({ scopeIndex: 1 });
++    await loadBambookHistoryPage(scopes, next, load);
++    expect(load).toHaveBeenLastCalledWith('legacy', 30, undefined);
++  });
++  it('does not loop on a broken cursor or request after completion', async () => {
++    const load = vi.fn().mockResolvedValue({ hasMore: true, nextCursor: 'same' });
++    await expect(loadBambookHistoryPage(scopes, { scopeIndex: 0, cursor: 'same' }, load)).rejects.toThrow();
++    load.mockClear(); await loadBambookHistoryPage(scopes, { scopeIndex: 2 }, load);
++    expect(load).not.toHaveBeenCalled();
++  });
++});
++
++describe('Bambook implicit workspace policy', () => {
++  it('uses Standard for newly created conversations only', () => expect(BAMBOOK_AGENT_MODE).toBe('Standard'));
++  it('prefers the registered host workspace without renaming or moving owners', () => {
++    const host = local('host', '/Bambook/tmp/openbitfun-workspace');
++    expect(resolveBambookWorkspace([local('older'), host])).toBe(host);
++  });
++  it('recognizes the installed host workspace and Windows separators', () => {
++    const host = local('host', 'C:\\Bambook\\agent-workspace');
++    expect(resolveBambookWorkspace([host, local('older')])).toBe(host);
++  });
++  it('can use the sole registered local workspace', () => {
++    const host = local('only'); expect(resolveBambookWorkspace([host])).toBe(host);
++  });
++  it('fails closed for missing or ambiguous owners', () => {
++    expect(resolveBambookWorkspace([])).toBeNull();
++    expect(resolveBambookWorkspace([local('a'), local('b')])).toBeNull();
++    expect(resolveBambookWorkspace([local('a', '/a/agent-workspace'), local('b', '/b/agent-workspace')])).toBeNull();
++  });
++  it('never chooses an assistant or remote workspace', () => {
++    expect(resolveBambookWorkspace([{ ...local('remote'), workspaceKind: WorkspaceKind.Remote }, { ...local('assistant'), workspaceKind: WorkspaceKind.Assistant }])).toBeNull();
++  });
++});
+diff --git a/src/web-ui/src/app/components/NavPanel/BambookNav.tsx b/src/web-ui/src/app/components/NavPanel/BambookNav.tsx
+new file mode 100644
+index 0000000..5c83bdf
+--- /dev/null
++++ b/src/web-ui/src/app/components/NavPanel/BambookNav.tsx
+@@ -0,0 +1,51 @@
++import { useMemo, useState } from 'react';
++import { useI18n } from '@/infrastructure/i18n';
++import { Button, Icon, NavigationPanelItem, ScrollArea } from '@openbitfun/ui';
++import { useWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext';
++import { isRemoteWorkspace } from '@/shared/types';
++import { BAMBOOK_AGENT_MODE, BAMBOOK_MODEL_SETTINGS, resolveBambookWorkspace } from '@/bambookProduct';
++import { flowChatManager } from '@/flow_chat/services/FlowChatManager';
++import { openMainSession } from '@/flow_chat/services/sessionActivation';
++import { flowChatSessionConfigForWorkspace } from '@/app/utils/projectSessionWorkspace';
++import { notificationService } from '@/shared/notification-system';
++import { useSceneManager } from '@/app/hooks/useSceneManager';
++import { useSettingsStore } from '@/app/scenes/settings/settingsStore';
++import SessionsSection from './sections/sessions/SessionsSection';
++
++export async function createBambookConversation(workspace: NonNullable<ReturnType<typeof resolveBambookWorkspace>>, activateWorkspace: (id: string) => Promise<unknown>) {
++  const id = await flowChatManager.createChatDraft(flowChatSessionConfigForWorkspace(workspace), BAMBOOK_AGENT_MODE);
++  await openMainSession(id, { workspaceId: workspace.id, activateWorkspace });
++  return id;
++}
++
++export default function BambookNav() {
++  const { t } = useI18n('common');
++  const { openedWorkspacesList, loading, setActiveWorkspace } = useWorkspaceContext();
++  const workspace = resolveBambookWorkspace(openedWorkspacesList);
++  const scopes = useMemo(() => openedWorkspacesList.filter(item => !isRemoteWorkspace(item))
++    .sort((a, b) => Number(b.id === workspace?.id) - Number(a.id === workspace?.id))
++    .map(item => ({ workspaceId: item.id, workspaceName: item.name })), [openedWorkspacesList, workspace?.id]);
++  const [creating, setCreating] = useState(false);
++  const { openScene } = useSceneManager();
++  const create = async () => {
++    if (!workspace || creating) return;
++    setCreating(true);
++    try { await createBambookConversation(workspace, setActiveWorkspace); }
++    catch (error) { notificationService.error(error instanceof Error ? error.message : t('bambook.createFailed')); }
++    finally { setCreating(false); }
++  };
++  return <div className="bambook-agent-nav" data-testid="bambook-agent-nav">
++    <Button variant="primary" disabled={loading || !workspace || creating} onClick={() => void create()} data-testid="bambook-new-conversation">
++      <Icon name="plus" size="sm" />{creating ? t('bambook.creating') : t('bambook.newConversation')}
++    </Button>
++    {!loading && !workspace && <p role="alert">{t('bambook.notReady')}</p>}
++    <div className="bambook-agent-nav__label">{t('bambook.history')}</div>
++    <ScrollArea className="bambook-agent-nav__history" edgeFade="vertical">
++      {scopes.length > 0 && <SessionsSection workspaceId={workspace?.id} workspacePath={workspace?.rootPath} workspaceScopes={scopes} layout="flat" compactProduct />}
++    </ScrollArea>
++    <div className="bambook-agent-nav__footer">
++      <NavigationPanelItem leading={<Icon name="settings" size="sm" />} onClick={() => { useSettingsStore.getState().openPage(BAMBOOK_MODEL_SETTINGS); openScene('settings'); }} data-testid="bambook-model-settings">{t('bambook.models')}</NavigationPanelItem>
++      <NavigationPanelItem leading={<Icon name="info" size="sm" />} onClick={() => window.dispatchEvent(new Event('nav:show-about'))} data-testid="bambook-about">{t('bambook.about')}</NavigationPanelItem>
++    </div>
++  </div>;
++}
+diff --git a/src/web-ui/src/app/components/NavPanel/BambookNav.test.tsx b/src/web-ui/src/app/components/NavPanel/BambookNav.test.tsx
+new file mode 100644
+index 0000000..776d81e
+--- /dev/null
++++ b/src/web-ui/src/app/components/NavPanel/BambookNav.test.tsx
+@@ -0,0 +1,59 @@
++// @vitest-environment jsdom
++import React, { act } from 'react';
++import { createRoot, type Root } from 'react-dom/client';
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
++const mock = vi.hoisted(() => ({
++  workspaces: [{ id: 'host', name: 'Host', rootPath: '/tmp/openbitfun-workspace', workspaceKind: 'normal' }],
++  create: vi.fn(), activate: vi.fn(), open: vi.fn(), scene: vi.fn(), settings: vi.fn(), error: vi.fn(), loading: false,
++}));
++vi.mock('@openbitfun/ui', () => ({
++  Button: ({ children, variant: _, ...props }: any) => <button {...props}>{children}</button>,
++  Icon: () => null,
++  ScrollArea: ({ children }: any) => <div>{children}</div>,
++  NavigationPanelItem: ({ children, leading: _, ...props }: any) => <button {...props}>{children}</button>,
++}));
++vi.mock('@/infrastructure/contexts/WorkspaceContext', () => ({ useWorkspaceContext: () => ({ openedWorkspacesList: mock.workspaces, loading: mock.loading, setActiveWorkspace: mock.activate }) }));
++vi.mock('@/flow_chat/services/FlowChatManager', () => ({ flowChatManager: { createChatDraft: mock.create } }));
++vi.mock('@/flow_chat/services/sessionActivation', () => ({ openMainSession: mock.open }));
++vi.mock('@/app/utils/projectSessionWorkspace', () => ({ flowChatSessionConfigForWorkspace: (workspace: any) => ({ workspaceId: workspace.id, workspacePath: workspace.rootPath }) }));
++vi.mock('@/shared/notification-system', () => ({ notificationService: { error: mock.error } }));
++vi.mock('@/app/hooks/useSceneManager', () => ({ useSceneManager: () => ({ openScene: mock.scene }) }));
++vi.mock('@/app/scenes/settings/settingsStore', () => ({ useSettingsStore: { getState: () => ({ openPage: mock.settings }) } }));
++vi.mock('./sections/sessions/SessionsSection', () => ({ default: (props: any) => <div data-testid="history" data-props={JSON.stringify(props)} /> }));
++import BambookNav from './BambookNav';
++let root: Root, element: HTMLDivElement;
++beforeEach(() => {
++  vi.clearAllMocks(); mock.loading = false;
++  mock.workspaces = [{ id: 'host', name: 'Host', rootPath: '/tmp/openbitfun-workspace', workspaceKind: 'normal' }];
++  mock.create.mockResolvedValue('draft-1'); mock.open.mockResolvedValue(undefined);
++  element = document.createElement('div'); document.body.append(element); root = createRoot(element);
++});
++afterEach(() => { act(() => root.unmount()); element.remove(); });
++const render = async () => act(async () => root.render(<BambookNav />));
++const click = async (id: string) => act(async () => element.querySelector<HTMLButtonElement>(`[data-testid="${id}"]`)!.click());
++describe('Bambook conversation rail', () => {
++  it('creates a real Standard draft with the existing authoritative owner and activates it', async () => {
++    await render(); await click('bambook-new-conversation');
++    expect(mock.create).toHaveBeenCalledWith({ workspaceId: 'host', workspacePath: '/tmp/openbitfun-workspace' }, 'Standard');
++    expect(mock.open).toHaveBeenCalledWith('draft-1', { workspaceId: 'host', activateWorkspace: mock.activate });
++  });
++  it('only exposes conversation, models/accounts and legal About entrypoints', async () => {
++    await render(); expect(element.querySelectorAll('button')).toHaveLength(3);
++    await click('bambook-model-settings'); expect(mock.settings).toHaveBeenCalledWith('ai.models'); expect(mock.scene).toHaveBeenCalledWith('settings');
++    const about = vi.fn(); window.addEventListener('nav:show-about', about);
++    await click('bambook-about'); expect(about).toHaveBeenCalledTimes(1); window.removeEventListener('nav:show-about', about);
++  });
++  it('keeps flat history tied to real local owner IDs and requests compact menus', async () => {
++    await render(); const props = JSON.parse(element.querySelector('[data-testid="history"]')!.getAttribute('data-props')!);
++    expect(props).toMatchObject({ layout: 'flat', compactProduct: true, workspaceScopes: [{ workspaceId: 'host', workspaceName: 'Host' }] });
++  });
++  it('does not invent a workspace or silently select an ambiguous owner', async () => {
++    mock.workspaces = []; await render(); await click('bambook-new-conversation');
++    expect(mock.create).not.toHaveBeenCalled(); expect(element.querySelector('[role="alert"]')).not.toBeNull();
++  });
++  it('reports creation failure without activating a nonexistent session', async () => {
++    mock.create.mockRejectedValueOnce(new Error('Host unavailable')); await render(); await click('bambook-new-conversation');
++    expect(mock.open).not.toHaveBeenCalled(); expect(mock.error).toHaveBeenCalledWith('Host unavailable');
++    expect(element.querySelector<HTMLButtonElement>('[data-testid="bambook-new-conversation"]')!.disabled).toBe(false);
++  });
++});
+diff --git a/src/web-ui/src/app/scenes/settings/bambookSettings.test.ts b/src/web-ui/src/app/scenes/settings/bambookSettings.test.ts
+new file mode 100644
+index 0000000..fa0fb4c
+--- /dev/null
++++ b/src/web-ui/src/app/scenes/settings/bambookSettings.test.ts
+@@ -0,0 +1,26 @@
++import { beforeEach, describe, expect, it, vi } from 'vitest';
++const navigation = vi.hoisted(() => vi.fn());
++vi.mock('@/infrastructure/config/settingsDraftRegistry', () => ({ requestSettingsNavigation: navigation }));
++vi.mock('./settingsDestination', () => ({ resolveSettingsDestination: (destination: unknown) => destination }));
++import { useSettingsStore } from './settingsStore';
++beforeEach(() => {
++  navigation.mockReset(); navigation.mockImplementation((_from, _to, commit) => commit());
++  useSettingsStore.setState({ activePageId: 'ai.models', activeViewId: null, activeSectionId: null });
++});
++describe('Bambook model/account settings boundary', () => {
++  it('opens model configuration through the existing draft navigation guard', () => {
++    useSettingsStore.getState().openDestination({ pageId: 'ai.models', viewId: 'json' });
++    expect(navigation).toHaveBeenCalledOnce();
++    expect(useSettingsStore.getState().activePageId).toBe('ai.models');
++  });
++  it('does not expose hidden IDE settings through old destinations', () => {
++    useSettingsStore.getState().openPage('tools.external-agents');
++    expect(navigation).not.toHaveBeenCalled();
++    expect(useSettingsStore.getState().activePageId).toBe('ai.models');
++  });
++  it('does not commit navigation when the draft guard defers it', () => {
++    navigation.mockImplementation(() => false);
++    useSettingsStore.getState().openDestination({ pageId: 'ai.models', viewId: 'local' });
++    expect(useSettingsStore.getState().activeViewId).toBeNull();
++  });
++});

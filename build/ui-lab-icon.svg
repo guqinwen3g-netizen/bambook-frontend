@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="lab-bg" x1="128" y1="72" x2="896" y2="952" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F8FCFF"/>
+      <stop offset="0.45" stop-color="#DDEBFF"/>
+      <stop offset="1" stop-color="#4A90E2"/>
+    </linearGradient>
+    <linearGradient id="lab-mark" x1="244" y1="208" x2="820" y2="816" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0A2540"/>
+      <stop offset="1" stop-color="#2563EB"/>
+    </linearGradient>
+    <filter id="lab-depth" x="-12%" y="-12%" width="124%" height="128%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="36" stdDeviation="46" flood-color="#0A2540" flood-opacity="0.24"/>
+      <feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#FFFFFF" flood-opacity="0.58"/>
+    </filter>
+  </defs>
+  <rect x="84" y="84" width="856" height="856" rx="224" fill="url(#lab-bg)" filter="url(#lab-depth)"/>
+  <rect x="126" y="126" width="772" height="772" rx="190" fill="none" stroke="#FFFFFF" stroke-opacity="0.58" stroke-width="18"/>
+  <path d="M300 306h146c82 0 134 43 134 110 0 43-20 76-58 95 52 18 82 57 82 112 0 74-57 123-146 123H300V306Zm128 172c36 0 59-20 59-50 0-31-23-50-59-50h-42v100h42Zm20 196c40 0 65-22 65-58s-25-58-65-58h-62v116h62Z" fill="url(#lab-mark)"/>
+  <path d="M646 306h78v368h184v72H646V306Z" fill="url(#lab-mark)" opacity="0.92"/>
+  <g fill="#FFFFFF" fill-opacity="0.78">
+    <rect x="246" y="216" width="56" height="56" rx="18"/>
+    <rect x="318" y="216" width="56" height="56" rx="18"/>
+    <rect x="246" y="288" width="56" height="56" rx="18"/>
+    <rect x="318" y="288" width="56" height="56" rx="18"/>
+  </g>
+  <text x="512" y="842" text-anchor="middle" font-family="Avenir Next, Helvetica Neue, Arial, sans-serif" font-size="86" font-weight="500" letter-spacing="18" fill="#FFFFFF" fill-opacity="0.9">LAB</text>
+</svg>

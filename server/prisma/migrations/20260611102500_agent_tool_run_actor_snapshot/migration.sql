@@ -1,0 +1,7 @@
+ALTER TABLE "AgentToolRun" ADD COLUMN IF NOT EXISTS "actorId" TEXT;
+ALTER TABLE "AgentToolRun" ADD COLUMN IF NOT EXISTS "actorDisplayName" TEXT;
+ALTER TABLE "AgentToolRun" ADD COLUMN IF NOT EXISTS "actorRoles" JSONB;
+
+ALTER TABLE "AgentToolRun" ALTER COLUMN "userId" DROP NOT NULL;
+
+CREATE INDEX IF NOT EXISTS "AgentToolRun_actorId_idx" ON "AgentToolRun"("actorId");

@@ -1,0 +1,197 @@
+{
+  "workspaceId": "4ccb6b3f-d1ab-49c0-be58-f385bc37ffff",
+  "slug": "market-audit-1ed52277c8",
+  "revision": 40,
+  "actions": 33,
+  "verified": [
+    "customer-relation-contact-sync",
+    "quote-reject-edit-resubmit-approved",
+    "exact-order-source-and-amount",
+    "season-review",
+    "show-and-campaign-conversions",
+    "lookbook-prepare-reopen"
+  ],
+  "trace": [
+    {
+      "action": "market.customer.create",
+      "revision": 1
+    },
+    {
+      "action": "market.contact.save",
+      "revision": 2
+    },
+    {
+      "action": "market.customer.update",
+      "revision": 3
+    },
+    {
+      "action": "market.supplier.save",
+      "revision": 4
+    },
+    {
+      "action": "market.contact.save",
+      "revision": 5
+    },
+    {
+      "action": "market.product.save",
+      "revision": 6
+    },
+    {
+      "action": "market.product.status",
+      "revision": 7
+    },
+    {
+      "action": "market.product.status",
+      "revision": 8
+    },
+    {
+      "action": "market.quotation.save",
+      "revision": 9
+    },
+    {
+      "action": "market.quotation.submit",
+      "revision": 10
+    },
+    {
+      "action": "review.rejected",
+      "revision": 11
+    },
+    {
+      "action": "market.quotation.save",
+      "revision": 12
+    },
+    {
+      "action": "market.quotation.submit",
+      "revision": 13
+    },
+    {
+      "action": "review.approved",
+      "revision": 14
+    },
+    {
+      "action": "market.quotation.status",
+      "revision": 15
+    },
+    {
+      "action": "market.quotation.status",
+      "revision": 16
+    },
+    {
+      "action": "market.quotation.convert",
+      "revision": 17
+    },
+    {
+      "action": "market.season.save",
+      "revision": 18
+    },
+    {
+      "action": "market.season.review",
+      "revision": 19
+    },
+    {
+      "action": "market.trend.save",
+      "revision": 20
+    },
+    {
+      "action": "market.show.save",
+      "revision": 21
+    },
+    {
+      "action": "market.showLead.save",
+      "revision": 22
+    },
+    {
+      "action": "market.showLead.transition",
+      "revision": 23
+    },
+    {
+      "action": "market.campaign.save",
+      "revision": 24
+    },
+    {
+      "action": "market.campaign.status",
+      "revision": 25
+    },
+    {
+      "action": "market.campaign.status",
+      "revision": 26
+    },
+    {
+      "action": "market.campaign.save",
+      "revision": 27
+    },
+    {
+      "action": "market.lead.save",
+      "revision": 28
+    },
+    {
+      "action": "market.lead.transition",
+      "revision": 29
+    },
+    {
+      "action": "market.lead.transition",
+      "revision": 30
+    },
+    {
+      "action": "market.lookbook.save",
+      "revision": 31
+    },
+    {
+      "action": "market.lookbook.status",
+      "revision": 32
+    },
+    {
+      "action": "market.lookbook.status",
+      "revision": 33
+    }
+  ],
+  "additionalActions": [
+    "development.submit",
+    "development.recordSample",
+    "development.recordQc",
+    "market.product.fromVersion",
+    "market.quotation.save",
+    "market.attachment.set"
+  ],
+  "additionalVerified": [
+    "development-pass-to-product-exact-version",
+    "quote-canonical-version-copy",
+    "real-file-upload-associate-download"
+  ],
+  "finalRevision": 68,
+  "moreActions": [
+    "market.contact.save",
+    "market.contact.save",
+    "market.contact.delete",
+    "market.supplier.save",
+    "market.supplier.status",
+    "market.supplier.status",
+    "market.relation.status",
+    "market.relation.status",
+    "market.product.save",
+    "market.trend.save",
+    "market.show.save",
+    "market.campaign.status",
+    "market.campaign.status",
+    "market.lead.save",
+    "market.lead.save",
+    "market.lead.transition",
+    "market.lead.transition",
+    "market.lead.transition",
+    "market.showLead.save",
+    "market.showLead.transition",
+    "market.showLead.transition",
+    "market.quotation.save",
+    "market.quotation.status",
+    "market.quotation.status",
+    "market.lookbook.status",
+    "market.lookbook.status",
+    "market.lookbook.status",
+    "market.lookbook.status"
+  ],
+  "guardedActions": [
+    "market.product.save",
+    "market.campaign.status",
+    "market.quotation.convert"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "stage": "Closed298 sourceCN return and archived V2 download",
+  "route": "claims/64cc2e8c-8fdd-4c64-824d-d56e952ca891?section=credit:e80a4438-fab6-45c4-8590-604b32c1edec",
+  "correctCNCardTop": 64.8785171508789,
+  "notFound": false,
+  "savedBalance": 0,
+  "closedDownload": {
+    "bytes": 235031,
+    "sha256": "54a8f7aa0ad49772b9484cc154d013fecf067444a22ca1f36e377ddb8c10e3c8",
+    "matchesPreSettlementArchive": true
+  },
+  "targetedTests": {
+    "files": 2,
+    "passed": 47,
+    "log": "/private/tmp/mist-cn-source-return-final.log"
+  },
+  "screenshot": "cn-versions-settled-ui.png",
+  "reloadReadback": {
+    "closed": true,
+    "cnCode": "CLM-2026-0002",
+    "amount": 33,
+    "remaining": 0,
+    "printVersions": [
+      1,
+      2
+    ],
+    "exactCardTop": 73.87744140625
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "scope": "Current Mist CN print/numbering/root wiring; read-only review and temporary fixture tests only",
+  "findings": [],
+  "freshTests": {
+    "passed": 42,
+    "files": 5,
+    "exitCode": 0,
+    "log": "/tmp/mist-cn-final-readonly-tests.log"
+  },
+  "checks": [
+    {
+      "area": "Professional numbers",
+      "source": "server/src/mist/businessNumbers.ts:27",
+      "finding": "Allocates with original nextBusinessNumber from one current database transaction, scans all retained workspace facts and existing professional records, CLM case/CN share pool; no UUID fallback."
+    },
+    {
+      "area": "Local sequence persistence",
+      "source": "server/src/mist/local.ts:47",
+      "finding": "Sequence participates in existing serialized clone/atomic rename transaction; corrupt sequence rejected and positive increments only."
+    },
+    {
+      "area": "Permission/revision/replay before render",
+      "source": "server/src/mist/repository.ts:133",
+      "finding": "Fresh owner/scope check, durable receipt and optimistic revision checks precede number preparation and PDF rendering; permission checked again before commit."
+    },
+    {
+      "area": "Issue facts",
+      "source": "server/src/shared/mistPlatform.ts:187",
+      "finding": "Issue adds private file metadata and immutable print version only; it does not recalculate financial amount/settlement or write goods/inventory."
+    },
+    {
+      "area": "Trusted payload and approval source",
+      "source": "server/src/shared/mistCreditDocuments.ts:57",
+      "finding": "Client accepts IDs only; source validates exact Executed approved disposition, reviewer/decision fields, frozen attachments, original CI and configured issuer."
+    },
+    {
+      "area": "Archive read",
+      "source": "server/src/mist/repository.ts:281",
+      "finding": "Selected print version belongs to credit and source, snapshot/source/hash/file metadata verified; archived bytes read without live re-render."
+    },
+    {
+      "area": "Binary transport",
+      "source": "server/src/mist/route.ts:46",
+      "finding": "Both CN routes use Buffer.from(document.bytes), with application/pdf, no-store, nosniff and SHA header; real local clone HTTP regression included."
+    },
+    {
+      "area": "Provider source/version mapping",
+      "source": "dev-ui-preview/mist-atelier/app/runtime/workspace.tsx:327",
+      "finding": "Preview uses source version and download uses exact print version; PDF magic checked and identity/workspace epoch rechecked after download."
+    }
+  ],
+  "limitations": [
+    "No product code changed during this review.",
+    "Tests use explicit in-memory/temporary local fixtures and mocked PDF renderer; actual UI-downloaded PDF visual/readback evidence is recorded separately.",
+    "No actual company edit was performed; immutable issuer archive after company changes is repository test coverage.",
+    "No real PostgreSQL concurrency or multi-process local-file runtime test was run."
+  ]
+}

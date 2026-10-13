@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Bambook Knowledge API launchd resident (com.bambook.knowledge-api)
+     - RunAtLoad: start on login / boot
+     - KeepAlive: restart on crash
+     - Runs run-knowledge-api.sh → uvicorn on 127.0.0.1:8091 (canonical port)
+     - URL_MOUNT_PATH=/bambook/kb is set in ~/bambook-knowledge-api/.env
+     - Cloudflare Tunnel routes /bambook/* → 127.0.0.1:8091; the knowledge API
+       serves /bambook/kb/* and proxies /bambook/kb/api/* to the main API on 8081.
+     - Replace CHANGE_ME_HOME with the deploy user's home (e.g. /Users/panda1).
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.bambook.knowledge-api</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>CHANGE_ME_HOME/bambook-knowledge-api/scripts/run-knowledge-api.sh</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>WorkingDirectory</key>
+  <string>CHANGE_ME_HOME/bambook-knowledge-api</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>BAMBOOK_KNOWLEDGE_API_PORT</key>
+    <string>8091</string>
+    <key>BAMBOOK_KNOWLEDGE_API_HOST</key>
+    <string>127.0.0.1</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/tmp/bambook-knowledge-api.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/bambook-knowledge-api.log</string>
+</dict>
+</plist>

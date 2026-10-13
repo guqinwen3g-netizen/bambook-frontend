@@ -1,0 +1,31 @@
+{
+  "actualApiFiles": true,
+  "status": "failed-binary-http-transfer-preserved; waiting for corrected GET download",
+  "files": [
+    {
+      "actualApiResponse": true,
+      "sourceDownload": "/Users/qinwengu/Downloads/CLM-2026-0002-v1-DRAFT.pdf",
+      "preservedFile": "failed-http-transfer-CLM-2026-0002-v1-DRAFT.json",
+      "bytes": 2782136,
+      "sha256": "ddf4f97af3c4a3fa9bbf81f6bbf302a40d3b9f7dd5fbf25cea899c299436be8c",
+      "format": "JSON numeric object, not PDF bytes",
+      "pdfParseError": "No /Root object",
+      "downloadTransportValid": false,
+      "visualVerified": false
+    },
+    {
+      "actualApiResponse": true,
+      "sourceDownload": "/Users/qinwengu/Downloads/CLM-2026-0002-v1.pdf",
+      "preservedFile": "failed-http-transfer-CLM-2026-0002-v1.json",
+      "bytes": 2747349,
+      "sha256": "e36b82a53fa2b147ee7589c6ce712f99367be280b7e58338bf80d5aaf33258b6",
+      "format": "JSON numeric object, not PDF bytes",
+      "pdfParseError": "No /Root object",
+      "downloadTransportValid": false,
+      "visualVerified": false
+    }
+  ],
+  "noReissue": true,
+  "privateArchiveValidity": "Independently confirmed by market audit; this report has not read private store/archive.",
+  "syntheticQaDirectory": "/tmp/mist-cn-pdf-qa (separate; not actual API acceptance)"
+}

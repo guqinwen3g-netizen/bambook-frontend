@@ -1,0 +1,7 @@
+{
+  "actualFormalV1": true,
+  "file": "CLM-2026-0002-v1.pdf",
+  "sha256": "b2c86133b6e4ddf70191af722b851097adf7f0e3527eec82078c07bb3b3a9b6f",
+  "bytes": 230615,
+  "purpose": "Compare exact archived V1 bytes after company changes and cumulative source V2 append; never replace this baseline."
+}

@@ -1,0 +1,1 @@
+ALTER TABLE "Warehouse" ADD COLUMN IF NOT EXISTS "profile" JSONB;

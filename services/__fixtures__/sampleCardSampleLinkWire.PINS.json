@@ -1,0 +1,10 @@
+{
+  "source": "/private/tmp/bambook-root-s4c-reverse-native-r2-nemoxjtg/NATIVE-WIRE.json",
+  "sha256": "d6a3d5ebf5a5e3a8956644328f5d5f271d241b9f29624dd5ee74ada9498fbb82",
+  "synthetic": true,
+  "nativePG": true,
+  "companyData": false,
+  "sourceFrozen": "/private/tmp/bambook-root-s4c-reverse-qualify-npcq9wj3/workspace/ROOT-FROZEN.json",
+  "originalMockWireRed": "/private/tmp/bambook-card-link-frontend-id9c_lle/runs/02-original-wire-red",
+  "responseValuesModified": false
+}

@@ -1,0 +1,85 @@
+{
+  "actualApiFile": true,
+  "sourceDownload": "/Users/qinwengu/Downloads/CLM-2026-0002-v1 (1).pdf",
+  "evidenceFile": "CLM-2026-0002-v1.pdf",
+  "bytes": 230615,
+  "sha256": "b2c86133b6e4ddf70191af722b851097adf7f0e3527eec82078c07bb3b3a9b6f",
+  "expectedPrivateShaDeclaredByRoot": "b2c86133b6e4ddf70191af722b851097adf7f0e3527eec82078c07bb3b3a9b6f",
+  "privateShaMatches": true,
+  "issueCountAndRevision": "Root reports issueCount1/revision287 preserved by read-only GET; this file audit did not access liveStore/API.",
+  "pdfPages": 1,
+  "checks": [
+    {
+      "key": "binary_pdf_header_eof",
+      "ok": true
+    },
+    {
+      "key": "private_archive_sha",
+      "ok": true
+    },
+    {
+      "key": "one_a4_page",
+      "ok": true
+    },
+    {
+      "key": "credit_note_title",
+      "ok": true
+    },
+    {
+      "key": "number_and_v1",
+      "ok": true
+    },
+    {
+      "key": "actual_issuer_chinese",
+      "ok": true
+    },
+    {
+      "key": "actual_issuer_english",
+      "ok": true
+    },
+    {
+      "key": "actual_issuer_address",
+      "ok": true
+    },
+    {
+      "key": "original_ci",
+      "ok": true
+    },
+    {
+      "key": "return_quantity2",
+      "ok": true
+    },
+    {
+      "key": "original_price15_in_approved_reason",
+      "ok": true
+    },
+    {
+      "key": "approved_credit30",
+      "ok": true
+    },
+    {
+      "key": "currency_words",
+      "ok": true
+    },
+    {
+      "key": "actual_issued_by",
+      "ok": true
+    },
+    {
+      "key": "formal_no_draft_watermark",
+      "ok": true
+    }
+  ],
+  "ok": true,
+  "visualReview": {
+    "pngViewed": true,
+    "noClippingOrOverlapObserved": true,
+    "chineseReadable": true,
+    "actualFormal": true,
+    "draftComparisonPending": "Actual SourceV2 DRAFT download before its issue; no corrected V1 draft was downloaded."
+  },
+  "priceEvidence": "Original USD15 each is explicitly printed in the approved reason, not inferred from 30/2.",
+  "noResignOrFinancialRerender": true,
+  "failedHttpEvidenceRetained": true,
+  "syntheticQaSeparate": true
+}

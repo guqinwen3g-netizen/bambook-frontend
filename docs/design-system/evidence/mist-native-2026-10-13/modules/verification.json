@@ -1,0 +1,129 @@
+{
+  "verifiedAt": "2026-10-13T01:51:22.033243+00:00",
+  "scope": "Current Mist MVP routes functionalized; not a production deployment",
+  "coverage": {
+    "mapped": 35,
+    "implemented": 34,
+    "excluded": [
+      "emails"
+    ],
+    "missing": [],
+    "paths": {
+      "samples": "dev-ui-preview/mist-atelier/app/pages/modules/FulfillmentPages.tsx",
+      "qc-workbench": "dev-ui-preview/mist-atelier/app/pages/modules/FulfillmentPages.tsx",
+      "shipments": "dev-ui-preview/mist-atelier/app/pages/modules/FulfillmentPages.tsx",
+      "procurement": "dev-ui-preview/mist-atelier/app/pages/modules/FulfillmentPages.tsx",
+      "inventory": "dev-ui-preview/mist-atelier/app/pages/modules/FulfillmentPages.tsx",
+      "customs": "dev-ui-preview/mist-atelier/app/pages/modules/FulfillmentPages.tsx",
+      "document-center": "dev-ui-preview/mist-atelier/app/pages/modules/FulfillmentPages.tsx",
+      "mes": "dev-ui-preview/mist-atelier/app/pages/modules/FulfillmentPages.tsx",
+      "products": "dev-ui-preview/mist-atelier/app/pages/modules/MarketPages.tsx",
+      "quotations": "dev-ui-preview/mist-atelier/app/pages/modules/MarketPages.tsx",
+      "suppliers": "dev-ui-preview/mist-atelier/app/pages/modules/MarketPages.tsx",
+      "relations": "dev-ui-preview/mist-atelier/app/pages/modules/MarketPages.tsx",
+      "seasons": "dev-ui-preview/mist-atelier/app/pages/modules/MarketPages.tsx",
+      "marketing": "dev-ui-preview/mist-atelier/app/pages/modules/MarketPages.tsx",
+      "invoices": "dev-ui-preview/mist-atelier/app/pages/modules/PlatformPages.tsx",
+      "pricing": "dev-ui-preview/mist-atelier/app/pages/modules/PlatformPages.tsx",
+      "bom": "dev-ui-preview/mist-atelier/app/pages/modules/PlatformPages.tsx",
+      "risks": "dev-ui-preview/mist-atelier/app/pages/modules/PlatformPages.tsx",
+      "claims": "dev-ui-preview/mist-atelier/app/pages/modules/PlatformPages.tsx",
+      "reports": "dev-ui-preview/mist-atelier/app/pages/modules/PlatformPages.tsx",
+      "dashboard": "dev-ui-preview/mist-atelier/app/pages/modules/PlatformPages.tsx",
+      "data-center": "dev-ui-preview/mist-atelier/app/pages/modules/PlatformPages.tsx",
+      "hr": "dev-ui-preview/mist-atelier/app/pages/modules/PlatformPages.tsx",
+      "business-tools": "dev-ui-preview/mist-atelier/app/pages/modules/PlatformPages.tsx",
+      "admin-panel": "dev-ui-preview/mist-atelier/app/pages/modules/PlatformPages.tsx",
+      "assistant": "dev-ui-preview/mist-atelier/app/pages/modules/PlatformPages.tsx",
+      "cockpit": "dev-ui-preview/mist-atelier/app/pages/HomePage.tsx",
+      "development": "dev-ui-preview/mist-atelier/app/pages/DevListPage.tsx",
+      "orders": "dev-ui-preview/mist-atelier/app/pages/OrderListPage.tsx",
+      "payment-vouchers": "dev-ui-preview/mist-atelier/app/pages/FinancePage.tsx",
+      "crm": "dev-ui-preview/mist-atelier/app/pages/CustomerPage.tsx",
+      "production-board": "dev-ui-preview/mist-atelier/app/pages/ProductionPage.tsx",
+      "calendar": "dev-ui-preview/mist-atelier/app/pages/CalendarPage.tsx",
+      "settings": "dev-ui-preview/mist-atelier/app/pages/SettingsPage.tsx"
+    }
+  },
+  "frontendTests": {
+    "files": 30,
+    "passed": 282,
+    "log": "/private/tmp/mist-final-frontend.log"
+  },
+  "serverTests": {
+    "files": 13,
+    "passed": 145,
+    "log": "/private/tmp/mist-final-server.log"
+  },
+  "strictTypes": {
+    "activeFrontendGraph": "pass",
+    "serverMistGraphEs2018": "pass",
+    "logs": [
+      "/private/tmp/mist-final-types.log",
+      "/private/tmp/mist-final-server-types.log"
+    ]
+  },
+  "build": {
+    "status": "pass",
+    "log": "/private/tmp/mist-final-build.log"
+  },
+  "mistGuard": {
+    "files": 73,
+    "errors": 0,
+    "warnings": 0,
+    "log": "/private/tmp/mist-final-guard.log"
+  },
+  "realHttp": {
+    "completedStages": 35,
+    "workspaceId": "ba1e3ba2-d6a9-4387-b6f0-ec3aa95b4070",
+    "revisionAtCompletion": 34,
+    "summary": "http-chain.json",
+    "storage": "independent local-file workspace; no legacy database",
+    "binaryDownloads": "two PDFs, 650 bytes each, matching SHA-256"
+  },
+  "runtime": {
+    "frontend": "http://127.0.0.1:3001",
+    "sameSourcePreview": "http://127.0.0.1:3131",
+    "api": "http://127.0.0.1:8082",
+    "localEntry": "automatic signed local session; no password/old account library",
+    "storage": "server/private/mist-local (ignored, 0600 files)",
+    "watch": "metadata polling runner",
+    "command": "npm run dev (or npm run dev:mist): local API + frontend; readiness before serving UI",
+    "verifiedColdStart": true,
+    "restartPersistence": "Existing Mist and local acceptance workspaces read after restarting both owned services",
+    "passiveFocus": "Unchanged server identity preserves unsaved form DOM and session key; identity/permission changes or verification failure invalidate context"
+  },
+  "visualScope": {
+    "desktopCssViewport": [
+      1180,
+      800
+    ],
+    "mobileCssViewport": [
+      390,
+      844
+    ],
+    "themes": [
+      "light",
+      "dark"
+    ],
+    "noHorizontalPageOverflow": true,
+    "notes": "Per-route DOM and rendered screenshots; 1440 full-image viewport not re-certified because host pane clips it.",
+    "evidence": [
+      "home-local-light.jpg",
+      "shipments-records-light.jpg",
+      "admin-panel-390-dark.jpg",
+      "route-render-observations.json"
+    ]
+  },
+  "limits": [
+    "Current MVP excludes mailbox",
+    "Local test identities do not provision production organization accounts",
+    "Model provider requests were mocked; no external live model invocation during verification",
+    "Shipping/customs/bank entries are recorded business facts; no external submission/transfer performed",
+    "No production deployment or full legacy-system feature-parity claim"
+  ],
+  "startupTests": {
+    "passed": 5,
+    "log": "/private/tmp/mist-final-startup.log"
+  }
+}

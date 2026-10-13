@@ -1,0 +1,325 @@
+/* ═══════════════════════════════════════════════════════════════════
+   MIST ATELIER — 基础 + 原子组件（styles/mist/components.css）
+   依赖 tokens.css。类名统一 mist- 前缀；变体统一用 data-* 属性。
+   Flat Frost 硬规则：本文件内除 .mist-palette/.mist-drawer/.mist-dialog/
+   .mist-menu 外不得出现 box-shadow；不得给容器写 border（分隔线除外）。
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── 基础 ── */
+.mist-root { font-family: var(--mist-font); color: var(--mist-ink); font-size: var(--mist-text-base); line-height: var(--mist-leading); -webkit-font-smoothing: antialiased; font-weight: var(--mist-fw-regular); }
+.mist-root *, .mist-root *::before, .mist-root *::after { box-sizing: border-box; }
+.mist-root :where(h1, h2, h3, h4, p, ul, ol, figure, dl, dd) { margin: 0; padding: 0; }
+.mist-root :where(ul, ol) { list-style: none; }
+.mist-root :where(button) { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: inherit; }
+.mist-root :where(input, textarea, select) { font: inherit; color: inherit; }
+.mist-root :where(button:disabled) { cursor: not-allowed; opacity: .5; }
+.mist-root :focus-visible { outline: 2px solid var(--mist-accent); outline-offset: 2px; border-radius: 8px; }
+.mist-root ::selection { background: var(--mist-accent-tint-2); }
+
+.mist-icon { width: 18px; height: 18px; flex: none; stroke-width: 1.5; }
+.mist-icon[data-size="sm"] { width: 15px; height: 15px; }
+.mist-icon[data-size="xs"] { width: 13px; height: 13px; }
+.mist-icon[data-size="lg"] { width: 22px; height: 22px; }
+
+/* The bubble owns its skin; existing hosts provide layout without a second shell. */
+.mist-icon[data-assistant-eyes] { width: 28px; height: 28px; padding: 0; color: var(--mist-ai-ink); }
+.mist-icon[data-assistant-eyes][data-size="xs"] { width: 24px; height: 24px; }
+.mist-icon[data-assistant-eyes][data-size="lg"] { width: 32px; height: 32px; }
+.mist-badge:has(> .mist-icon[data-assistant-eyes]) { background: transparent; color: var(--mist-ai-ink); }
+.mist-badge > .mist-icon[data-assistant-eyes] { width: 100%; height: 100%; padding: 0; background: transparent; color: inherit; }
+.mist-tile > .mist-icon[data-assistant-eyes] { padding: 0; background: transparent; }
+
+.mist-mono { font-family: var(--mist-font-mono); font-size: .86em; letter-spacing: -.01em; }
+.mist-muted { color: var(--mist-ink-3); }
+.mist-secondary { color: var(--mist-ink-2); }
+.mist-num { font-variant-numeric: tabular-nums; }
+.mist-eyebrow { font-size: var(--mist-text-xs); letter-spacing: var(--mist-tracking-caps); color: var(--mist-ink-3); }
+.mist-h1 { font-size: var(--mist-text-4xl); font-weight: var(--mist-fw-regular); letter-spacing: var(--mist-tracking-tight); line-height: 1.15; }
+.mist-h2 { font-size: var(--mist-text-xl); font-weight: var(--mist-fw-medium); line-height: 1.3; }
+.mist-h3 { font-size: var(--mist-text-base); font-weight: var(--mist-fw-medium); }
+.mist-sub { color: var(--mist-ink-2); font-size: var(--mist-text-base); }
+.mist-tone-ok { color: var(--mist-ok-ink); } .mist-tone-warn { color: var(--mist-warn-ink); } .mist-tone-bad { color: var(--mist-bad-ink); } .mist-tone-accent { color: var(--mist-accent-ink); } .mist-tone-ai { color: var(--mist-ai-ink); }
+
+/* ── 按钮 ── */
+.mist-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: var(--mist-control-h); padding: 0 16px; border-radius: var(--mist-r-md); font-size: var(--mist-text-md); font-weight: var(--mist-fw-medium); white-space: nowrap; transition: background var(--mist-dur), color var(--mist-dur), transform var(--mist-dur-fast); background: var(--mist-fill); color: var(--mist-ink); }
+.mist-btn:hover { background: var(--mist-fill-2); }
+.mist-btn:active { transform: scale(.98); }
+.mist-btn[data-variant="primary"] { background: var(--mist-accent); color: var(--mist-on-accent); }
+.mist-btn[data-variant="primary"]:hover { background: var(--mist-accent-hover); }
+.mist-btn[data-variant="quiet"] { background: none; color: var(--mist-ink-2); padding: 0 10px; }
+.mist-btn[data-variant="quiet"]:hover { background: var(--mist-fill); color: var(--mist-ink); }
+.mist-btn[data-variant="danger"] { background: var(--mist-bad-tint); color: var(--mist-bad-ink); }
+.mist-btn[data-variant="danger"]:hover { background: color-mix(in srgb, var(--mist-bad) 20%, transparent); }
+.mist-btn[data-variant="ai"] { background: var(--mist-ai-tint); color: var(--mist-ai-ink); }
+.mist-btn[data-variant="white"] { background: var(--mist-hero-cta-bg); color: var(--mist-hero-cta-ink); }
+.mist-btn[data-variant="glass"] { background: var(--mist-on-media-frost); color: var(--mist-on-media); backdrop-filter: blur(8px); }
+.mist-btn[data-variant="glass"]:hover { background: rgba(255,255,255,.28); }
+.mist-btn[data-size="sm"] { height: var(--mist-control-h-sm); padding: 0 12px; font-size: 12.5px; border-radius: 10px; }
+.mist-btn[data-size="lg"] { height: var(--mist-control-h-lg); padding: 0 20px; font-size: var(--mist-text-base); }
+.mist-btn[data-block] { width: 100%; }
+.mist-btn[data-loading] { pointer-events: none; opacity: .75; }
+.mist-btn .mist-spin { animation: mist-spin 1s linear infinite; }
+@keyframes mist-spin { to { transform: rotate(360deg); } }
+
+.mist-icon-btn { width: 38px; height: 38px; border-radius: var(--mist-r-md); display: inline-grid; place-items: center; color: var(--mist-ink-2); position: relative; transition: background var(--mist-dur), color var(--mist-dur); flex: none; }
+.mist-icon-btn:hover { background: var(--mist-fill); color: var(--mist-ink); }
+.mist-icon-btn[data-size="sm"] { width: 30px; height: 30px; border-radius: var(--mist-r-sm); }
+.mist-pip { position: absolute; top: 9px; right: 10px; width: 7px; height: 7px; border-radius: 50%; background: var(--mist-bad); }
+
+.mist-link { color: var(--mist-accent-ink); font-size: var(--mist-text-sm); display: inline-flex; align-items: center; gap: 6px; font-weight: var(--mist-fw-medium); }
+.mist-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* ── 分段器 / Tabs ── */
+.mist-seg { display: inline-flex; padding: 3px; border-radius: var(--mist-r-md); background: var(--mist-sunken); gap: 2px; }
+.mist-seg > button { height: 32px; padding: 0 13px; border-radius: var(--mist-r-sm); font-size: var(--mist-text-sm); color: var(--mist-ink-2); display: flex; align-items: center; gap: 6px; transition: background var(--mist-dur), color var(--mist-dur); }
+.mist-seg > button:hover { color: var(--mist-ink); }
+.mist-seg > button[aria-pressed="true"] { background: var(--mist-card); color: var(--mist-ink); }
+.mist-root[data-theme="dark"] .mist-seg > button[aria-pressed="true"], :is(.dark,[data-theme="dark"]) .mist-root:not([data-theme="light"]) .mist-seg > button[aria-pressed="true"] { background: var(--mist-card-2); }
+
+.mist-tabs { display: flex; gap: 26px; border-bottom: 1px solid var(--mist-line); margin-bottom: 18px; overflow-x: auto; scrollbar-width: none; }
+.mist-tabs > button { position: relative; height: 42px; font-size: var(--mist-text-lg); color: var(--mist-ink-3); display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.mist-tabs > button:hover { color: var(--mist-ink-2); }
+.mist-tabs > button[aria-selected="true"] { color: var(--mist-ink); font-weight: var(--mist-fw-medium); }
+.mist-tabs > button[aria-selected="true"]::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; border-radius: 2px; background: var(--mist-accent); }
+.mist-tabs .mist-tab-count { font-size: var(--mist-text-xs); padding: 1px 7px; border-radius: var(--mist-r-xs); background: var(--mist-sunken); color: var(--mist-ink-2); font-weight: var(--mist-fw-regular); }
+
+/* ── 状态标签 Pill（只读）/ 筛选 Chip（可点）── */
+.mist-pill { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px; border-radius: 8px; font-size: var(--mist-text-xs); font-weight: var(--mist-fw-medium); white-space: nowrap; background: var(--mist-sunken); color: var(--mist-ink-2); }
+.mist-pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .85; }
+.mist-pill[data-plain]::before { display: none; }
+.mist-pill[data-tone="accent"] { background: var(--mist-accent-tint); color: var(--mist-accent-ink); }
+.mist-pill[data-tone="ok"] { background: var(--mist-ok-tint); color: var(--mist-ok-ink); }
+.mist-pill[data-tone="warn"] { background: var(--mist-warn-tint); color: var(--mist-warn-ink); }
+.mist-pill[data-tone="bad"] { background: var(--mist-bad-tint); color: var(--mist-bad-ink); }
+.mist-pill[data-tone="ai"] { background: var(--mist-ai-tint); color: var(--mist-ai-ink); }
+
+.mist-chip { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border-radius: 11px; font-size: var(--mist-text-sm); color: var(--mist-ink-2); background: var(--mist-fill); transition: background var(--mist-dur); white-space: nowrap; }
+.mist-chip:hover { background: var(--mist-fill-2); color: var(--mist-ink); }
+.mist-chip b { font-weight: var(--mist-fw-medium); color: var(--mist-ink); }
+.mist-chip[aria-pressed="true"] { background: var(--mist-accent-tint-2); color: var(--mist-accent-ink); }
+
+.mist-kbd { font-family: var(--mist-font); font-size: 11px; padding: 2px 6px; border-radius: 6px; background: var(--mist-sunken); color: var(--mist-ink-2); }
+.mist-badge { width: 34px; height: 34px; border-radius: var(--mist-r-md); display: grid; place-items: center; background: var(--mist-ai-ink); color: var(--mist-card); flex: none; }
+.mist-badge[data-size="lg"] { width: 40px; height: 40px; border-radius: var(--mist-r-md); }
+.mist-tile { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--mist-sunken); color: var(--mist-ink-2); flex: none; }
+.mist-tile[data-size="sm"] { width: 28px; height: 28px; border-radius: 9px; }
+.mist-tile[data-tone="accent"] { background: var(--mist-accent-tint); color: var(--mist-accent-ink); }
+.mist-tile[data-tone="ok"] { background: var(--mist-ok-tint); color: var(--mist-ok-ink); }
+.mist-tile[data-tone="warn"] { background: var(--mist-warn-tint); color: var(--mist-warn-ink); }
+.mist-tile[data-tone="bad"] { background: var(--mist-bad-tint); color: var(--mist-bad-ink); }
+.mist-tile[data-tone="ai"] { background: var(--mist-ai-tint); color: var(--mist-ai-ink); }
+
+/* ── 头像 ── */
+.mist-avatar { width: 32px; height: 32px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 12px; font-weight: var(--mist-fw-medium); flex: none; background: var(--mist-accent-tint-2); color: var(--mist-accent-ink); overflow: hidden; }
+.mist-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.mist-avatar[data-size="sm"] { width: 26px; height: 26px; font-size: 10.5px; }
+.mist-avatar[data-size="xs"] { width: 22px; height: 22px; font-size: 10px; }
+.mist-avatar[data-tone="ok"] { background: var(--mist-ok-tint); color: var(--mist-ok-ink); }
+.mist-avatar[data-tone="warn"] { background: var(--mist-warn-tint); color: var(--mist-warn-ink); }
+.mist-avatar[data-tone="ai"] { background: var(--mist-ai-tint); color: var(--mist-ai-ink); }
+.mist-avatar[data-tone="bad"] { background: var(--mist-bad-tint); color: var(--mist-bad-ink); }
+.mist-stack { display: inline-flex; }
+.mist-stack > .mist-avatar + .mist-avatar { margin-left: -5px; }
+
+/* ── 卡片 ── */
+.mist-card { background: var(--mist-card); border-radius: var(--mist-r-card); min-width: 0; }
+.mist-card[data-interactive] { cursor: pointer; transition: background var(--mist-dur); text-align: left; }
+.mist-card[data-interactive]:hover { background: var(--mist-card-2); }
+.mist-card[data-tone="ai"] { background: var(--mist-ai-surface); }
+.mist-card[data-tone="accent"] { background: linear-gradient(180deg, var(--mist-accent-tint), transparent 40%), var(--mist-card); }
+.mist-card[data-clip] { overflow: hidden; }
+.mist-card-h { display: flex; align-items: center; gap: 12px; padding: var(--mist-card-pad-y) var(--mist-card-pad-x) 0; min-width: 0; }
+.mist-card-h .mist-card-sub { font-size: var(--mist-text-xs); color: var(--mist-ink-3); display: block; }
+.mist-card-tools { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.mist-card-body { padding: 14px var(--mist-card-pad-x) var(--mist-card-pad-y); }
+.mist-card-foot { display: flex; align-items: center; gap: 10px; padding: 16px var(--mist-card-pad-x) 22px; }
+.mist-card-foot .mist-spacer { flex: 1; }
+.mist-note { font-size: var(--mist-text-xs); color: var(--mist-ink-3); display: inline-flex; align-items: center; gap: 6px; }
+
+/* ── 布局栅格 ── */
+.mist-grid { display: grid; gap: var(--mist-gap); grid-template-columns: repeat(12, minmax(0, 1fr)); align-items: start; }
+.mist-col-3 { grid-column: span 3; } .mist-col-4 { grid-column: span 4; } .mist-col-5 { grid-column: span 5; } .mist-col-6 { grid-column: span 6; } .mist-col-7 { grid-column: span 7; } .mist-col-8 { grid-column: span 8; } .mist-col-9 { grid-column: span 9; } .mist-col-12 { grid-column: span 12; }
+.mist-col { display: flex; flex-direction: column; gap: var(--mist-gap); min-width: 0; }
+.mist-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.mist-spacer { flex: 1; }
+
+/* ── 进度 ── */
+.mist-prog { display: flex; gap: 3px; min-width: 60px; }
+.mist-prog i { flex: 1; height: 4px; border-radius: 4px; background: var(--mist-ink-4); }
+.mist-prog i[data-s="done"] { background: var(--mist-accent); }
+.mist-prog i[data-s="now"] { background: linear-gradient(90deg, var(--mist-accent) 55%, var(--mist-ink-4) 55%); }
+.mist-meter { display: flex; flex-direction: column; gap: 6px; font-size: var(--mist-text-xs); color: var(--mist-ink-3); min-width: 0; }
+.mist-meter-track { height: 6px; border-radius: 6px; background: var(--mist-sunken); overflow: hidden; display: flex; }
+.mist-meter-track i { display: block; height: 100%; background: var(--mist-accent); transition: width var(--mist-dur-slow) var(--mist-ease); }
+.mist-meter-track i[data-tone="ok"] { background: var(--mist-ok); }
+.mist-meter-track i[data-tone="warn"] { background: var(--mist-warn); }
+.mist-meter-track i[data-tone="bad"] { background: var(--mist-bad); }
+
+/* ── 键值 / 事实 ── */
+.mist-kv { padding: 6px 16px 14px; }
+.mist-kv > div { display: flex; justify-content: space-between; gap: 12px; padding: 10px 2px; font-size: var(--mist-text-sm); }
+.mist-kv > div:not(:last-child) { border-bottom: 1px solid var(--mist-line); }
+.mist-kv dt, .mist-kv > div > span:first-child { color: var(--mist-ink-3); white-space: nowrap; }
+.mist-kv dd, .mist-kv > div > b { font-weight: var(--mist-fw-medium); text-align: right; min-width: 0; }
+.mist-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 16px; }
+.mist-facts[data-cols="3"] { grid-template-columns: repeat(3, 1fr); }
+.mist-facts[data-cols="4"] { grid-template-columns: repeat(4, 1fr); }
+.mist-facts small { display: block; font-size: var(--mist-text-2xs); color: var(--mist-ink-3); margin-bottom: 2px; }
+.mist-facts b { font-weight: var(--mist-fw-medium); font-size: var(--mist-text-md); }
+
+/* ── 缩略图 / 对象 ── */
+.mist-thumb { width: 48px; height: 56px; border-radius: var(--mist-r-md); background: linear-gradient(160deg, var(--mist-sunken), var(--mist-card-2)); display: grid; place-items: center; flex: none; overflow: hidden; color: var(--mist-ink-3); }
+.mist-thumb img { max-height: 82%; max-width: 84%; object-fit: contain; }
+.mist-thumb[data-size="lg"] { width: 64px; height: 76px; border-radius: var(--mist-r-lg); }
+.mist-thumb[data-size="sm"] { width: 36px; height: 40px; border-radius: 10px; }
+.mist-obj { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.mist-obj > div { min-width: 0; }
+.mist-obj-name { font-size: var(--mist-text-lg); font-weight: var(--mist-fw-medium); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mist-obj-meta { font-size: var(--mist-text-xs); color: var(--mist-ink-3); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── 空 / 加载 / 错误 ── */
+.mist-empty { padding: 56px 20px; text-align: center; color: var(--mist-ink-3); font-size: var(--mist-text-md); display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.mist-empty .mist-tile { width: 52px; height: 52px; border-radius: 16px; margin-bottom: 4px; }
+.mist-empty b { color: var(--mist-ink); font-weight: var(--mist-fw-medium); font-size: var(--mist-text-base); }
+.mist-empty[data-compact] { padding: 28px 16px; }
+.mist-skel { display: block; border-radius: 8px; background: linear-gradient(90deg, var(--mist-fill) 0%, var(--mist-fill-2) 40%, var(--mist-fill) 80%); background-size: 300% 100%; animation: mist-shimmer 1.4s linear infinite; height: 12px; }
+@keyframes mist-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+.mist-banner { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; border-radius: var(--mist-r-lg); background: var(--mist-accent-tint); color: var(--mist-accent-ink); font-size: var(--mist-text-md); }
+.mist-banner[data-tone="ok"] { background: var(--mist-ok-tint); color: var(--mist-ok-ink); }
+.mist-banner[data-tone="warn"] { background: var(--mist-warn-tint); color: var(--mist-warn-ink); }
+.mist-banner[data-tone="bad"] { background: var(--mist-bad-tint); color: var(--mist-bad-ink); }
+.mist-banner[data-tone="ai"] { background: var(--mist-ai-surface); color: var(--mist-ai-ink); }
+.mist-banner b { font-weight: var(--mist-fw-medium); }
+.mist-banner p { color: var(--mist-ink-2); margin-top: 2px; font-size: var(--mist-text-sm); }
+.mist-banner .mist-banner-act { margin-left: auto; display: flex; gap: 8px; flex: none; }
+
+/* ── 表单 ── */
+.mist-form { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.mist-form[data-cols="1"] { grid-template-columns: 1fr; }
+.mist-form[data-cols="3"] { grid-template-columns: repeat(3, 1fr); }
+.mist-field { display: flex; flex-direction: column; gap: 6px; font-size: var(--mist-text-xs); color: var(--mist-ink-2); min-width: 0; }
+.mist-field[data-full] { grid-column: 1 / -1; }
+.mist-field-label { display: flex; align-items: center; gap: 6px; }
+.mist-field-label em { font-style: normal; color: var(--mist-bad-ink); }
+.mist-field-hint { color: var(--mist-ink-3); font-size: var(--mist-text-2xs); }
+.mist-field[data-error] .mist-field-hint { color: var(--mist-bad-ink); }
+.mist-input { min-height: 42px; border-radius: var(--mist-r-md); background: var(--mist-fill); display: flex; align-items: center; gap: 8px; padding: 0 12px; font-size: var(--mist-text-md); color: var(--mist-ink); transition: background var(--mist-dur); }
+.mist-input:hover { background: var(--mist-fill-2); }
+.mist-input:focus-within { background: var(--mist-accent-tint); }
+.mist-field[data-error] .mist-input { background: var(--mist-bad-tint); }
+.mist-input > .mist-icon { color: var(--mist-ink-3); }
+.mist-input input, .mist-input textarea, .mist-input select { border: 0; outline: 0; background: none; flex: 1; font-size: var(--mist-text-md); min-width: 0; resize: none; color: var(--mist-ink); padding: 0; height: 40px; appearance: none; }
+.mist-input textarea { height: auto; min-height: 64px; padding: 10px 0; line-height: 1.5; }
+.mist-input[data-multiline] { align-items: flex-start; }
+.mist-input[data-multiline] > .mist-icon { margin-top: 12px; }
+.mist-input input::placeholder, .mist-input textarea::placeholder { color: var(--mist-ink-3); }
+.mist-input select { cursor: pointer; }
+.mist-input .mist-input-suffix { color: var(--mist-ink-3); font-size: var(--mist-text-xs); white-space: nowrap; }
+.mist-input[data-disabled] { opacity: .55; pointer-events: none; }
+.mist-root[data-theme="dark"] .mist-input select option, :is(.dark,[data-theme="dark"]) .mist-root .mist-input select option { background: var(--mist-card); }
+
+.mist-search { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; border-radius: var(--mist-r-md); background: var(--mist-fill); color: var(--mist-ink-3); min-width: 280px; transition: background var(--mist-dur); }
+.mist-search:focus-within { background: var(--mist-accent-tint); }
+.mist-search input { border: 0; outline: 0; background: none; flex: 1; font-size: var(--mist-text-md); color: var(--mist-ink); min-width: 0; }
+.mist-search input::placeholder { color: var(--mist-ink-3); }
+
+.mist-check { display: inline-flex; align-items: center; gap: 10px; font-size: var(--mist-text-md); cursor: pointer; user-select: none; }
+.mist-check input { position: absolute; opacity: 0; pointer-events: none; }
+.mist-check-box { width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center; flex: none; background: var(--mist-fill-2); color: transparent; transition: background var(--mist-dur); }
+.mist-check input:checked + .mist-check-box { background: var(--mist-accent); color: var(--mist-on-accent); }
+.mist-check input:focus-visible + .mist-check-box { outline: 2px solid var(--mist-accent); outline-offset: 2px; }
+.mist-check[data-tone="ok"] input:checked + .mist-check-box { background: var(--mist-ok); }
+
+.mist-switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-size: var(--mist-text-md); }
+.mist-switch input { position: absolute; opacity: 0; pointer-events: none; }
+.mist-switch-track { width: 36px; height: 22px; border-radius: 999px; background: var(--mist-fill-2); position: relative; transition: background var(--mist-dur); flex: none; }
+.mist-switch-track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--mist-card); transition: transform var(--mist-dur) var(--mist-ease); }
+.mist-switch input:checked + .mist-switch-track { background: var(--mist-accent); }
+.mist-switch input:checked + .mist-switch-track::after { transform: translateX(14px); background: var(--mist-on-accent); }
+.mist-switch input:focus-visible + .mist-switch-track { outline: 2px solid var(--mist-accent); outline-offset: 2px; }
+
+.mist-choices { display: grid; grid-template-columns: repeat(var(--mist-choice-cols, 3), minmax(0, 1fr)); gap: 10px; }
+.mist-choice { padding: 14px; border-radius: var(--mist-r-lg); background: var(--mist-fill); display: flex; flex-direction: column; gap: 4px; transition: background var(--mist-dur); text-align: left; }
+.mist-choice:hover { background: var(--mist-fill-2); }
+.mist-choice[aria-checked="true"] { background: var(--mist-accent-tint-2); }
+.mist-choice b { font-weight: var(--mist-fw-medium); display: flex; align-items: center; gap: 8px; font-size: var(--mist-text-base); }
+.mist-choice small { font-size: var(--mist-text-xs); color: var(--mist-ink-3); }
+.mist-radio { width: 16px; height: 16px; border-radius: 50%; background: var(--mist-fill-2); margin-left: auto; flex: none; transition: background var(--mist-dur); }
+.mist-choice[aria-checked="true"] .mist-radio { background: var(--mist-accent); outline: 3px solid var(--mist-card); outline-offset: -6px; }
+
+.mist-upload { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 26px; border-radius: var(--mist-r-lg); background: var(--mist-fill); color: var(--mist-ink-3); font-size: var(--mist-text-sm); text-align: center; transition: background var(--mist-dur); cursor: pointer; }
+.mist-upload:hover, .mist-upload[data-over] { background: var(--mist-accent-tint); color: var(--mist-accent-ink); }
+.mist-upload b { color: var(--mist-ink); font-weight: var(--mist-fw-medium); }
+
+/* ── 浮层（唯一允许阴影的地方）── */
+.mist-scrim { position: fixed; inset: 0; background: var(--mist-scrim); backdrop-filter: blur(3px); z-index: var(--mist-z-overlay); animation: mist-fade .25s both; }
+@keyframes mist-fade { from { opacity: 0; } }
+.mist-palette, .mist-drawer, .mist-dialog, .mist-menu { background: var(--mist-overlay-bg); backdrop-filter: blur(24px) saturate(1.2); -webkit-backdrop-filter: blur(24px) saturate(1.2); box-shadow: var(--mist-shadow-overlay); color: var(--mist-ink); }
+.mist-palette { position: fixed; left: 50%; top: 14vh; transform: translateX(-50%); width: min(640px, 92vw); z-index: calc(var(--mist-z-overlay) + 1); border-radius: var(--mist-r-card); overflow: hidden; animation: mist-pop .3s var(--mist-ease) both; }
+@keyframes mist-pop { from { opacity: 0; transform: translate(-50%, 8px) scale(.98); } }
+.mist-palette-q { display: flex; align-items: center; gap: 12px; height: 60px; padding: 0 20px; border-bottom: 1px solid var(--mist-line); color: var(--mist-ink-3); }
+.mist-palette-q input { flex: 1; border: 0; outline: 0; background: none; font-size: 16px; color: var(--mist-ink); }
+.mist-palette-list { max-height: 52vh; overflow-y: auto; padding-bottom: 4px; }
+.mist-palette-grp { padding: 10px 10px 4px; }
+.mist-palette-grp > small { display: block; padding: 4px 12px 6px; font-size: var(--mist-text-2xs); color: var(--mist-ink-3); }
+.mist-palette-it { width: 100%; display: flex; align-items: center; gap: 12px; padding: 9px 12px; border-radius: var(--mist-r-md); font-size: var(--mist-text-md); text-align: left; }
+.mist-palette-it:hover, .mist-palette-it[data-active] { background: var(--mist-accent-tint); }
+.mist-palette-it .mist-tile { width: 30px; height: 30px; border-radius: var(--mist-r-sm); overflow: hidden; }
+.mist-palette-it .mist-tile img { height: 26px; }
+.mist-palette-it small { margin-left: auto; font-size: var(--mist-text-xs); color: var(--mist-ink-3); }
+.mist-palette-ft { display: flex; gap: 16px; padding: 12px 20px; font-size: var(--mist-text-2xs); color: var(--mist-ink-3); border-top: 1px solid var(--mist-line); margin-top: 6px; }
+
+.mist-drawer { position: fixed; right: 10px; top: 10px; bottom: 10px; width: 400px; max-width: calc(100vw - 20px); z-index: calc(var(--mist-z-overlay) + 1); border-radius: var(--mist-r-hero); display: flex; flex-direction: column; overflow: hidden; animation: mist-slide .4s var(--mist-ease) both; }
+.mist-drawer[data-size="lg"] { width: 560px; }
+@keyframes mist-slide { from { opacity: 0; transform: translateX(24px); } }
+.mist-drawer-h { display: flex; align-items: center; gap: 12px; padding: 18px 16px 16px 18px; }
+.mist-drawer-h[data-tone="ai"] { background: var(--mist-ai-surface); }
+.mist-drawer-h b { display: block; font-weight: var(--mist-fw-medium); font-size: 15px; }
+.mist-drawer-h small { font-size: var(--mist-text-xs); color: var(--mist-ink-3); }
+.mist-drawer-h .mist-icon-btn { margin-left: auto; }
+.mist-drawer-body { flex: 1; overflow-y: auto; padding: 8px 18px 18px; }
+.mist-drawer-foot { display: flex; gap: 10px; justify-content: flex-end; padding: 14px 18px 18px; border-top: 1px solid var(--mist-line); }
+
+.mist-dialog { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(520px, 92vw); max-height: 86vh; overflow: auto; z-index: calc(var(--mist-z-overlay) + 1); border-radius: var(--mist-r-card); animation: mist-pop-c .3s var(--mist-ease) both; }
+@keyframes mist-pop-c { from { opacity: 0; transform: translate(-50%, -48%) scale(.98); } }
+.mist-dialog-h { display: flex; gap: 14px; padding: 22px 22px 0; align-items: flex-start; }
+.mist-dialog-h .mist-h2 + p { color: var(--mist-ink-2); font-size: var(--mist-text-md); margin-top: 6px; }
+.mist-dialog-body { padding: 16px 22px 4px; }
+.mist-dialog-foot { display: flex; gap: 10px; justify-content: flex-end; padding: 18px 22px 22px; }
+
+.mist-menu { position: fixed; z-index: calc(var(--mist-z-overlay) + 2); min-width: 200px; padding: 6px; border-radius: var(--mist-r-lg); animation: mist-fade .15s both; }
+.mist-menu > button { width: 100%; display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; font-size: var(--mist-text-md); text-align: left; }
+.mist-menu > button:hover, .mist-menu > button[aria-checked="true"] { background: var(--mist-accent-tint); }
+.mist-menu > button[aria-checked="true"]::after { content: "✓"; margin-left: auto; color: var(--mist-accent-ink); font-size: 12px; }
+.mist-menu-wrap { position: relative; display: inline-flex; }
+
+.mist-toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: var(--mist-z-toast); display: flex; align-items: center; gap: 10px; padding: 12px 16px 12px 14px; border-radius: 14px; background: var(--mist-ink); color: var(--mist-canvas); font-size: var(--mist-text-sm); animation: mist-toast .35s var(--mist-ease) both; max-width: 92vw; }
+.mist-toast[data-tone="bad"] { background: var(--mist-bad); color: #fff; }
+@keyframes mist-toast { from { opacity: 0; transform: translate(-50%, 10px); } }
+
+/* AI 对话 */
+.mist-msgs { display: flex; flex-direction: column; gap: 14px; }
+.mist-msg { max-width: 90%; font-size: var(--mist-text-md); line-height: 1.6; }
+.mist-msg[data-role="user"] { align-self: flex-end; padding: 10px 14px; border-radius: 16px 16px 4px 16px; background: var(--mist-accent); color: var(--mist-on-accent); }
+.mist-msg[data-role="assistant"] { align-self: flex-start; }
+.mist-msg-bubble { padding: 12px 14px; border-radius: 16px 16px 16px 4px; background: var(--mist-fill); }
+.mist-msg-bubble b { font-weight: var(--mist-fw-medium); }
+.mist-msg-src { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.mist-msg-src span { font-size: var(--mist-text-2xs); padding: 3px 8px; border-radius: var(--mist-r-xs); background: var(--mist-sunken); color: var(--mist-ink-2); display: inline-flex; align-items: center; gap: 5px; }
+.mist-msg-acts { display: flex; gap: 8px; margin-top: 10px; }
+.mist-sugg { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 18px 12px; }
+.mist-sugg > button { font-size: 12.5px; padding: 7px 11px; border-radius: 10px; background: var(--mist-fill); color: var(--mist-ink-2); }
+.mist-sugg > button:hover { background: var(--mist-fill-2); color: var(--mist-ink); }
+.mist-composer { margin: 0 14px 14px; display: flex; align-items: flex-end; gap: 8px; padding: 8px 8px 8px 14px; border-radius: 18px; background: var(--mist-fill); }
+.mist-composer textarea { flex: 1; border: 0; outline: 0; background: none; resize: none; font-size: var(--mist-text-md); height: 36px; padding-top: 7px; color: var(--mist-ink); }
+.mist-composer textarea::placeholder { color: var(--mist-ink-3); }
+.mist-send { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; background: var(--mist-ai); color: #fff; flex: none; }
+.mist-root[data-theme="dark"] .mist-send, :is(.dark,[data-theme="dark"]) .mist-root:not([data-theme="light"]) .mist-send { color: var(--mist-brand-deep-1); }
+.mist-typing { display: inline-flex; gap: 4px; padding: 14px; }
+.mist-typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--mist-ink-3); animation: mist-blink 1.2s infinite; }
+.mist-typing i:nth-child(2) { animation-delay: .15s; } .mist-typing i:nth-child(3) { animation-delay: .3s; }
+@keyframes mist-blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) { .mist-root *, .mist-root *::before, .mist-root *::after { animation: none !important; transition: none !important; } }
+
+.mist-drawer:has(> .mist-drawer-h[data-tone="ai"]) { background: var(--mist-ai-panel); }

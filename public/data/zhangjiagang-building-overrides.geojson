@@ -1,0 +1,92 @@
+{
+  "type": "FeatureCollection",
+  "name": "zhangjiagang-building-overrides",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              120.5082767,
+              31.8698151
+            ],
+            [
+              120.5083795,
+              31.8700326
+            ],
+            [
+              120.5087253,
+              31.8699116
+            ],
+            [
+              120.5086204,
+              31.8696877
+            ],
+            [
+              120.5082767,
+              31.8698151
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "id": "junma-plaza-tower-b",
+        "override_id": "junma-plaza-tower-b",
+        "name": "骏马置地广场 B Tower",
+        "source": "BambookManualOverride",
+        "replacement_for": "junma-plaza-gba-51458",
+        "real_height": 112,
+        "render_height": 118,
+        "height": 112,
+        "min_height": 0,
+        "part": "tower",
+        "note": "User-drawn footprint override for Junma Plaza twin towers."
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              120.50778471238225,
+              31.869662913700697
+            ],
+            [
+              120.50788751238225,
+              31.869880413700695
+            ],
+            [
+              120.50823331238225,
+              31.869759413700695
+            ],
+            [
+              120.50812841238225,
+              31.869535513700697
+            ],
+            [
+              120.50778471238225,
+              31.869662913700697
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "id": "junma-plaza-tower-a",
+        "override_id": "junma-plaza-tower-a",
+        "name": "骏马置地广场 A Tower",
+        "source": "BambookManualOverride",
+        "replacement_for": "junma-plaza-gba-51458",
+        "real_height": 105,
+        "render_height": 110,
+        "height": 105,
+        "min_height": 0,
+        "part": "tower",
+        "note": "User-drawn footprint override for Junma Plaza twin towers."
+      }
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  # -------------------------------------------------------------
+  # [THE BRAIN] PostgreSQL 16
+  # Sovereign Database optimized for low-resource environments
+  # -------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: panda_neural_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secure_neural_password}
+      POSTGRES_DB: ${DB_NAME:-panda_hub}
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Resource Limits for 2C/4G Server stability
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1024M
+
+  # -------------------------------------------------------------
+  # [THE API] Node.js Sync Server (Future)
+  # -------------------------------------------------------------
+  # api:
+  #   build: .
+  #   ports:
+  #     - "4000:4000"
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy

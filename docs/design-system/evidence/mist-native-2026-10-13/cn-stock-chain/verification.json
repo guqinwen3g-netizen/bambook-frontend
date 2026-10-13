@@ -1,0 +1,603 @@
+{
+  "scope": "Mist native return inventory, professional numbering, CN archived PDF and actual local UI acceptance",
+  "revision": 298,
+  "workspaceId": "96430896-74a5-4b29-8ac7-c9b014ba7cc7",
+  "claimId": "64cc2e8c-8fdd-4c64-824d-d56e952ca891",
+  "baselineRevision": 279,
+  "capturedAt": "2026-10-13T08:36:36.970841+00:00",
+  "case": {
+    "code": "CLM-2026-0001",
+    "state": "Closed",
+    "problemChars": 111,
+    "ascii": true
+  },
+  "counts": {
+    "newCN": 1,
+    "newRT": 1,
+    "newGoods": 1,
+    "sourceVersions": 2,
+    "printVersions": 2,
+    "batches": 2,
+    "stockRows": 2,
+    "movements": 8,
+    "refundPayments": 1,
+    "settlementApplications": 1
+  },
+  "cash": {
+    "grossSourceAllocated": 60.0,
+    "originalRefunds": 15.0,
+    "newRefunds": 33.0,
+    "net": 12.0,
+    "currency": "USD"
+  },
+  "sourceQuantity": {
+    "sourceCI": 4,
+    "legacyExecuted": 1.0,
+    "newExecuted": 2.0,
+    "remaining": 1.0
+  },
+  "dispositions": [
+    {
+      "id": "5145e026-d7d5-49e7-9d26-f55c32cbd3c3",
+      "kind": "ReturnRefund",
+      "state": "Executed",
+      "amount": 30,
+      "quantity": 2,
+      "unit": "件",
+      "returnDisposition": "Scrap",
+      "requesterId": "local-operator",
+      "reviewerId": "local-reviewer",
+      "submittedAt": "2026-10-13T07:37:07.232Z",
+      "decidedById": "local-reviewer",
+      "decidedBy": "本地审批员",
+      "decidedAt": "2026-10-13T07:38:05.669Z",
+      "decisionNote": "QA-CN-STOCK-APPROVED-2",
+      "creditNoteId": "e80a4438-fab6-45c4-8590-604b32c1edec",
+      "goodsId": "5b11bffa-e918-4091-9f84-f0ab2b3f8778",
+      "sourceLineId": "4f9bcf2f-5883-4d7d-aeb6-416a3980e865",
+      "sourceProductionId": "9dd97aa4-792e-4059-81d1-027d0067218e",
+      "snapshotSha256": "fc751d8e3c4e9bb31b6bc926382f1af2ee2aaa7129b9948a4c65b0fd2fcf2473",
+      "reviewFileIds": [
+        "d105aed0-81ef-4dba-bef2-e3d0e9baa762"
+      ],
+      "goodsSource": {
+        "schemaVersion": 1,
+        "claimId": "64cc2e8c-8fdd-4c64-824d-d56e952ca891",
+        "invoiceId": "4cd30247-57ef-41ea-99c6-a8b45c616ab3",
+        "documentId": "26e3f995-8d3e-4d1f-969e-3e68416cd0fc",
+        "orderId": "e32ac965-6f99-44f9-ac41-56b1af4c8280",
+        "lineId": "4f9bcf2f-5883-4d7d-aeb6-416a3980e865",
+        "shipmentId": "b1916208-faff-4eaa-a791-39f5b8f811bd",
+        "productionId": "9dd97aa4-792e-4059-81d1-027d0067218e",
+        "customerId": "7a41388a-c4c8-474e-9892-b397b94e4546",
+        "currency": "USD",
+        "name": "异常流程验收羊毛外套",
+        "style": "FLOW-EXCEPTION-1013",
+        "unit": "件",
+        "unitPrice": 15,
+        "sourceQuantity": 4,
+        "sourceAmount": 60,
+        "orderApprovedVersion": 2,
+        "dispositionId": "5145e026-d7d5-49e7-9d26-f55c32cbd3c3",
+        "quantity": 2
+      }
+    },
+    {
+      "id": "1c2960a6-d5be-443f-b6a9-be56a81ae37f",
+      "kind": "Allowance",
+      "state": "Executed",
+      "amount": 3,
+      "quantity": 0,
+      "unit": "",
+      "returnDisposition": "",
+      "requesterId": "local-operator",
+      "reviewerId": "local-reviewer",
+      "submittedAt": "2026-10-13T08:16:23.690Z",
+      "decidedById": "local-reviewer",
+      "decidedBy": "本地审批员",
+      "decidedAt": "2026-10-13T08:17:41.112Z",
+      "decisionNote": "QA-CN-ALLOWANCE-3-APPROVED",
+      "creditNoteId": "e80a4438-fab6-45c4-8590-604b32c1edec",
+      "goodsId": null,
+      "sourceLineId": null,
+      "sourceProductionId": null,
+      "snapshotSha256": "83ed071f1341b811fb7e7e46ed15198ffdc719ea5f406ec5386db224ccd57000",
+      "reviewFileIds": [
+        "d105aed0-81ef-4dba-bef2-e3d0e9baa762"
+      ],
+      "goodsSource": null
+    }
+  ],
+  "credits": [
+    {
+      "id": "e80a4438-fab6-45c4-8590-604b32c1edec",
+      "code": "CLM-2026-0002",
+      "originalAmount": 30,
+      "currentAmount": 33.0,
+      "remaining": 0.0,
+      "sourceVersionIds": [
+        "d9a261c5-4b25-480d-8990-6755f803d1aa",
+        "6ba713f6-e6d2-4fdb-8cdb-e4bf12ce680c"
+      ],
+      "sourceVersions": [
+        {
+          "id": "d9a261c5-4b25-480d-8990-6755f803d1aa",
+          "version": 1,
+          "previousVersionId": null,
+          "amount": 30,
+          "fingerprint": "4c931700b2039cc4e0496c62341a01f309e73c90616817a52f4859647c6aab28",
+          "dispositionIds": [
+            "5145e026-d7d5-49e7-9d26-f55c32cbd3c3"
+          ]
+        },
+        {
+          "id": "6ba713f6-e6d2-4fdb-8cdb-e4bf12ce680c",
+          "version": 2,
+          "previousVersionId": "d9a261c5-4b25-480d-8990-6755f803d1aa",
+          "amount": 33,
+          "fingerprint": "36d00ef7a2fced0ba5586c091ec7fcbe3d5d4e168bce1e45d34f06ca1f3628f1",
+          "dispositionIds": [
+            "5145e026-d7d5-49e7-9d26-f55c32cbd3c3",
+            "1c2960a6-d5be-443f-b6a9-be56a81ae37f"
+          ]
+        }
+      ],
+      "printVersions": [
+        {
+          "id": "1cf8a79a-3b72-4681-bbf9-2a93fcee57bc",
+          "version": 1,
+          "sourceVersionId": "d9a261c5-4b25-480d-8990-6755f803d1aa",
+          "sourceFingerprint": "4c931700b2039cc4e0496c62341a01f309e73c90616817a52f4859647c6aab28",
+          "snapshotFingerprint": "3758448af6805f3895444624899fd572c6be86eff8de23297c34488bf3f4d305",
+          "issuerHash": "f9851926a4f559b94f9a98e6b38639ef8a7dd2f116aa1aa4fd228eac09bc1b45",
+          "customerHash": "98aebc6f428917a9da30f69d975249179f42cf98acf596ceafb09faa7038b561",
+          "fileId": "466ab10f-9a9d-449d-93f8-7e26277e4043",
+          "fileName": "CLM-2026-0002-v1.pdf",
+          "bytes": 230615,
+          "sha256": "b2c86133b6e4ddf70191af722b851097adf7f0e3527eec82078c07bb3b3a9b6f",
+          "issuedAt": "2026-10-13T07:51:12.633Z",
+          "issuedById": "local-operator",
+          "issuedBy": "本地操作员",
+          "amount": 30
+        },
+        {
+          "id": "7acd8602-37db-4db8-b2aa-01d0b1f25de0",
+          "version": 2,
+          "sourceVersionId": "6ba713f6-e6d2-4fdb-8cdb-e4bf12ce680c",
+          "sourceFingerprint": "36d00ef7a2fced0ba5586c091ec7fcbe3d5d4e168bce1e45d34f06ca1f3628f1",
+          "snapshotFingerprint": "29466ea06d69a3db0308ec9f9b3f932d7b994b5947ba185ac2fbdf722a152575",
+          "issuerHash": "f9851926a4f559b94f9a98e6b38639ef8a7dd2f116aa1aa4fd228eac09bc1b45",
+          "customerHash": "98aebc6f428917a9da30f69d975249179f42cf98acf596ceafb09faa7038b561",
+          "fileId": "f54d0340-9045-4709-be6a-15ef6cc9addd",
+          "fileName": "CLM-2026-0002-v2.pdf",
+          "bytes": 235031,
+          "sha256": "54a8f7aa0ad49772b9484cc154d013fecf067444a22ca1f36e377ddb8c10e3c8",
+          "issuedAt": "2026-10-13T08:19:10.347Z",
+          "issuedById": "local-operator",
+          "issuedBy": "本地操作员",
+          "amount": 33
+        }
+      ]
+    }
+  ],
+  "goods": [
+    {
+      "id": "5b11bffa-e918-4091-9f84-f0ab2b3f8778",
+      "claimId": "64cc2e8c-8fdd-4c64-824d-d56e952ca891",
+      "dispositionId": "5145e026-d7d5-49e7-9d26-f55c32cbd3c3",
+      "orderId": "e32ac965-6f99-44f9-ac41-56b1af4c8280",
+      "quantity": 2,
+      "unit": "件",
+      "destination": "Scrap",
+      "source": {
+        "schemaVersion": 1,
+        "claimId": "64cc2e8c-8fdd-4c64-824d-d56e952ca891",
+        "invoiceId": "4cd30247-57ef-41ea-99c6-a8b45c616ab3",
+        "documentId": "26e3f995-8d3e-4d1f-969e-3e68416cd0fc",
+        "orderId": "e32ac965-6f99-44f9-ac41-56b1af4c8280",
+        "lineId": "4f9bcf2f-5883-4d7d-aeb6-416a3980e865",
+        "shipmentId": "b1916208-faff-4eaa-a791-39f5b8f811bd",
+        "productionId": "9dd97aa4-792e-4059-81d1-027d0067218e",
+        "customerId": "7a41388a-c4c8-474e-9892-b397b94e4546",
+        "currency": "USD",
+        "name": "异常流程验收羊毛外套",
+        "style": "FLOW-EXCEPTION-1013",
+        "unit": "件",
+        "unitPrice": 15,
+        "sourceQuantity": 4,
+        "sourceAmount": 60,
+        "orderApprovedVersion": 2,
+        "dispositionId": "5145e026-d7d5-49e7-9d26-f55c32cbd3c3",
+        "quantity": 2
+      },
+      "state": "Scrapped",
+      "events": [
+        {
+          "at": "2026-10-13T08:10:33.500Z",
+          "actor": "本地操作员",
+          "action": "PartiallyReceived",
+          "basis": "QA-B1: received 1 of 2; counted at QA-RETURN-A1; local test only.",
+          "fileIds": []
+        },
+        {
+          "at": "2026-10-13T08:13:07.287Z",
+          "actor": "本地操作员",
+          "action": "Received",
+          "basis": "QA-B2: received final 1 of 2; counted at QA-RETURN-A2; local test only.",
+          "fileIds": []
+        },
+        {
+          "at": "2026-10-13T08:14:08.509Z",
+          "actor": "本地操作员",
+          "action": "Scrapped",
+          "basis": "QA-B1-SCRAP: approved Scrap performed on received batch B1 only; local software test.",
+          "fileIds": []
+        },
+        {
+          "at": "2026-10-13T08:15:15.685Z",
+          "actor": "本地操作员",
+          "action": "Scrapped",
+          "basis": "QA-B2-SCRAP: approved Scrap performed on received batch B2 only; local software test.",
+          "fileIds": []
+        }
+      ],
+      "returnReceiptId": "5c1b3e4f-12fe-4329-aaee-2165254b9140",
+      "receivedQuantity": 2
+    }
+  ],
+  "returnReceipts": [
+    {
+      "id": "5c1b3e4f-12fe-4329-aaee-2165254b9140",
+      "code": "RT-2026-0001",
+      "claimId": "64cc2e8c-8fdd-4c64-824d-d56e952ca891",
+      "warehouseId": "c7c4b7b9-dc68-4f17-b269-21f78c47781c",
+      "goodsIds": [
+        "5b11bffa-e918-4091-9f84-f0ab2b3f8778"
+      ],
+      "createdAt": "2026-10-13T07:40:35.426Z",
+      "actorId": "local-operator",
+      "actor": "本地操作员"
+    }
+  ],
+  "batches": [
+    {
+      "id": "fa6da3ad-9f6c-4486-9319-c172fd9aaf64",
+      "goodsId": "5b11bffa-e918-4091-9f84-f0ab2b3f8778",
+      "rtId": "5c1b3e4f-12fe-4329-aaee-2165254b9140",
+      "stockId": "29fc8938-079d-44b5-8f95-67e63fafa7de",
+      "warehouseId": "c7c4b7b9-dc68-4f17-b269-21f78c47781c",
+      "quantity": 1,
+      "unit": "件",
+      "batchNumber": "QA-RET-1013-B1",
+      "ownership": "Transferred",
+      "ownerCustomerId": "7a41388a-c4c8-474e-9892-b397b94e4546",
+      "actorId": "local-operator",
+      "actor": "本地操作员",
+      "onHand": 0,
+      "locked": 0,
+      "available": 0,
+      "disposal": {
+        "id": "0eed97e4-4436-4aff-a5ca-7966797ddb12",
+        "basis": "QA-B1-SCRAP: approved Scrap performed on received batch B1 only; local software test.",
+        "fileIds": [],
+        "at": "2026-10-13T08:14:08.509Z",
+        "actorId": "local-operator",
+        "actor": "本地操作员",
+        "unlockMovementId": "3e3a2c80-15c3-4bd7-8075-5355ee07e61a",
+        "outboundMovementId": "78ef8bca-c43a-4307-a94a-e9887555bb3c"
+      },
+      "movementChain": [
+        {
+          "id": "e63d2984-9368-4988-bd03-2730ba0f37e3",
+          "stockId": "29fc8938-079d-44b5-8f95-67e63fafa7de",
+          "kind": "receive",
+          "quantity": 1,
+          "unit": "件",
+          "warehouseId": "c7c4b7b9-dc68-4f17-b269-21f78c47781c",
+          "goodsId": "5b11bffa-e918-4091-9f84-f0ab2b3f8778",
+          "receivedEventId": "fa6da3ad-9f6c-4486-9319-c172fd9aaf64",
+          "location": "QA-RETURN-A1",
+          "person": "CLM-2026-0001",
+          "note": "QA-B1: received 1 of 2; counted at QA-RETURN-A1; local test only.",
+          "at": "2026-10-13T08:10:33.500Z",
+          "actor": "本地操作员",
+          "onHandBefore": 0,
+          "onHandAfter": 1,
+          "lockedBefore": 0,
+          "lockedAfter": 0
+        },
+        {
+          "id": "7338ce56-eed8-42e2-b788-1b31ac8fccd3",
+          "stockId": "29fc8938-079d-44b5-8f95-67e63fafa7de",
+          "kind": "lock",
+          "quantity": 1,
+          "unit": "件",
+          "warehouseId": "c7c4b7b9-dc68-4f17-b269-21f78c47781c",
+          "goodsId": "5b11bffa-e918-4091-9f84-f0ab2b3f8778",
+          "receivedEventId": "fa6da3ad-9f6c-4486-9319-c172fd9aaf64",
+          "location": "QA-RETURN-A1",
+          "person": "CLM-2026-0001",
+          "note": "QA-B1: received 1 of 2; counted at QA-RETURN-A1; local test only.",
+          "at": "2026-10-13T08:10:33.500Z",
+          "actor": "本地操作员",
+          "onHandBefore": 1,
+          "onHandAfter": 1,
+          "lockedBefore": 0,
+          "lockedAfter": 1
+        },
+        {
+          "id": "3e3a2c80-15c3-4bd7-8075-5355ee07e61a",
+          "stockId": "29fc8938-079d-44b5-8f95-67e63fafa7de",
+          "kind": "unlock",
+          "quantity": 1,
+          "unit": "件",
+          "warehouseId": "c7c4b7b9-dc68-4f17-b269-21f78c47781c",
+          "goodsId": "5b11bffa-e918-4091-9f84-f0ab2b3f8778",
+          "receivedEventId": "fa6da3ad-9f6c-4486-9319-c172fd9aaf64",
+          "location": "QA-RETURN-A1",
+          "person": "CLM-2026-0001",
+          "note": "QA-B1-SCRAP: approved Scrap performed on received batch B1 only; local software test.",
+          "at": "2026-10-13T08:14:08.509Z",
+          "actor": "本地操作员",
+          "onHandBefore": 1,
+          "onHandAfter": 1,
+          "lockedBefore": 1,
+          "lockedAfter": 0
+        },
+        {
+          "id": "78ef8bca-c43a-4307-a94a-e9887555bb3c",
+          "stockId": "29fc8938-079d-44b5-8f95-67e63fafa7de",
+          "kind": "scrap",
+          "quantity": 1,
+          "unit": "件",
+          "warehouseId": "c7c4b7b9-dc68-4f17-b269-21f78c47781c",
+          "goodsId": "5b11bffa-e918-4091-9f84-f0ab2b3f8778",
+          "receivedEventId": "fa6da3ad-9f6c-4486-9319-c172fd9aaf64",
+          "location": "QA-RETURN-A1",
+          "person": "CLM-2026-0001",
+          "note": "QA-B1-SCRAP: approved Scrap performed on received batch B1 only; local software test.",
+          "at": "2026-10-13T08:14:08.509Z",
+          "actor": "本地操作员",
+          "onHandBefore": 1,
+          "onHandAfter": 0,
+          "lockedBefore": 0,
+          "lockedAfter": 0
+        }
+      ]
+    },
+    {
+      "id": "ea6b8387-b533-4cdb-9be8-5f4d2190e705",
+      "goodsId": "5b11bffa-e918-4091-9f84-f0ab2b3f8778",
+      "rtId": "5c1b3e4f-12fe-4329-aaee-2165254b9140",
+      "stockId": "41af68ba-eded-4787-910d-ecd7c3e15d0e",
+      "warehouseId": "c7c4b7b9-dc68-4f17-b269-21f78c47781c",
+      "quantity": 1,
+      "unit": "件",
+      "batchNumber": "QA-RET-1013-B2",
+      "ownership": "Transferred",
+      "ownerCustomerId": "7a41388a-c4c8-474e-9892-b397b94e4546",
+      "actorId": "local-operator",
+      "actor": "本地操作员",
+      "onHand": 0,
+      "locked": 0,
+      "available": 0,
+      "disposal": {
+        "id": "cd5003a5-38b1-4fab-ad3a-b758a9d3d90f",
+        "basis": "QA-B2-SCRAP: approved Scrap performed on received batch B2 only; local software test.",
+        "fileIds": [],
+        "at": "2026-10-13T08:15:15.685Z",
+        "actorId": "local-operator",
+        "actor": "本地操作员",
+        "unlockMovementId": "92e90ab3-a1b6-495d-96a3-e699b03d3398",
+        "outboundMovementId": "6333d694-8c9b-4734-b5ab-3e608fb987bf"
+      },
+      "movementChain": [
+        {
+          "id": "4085a8cf-ce80-4455-9004-e582f23d8c23",
+          "stockId": "41af68ba-eded-4787-910d-ecd7c3e15d0e",
+          "kind": "receive",
+          "quantity": 1,
+          "unit": "件",
+          "warehouseId": "c7c4b7b9-dc68-4f17-b269-21f78c47781c",
+          "goodsId": "5b11bffa-e918-4091-9f84-f0ab2b3f8778",
+          "receivedEventId": "ea6b8387-b533-4cdb-9be8-5f4d2190e705",
+          "location": "QA-RETURN-A2",
+          "person": "CLM-2026-0001",
+          "note": "QA-B2: received final 1 of 2; counted at QA-RETURN-A2; local test only.",
+          "at": "2026-10-13T08:13:07.287Z",
+          "actor": "本地操作员",
+          "onHandBefore": 0,
+          "onHandAfter": 1,
+          "lockedBefore": 0,
+          "lockedAfter": 0
+        },
+        {
+          "id": "aec9a486-0edc-4019-b0a9-cf12981ad9f2",
+          "stockId": "41af68ba-eded-4787-910d-ecd7c3e15d0e",
+          "kind": "lock",
+          "quantity": 1,
+          "unit": "件",
+          "warehouseId": "c7c4b7b9-dc68-4f17-b269-21f78c47781c",
+          "goodsId": "5b11bffa-e918-4091-9f84-f0ab2b3f8778",
+          "receivedEventId": "ea6b8387-b533-4cdb-9be8-5f4d2190e705",
+          "location": "QA-RETURN-A2",
+          "person": "CLM-2026-0001",
+          "note": "QA-B2: received final 1 of 2; counted at QA-RETURN-A2; local test only.",
+          "at": "2026-10-13T08:13:07.287Z",
+          "actor": "本地操作员",
+          "onHandBefore": 1,
+          "onHandAfter": 1,
+          "lockedBefore": 0,
+          "lockedAfter": 1
+        },
+        {
+          "id": "92e90ab3-a1b6-495d-96a3-e699b03d3398",
+          "stockId": "41af68ba-eded-4787-910d-ecd7c3e15d0e",
+          "kind": "unlock",
+          "quantity": 1,
+          "unit": "件",
+          "warehouseId": "c7c4b7b9-dc68-4f17-b269-21f78c47781c",
+          "goodsId": "5b11bffa-e918-4091-9f84-f0ab2b3f8778",
+          "receivedEventId": "ea6b8387-b533-4cdb-9be8-5f4d2190e705",
+          "location": "QA-RETURN-A2",
+          "person": "CLM-2026-0001",
+          "note": "QA-B2-SCRAP: approved Scrap performed on received batch B2 only; local software test.",
+          "at": "2026-10-13T08:15:15.685Z",
+          "actor": "本地操作员",
+          "onHandBefore": 1,
+          "onHandAfter": 1,
+          "lockedBefore": 1,
+          "lockedAfter": 0
+        },
+        {
+          "id": "6333d694-8c9b-4734-b5ab-3e608fb987bf",
+          "stockId": "41af68ba-eded-4787-910d-ecd7c3e15d0e",
+          "kind": "scrap",
+          "quantity": 1,
+          "unit": "件",
+          "warehouseId": "c7c4b7b9-dc68-4f17-b269-21f78c47781c",
+          "goodsId": "5b11bffa-e918-4091-9f84-f0ab2b3f8778",
+          "receivedEventId": "ea6b8387-b533-4cdb-9be8-5f4d2190e705",
+          "location": "QA-RETURN-A2",
+          "person": "CLM-2026-0001",
+          "note": "QA-B2-SCRAP: approved Scrap performed on received batch B2 only; local software test.",
+          "at": "2026-10-13T08:15:15.685Z",
+          "actor": "本地操作员",
+          "onHandBefore": 1,
+          "onHandAfter": 0,
+          "lockedBefore": 0,
+          "lockedAfter": 0
+        }
+      ]
+    }
+  ],
+  "newPayments": [
+    {
+      "id": "a2ccdd44-24fa-4ef0-9948-66add0a025bc",
+      "code": "PV-2026-0001",
+      "date": "2026-10-13",
+      "payee": "Mist 合同验收客户",
+      "amount": 33,
+      "currency": "USD",
+      "ref": "CLM-2026-0002 · QA-CN-STOCK-REFUND-33-LOCAL"
+    }
+  ],
+  "creditApplications": [
+    {
+      "id": "a92f9108-4cda-4ad1-b3d8-6a83df00fd55",
+      "creditId": "e80a4438-fab6-45c4-8590-604b32c1edec",
+      "paymentId": "a2ccdd44-24fa-4ef0-9948-66add0a025bc",
+      "amount": 33,
+      "at": "2026-10-13T08:20:56.496Z",
+      "actor": "本地操作员"
+    }
+  ],
+  "professionalNumbering": {
+    "businessSequences": {
+      "SEQ_CLM_2026": {
+        "id": "SEQ_CLM_2026",
+        "prefix": "CLM",
+        "year": 2026,
+        "seq": 2,
+        "updatedAt": "1791877235445"
+      },
+      "SEQ_RT_2026": {
+        "id": "SEQ_RT_2026",
+        "prefix": "RT",
+        "year": 2026,
+        "seq": 1,
+        "updatedAt": "1791877235444"
+      },
+      "SEQ_PV_2026": {
+        "id": "SEQ_PV_2026",
+        "prefix": "PV",
+        "year": 2026,
+        "seq": 1,
+        "updatedAt": "1791879656504"
+      }
+    },
+    "collisions": {}
+  },
+  "originalFacts": {
+    "protectedFactsUnchanged": true,
+    "companySetupBaselineRevision": 285,
+    "scope": "Original Closed870/CN15/refund15, source CI/order/shipment and first two completed order commercial/financial facts retained; authorized software test issuer setup separate"
+  },
+  "errors": [],
+  "warnings": [],
+  "actualUiReturn": {
+    "stage": "Closed298 sourceCN return and archived V2 download",
+    "route": "claims/64cc2e8c-8fdd-4c64-824d-d56e952ca891?section=credit:e80a4438-fab6-45c4-8590-604b32c1edec",
+    "correctCNCardTop": 64.8785171508789,
+    "notFound": false,
+    "savedBalance": 0,
+    "closedDownload": {
+      "bytes": 235031,
+      "sha256": "54a8f7aa0ad49772b9484cc154d013fecf067444a22ca1f36e377ddb8c10e3c8",
+      "matchesPreSettlementArchive": true
+    },
+    "targetedTests": {
+      "files": 2,
+      "passed": 47,
+      "log": "/private/tmp/mist-cn-source-return-final.log"
+    },
+    "screenshot": "cn-versions-settled-ui.png",
+    "reloadReadback": {
+      "closed": true,
+      "cnCode": "CLM-2026-0002",
+      "amount": 33,
+      "remaining": 0,
+      "printVersions": [
+        1,
+        2
+      ],
+      "exactCardTop": 73.87744140625
+    }
+  },
+  "freshChecks": {
+    "frontend": {
+      "files": 37,
+      "passed": 536
+    },
+    "backend": {
+      "files": 27,
+      "passed": 357
+    },
+    "uiTypes": 0,
+    "serverSourceTypes": 0,
+    "build": "passed",
+    "mistGuard": {
+      "files": 84,
+      "errors": 0,
+      "warnings": 0
+    },
+    "logs": "docs/design-system/evidence/mist-native-2026-10-13/cn-stock-chain/checks"
+  },
+  "limits": [
+    "Local software acceptance records, no external bank/logistics actions",
+    "Legacy incomplete frozen source is preserved without fabricated inventory or formal provenance",
+    "Real PostgreSQL concurrency and multiprocess local not tested"
+  ],
+  "actualPdf": [
+    {
+      "name": "CLM-2026-0002-v1.pdf",
+      "bytes": 230615,
+      "sha256": "b2c86133b6e4ddf70191af722b851097adf7f0e3527eec82078c07bb3b3a9b6f"
+    },
+    {
+      "name": "CLM-2026-0002-v2.pdf",
+      "bytes": 235031,
+      "sha256": "54a8f7aa0ad49772b9484cc154d013fecf067444a22ca1f36e377ddb8c10e3c8"
+    },
+    {
+      "name": "CLM-2026-0002-v2-DRAFT.pdf",
+      "bytes": 236307,
+      "sha256": "6ac6a0ce45b6fcb172fc5656304c047851101ae22871b55d5aa572a84824d3ad"
+    },
+    {
+      "name": "CLM-2026-0002-v1-after-v2.pdf",
+      "bytes": 230615,
+      "sha256": "b2c86133b6e4ddf70191af722b851097adf7f0e3527eec82078c07bb3b3a9b6f"
+    }
+  ]
+}

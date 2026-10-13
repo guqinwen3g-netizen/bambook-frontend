@@ -1,0 +1,33 @@
+import 'dotenv/config';
+import assert from 'node:assert/strict';
+import {PrismaClient} from '@prisma/client';
+import {manualStockCommand} from '../src/inventory/manualStockCommandService';
+import {registerInventoryOwner} from '../src/inventory/inventoryOwnerRegistrationService';
+import {createInventoryTransfer,transitionInventoryTransfer} from '../src/inventory/inventoryTransferService';
+import {createInventoryOwnershipService} from '../src/inventory/inventoryOwnershipService';
+import {getPersonalWorkbench} from '../src/dashboard/workbenchService';
+import {loadUserWithRoles,buildLoadedAuthTokenPayload} from '../src/auth/tokenHelpers';
+const db=new PrismaClient();
+async function main(){
+ const [{name}]=await db.$queryRawUnsafe<any[]>('select current_database() as name');assert.equal(name,'panda_hub_dev');
+ const actor='devsim-logistics';const existing=await db.inventoryItem.findFirst({where:{description:'【模拟验收】男士羊毛大衣 · 重试与货权'},orderBy:{createdAt:'desc'}});const key=existing?.batchNumber||'operating-'+Date.now();const brand=await db.relation.findFirst({where:{isOrganization:true,deletedAt:null,name:{contains:'模拟品牌'}},select:{id:true}});assert(brand);
+ const input={requestKey:key,receiptDate:'2026-10-06',warehouseId:'WH_1791222813459_6de07s',productAssetId:'devsim-bulk-coat',materialCode:'DEVSIM-COAT-NAVY',description:'【模拟验收】男士羊毛大衣 · 重试与货权',category:'Garment',batchNumber:key,quantity:8,unit:'PC',details:{color:'海军蓝',sizes:[{size:'L',quantity:8}]},notes:'模拟期初盘点签字凭据'};
+ const [a,b]=await Promise.all([manualStockCommand(db,'receipt',input,actor),manualStockCommand(db,'receipt',input,actor)]);assert.equal(a.id,b.id);assert.equal(await db.stockMovement.count({where:{itemId:a.id,type:'Inbound'}}),1);assert.equal(a.lastInDate,'2026-10-06');
+ await assert.rejects(manualStockCommand(db,'receipt',{...input,quantity:9},actor));
+ const move={requestKey:key+'-out',itemId:a.id,type:'Outbound',quantity:3,unit:'PC',movementDate:'2026-10-06',reason:'模拟内部试穿消耗，非订单出运',referenceType:'Manual'};
+ const [m,n]=await Promise.all([manualStockCommand(db,'movement',move,actor),manualStockCommand(db,'movement',move,actor)]);assert.equal(m.id,n.id);assert.equal(String((await db.inventoryItem.findUniqueOrThrow({where:{id:a.id}})).quantity),'5');
+ await assert.rejects(manualStockCommand(db,'movement',{...move,requestKey:key+'-overflow',quantity:6},actor));
+ await assert.rejects(registerInventoryOwner(db,a.id,{ownership:'Transferred',ownerRelationId:'MISSING',date:'2026-10-06',evidence:'不存在的组织不可登记'},actor));
+ await registerInventoryOwner(db,a.id,{ownership:'Transferred',ownerRelationId:brand.id,date:'2026-10-06',evidence:'模拟客户货权确认，不代表真实成交'},actor);
+ const owner=await db.inventoryItem.findUniqueOrThrow({where:{id:a.id}});assert.equal(owner.ownerRelationId,brand.id);
+ const transfer=await createInventoryTransfer(db,{sourceItemId:'INV_1791223626556_zbxbkm',targetWarehouseId:'WH_1791223626540_9bf680',quantity:'100',note:'【模拟】在途签收任务 · 保留给后勤演练',requestKey:key+'-transfer'},actor);
+ const pending=await getPersonalWorkbench(db,await buildLoadedAuthTokenPayload(db,await loadUserWithRoles(db,actor)),{group:'inventory'});assert(pending.groups[0].items?.some(i=>(i.target as any).transferId===transfer.id));
+ const before=await createInventoryOwnershipService(db).summarizeByOwnership();assert(before.ok);
+ await transitionInventoryTransfer(db,transfer.id,'dispatch',{requestKey:key+'-dispatch',date:'2026-10-06',note:'模拟运单 SIM-OPERATING-01，尚未实际签收'},actor);
+ const after=await createInventoryOwnershipService(db).summarizeByOwnership();assert(after.ok);
+ if(before.ok&&after.ok)assert.deepEqual(after.data.ourStock?.quantityByUnit,before.data.ourStock?.quantityByUnit);
+ const work=await getPersonalWorkbench(db,await buildLoadedAuthTokenPayload(db,await loadUserWithRoles(db,actor)),{group:'inventory'});assert.equal(work.groups[0].status,'ready');assert(work.groups[0].items?.some(i=>(i.target as any).transferId===transfer.id&&i.kind==='receive-transfer'));
+ assert.equal(await db.notification.count({where:{userId:actor,link:`/inventory?id=${transfer.id}&tab=transfers&itemId=${transfer.sourceItemId}`}}),2);
+ console.log(JSON.stringify({result:'PASS',checks:['concurrent initial receipt retry','actual receipt date','request collision rejection','concurrent movement retry','insufficient quantity rejection','real owner organization validation','owner registration','personal pending and receiving task','dispatch notifications','in-transit assets conserved'],inventoryItemId:a.id,transferId:transfer.id}));
+}
+main().finally(()=>db.$disconnect()).catch(e=>{console.error(e);process.exitCode=1;});

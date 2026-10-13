@@ -1,0 +1,1 @@
+ALTER TABLE "InventoryItem" ADD COLUMN IF NOT EXISTS "details" JSONB;

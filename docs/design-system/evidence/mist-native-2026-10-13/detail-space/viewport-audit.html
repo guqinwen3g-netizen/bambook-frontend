@@ -1,0 +1,22 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Mist detail viewport verification</title>
+<style>
+  body{margin:0;background:#e8edf0;font:14px system-ui;color:#25343e}
+  header{padding:12px 20px} iframe{display:block;border:0;height:900px;margin:0 20px 20px}
+</style>
+<header id="caption">Actual Mist application · viewport verification · local test workspace</header>
+<iframe id="app-under-test" title="Actual Mist detail viewport"></iframe>
+<script>
+  const query=new URLSearchParams(location.search);
+  const width=[1440,1180,390].includes(Number(query.get('width')))?Number(query.get('width')):390;
+  const routes={
+    sample:'/?intro=0&view=samples&section=shipment%3A508c03c3-a645-49d1-8b69-e352334dcd94&id=24000aba-39c8-4380-8b81-e7f327918112&detail=full',
+    ci:'/?intro=0&view=document-center&section=508c03c3-a645-49d1-8b69-e352334dcd94&id=7c74cfda-6639-46dc-8839-f50fd8ca0a28&detail=full'
+  };
+  const target=query.get('target') in routes?query.get('target'):'sample';
+  const frame=document.getElementById('app-under-test');
+  frame.style.width=width+'px';
+  frame.src=routes[target];
+  document.getElementById('caption').textContent='Actual Mist '+target+' detail · '+width+' × 900 CSS px · saved local test records';
+</script>

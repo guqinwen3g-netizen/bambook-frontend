@@ -1,0 +1,29 @@
+import { describe,it,expect } from 'vitest';
+import { buildOrderSampleSource,orderSampleDigest } from '../orderSampleSourceContract';
+import { buildOrderSampleQcReport,loadOrderSampleQcEvidence,orderSampleQcStoredReport,orderSampleQcReportContentHash, type OrderSampleQcInput } from '../orderSampleQcEvidence';
+const fp='a'.repeat(64),lineFp='b'.repeat(64),now='1791072000000';
+function fixture(result:OrderSampleQcInput['result']='pass') {
+ const source=buildOrderSampleSource({domain:'order',sourceId:'src',sampleId:'smp',family:'garment_pp',owner:{orderId:'ord',businessLine:'garment',factoryRelationId:'fac'},chainId:'chain',round:1,previousSourceId:null,provenance:'native_new',specSnapshot:{style:'coat'},sampleFacts:{quantity:'1',unit:'PC',cuttingDate:'2026-10-04'},coverage:[{orderLineId:'line',expectedLineFingerprint:lineFp,rangeStart:'0',quantity:'100',unit:'PC',productionBatchId:null,expectedBatchRevision:null}],lines:[{id:'line',orderId:'ord',factoryRelationId:'fac',quantity:'100',unit:'PC',specSnapshot:{style:'coat'},sourceFingerprint:fp,lineFingerprint:lineFp}],batches:[]});
+ const input:OrderSampleQcInput={requestedEventId:'requested',result,opinion:'检查完成',inspectionDate:'2026-10-04',inspectorOrg:'内部QC',totalUnits:2,passedUnits:result==='pass'?2:1,sampleSize:2,criticalDefects:0,majorDefects:0,minorDefects:0,defectSummary:'',reportFile:null};
+ const command={protocolVersion:1,operation:'qc_review',actorId:'qc',requestKey:'review-001',input:{protocolVersion:1,requestKey:'review-001',sourceId:'src',eventType:'qc_reviewed',occurredAt:'2026-10-04',expectedHead:{eventId:'requested',sequence:2},payload:input}};
+ const made=buildOrderSampleQcReport(source,input,{reportId:'report',eventId:'review-event',actorId:'qc',requestKey:'review-001',commandHash:orderSampleDigest(command),sequence:3,recordedAt:now});
+ const originalReport=orderSampleQcStoredReport(made.data);
+ const audit:any={id:'qc-audit',actorId:'qc',action:'order_sample_qc_review',targetType:'InspectionReport',targetId:'report',transactionId:'review-event',createdAt:new Date(Number(now)),detail:{protocol:'order_sample_native_v1',source:'route:qc:order-sample-review',after:made.report,originalReport,originalReportHash:orderSampleDigest(originalReport),reviewCommand:command}};
+ const reportAudit={auditId:'qc-audit',protocol:'order_sample_native_v1',source:'route:qc:order-sample-review',operation:'order_sample_qc_review',actorId:'qc',targetType:'InspectionReport',targetId:'report',after:made.report};
+ const event:any={id:'review-event',eventType:'qc_reviewed',actorId:'qc',recordedAt:BigInt(now),requestKey:'review-001',qcReportId:'report',qcReportRevision:3,qcReportAuditId:'qc-audit',payload:{requestedEventId:'requested',report:made.report,reportAudit}};
+ const db:any={inspectionReport:{findUnique:async()=>made.data},auditLog:{findUnique:async()=>audit}};
+ return {source,input,report:made.data,audit,event,db};
+}
+describe('native QC requires actual InspectionReport and actual audit',()=>{
+ it('reconstructs real report and audit with report hash independent of Source fingerprint',async()=>{const f=fixture(),r=await loadOrderSampleQcEvidence(f.db,f.source,f.event);expect(r.report.result).toBe('passed');expect(f.report.contentFingerprint).not.toBe(f.source.contentFingerprint);expect(r.report.contentFingerprint).toBe(f.source.contentFingerprint);});
+ it.each(['conditional','fail','direct_reject'] as const)('preserves actual %s and never manufactures passing qualification',async result=>{const f=fixture(result),r=await loadOrderSampleQcEvidence(f.db,f.source,f.event);expect(f.report.result).toBe(result==='direct_reject'?'fail':result);expect(r.report.result).toBe(result==='direct_reject'?'direct_reject':'failed');expect(f.report.approvedByBusiness).toBe(false);});
+ it.each(['scopeKey','scopeFingerprint','orderId','inspectionType','scopeType','requestKey','inspectedBy','commandHash','contentFingerprint'])('rejects changed stored %s',async field=>{const f=fixture();f.report[field]='changed';await expect(loadOrderSampleQcEvidence(f.db,f.source,f.event)).rejects.toThrow();});
+ it('rejects absent report despite self-consistent event JSON',async()=>{const f=fixture();f.db.inspectionReport.findUnique=async()=>null;await expect(loadOrderSampleQcEvidence(f.db,f.source,f.event)).rejects.toThrow();});
+ it('rejects absent actual QC audit',async()=>{const f=fixture();f.db.auditLog.findUnique=async()=>null;await expect(loadOrderSampleQcEvidence(f.db,f.source,f.event)).rejects.toThrow();});
+ it.each(['actorId','action','targetId','transactionId'])('rejects changed audit %s',async key=>{const f=fixture();f.audit[key]='other';await expect(loadOrderSampleQcEvidence(f.db,f.source,f.event)).rejects.toThrow();});
+ it('even recomputed content hash cannot bypass original audit pin',async()=>{const f=fixture();f.report.notes='修改';f.report.contentFingerprint=orderSampleQcReportContentHash(f.report);await expect(loadOrderSampleQcEvidence(f.db,f.source,f.event)).rejects.toThrow();});
+ it('embedded passing report cannot replace actual failed report',async()=>{const f=fixture('fail');f.event.payload.report.result='passed';await expect(loadOrderSampleQcEvidence(f.db,f.source,f.event)).rejects.toThrow();});
+ it('rejects fake approving signatures and flags',async()=>{const f=fixture();f.report.approvedByBusiness=true;await expect(loadOrderSampleQcEvidence(f.db,f.source,f.event)).rejects.toThrow();});
+ it('rejects replay under other event identity',async()=>{const f=fixture();f.event.id='other';await expect(loadOrderSampleQcEvidence(f.db,f.source,f.event)).rejects.toThrow();});
+ it('SQL faults propagate without embedded fallback',async()=>{const f=fixture();f.db.inspectionReport.findUnique=async()=>{throw Error('SQL unavailable');};await expect(loadOrderSampleQcEvidence(f.db,f.source,f.event)).rejects.toThrow('SQL unavailable');});
+});

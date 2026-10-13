@@ -1,0 +1,39 @@
+sudo NOPASSWD — 仅清理 root 多余 cloudflared（示例）
+
+原则
+- 只对「固定路径的一个脚本」放行 NOPASSWD，不要 NOPASSWD 整段 /bin/kill 或 ALL。
+- 编辑 sudoers 必须用 visudo，避免语法错误锁死 sudo。
+
+一、把脚本装到系统路径（在 Mac mini 本机执行）
+
+  sudo mkdir -p /usr/local/sbin
+  sudo cp ~/bambook-knowledge-api/scripts/kill-root-cloudflared-dupes.sh /usr/local/sbin/kill-root-cloudflared-dupes.sh
+  sudo chmod 755 /usr/local/sbin/kill-root-cloudflared-dupes.sh
+
+可先 sudo 执行一次验证：
+
+  sudo /usr/local/sbin/kill-root-cloudflared-dupes.sh
+
+二、增加 NOPASSWD（仍需输入一次管理员密码）
+
+  sudo visudo -f /etc/sudoers.d/panda1-cloudflared-cleanup
+
+在编辑器中写入**唯一一行**（用户名按实际改，若管理用户是 panda1 则如下）：
+
+  panda1 ALL=(root) NOPASSWD: /usr/local/sbin/kill-root-cloudflared-dupes.sh
+
+保存退出（visudo 会校验语法）。
+
+文件末尾必须有空行（部分系统要求）。
+
+三、验证免密
+
+  sudo /usr/local/sbin/kill-root-cloudflared-dupes.sh
+
+第二次起不应再询问密码。
+
+四、日常使用（SSH / 自动化）
+
+  sudo /usr/local/sbin/kill-root-cloudflared-dupes.sh
+
+撤销 NOPASSWD：sudo rm /etc/sudoers.d/panda1-cloudflared-cleanup && sudo visudo -c

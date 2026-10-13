@@ -1,0 +1,71 @@
+{
+  "readOnly": true,
+  "kind": "unreceived-refund",
+  "declaredUiAttemptAmount": "15",
+  "claimId": "870d849a-4066-4b0d-b27e-821eebe25737",
+  "beforeRevision": 260,
+  "afterRevision": 260,
+  "addedFileIds": [],
+  "inputs": [
+    {
+      "path": "/tmp/mist-exception-claim-executed.json",
+      "sha256": "b0d18bbde2a2bb683215056200cbfb18fcfd9b9d07779f6b5cb1efe1deb4e8a5"
+    },
+    {
+      "path": "/tmp/mist-exception-refund-unreceived-after.json",
+      "sha256": "b0d18bbde2a2bb683215056200cbfb18fcfd9b9d07779f6b5cb1efe1deb4e8a5"
+    },
+    {
+      "path": "/tmp/mist-exception-refund-paid-baseline.json",
+      "sha256": "23514ad5da900819bcdb9e0070c9cb1800454d2d76df9762a59e6b530834e2f9"
+    }
+  ],
+  "checks": [
+    {
+      "key": "snapshots.pass_own_stage_checks",
+      "ok": true
+    },
+    {
+      "key": "snapshots.same_workspace",
+      "ok": true
+    },
+    {
+      "key": "rejection.exact_claim",
+      "ok": true
+    },
+    {
+      "key": "rejection.refund_state_unchanged",
+      "ok": true
+    },
+    {
+      "key": "rejection.original_paid_facts_unchanged",
+      "ok": true
+    },
+    {
+      "key": "rejection.invoice_totals_unchanged",
+      "ok": true
+    },
+    {
+      "key": "rejection.existing_file_hashes_unchanged",
+      "ok": true
+    },
+    {
+      "key": "precondition.independent_cn15",
+      "ok": true
+    },
+    {
+      "key": "precondition.no_cash_or_offset",
+      "ok": true
+    },
+    {
+      "key": "precondition.not_received",
+      "ok": true
+    },
+    {
+      "key": "attempt.within_cn_but_return_gate",
+      "ok": true
+    }
+  ],
+  "ok": true,
+  "limit": "This comparison does not execute or independently prove the rejection; pair with captured UI/server error evidence. Workspace revision changes and new case attachment files are informational; original paid facts, financial actions, goods events and existing file hashes must remain unchanged."
+}

@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Panda 关系智库</title>
+<style>
+:root {
+  --bg: #f5f6fa;
+  --panel: #ffffff;
+  --primary: #2563eb;
+  --primary-light: #dbeafe;
+  --accent: #f59e0b;
+  --text: #1e293b;
+  --text2: #64748b;
+  --border: #e2e8f0;
+  --danger: #ef4444;
+  --success: #10b981;
+  --tag-customer: #dbeafe;
+  --tag-supplier: #dcfce7;
+  --tag-logistics: #fef9c3;
+  --tag-agent: #fce7f3;
+  --tag-factory: #ede9fe;
+  --tag-partner: #fee2e2;
+  --tag-institution: #f1f5f9;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
+
+/* 顶部导航 */
+header { background: var(--panel); border-bottom: 1px solid var(--border); padding: 0 24px; display: flex; align-items: center; justify-content: space-between; height: 56px; position: sticky; top: 0; z-index: 100; }
+.logo { font-size: 18px; font-weight: 700; color: var(--primary); display: flex; align-items: center; gap: 8px; }
+.logo span { color: var(--text); }
+.header-nav { display: flex; gap: 4px; }
+.nav-btn { background: none; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; color: var(--text2); transition: all 0.15s; }
+.nav-btn:hover, .nav-btn.active { background: var(--primary-light); color: var(--primary); font-weight: 500; }
+
+/* 布局 */
+.layout { display: flex; min-height: calc(100vh - 56px); }
+.sidebar { width: 240px; background: var(--panel); border-right: 1px solid var(--border); padding: 20px 16px; overflow-y: auto; flex-shrink: 0; }
+.main { flex: 1; padding: 24px; overflow: auto; }
+
+/* 统计卡片 */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.stat-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; }
+.stat-card .num { font-size: 28px; font-weight: 700; color: var(--primary); }
+.stat-card .label { font-size: 12px; color: var(--text2); margin-top: 2px; }
+.stat-card .sub { font-size: 11px; color: var(--text2); margin-top: 4px; }
+
+/* 搜索栏 */
+.search-bar { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; display: flex; align-items: center; padding: 0 12px; margin-bottom: 16px; gap: 8px; }
+.search-bar input { border: none; outline: none; flex: 1; padding: 10px 0; font-size: 14px; background: transparent; }
+.search-bar select { border: none; outline: none; background: transparent; font-size: 14px; color: var(--text2); cursor: pointer; }
+
+/* 实体列表 */
+.entity-list { display: flex; flex-direction: column; gap: 8px; }
+.entity-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; cursor: pointer; transition: all 0.15s; display: flex; align-items: flex-start; gap: 12px; }
+.entity-card:hover { border-color: var(--primary); box-shadow: 0 2px 8px rgba(37,99,235,0.1); }
+.entity-avatar { width: 40px; height: 40px; border-radius: 8px; background: var(--primary-light); display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 700; color: var(--primary); flex-shrink: 0; }
+.entity-info { flex: 1; min-width: 0; }
+.entity-name { font-weight: 600; font-size: 15px; margin-bottom: 4px; }
+.entity-meta { font-size: 12px; color: var(--text2); }
+.entity-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.tag { font-size: 11px; padding: 2px 8px; border-radius: 20px; font-weight: 500; }
+.tag-customer { background: var(--tag-customer); color: #1d4ed8; }
+.tag-supplier { background: var(--tag-supplier); color: #15803d; }
+.tag-logistics { background: var(--tag-logistics); color: #a16207; }
+.tag-agent { background: var(--tag-agent); color: #9d174d; }
+.tag-factory { background: var(--tag-factory); color: #6d28d9; }
+.tag-partner { background: var(--tag-partner); color: #b91c1c; }
+.tag-institution { background: var(--tag-institution); color: #475569; }
+.tag-other { background: var(--tag-institution); color: #475569; }
+.entity-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
+/* 按钮 */
+.btn { padding: 7px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel); cursor: pointer; font-size: 13px; transition: all 0.15s; display: inline-flex; align-items: center; gap: 5px; }
+.btn:hover { border-color: var(--primary); color: var(--primary); }
+.btn-primary { background: var(--primary); color: white; border-color: var(--primary); }
+.btn-primary:hover { background: #1d4ed8; }
+.btn-danger { color: var(--danger); border-color: var(--danger); }
+.btn-danger:hover { background: #fef2f2; }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+
+/* 详情弹窗 */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 20px; }
+.modal { background: var(--panel); border-radius: 12px; width: 100%; max-width: 900px; max-height: 90vh; display: flex; flex-direction: column; }
+.modal-header { padding: 20px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+.modal-header h2 { font-size: 18px; }
+.modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--text2); width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 6px; }
+.modal-close:hover { background: var(--bg); }
+.modal-body { padding: 24px; overflow-y: auto; flex: 1; }
+.modal-footer { padding: 16px 24px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; flex-shrink: 0; }
+
+/* 表单 */
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.form-group { display: flex; flex-direction: column; gap: 4px; }
+.form-group.full { grid-column: 1 / -1; }
+label { font-size: 12px; font-weight: 500; color: var(--text2); }
+input, select, textarea { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 14px; outline: none; transition: border 0.15s; background: var(--panel); }
+input:focus, select:focus, textarea:focus { border-color: var(--primary); }
+textarea { resize: vertical; min-height: 80px; }
+
+/* 角色选择 */
+.role-picker { display: flex; flex-wrap: wrap; gap: 6px; }
+.role-option { padding: 5px 12px; border-radius: 6px; border: 1px solid var(--border); cursor: pointer; font-size: 13px; transition: all 0.15s; background: var(--panel); }
+.role-option.selected { background: var(--primary-light); border-color: var(--primary); color: var(--primary); font-weight: 500; }
+
+/* 联系人/PO列表 */
+.section-title { font-size: 13px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; margin: 20px 0 10px; }
+.item-list { display: flex; flex-direction: column; gap: 6px; }
+.item-row { background: var(--bg); border-radius: 6px; padding: 10px 12px; display: flex; align-items: center; gap: 10px; }
+.item-row .info { flex: 1; }
+.item-row .name { font-weight: 500; font-size: 14px; }
+.item-row .sub { font-size: 12px; color: var(--text2); }
+.badge { font-size: 11px; padding: 2px 7px; border-radius: 10px; font-weight: 500; }
+.badge-pending { background: #fef9c3; color: #a16207; }
+.badge-confirmed { background: #dbeafe; color: #1d4ed8; }
+.badge-production { background: #ede9fe; color: #6d28d9; }
+.badge-shipped { background: #dcfce7; color: #15803d; }
+.badge-delivered { background: #d1fae5; color: #065f46; }
+.badge-cancelled { background: #fee2e2; color: #b91c1c; }
+.badge-email { background: #e0f2fe; color: #0369a1; }
+.badge-note { background: #f1f5f9; color: #475569; }
+.badge-po { background: #fef9c3; color: #a16207; }
+.badge-sample { background: #fce7f3; color: #9d174d; }
+
+/* 时间轴 */
+.timeline { display: flex; flex-direction: column; gap: 8px; }
+.timeline-item { display: flex; gap: 10px; }
+.timeline-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--primary); margin-top: 6px; flex-shrink: 0; }
+.timeline-content { flex: 1; }
+.timeline-time { font-size: 11px; color: var(--text2); }
+.timeline-desc { font-size: 13px; }
+
+/* 侧边栏 */
+.sidebar-section { margin-bottom: 20px; }
+.sidebar-title { font-size: 11px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+.sidebar-filter { width: 100%; border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-size: 13px; outline: none; background: var(--panel); margin-bottom: 6px; }
+.filter-item { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 5px; cursor: pointer; font-size: 13px; color: var(--text2); }
+.filter-item:hover { background: var(--bg); }
+.filter-item.active { background: var(--primary-light); color: var(--primary); font-weight: 500; }
+.filter-count { margin-left: auto; font-size: 11px; background: var(--border); padding: 1px 6px; border-radius: 10px; }
+
+/* 空状态 */
+.empty { text-align: center; padding: 60px 20px; color: var(--text2); }
+.empty-icon { font-size: 48px; margin-bottom: 12px; opacity: 0.5; }
+.empty p { margin-bottom: 16px; }
+
+/* 关系图 */
+.relationship-section { margin-top: 16px; }
+.rel-item { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.rel-item:last-child { border-bottom: none; }
+
+/* Markdown 展示 */
+.markdown-body { line-height: 1.7; font-size: 14px; }
+.markdown-body h1 { font-size: 18px; border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 12px; }
+.markdown-body h2 { font-size: 15px; font-weight: 600; margin: 12px 0 8px; }
+.markdown-body p { margin: 6px 0; }
+.markdown-body li { margin: 4px 0 4px 20px; }
+.markdown-body hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+
+/* Tab */
+.tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 16px; gap: 0; }
+.tab { padding: 10px 16px; cursor: pointer; font-size: 14px; color: var(--text2); border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all 0.15s; }
+.tab:hover { color: var(--primary); }
+.tab.active { color: var(--primary); font-weight: 500; border-bottom-color: var(--primary); }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* 关系关系人输入 */
+.rel-form { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; }
+.rel-type-badge { font-size: 11px; padding: 3px 8px; border-radius: 10px; background: var(--primary-light); color: var(--primary); font-weight: 500; }
+
+#detailModal .modal { max-width: 800px; }
+#detailModal .modal-body { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.detail-left, .detail-right { min-width: 0; }
+
+.hidden { display: none !important; }
+
+@media (max-width: 768px) {
+  .sidebar { display: none; }
+  .form-grid { grid-template-columns: 1fr; }
+  #detailModal .modal-body { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">🐼 Panda <span>关系智库</span></div>
+  <div class="header-nav">
+    <button class="nav-btn active" onclick="showView('entities')">关系列表</button>
+    <button class="nav-btn" onclick="showView('stats')">数据总览</button>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- 侧边栏 -->
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-title">角色筛选</div>
+      <select class="sidebar-filter" onchange="loadEntities(this.value)">
+        <option value="">全部角色</option>
+        <option value="customer">客户</option>
+        <option value="supplier">供应商</option>
+        <option value="factory">工厂</option>
+        <option value="agent">代理商</option>
+        <option value="logistics">物流</option>
+        <option value="partner">合作伙伴</option>
+        <option value="institution">机构</option>
+      </select>
+      <div id="roleFilters"></div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-title">快捷操作</div>
+      <button class="btn btn-primary" style="width:100%" onclick="openAddModal()">+ 新增实体</button>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-title">知识库统计</div>
+      <div id="sidebarStats" style="font-size:13px;color:var(--text2)"></div>
+    </div>
+  </div>
+
+  <!-- 主内容 -->
+  <div class="main" id="mainView">
+    <div class="search-bar">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input type="text" id="searchInput" placeholder="搜索公司名、描述..." oninput="loadEntities()">
+      <select id="typeFilter" onchange="loadEntities()">
+        <option value="">全部类型</option>
+        <option value="customer">客户</option>
+        <option value="supplier">供应商</option>
+        <option value="factory">工厂</option>
+        <option value="agent">代理商</option>
+        <option value="logistics">物流</option>
+        <option value="partner">合作伙伴</option>
+        <option value="institution">机构</option>
+      </select>
+    </div>
+
+    <div class="stats" id="statsCards"></div>
+    <div class="entity-list" id="entityList"></div>
+  </div>
+</div>
+
+<!-- 新增实体弹窗 -->
+<div class="modal-overlay hidden" id="addModal" onclick="if(event.target===this)closeAddModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>新增实体</h2>
+      <button class="modal-close" onclick="closeAddModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group full">
+          <label>公司名称 *</label>
+          <input type="text" id="f-name" placeholder="例如：Peerless Clothing Inc.">
+        </div>
+        <div class="form-group">
+          <label>国家</label>
+          <input type="text" id="f-country" placeholder="例如：美国">
+        </div>
+        <div class="form-group">
+          <label>城市</label>
+          <input type="text" id="f-city" placeholder="例如：纽约">
+        </div>
+        <div class="form-group full">
+          <label>角色（可多选）</label>
+          <div class="role-picker" id="rolePicker">
+            <div class="role-option" data-role="customer">客户</div>
+            <div class="role-option" data-role="supplier">供应商</div>
+            <div class="role-option" data-role="factory">工厂</div>
+            <div class="role-option" data-role="agent">代理商</div>
+            <div class="role-option" data-role="logistics">物流</div>
+            <div class="role-option" data-role="partner">合作伙伴</div>
+            <div class="role-option" data-role="institution">机构</div>
+            <div class="role-option" data-role="other">其他</div>
+          </div>
+        </div>
+        <div class="form-group full">
+          <label>描述</label>
+          <textarea id="f-description" placeholder="公司背景、业务范围、合作概况..."></textarea>
+        </div>
+        <div class="form-group full">
+          <label>联系人</label>
+          <div id="contactFields"></div>
+          <button class="btn btn-sm" onclick="addContactField()" style="margin-top:6px">+ 添加联系人</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeAddModal()">取消</button>
+      <button class="btn btn-primary" onclick="submitAdd()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 详情弹窗 -->
+<div class="modal-overlay hidden" id="detailModal" onclick="if(event.target===this)closeDetail()">
+  <div class="modal" style="max-width:900px">
+    <div class="modal-header">
+      <h2 id="detailTitle">实体详情</h2>
+      <button class="modal-close" onclick="closeDetail()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="detail-left">
+        <div id="detailMeta" style="font-size:13px;color:var(--text2);margin-bottom:12px"></div>
+        <div id="detailMd" class="markdown-body"></div>
+        <div class="section-title">联系人</div>
+        <div id="detailContacts" class="item-list"></div>
+        <div class="section-title">采购订单 PO</div>
+        <div id="detailPOs" class="item-list"></div>
+      </div>
+      <div class="detail-right">
+        <div class="section-title">关系链路</div>
+        <div id="detailRelationships" class="item-list"></div>
+        <div class="section-title" style="margin-top:20px">活动时间轴</div>
+        <div id="detailTimeline" class="timeline"></div>
+        <div class="section-title" style="margin-top:20px">快速添加记录</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <input type="text" id="quickNoteInput" placeholder="添加一条备注..." style="width:100%">
+          <button class="btn btn-primary btn-sm" onclick="addActivityNote()">添加备注</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger btn-sm" onclick="deleteCurrentEntity()">删除</button>
+      <button class="btn btn-primary" onclick="closeDetail()">关闭</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '';
+
+// ---- 全局状态 ----
+let currentEntities = [];
+let currentEntityId = null;
+let selectedRoles = new Set();
+
+// ---- 工具 ----
+function $id(id) { return document.getElementById(id); }
+function tag(role) { return `<span class="tag tag-${role}">${roleLabel(role)}</span>`; }
+function roleLabel(r) {
+  const m = {customer:'客户',supplier:'供应商',factory:'工厂',agent:'代理商',logistics:'物流',partner:'合作伙伴',institution:'机构',other:'其他'};
+  return m[r] || r;
+}
+function badgeStatus(s) {
+  const m = {pending:'待确认',confirmed:'已确认',in_production:'生产中',shipped:'已发货',delivered:'已到达',cancelled:'已取消'};
+  return `<span class="badge badge-${s}">${m[s]||s}</span>`;
+}
+function badgeType(t) {
+  const m = {email:'邮件',note:'备注',po:'订单',sample:'样品',shipment:'物流',invoice:'发票'};
+  return `<span class="badge badge-${t}">${m[t]||t}</span>`;
+}
+function avatar(name) {
+  const colors = ['#dbeafe','#dcfce7','#fef9c3','#fce7f3','#ede9fe','#fee2e2','#f1f5f9'];
+  let hash = 0;
+  for (let c of name) hash = hash * 31 + c.charCodeAt(0);
+  return `<div class="entity-avatar" style="background:${colors[hash%colors.length]}">${name.slice(0,2)}</div>`;
+}
+function timeAgo(dt) {
+  if (!dt) return '';
+  const d = new Date(dt);
+  const now = new Date();
+  const diff = Math.floor((now - d) / 1000);
+  if (diff < 60) return '刚刚';
+  if (diff < 3600) return Math.floor(diff/60)+'分钟前';
+  if (diff < 86400) return Math.floor(diff/3600)+'小时前';
+  if (diff < 2592000) return Math.floor(diff/86400)+'天前';
+  return d.toLocaleDateString('zh-CN');
+}
+
+// ---- 加载实体列表 ----
+async function loadEntities(typeFilter) {
+  const type = typeFilter ?? $id('typeFilter').value;
+  const search = $id('searchInput').value;
+  let url = `${API}/api/entities?`;
+  if (type) url += `type=${type}&`;
+  if (search) url += `search=${encodeURIComponent(search)}`;
+  try {
+    const res = await fetch(url);
+    currentEntities = await res.json();
+    renderEntityList();
+    renderSidebarStats();
+  } catch(e) { console.error(e); }
+}
+
+function renderEntityList() {
+  const el = $id('entityList');
+  if (!currentEntities.length) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">📭</div><p>暂无实体记录</p><button class="btn btn-primary" onclick="openAddModal()">+ 添加第一个实体</button></div>`;
+    return;
+  }
+  el.innerHTML = currentEntities.map(e => `
+    <div class="entity-card" onclick="openDetail('${e.id}')">
+      ${avatar(e.name)}
+      <div class="entity-info">
+        <div class="entity-name">${e.name}</div>
+        <div class="entity-meta">${e.country||''} ${e.city ? '· ' + e.city : ''}</div>
+        <div class="entity-tags">${(e.roles||[]).map(r=>tag(r)).join('')}</div>
+      </div>
+      <div class="entity-actions">
+        <button class="btn btn-sm" onclick="event.stopPropagation();openDetail('${e.id}')">查看</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderSidebarStats() {
+  const statsEl = $id('sidebarStats');
+  if (!currentEntities.length) { statsEl.innerHTML = '暂无数据'; return; }
+  const byRole = {};
+  currentEntities.forEach(e => {
+    (e.roles||[]).forEach(r => { byRole[r] = (byRole[r]||0)+1; });
+  });
+  statsEl.innerHTML = Object.entries(byRole).map(([r,c]) =>
+    `<div class="filter-item">${roleLabel(r)} <span class="filter-count">${c}</span></div>`
+  ).join('');
+}
+
+// ---- 新增实体 ----
+function openAddModal() {
+  $id('addModal').classList.remove('hidden');
+  $id('f-name').value = '';
+  $id('f-country').value = '';
+  $id('f-city').value = '';
+  $id('f-description').value = '';
+  selectedRoles = new Set();
+  document.querySelectorAll('.role-option').forEach(el => el.classList.remove('selected'));
+  $id('contactFields').innerHTML = '';
+  addContactField();
+}
+
+function closeAddModal() { $id('addModal').classList.add('hidden'); }
+
+function addContactField(c = {}) {
+  const div = document.createElement('div');
+  div.style = 'display:grid;grid-template-columns:2fr 1fr 2fr;gap:6px;margin-bottom:6px';
+  div.innerHTML = `
+    <input type="text" placeholder="姓名" class="c-name" value="${c.name||''}">
+    <input type="text" placeholder="职位" class="c-role" value="${c.role||''}">
+    <input type="text" placeholder="邮箱" class="c-email" value="${c.email||''}">
+  `;
+  $id('contactFields').appendChild(div);
+}
+
+async function submitAdd() {
+  const name = $id('f-name').value.trim();
+  if (!name) { alert('请输入公司名称'); return; }
+  const roles = Array.from(selectedRoles);
+  if (!roles.length) { alert('请至少选择一个角色'); return; }
+
+  const contacts = Array.from($id('contactFields').querySelectorAll('div')).map(row => ({
+    name: row.querySelector('.c-name').value.trim(),
+    role: row.querySelector('.c-role').value.trim(),
+    email: row.querySelector('.c-email').value.trim(),
+  })).filter(c => c.name);
+
+  const body = {
+    name, country: $id('f-country').value.trim(), city: $id('f-city').value.trim(),
+    description: $id('f-description').value.trim(), roles, contacts
+  };
+
+  try {
+    const res = await fetch(`${API}/api/entities`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error(await res.text());
+    closeAddModal();
+    loadEntities();
+  } catch(e) { alert('保存失败: ' + e.message); }
+}
+
+// ---- 实体详情 ----
+async function openDetail(id) {
+  currentEntityId = id;
+  try {
+    const res = await fetch(`${API}/api/entities/${id}`);
+    const d = await res.json();
+    $id('detailTitle').textContent = d.name;
+    $id('detailMeta').innerHTML = `${d.country||''} ${d.city?'· '+d.city:''} &nbsp;|&nbsp; ${(d.roles||[]).map(r=>tag(r)).join(' ')}`;
+
+    // Markdown
+    if (d.markdown) {
+      $id('detailMd').innerHTML = markdownToHtml(d.markdown);
+    } else {
+      $id('detailMd').innerHTML = `<p style="color:var(--text2);font-size:13px">${d.description||'暂无描述'}</p>`;
+    }
+
+    // 联系人
+    $id('detailContacts').innerHTML = (d.contacts||[]).length ? d.contacts.map(c => `
+      <div class="item-row">
+        <div class="info"><div class="name">${c.name}</div><div class="sub">${c.role||'—'} · ${c.email||'无邮箱'}</div></div>
+        ${c.phone ? `<span style="font-size:12px;color:var(--text2)">📱 ${c.phone}</span>` : ''}
+      </div>
+    `).join('') : '<div style="font-size:13px;color:var(--text2)">暂无联系人</div>';
+
+    // PO
+    $id('detailPOs').innerHTML = (d.pos||[]).length ? d.pos.map(p => `
+      <div class="item-row">
+        <div class="info"><div class="name">${p.po_number}</div><div class="sub">${p.season||''} ${p.order_type?'· '+p.order_type:''}</div></div>
+        <span>${p.amount ? p.currency+' '+p.amount : ''}</span>
+        ${badgeStatus(p.status)}
+      </div>
+    `).join('') : '<div style="font-size:13px;color:var(--text2)">暂无订单记录</div>';
+
+    // 关系链路
+    loadRelationships(id, d.name);
+
+    // 时间轴
+    $id('detailTimeline').innerHTML = (d.logs||[]).map(l => `
+      <div class="timeline-item">
+        <div class="timeline-dot"></div>
+        <div class="timeline-content">
+          <div class="timeline-time">${timeAgo(l.created_at)}</div>
+          <div class="timeline-desc">${badgeType(l.type)} ${l.description}</div>
+        </div>
+      </div>
+    `).join('') || '<div style="font-size:13px;color:var(--text2)">暂无活动记录</div>';
+
+    $id('detailModal').classList.remove('hidden');
+  } catch(e) { alert('加载失败: ' + e.message); }
+}
+
+function closeDetail() { $id('detailModal').classList.add('hidden'); currentEntityId = null; }
+
+// ---- 关系链路 ----
+function relTypeLabel(t) {
+  const m = {
+    supplies_to: '供应→', pays_to: '付款→', ships_via: '物流→',
+    represents: '代理→', represented_by: '←代理', contracts_with: '合作→',
+    uses_service: '使用→', receives_payment_via: '收款→', prospect: '潜在合作',
+  };
+  return m[t] || t;
+}
+
+function relTypeColor(t) {
+  const m = {
+    supplies_to: '#15803d', pays_to: '#1d4ed8', ships_via: '#a16207',
+    represents: '#9d174d', represented_by: '#9d174d', contracts_with: '#6d28d9',
+    uses_service: '#6d28d9', receives_payment_via: '#1d4ed8', prospect: '#64748b',
+  };
+  return m[t] || '#64748b';
+}
+
+async function loadRelationships(entityId, entityName) {
+  try {
+    const res = await fetch(`${API}/api/relationships`);
+    const allRels = await res.json();
+    // 筛选与当前实体相关的关系
+    const rels = allRels.filter(r => r.from_entity_id === entityId || r.to_entity_id === entityId);
+    const el = $id('detailRelationships');
+    if (!rels.length) {
+      el.innerHTML = '<div style="font-size:13px;color:var(--text2)">暂无关系记录</div>';
+      return;
+    }
+    el.innerHTML = rels.map(r => {
+      const isFrom = r.from_entity_id === entityId;
+      const otherName = isFrom ? r.to_name : r.from_name;
+      const direction = isFrom ? '→' : '←';
+      const relType = isFrom ? r.type : (r.type === 'supplies_to' ? 'supplied_by' : r.type === 'represented_by' ? 'represents' : r.type);
+      return `
+        <div class="item-row">
+          <span class="rel-type-badge" style="background:${relTypeColor(r.type)}22;color:${relTypeColor(r.type)}">${relTypeLabel(isFrom ? r.type : relType)}</span>
+          <div class="info"><div class="name">${direction} ${otherName}</div><div class="sub">${r.description||''}</div></div>
+          ${r.related_pos && r.related_pos.length ? `<div style="font-size:11px;color:var(--text2)">PO: ${Array.isArray(r.related_pos) ? r.related_pos.join(', ') : r.related_pos}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+  } catch(e) {
+    $id('detailRelationships').innerHTML = '<div style="font-size:13px;color:var(--text2)">加载失败</div>';
+  }
+}
+
+async function addActivityNote() {
+  const desc = $id('quickNoteInput').value.trim();
+  if (!desc || !currentEntityId) return;
+  await fetch(`${API}/api/activity`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ entity_id: currentEntityId, type: 'note', description: desc })
+  });
+  $id('quickNoteInput').value = '';
+  openDetail(currentEntityId); // 刷新
+}
+
+async function deleteCurrentEntity() {
+  if (!currentEntityId) return;
+  if (!confirm('确定要删除这个实体吗？相关联系人、订单、活动记录将一并删除。')) return;
+  await fetch(`${API}/api/entities/${currentEntityId}`, { method: 'DELETE' });
+  closeDetail();
+  loadEntities();
+}
+
+// ---- 角色多选 ----
+document.querySelectorAll('.role-option').forEach(el => {
+  el.addEventListener('click', () => {
+    const r = el.dataset.role;
+    if (selectedRoles.has(r)) selectedRoles.delete(r);
+    else selectedRoles.add(r);
+    el.classList.toggle('selected', selectedRoles.has(r));
+  });
+});
+
+// ---- 简单 Markdown 转 HTML ----
+function markdownToHtml(md) {
+  if (!md) return '';
+  return md
+    .replace(/^---[\s\S]*?---\n/, '') // 移除 frontmatter
+    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^- (.+)$/gm, '<li>$1</li>')
+    .replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\n\n/g, '</p><p>')
+    .replace(/^(?!<[hup])/gm, '')
+    .replace(/^(.+)$/gm, m => m.startsWith('<') ? m : `<p>${m}</p>`)
+    .replace(/<p><\/p>/g, '');
+}
+
+// ---- 视图切换 ----
+async function showView(view) {
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  event?.target?.classList?.add('active');
+  if (view === 'stats') {
+    const res = await fetch(`${API}/api/stats`);
+    const s = await res.json();
+    $id('statsCards').innerHTML = `
+      <div class="stat-card"><div class="num">${s.entityCount}</div><div class="label">实体总数</div></div>
+      <div class="stat-card"><div class="num">${s.contactCount}</div><div class="label">联系人</div></div>
+      <div class="stat-card"><div class="num">${s.poCount}</div><div class="label">采购订单</div></div>
+      <div class="stat-card"><div class="num">${s.relationshipCount}</div><div class="label">关系链路</div></div>
+    ` + (s.roleStats||[]).map(r => `
+      <div class="stat-card"><div class="num">${r.c}</div><div class="label">${roleLabel(r.role_type)}</div></div>
+    `).join('');
+    $id('entityList').innerHTML = '';
+  } else {
+    loadEntities();
+  }
+}
+
+// ---- 启动 ----
+loadEntities();
+</script>
+</body>
+</html>

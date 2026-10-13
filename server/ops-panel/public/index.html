@@ -1,0 +1,1062 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bambook 数据中心运维面板</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg-primary: #0a1628;
+        --bg-secondary: #162340;
+        --bg-tertiary: #1a3a52;
+        --glass-3: rgba(255,255,255,0.03);
+        --glass-5: rgba(255,255,255,0.05);
+        --glass-8: rgba(255,255,255,0.08);
+        --glass-12: rgba(255,255,255,0.12);
+        --text-primary: rgba(255,255,255,0.95);
+        --text-secondary: rgba(255,255,255,0.70);
+        --text-tertiary: rgba(255,255,255,0.45);
+        --text-muted: rgba(255,255,255,0.30);
+        --border-subtle: rgba(255,255,255,0.06);
+        --border-default: rgba(255,255,255,0.12);
+        --border-glow-blue: rgba(74,158,255,0.30);
+        --accent-blue: #4a9eff;
+        --accent-blue-dim: #2563eb;
+        --accent-cyan: #4ecdc4;
+        --accent-purple: #a78bfa;
+        --accent-orange: #fb923c;
+        --accent-red: #ff6b6b;
+        --accent-green: #22c55e;
+        --accent-yellow: #facc15;
+        --shadow-lg: 0 8px 32px rgba(0,0,0,0.25);
+        --shadow-xl: 0 16px 48px rgba(0,0,0,0.30);
+        --shadow-glow-blue: 0 0 20px rgba(74,158,255,0.15);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        color: var(--text-primary);
+        background:
+          radial-gradient(circle at 18% 12%, rgba(74,158,255,0.20), transparent 30%),
+          radial-gradient(circle at 88% 0%, rgba(78,205,196,0.16), transparent 26%),
+          radial-gradient(circle at 72% 78%, rgba(167,139,250,0.12), transparent 30%),
+          linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 50%, var(--bg-tertiary) 100%);
+      }
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background-image:
+          linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+        background-size: 42px 42px;
+        mask-image: linear-gradient(to bottom, black, transparent 80%);
+      }
+      .wrap { position: relative; width: min(1760px, calc(100vw - 48px)); margin: 0 auto; padding: 22px 0 56px; }
+      .glass {
+        background: var(--glass-8);
+        border: 1px solid var(--border-default);
+        box-shadow: var(--shadow-lg), inset 0 1px 0 var(--glass-12);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+      }
+      .topbar { display: grid; grid-template-columns: minmax(300px, 0.9fr) minmax(420px, 1.4fr) minmax(360px, 0.75fr); gap: 14px; align-items: stretch; margin-bottom: 14px; }
+      .brand-card { border-radius: 28px; padding: 20px 22px; }
+      .eyebrow { display: inline-flex; align-items: center; gap: 8px; color: var(--accent-cyan); font-size: 11px; font-weight: 800; letter-spacing: 0.22em; text-transform: uppercase; }
+      .eyebrow::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--accent-cyan); box-shadow: 0 0 18px rgba(78,205,196,0.80); }
+      h1 { margin: 12px 0 0; font-size: clamp(26px, 3vw, 44px); line-height: 1; letter-spacing: -0.06em; font-weight: 300; }
+      .subtitle, .small, .section-note { color: var(--text-tertiary); font-size: 13px; line-height: 1.5; }
+      .subtitle { margin-top: 10px; }
+      .health-strip { border-radius: 28px; padding: 16px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+      .core-light { min-width: 0; padding: 13px; border-radius: 18px; background: linear-gradient(135deg, var(--glass-8), var(--glass-3)); border: 1px solid var(--border-subtle); }
+      .core-light .name { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--text-secondary); }
+      .core-light .value { margin-top: 9px; font-size: 18px; font-weight: 650; letter-spacing: -0.03em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: var(--accent-red); box-shadow: 0 0 12px var(--accent-red); }
+      .dot.ok { background: var(--accent-green); box-shadow: 0 0 12px var(--accent-green); }
+      .dot.warn { background: var(--accent-yellow); box-shadow: 0 0 12px var(--accent-yellow); }
+      .admin-panel { border-radius: 28px; padding: 16px; display: grid; gap: 10px; }
+      .admin-row, .password-tools { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+      .admin-key-tools { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+      .admin-key-tools button { width: 100%; }
+      input, textarea, select { width: 100%; border: 1px solid var(--border-default); border-radius: 14px; padding: 11px 12px; background: var(--glass-5); color: var(--text-primary); outline: none; font: inherit; }
+      textarea { min-height: 112px; resize: vertical; font-family: "SF Mono", ui-monospace, monospace; line-height: 1.45; }
+      select { appearance: none; }
+      input:focus, textarea:focus, select:focus { border-color: var(--border-glow-blue); box-shadow: 0 0 0 4px rgba(74,158,255,0.10); }
+      button { border: 1px solid transparent; border-radius: 14px; padding: 11px 14px; background: linear-gradient(135deg, var(--accent-blue), var(--accent-blue-dim)); color: white; font-weight: 700; cursor: pointer; box-shadow: 0 4px 15px rgba(74,158,255,0.35); transition: all 180ms cubic-bezier(0.16, 1, 0.3, 1); }
+      button:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(74,158,255,0.45); }
+      button:disabled { cursor: not-allowed; opacity: 0.48; transform: none; box-shadow: none; }
+      button.secondary { background: var(--glass-8); color: var(--text-secondary); border-color: var(--border-default); box-shadow: none; }
+      button.danger { background: linear-gradient(135deg, var(--accent-red), #b91c1c); box-shadow: 0 4px 15px rgba(255,107,107,0.28); }
+      .dashboard-grid { display: grid; grid-template-columns: minmax(360px, 0.82fr) minmax(0, 1.18fr); gap: 14px; margin-bottom: 14px; }
+      .card { border-radius: 24px; padding: 20px; margin-bottom: 14px; }
+      .health-summary { min-height: 320px; display: flex; flex-direction: column; justify-content: space-between; }
+      .status-label { color: var(--text-tertiary); font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 800; }
+      .status-title { margin-top: 16px; font-size: clamp(34px, 4vw, 62px); line-height: 0.96; letter-spacing: -0.07em; font-weight: 300; }
+      .status-title.ok { color: var(--accent-green); text-shadow: 0 0 24px rgba(34,197,94,0.18); }
+      .status-title.warn { color: var(--accent-yellow); text-shadow: 0 0 24px rgba(250,204,21,0.18); }
+      .status-title.error { color: var(--accent-red); text-shadow: 0 0 24px rgba(255,107,107,0.18); }
+      .status-copy { margin-top: 14px; color: var(--text-secondary); line-height: 1.65; }
+      .summary-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }
+      .mini-metric { padding: 12px; border-radius: 16px; border: 1px solid var(--border-subtle); background: var(--glass-5); }
+      .mini-metric span { color: var(--text-muted); font-size: 11px; }
+      .mini-metric strong { display: block; margin-top: 4px; font-size: 20px; letter-spacing: -0.04em; }
+      .section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+      .section-head h2 { margin: 0; font-size: 22px; font-weight: 500; letter-spacing: -0.04em; }
+      .service-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(235px, 1fr)); gap: 10px; }
+      .service { min-width: 0; padding: 13px; border: 1px solid var(--border-subtle); border-radius: 18px; background: linear-gradient(135deg, var(--glass-8), var(--glass-3)); }
+      .service-name { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-weight: 800; font-size: 13px; }
+      .service-name > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .badge { display: inline-flex; align-items: center; gap: 7px; padding: 6px 9px; border-radius: 999px; font-size: 11px; font-weight: 800; border: 1px solid currentColor; }
+      .badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 10px currentColor; }
+      .badge.ok { background: rgba(34,197,94,.10); color: var(--accent-green); }
+      .badge.warn { background: rgba(250,204,21,.10); color: var(--accent-yellow); }
+      .badge.error { background: rgba(255,107,107,.10); color: var(--accent-red); }
+      .detail { color: var(--text-tertiary); margin-top: 8px; font-size: 12px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; white-space: normal; overflow: hidden; }
+      .data-map { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+      .data-card { position: relative; overflow: hidden; padding: 16px; border: 1px solid var(--border-default); border-radius: 22px; background: linear-gradient(135deg, var(--glass-8), var(--glass-3)); }
+      .data-card::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at top right, var(--accent-glow, rgba(74,158,255,0.14)), transparent 46%); pointer-events: none; }
+      .data-card[data-accent="cyan"] { --accent-glow: rgba(78,205,196,0.16); }
+      .data-card[data-accent="purple"] { --accent-glow: rgba(167,139,250,0.16); }
+      .data-card[data-accent="green"] { --accent-glow: rgba(34,197,94,0.14); }
+      .data-card[data-accent="orange"] { --accent-glow: rgba(251,146,60,0.16); }
+      .data-card > * { position: relative; }
+      .data-title { font-size: 15px; font-weight: 750; letter-spacing: -0.03em; }
+      .data-count { margin-top: 12px; font-size: 34px; line-height: 1; font-weight: 300; letter-spacing: -0.08em; }
+      .data-meta { margin-top: 8px; color: var(--accent-cyan); font-size: 12px; line-height: 1.45; }
+      .data-items { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin-top: 12px; }
+      .data-item { padding: 8px; border-radius: 12px; background: var(--glass-5); border: 1px solid var(--border-subtle); }
+      .data-item span { display: block; color: var(--text-muted); font-size: 10px; }
+      .data-item strong { display: block; margin-top: 3px; font-size: 15px; }
+      .bars { display: grid; gap: 6px; margin-top: 12px; }
+      .bar-row { display: grid; grid-template-columns: minmax(58px, 0.8fr) minmax(86px, 1.5fr) auto; align-items: center; gap: 7px; color: var(--text-secondary); font-size: 11px; }
+      .bar-track { height: 6px; border-radius: 999px; background: var(--glass-5); overflow: hidden; }
+      .bar-fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan)); }
+      .ops-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(420px, 0.72fr); gap: 14px; }
+      .dev-console { display: grid; grid-template-columns: minmax(420px, 0.8fr) minmax(0, 1.2fr); gap: 14px; align-items: stretch; }
+      .dev-controls { display: grid; gap: 10px; }
+      .dev-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; }
+      .dev-file-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 8px; }
+      .dev-upload-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+      .dev-quick { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+      .dev-output-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; color: var(--text-secondary); font-size: 12px; }
+      .dev-status { display: inline-flex; align-items: center; gap: 7px; padding: 6px 9px; border: 1px solid var(--border-default); border-radius: 999px; color: var(--text-secondary); background: var(--glass-5); }
+      .job-list { display: grid; gap: 8px; margin-top: 10px; max-height: 220px; overflow: auto; }
+      .job-item { text-align: left; width: 100%; border-color: var(--border-default); background: var(--glass-5); color: var(--text-secondary); box-shadow: none; display: grid; gap: 4px; }
+      .job-item strong { color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .job-item span { color: var(--text-tertiary); font-size: 11px; }
+      .action-groups { display: grid; gap: 12px; }
+      .action-group { border: 1px solid var(--border-subtle); border-radius: 18px; background: var(--glass-3); padding: 12px; }
+      .action-group summary { cursor: pointer; color: var(--text-secondary); font-weight: 750; }
+      .actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-top: 12px; }
+      .action { position: relative; overflow: hidden; padding: 14px; border: 1px solid var(--border-default); border-radius: 18px; background: linear-gradient(135deg, var(--glass-8), var(--glass-3)); }
+      .action strong { display: block; font-size: 14px; }
+      .action p { min-height: 36px; color: var(--text-tertiary); margin: 8px 0 12px; font-size: 12px; line-height: 1.45; }
+      .action-lock { color: var(--accent-yellow); font-size: 11px; margin-top: -4px; margin-bottom: 10px; min-height: 14px; }
+      code { color: var(--accent-cyan); font-family: "SF Mono", ui-monospace, monospace; }
+      .log-panel details { border: 1px solid var(--border-subtle); border-radius: 18px; background: var(--glass-3); padding: 12px; }
+      .log-panel summary { cursor: pointer; color: var(--text-secondary); font-weight: 750; }
+      .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 10px; }
+      .tabs button.active { border-color: var(--border-glow-blue); background: var(--glass-12); color: var(--text-primary); box-shadow: 0 0 0 3px rgba(74,158,255,0.12); }
+      .log-tools { display: grid; grid-template-columns: minmax(0, 1fr) 96px auto auto auto; gap: 8px; margin: 10px 0; align-items: center; }
+      #toastStack { position: fixed; right: 18px; bottom: 18px; z-index: 9999; display: grid; gap: 8px; max-width: min(460px, calc(100vw - 36px)); }
+      .toast { padding: 12px 14px; border-radius: 14px; border: 1px solid var(--border-default); background: rgba(13,24,43,0.94); color: var(--text-secondary); font-size: 12px; line-height: 1.55; box-shadow: var(--shadow-lg); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); cursor: pointer; white-space: pre-wrap; word-break: break-word; }
+      .toast.ok { border-color: rgba(34,197,94,0.45); }
+      .toast.error { border-color: rgba(255,107,107,0.55); color: var(--text-primary); }
+      .log-tools label { display: inline-flex; align-items: center; gap: 7px; color: var(--text-secondary); font-size: 12px; white-space: nowrap; }
+      .log-tools input[type="checkbox"] { width: auto; }
+      pre { background: rgba(5,10,21,0.82); color: rgba(235,245,255,0.90); border: 1px solid var(--border-subtle); padding: 16px; border-radius: 18px; overflow: auto; min-height: 220px; max-height: 560px; white-space: pre-wrap; box-shadow: inset 0 1px 0 rgba(255,255,255,0.05); }
+      @media (max-width: 1200px) { .topbar, .dashboard-grid, .ops-layout, .dev-console { grid-template-columns: 1fr; } .data-map { grid-template-columns: repeat(2, minmax(0, 1fr)); } .health-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+      @media (max-width: 720px) { .wrap { width: min(100% - 24px, 1760px); padding-top: 14px; } .data-map, .health-strip, .summary-metrics { grid-template-columns: 1fr; } .admin-row, .password-tools, .admin-key-tools, .dev-row, .dev-file-row, .dev-upload-row, .log-tools { grid-template-columns: 1fr; } h1 { font-size: 32px; } }
+    </style>
+
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="topbar">
+        <section class="brand-card glass">
+          <div class="eyebrow">Bambook Data Center</div>
+          <h1>数据中心运维面板</h1>
+          <div class="subtitle">给非 IT 人员看的系统健康仪表盘：先判断能不能用，再看数据资产和运维动作。</div>
+        </section>
+
+        <section class="health-strip glass" id="coreLights">
+          <div class="core-light"><div class="name">公网入口<span class="dot"></span></div><div class="value">等待刷新</div></div>
+          <div class="core-light"><div class="name">主数据 API<span class="dot"></span></div><div class="value">等待刷新</div></div>
+          <div class="core-light"><div class="name">AI Runtime<span class="dot"></span></div><div class="value">等待刷新</div></div>
+          <div class="core-light"><div class="name">Cloudflare<span class="dot"></span></div><div class="value">等待刷新</div></div>
+        </section>
+
+        <section class="admin-panel glass">
+          <div>
+            <div class="status-label">Admin Access</div>
+            <div class="small">密码只保存在当前浏览器，用于读取真实状态和执行白名单动作。</div>
+          </div>
+          <div class="admin-row">
+            <input id="token" type="password" placeholder="输入管理员密码" />
+            <button id="saveToken">保存</button>
+          </div>
+          <div class="password-tools">
+            <input id="newToken" type="password" placeholder="设置新的自定义密码" />
+            <button class="secondary" id="changeToken">修改密码</button>
+          </div>
+          <div class="admin-key-tools">
+            <button class="secondary" id="setModelKey">配置模型 API Key</button>
+            <button class="secondary" id="setEmailKey">配置邮件发送 (Resend)</button>
+          </div>
+        </section>
+      </header>
+
+      <main>
+        <section class="dashboard-grid">
+          <article class="health-summary card glass">
+            <div>
+              <div class="status-label">System Verdict</div>
+              <div id="overallTitle" class="status-title error">无法读取</div>
+              <div id="overallCopy" class="status-copy">输入管理员密码后刷新，面板会读取 Mac mini 的真实服务状态。</div>
+            </div>
+            <div class="summary-metrics" id="summaryMetrics">
+              <div class="mini-metric"><span>系统运行</span><strong>-</strong></div>
+              <div class="mini-metric"><span>内存可用</span><strong>-</strong></div>
+              <div class="mini-metric"><span>负载</span><strong>-</strong></div>
+              <div class="mini-metric"><span>AI 并发</span><strong>-</strong></div>
+            </div>
+          </article>
+
+          <article class="card glass">
+            <div class="section-head">
+              <div>
+                <h2>核心健康检查</h2>
+                <div id="updated" class="section-note">等待刷新</div>
+              </div>
+              <button class="secondary" id="refresh">刷新状态</button>
+            </div>
+            <div id="services" class="service-grid"></div>
+          </article>
+        </section>
+
+        <section class="card glass">
+          <div class="section-head">
+            <div>
+              <h2>数据中心导览</h2>
+              <div id="dataMapUpdated" class="section-note">从 Mac mini PostgreSQL 读取真实数据量</div>
+            </div>
+            <button class="secondary" id="refreshDataMap">刷新数据</button>
+          </div>
+          <div id="dataMap" class="data-map"></div>
+        </section>
+
+        <section class="card glass">
+          <div class="section-head">
+            <div>
+              <h2>Remote Develop</h2>
+              <div class="section-note">在数据中心执行开发命令，输出会实时回传，适合 build、migrate、日志和快速诊断。</div>
+            </div>
+          </div>
+          <div class="dev-console">
+            <div class="dev-controls">
+              <select id="devCwd">
+                <option value="server">数据中心 backend root</option>
+                <option value="repo">上级目录</option>
+                <option value="opsPanel">OPS 面板</option>
+              </select>
+              <textarea id="devCommand" spellcheck="false" placeholder="输入命令，例如：npm run build"></textarea>
+              <div class="dev-row">
+                <input id="devTimeout" type="number" min="5" max="7200" value="1800" title="超时时间，单位秒" />
+                <button id="runDevCommand">运行命令</button>
+                <button class="secondary" id="cancelDevJob">取消当前</button>
+              </div>
+              <div class="dev-quick" id="devQuickActions"></div>
+              <div>
+                <div class="status-label">Recent Jobs</div>
+                <div id="devJobs" class="job-list"></div>
+              </div>
+              <div>
+                <div class="status-label">远程文件维护</div>
+                <div class="dev-file-row">
+                  <input id="devFilePath" placeholder="相对路径，例如 src/index.ts" />
+                  <button class="secondary" id="loadDevFile">读取</button>
+                  <button class="secondary" id="diffDevFile">Diff</button>
+                  <button id="saveDevFile">保存</button>
+                  <button class="secondary" id="rollbackDevFile">回滚</button>
+                </div>
+                <div class="dev-upload-row">
+                  <input id="devUploadFile" type="file" />
+                  <button class="secondary" id="uploadDevFile">上传到路径</button>
+                </div>
+                <textarea id="devFileContent" spellcheck="false" placeholder="读取文件后在这里编辑。保存会自动备份原文件。"></textarea>
+                <pre id="devFileDiff">Diff 预览会显示在这里。</pre>
+                <div class="section-note" id="devFileMeta">仅处理所选工作目录内的文本文件。</div>
+              </div>
+            </div>
+            <div>
+              <div class="dev-output-head">
+                <span id="devJobTitle">未运行</span>
+                <span class="dev-status" id="devJobStatus">idle</span>
+              </div>
+              <pre id="devOutput">等待开发命令...</pre>
+            </div>
+          </div>
+        </section>
+
+        <section class="ops-layout">
+          <article class="card glass">
+            <div class="section-head">
+              <div>
+                <h2>运维动作</h2>
+                <div class="section-note">常用操作优先，危险操作默认折叠。</div>
+              </div>
+            </div>
+            <div id="actions" class="action-groups"></div>
+          </article>
+
+          <article class="card glass log-panel">
+            <div class="section-head">
+              <div>
+                <h2>日志与诊断</h2>
+                <div class="section-note">默认收起，排错时展开查看。</div>
+              </div>
+            </div>
+            <details id="logDetails">
+              <summary>展开最近日志</summary>
+              <div class="tabs">
+                <button class="secondary active" data-log="ops">操作日志</button>
+                <button class="secondary" data-log="cloudflare">Cloudflare</button>
+                <button class="secondary" data-log="main">主 API</button>
+                <button class="secondary" data-log="health">健康检查</button>
+                <button class="secondary" data-log="melo">Melo 安装</button>
+                <button class="secondary" data-log="meloService">Melo 服务</button>
+                <button class="secondary" data-log="meloServiceError">Melo 服务错误</button>
+              </div>
+              <div class="log-tools">
+                <input id="logSearch" placeholder="搜索关键词" />
+                <input id="logLines" type="number" min="20" max="10000" value="160" />
+                <label><input id="logStderrOnly" type="checkbox" /> 只看异常</label>
+                <button class="secondary" id="searchLog">搜索</button>
+                <button class="secondary" id="downloadLog">下载日志</button>
+              </div>
+              <pre id="log">展开后点击上方日志源加载...</pre>
+            </details>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <div id="toastStack" aria-live="polite"></div>
+
+    <script>
+      const tokenInput = document.getElementById('token');
+      const savedToken = localStorage.getItem('bambookOpsToken') || '';
+      tokenInput.value = savedToken;
+
+      const API_BASE = '/api';
+      const state = { actions: [], currentDevJobId: null, devPollTimer: null, currentLogName: 'ops', activeLocks: [], currentDevLockKey: '' };
+      const devQuickActions = [
+        { label: '当前目录', cwd: 'server', command: 'pwd; ls -la | head -n 40' },
+        { label: '健康检查', cwd: 'server', command: 'curl -fsS http://127.0.0.1:8081/api/health' },
+        { label: '主 API 进程', cwd: 'server', command: 'launchctl list | grep com.bambook.main-data-api || true; ps aux | grep -v grep | grep bambook-main || true' },
+        { label: 'OPS 进程', cwd: 'server', command: 'launchctl list | grep com.bambook.ops-panel || true; ps aux | grep -v grep | grep bambook-ops-panel || true' },
+        { label: 'Cloudflare 进程', cwd: 'server', command: 'launchctl list | grep cloudflare || true; ps aux | grep -v grep | grep cloudflared || true' },
+        { label: '公网探测', cwd: 'server', command: '/bin/bash scripts/ops/ops-public-probe.sh' },
+        { label: 'Prisma 状态', cwd: 'server', command: 'npx prisma migrate status' },
+        { label: 'Prisma generate', cwd: 'server', command: 'npx prisma generate' },
+        { label: 'Prisma migrate', cwd: 'server', command: 'npx prisma migrate deploy' },
+        { label: 'package scripts', cwd: 'server', command: 'node -e "console.log(require(\\'./package.json\\').scripts)"' },
+        { label: '安装依赖', cwd: 'server', command: 'npm install' },
+        { label: '后端 build', cwd: 'server', command: 'npm run build' },
+        { label: '重启主 API', cwd: 'server', command: 'launchctl kickstart -k "gui/$(id -u)/com.bambook.main-data-api"', lockKey: 'main-api' },
+        { label: '测试 Melo TTS', cwd: 'server', command: '/bin/bash scripts/ops/ops-test-melo-tts.sh', lockKey: 'melo-tts' },
+        { label: '检查 NLTK', cwd: 'server', command: 'find "${NLTK_DATA:-$PWD/.cache/nltk_data}" -maxdepth 3 -type d 2>/dev/null | sort | head -80' },
+        { label: '主 API 日志', cwd: 'server', command: 'tail -n 160 /tmp/bambook-main-data-api.log' },
+        { label: 'Action log', cwd: 'server', command: 'tail -n 160 /tmp/bambook-ops-actions.log' },
+        { label: 'OPS 日志', cwd: 'server', command: 'tail -n 160 /tmp/bambook-ops-panel.log' },
+        { label: '环境摘要', cwd: 'server', command: 'node -e "const keys=[\\'NODE_ENV\\',\\'PORT\\',\\'BAMBOOK_OPS_PORT\\',\\'BAMBOOK_MODEL_NAME\\',\\'BAMBOOK_MODEL_BASE_URL\\',\\'RESEND_FROM\\',\\'DATABASE_URL\\',\\'BAMBOOK_API_KEY\\',\\'ARK_API_KEY\\']; for (const k of keys) { const v=process.env[k]; console.log(`${k}=${v ? (/(KEY|TOKEN|SECRET|DATABASE_URL)/.test(k) ? \\'[set]\\' : v) : \\'[empty]\\'}`) }"' },
+        { label: '实时日志', cwd: 'server', command: 'tail -n 80 -f /tmp/bambook-main-data-api.log' },
+      ];
+
+      function headers() {
+        return {
+          'Content-Type': 'application/json',
+          'X-Bambook-Ops-Token': tokenInput.value.trim()
+        };
+      }
+
+      document.getElementById('saveToken').onclick = () => {
+        localStorage.setItem('bambookOpsToken', tokenInput.value.trim());
+        refresh();
+      };
+
+      document.getElementById('changeToken').onclick = changeToken;
+      document.getElementById('setModelKey').onclick = setModelKey;
+      document.getElementById('setEmailKey').onclick = setEmailKey;
+
+      document.getElementById('refresh').onclick = refresh;
+      document.getElementById('refreshDataMap').onclick = loadDataMap;
+      document.getElementById('runDevCommand').onclick = runDevCommand;
+      document.getElementById('devCommand').oninput = () => { state.currentDevLockKey = ''; };
+      document.getElementById('cancelDevJob').onclick = cancelCurrentDevJob;
+      document.getElementById('loadDevFile').onclick = loadDevFile;
+      document.getElementById('diffDevFile').onclick = diffDevFile;
+      document.getElementById('saveDevFile').onclick = saveDevFile;
+      document.getElementById('rollbackDevFile').onclick = rollbackDevFile;
+      document.getElementById('uploadDevFile').onclick = uploadDevFile;
+      document.getElementById('logSearch').onkeydown = event => { if (event.key === 'Enter') loadLog(state.currentLogName); };
+      document.getElementById('searchLog').onclick = () => loadLog(state.currentLogName);
+      document.getElementById('logLines').onchange = () => loadLog(state.currentLogName);
+      document.getElementById('logStderrOnly').onchange = () => loadLog(state.currentLogName);
+      document.getElementById('downloadLog').onclick = downloadLog;
+      // 日志面板默认收起：展开（用户主动行为）时才加载当前日志源，
+      // loadLog 不再被 refresh()/动作结果隐式触发，避免顶掉动作反馈
+      const logDetails = document.getElementById('logDetails');
+      logDetails.addEventListener('toggle', () => {
+        if (logDetails.open) loadLog(state.currentLogName);
+      });
+      // 健康仪表盘自动刷新：页面隐藏时暂停计时器，回到前台立即补一次刷新
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          if (state.autoRefreshTimer) clearTimeout(state.autoRefreshTimer);
+          state.autoRefreshTimer = null;
+        } else {
+          refresh();
+        }
+      });
+      renderDevQuickActions();
+
+      // 动作结果浮动提示（常驻独立区域，与默认折叠的日志面板解耦）
+      function notify(message, kind = 'ok') {
+        const stack = document.getElementById('toastStack');
+        const el = document.createElement('div');
+        el.className = `toast ${kind}`;
+        el.textContent = message;
+        el.title = '点击关闭';
+        el.onclick = () => el.remove();
+        stack.appendChild(el);
+        setTimeout(() => el.remove(), kind === 'error' ? 10000 : 6000);
+      }
+
+      // 失败指数退避：30s → 60s → 120s ……封顶 5 分钟，成功即复位
+      function scheduleAutoRefresh() {
+        if (state.autoRefreshTimer) clearTimeout(state.autoRefreshTimer);
+        state.autoRefreshTimer = null;
+        if (document.hidden) return;
+        const delay = state.refreshFailures > 0
+          ? Math.min(AUTO_REFRESH_MS * Math.pow(2, state.refreshFailures), AUTO_REFRESH_MAX_BACKOFF_MS)
+          : AUTO_REFRESH_MS;
+        state.autoRefreshTimer = setTimeout(() => refresh(), delay);
+      }
+
+      async function api(path, options = {}) {
+        const res = await fetch(path, { ...options, headers: { ...headers(), ...(options.headers || {}) } });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.ok === false) throw new Error(data.message || data.error || res.statusText);
+        return data;
+      }
+
+      async function refresh() {
+        try {
+          const data = await api(`${API_BASE}/status`);
+          state.actions = data.actions || [];
+          renderStatus(data.status);
+          renderActions(state.actions);
+          loadDataMap();
+          loadDevJobs();
+          state.refreshFailures = 0;
+        } catch (error) {
+          state.refreshFailures += 1;
+          document.getElementById('overallTitle').className = 'status-title error';
+          document.getElementById('overallTitle').textContent = '无法读取';
+          document.getElementById('overallCopy').textContent = '请检查管理员密码是否正确，或确认运维面板服务是否在线。';
+          renderCoreLights([]);
+          document.getElementById('services').innerHTML = `<div class="detail">${escapeHtml(error.message)}</div>`;
+        } finally {
+          scheduleAutoRefresh();
+        }
+      }
+
+      function renderStatus(status) {
+        const failed = (status.services || []).filter(s => s.status === 'error');
+        const warned = (status.services || []).filter(s => s.status === 'warn');
+        const overallTitle = document.getElementById('overallTitle');
+        const verdict = status.status || (status.ok ? 'ok' : 'error');
+        overallTitle.className = `status-title ${verdict}`;
+        overallTitle.textContent = verdict === 'ok' ? '系统可正常使用' : verdict === 'warn' ? '可用但需关注' : '需要处理';
+        document.getElementById('overallCopy').textContent = verdict === 'ok'
+          ? '公网入口、主数据服务、AI Runtime、Agent OS、Cloudflare 和数据库都处于可用状态。'
+          : verdict === 'warn'
+            ? `没有致命故障，但有 ${warned.length} 个警告项：${warned.slice(0, 3).map(s => s.name).join('、') || '请查看右侧健康检查'}。`
+            : `发现 ${failed.length} 个异常项：${failed.slice(0, 3).map(s => s.name).join('、') || '请查看右侧健康检查'}。`;
+        document.getElementById('updated').textContent = `主机 ${status.host} · ${new Date(status.generatedAt).toLocaleString()}`;
+        renderCoreLights(status.services || []);
+        document.getElementById('services').className = 'service-grid';
+        document.getElementById('services').innerHTML = (status.services || []).map(s => `
+          <div class="service">
+            <div class="service-name">
+              <span>${escapeHtml(s.name)}</span>
+              <span class="badge ${s.status}">${formatServiceStatus(s.status)}${s.ms ? ` · ${s.ms}ms` : ''}</span>
+            </div>
+            <div class="detail">${escapeHtml(s.detail || '')}</div>
+          </div>
+        `).join('');
+        const freeGb = status.memory ? (status.memory.free / 1024 / 1024 / 1024).toFixed(1) : '-';
+        const totalGb = status.memory ? (status.memory.total / 1024 / 1024 / 1024).toFixed(1) : '-';
+        document.getElementById('summaryMetrics').innerHTML = `
+          <div class="mini-metric"><span>系统运行</span><strong>${Math.round(status.uptimeSeconds / 3600)} 小时</strong></div>
+          <div class="mini-metric"><span>内存可用</span><strong>${freeGb} / ${totalGb} GB</strong></div>
+          <div class="mini-metric"><span>系统负载</span><strong>${(status.loadavg || []).map(x => x.toFixed(2)).join(' / ')}</strong></div>
+          <div class="mini-metric"><span>AI 并发</span><strong>${escapeHtml(formatAiRuntime(status.aiRuntime))}</strong></div>
+          <div class="mini-metric"><span>Agent OS</span><strong>${escapeHtml(formatAgentOs(status.agentOs))}</strong></div>
+          <div class="mini-metric"><span>磁盘空间</span><strong title="${escapeAttr(status.disk || '')}">${escapeHtml(compactDisk(status.disk))}</strong></div>
+        `;
+      }
+
+      function renderCoreLights(services) {
+        const picks = [
+          ['公网入口', '公网 API'],
+          ['主数据 API', '主数据 API'],
+          ['AI Runtime', 'AI Runtime'],
+          ['Agent OS', 'Agent OS'],
+          ['Cloudflare', 'Cloudflare Tunnel']
+        ];
+        document.getElementById('coreLights').innerHTML = picks.map(([label, serviceName]) => {
+          const service = services.find(s => s.name === serviceName);
+          const status = service?.status || 'error';
+          const value = service ? (`${formatServiceStatus(status)}${service.ms ? ` · ${service.ms}ms` : ''}`) : '等待刷新';
+          return `
+            <div class="core-light">
+              <div class="name">${escapeHtml(label)}<span class="dot ${status === 'ok' ? 'ok' : status === 'warn' ? 'warn' : ''}"></span></div>
+              <div class="value" title="${escapeAttr(service?.detail || value)}">${escapeHtml(value)}</div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      function formatServiceStatus(status) {
+        if (status === 'ok') return '正常';
+        if (status === 'warn') return '警告';
+        return '异常';
+      }
+
+      function formatAiRuntime(metrics) {
+        if (!metrics || !metrics.lanes) return '-';
+        const model = metrics.lanes.model || {};
+        const search = metrics.lanes.search || {};
+        const heavy = metrics.lanes.heavy || {};
+        return `模型 ${model.running || 0}/${model.limit || 0} · 检索 ${search.running || 0}/${search.limit || 0} · 重任务 ${heavy.running || 0}/${heavy.limit || 0}`;
+      }
+
+      function formatAgentOs(agent) {
+        if (!agent) return '-';
+        const roles = agent.identity?.roles?.length || 0;
+        const tools = agent.tools?.registered || 0;
+        const highRisk = agent.tools?.highRisk || 0;
+        const memory = agent.memory?.status || '-';
+        const knowledge = agent.knowledge?.status || '-';
+        return `角色 ${roles} · 工具 ${tools} · 高风险 ${highRisk} · 记忆 ${memory} · 知识 ${knowledge}`;
+      }
+
+      function firstUsefulLine(value) {
+        return String(value || '').split('\n').find(line => line && !line.startsWith('total')) || '';
+      }
+
+      function compactDisk(value) {
+        const lines = String(value || '').split('\n').filter(Boolean);
+        return lines[1] || lines[0] || '-';
+      }
+
+      async function loadDataMap() {
+        const target = document.getElementById('dataMap');
+        try {
+          const data = await api(`${API_BASE}/datamap`);
+          if (!data.ok) throw new Error(data.error || '无法读取数据导览');
+          document.getElementById('dataMapUpdated').textContent = `真实数据库统计 · ${new Date(data.generatedAt).toLocaleString()}`;
+          target.innerHTML = (data.categories || []).map(renderDataCategory).join('');
+        } catch (error) {
+          target.innerHTML = `<div class="detail">无法读取数据导览：${escapeHtml(error.message)}</div>`;
+        }
+      }
+
+      function renderDataCategory(category) {
+        const items = (category.items || []).slice(0, 3);
+        return `
+          <article class="data-card" data-accent="${escapeHtml(category.accent || 'blue')}">
+            <div class="data-title">${escapeHtml(category.title)}</div>
+            <div class="small">${escapeHtml(category.subtitle)}</div>
+            <div class="data-count">${formatNumber(category.count)}</div>
+            <div class="data-meta">${escapeHtml(category.meta || '')}</div>
+            <div class="data-items">
+              ${items.map(item => `
+                <div class="data-item">
+                  <span>${escapeHtml(item.label)}</span>
+                  <strong>${formatNumber(item.value)}</strong>
+                </div>
+              `).join('')}
+            </div>
+            ${renderBars((category.distribution || []).length ? category.distribution : (category.secondary || []))}
+          </article>
+        `;
+      }
+
+      function renderBars(rows) {
+        if (!rows.length) return '';
+        const max = Math.max(...rows.map(row => Number(row.count || 0)), 1);
+        return `<div class="bars">${rows.slice(0, 6).map(row => `
+          <div class="bar-row">
+            <span title="${escapeAttr(row.label)}">${escapeHtml(row.label)}</span>
+            <div class="bar-track"><div class="bar-fill" style="width:${Math.max(4, Number(row.count || 0) / max * 100)}%"></div></div>
+            <strong>${formatNumber(row.count)}</strong>
+          </div>
+        `).join('')}</div>`;
+      }
+
+      function formatNumber(value) {
+        return new Intl.NumberFormat('zh-CN').format(Number(value || 0));
+      }
+
+      function renderActions(actions) {
+        const groups = [
+          ['routine', '日常安全操作', true],
+          ['deploy', '部署与更新', false],
+          ['danger', '危险操作', false]
+        ];
+        document.getElementById('actions').innerHTML = groups.map(([group, title, open]) => {
+          const items = actions.filter(a => (a.group || 'routine') === group);
+          if (!items.length) return '';
+          return `
+            <details class="action-group" ${open ? 'open' : ''}>
+              <summary>${escapeHtml(title)} · ${items.length} 项</summary>
+              <div class="actions">
+                ${items.map(a => `
+                  <div class="action">
+                    <strong>${escapeHtml(a.label)}</strong>
+                    <p>${escapeHtml(a.description || '')}${a.confirm ? `<br>确认码：<code>${escapeHtml(a.confirm)}</code>` : '<br>无需二次确认'}</p>
+                    <div class="action-lock">${a.lockedBy ? `锁占用：${escapeHtml(a.lockLabel || a.lockKey || '任务')} · ${escapeHtml(a.lockedBy.jobId)}` : a.lockLabel ? `锁：${escapeHtml(a.lockLabel)}` : ''}</div>
+                    <button data-action="${escapeHtml(a.id)}" ${a.lockedBy ? 'disabled' : ''} ${a.group === 'danger' ? 'class="danger"' : ''}>${a.lockedBy ? '运行中' : '执行'}</button>
+                  </div>
+                `).join('')}
+              </div>
+            </details>
+          `;
+        }).join('');
+        document.querySelectorAll('[data-action]').forEach(btn => {
+          btn.onclick = () => runAction(btn.dataset.action);
+        });
+      }
+
+      async function runAction(id) {
+        const action = state.actions.find(a => a.id === id);
+        if (!action) return;
+        let confirmCode = null;
+        if (action.confirm) {
+          confirmCode = prompt(`要执行：${action.label}\n请输入确认码：${action.confirm}`);
+          if (confirmCode !== action.confirm) return alert('确认码不匹配，已取消。');
+        } else if (!confirm(`要执行：${action.label}？`)) {
+          return;
+        }
+        notify(`正在执行 ${action.label} ...`);
+        try {
+          const result = await api(`${API_BASE}/actions/${id}`, {
+            method: 'POST',
+            body: JSON.stringify(confirmCode ? { confirm: confirmCode } : {})
+          });
+          if (result.job) {
+            notify(`已创建任务 ${result.job.id}（${action.label}），进度见 Remote Develop 输出区。`);
+            state.currentDevJobId = result.job.id;
+            renderDevJob(result.job);
+            pollDevJob(result.job.id);
+            loadDevJobs();
+            return;
+          }
+          notify(`${action.label} 执行完成。`);
+          refresh();
+        } catch (error) {
+          // 失败消息写常驻 toast 区域，不再依赖折叠的日志面板，
+          // 也不再触发 loadLog（避免异步日志覆盖错误反馈）
+          notify(`${action.label} 执行失败：${error.message}`, 'error');
+        }
+      }
+
+      document.querySelectorAll('[data-log]').forEach(btn => {
+        btn.onclick = () => loadLog(btn.dataset.log);
+      });
+
+      async function loadLog(name) {
+        state.currentLogName = name || state.currentLogName || 'ops';
+        document.querySelectorAll('[data-log]').forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.log === state.currentLogName);
+        });
+        const q = document.getElementById('logSearch')?.value?.trim() || '';
+        const lines = document.getElementById('logLines')?.value || '160';
+        const stderrOnly = document.getElementById('logStderrOnly')?.checked ? '1' : '';
+        const params = new URLSearchParams({ name: state.currentLogName, lines });
+        if (q) params.set('q', q);
+        if (stderrOnly) params.set('stderrOnly', '1');
+        try {
+          const data = await api(`${API_BASE}/logs?${params.toString()}`);
+          document.getElementById('log').textContent = data.log || '暂无日志';
+        } catch (error) {
+          document.getElementById('log').textContent = `无法读取日志：${error.message}`;
+        }
+      }
+
+      async function downloadLog() {
+        const name = state.currentLogName || 'ops';
+        const q = document.getElementById('logSearch')?.value?.trim() || '';
+        const lines = document.getElementById('logLines')?.value || '160';
+        const stderrOnly = document.getElementById('logStderrOnly')?.checked ? '1' : '';
+        // token 只走 X-Bambook-Ops-Token header，不再拼进 URL query（避免进代理访问日志）
+        const params = new URLSearchParams({ name, lines, download: '1' });
+        if (q) params.set('q', q);
+        if (stderrOnly) params.set('stderrOnly', '1');
+        try {
+          const res = await fetch(`${API_BASE}/logs?${params.toString()}`, { headers: headers() });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.message || data.error || `HTTP ${res.status}`);
+          }
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `bambook-${name}.log`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+        } catch (error) {
+          notify(`日志下载失败：${error.message}`, 'error');
+        }
+      }
+
+      function renderDevQuickActions() {
+        document.getElementById('devQuickActions').innerHTML = devQuickActions.map((item, index) => `
+          <button class="secondary" data-dev-quick="${index}">${escapeHtml(item.label)}</button>
+        `).join('');
+        document.querySelectorAll('[data-dev-quick]').forEach(btn => {
+          btn.onclick = () => {
+            const item = devQuickActions[Number(btn.dataset.devQuick)];
+            document.getElementById('devCwd').value = item.cwd;
+            document.getElementById('devCommand').value = item.command;
+            state.currentDevLockKey = item.lockKey || '';
+            document.getElementById('devJobTitle').textContent = item.lockKey ? `模板锁：${item.lockKey}` : '未运行';
+          };
+        });
+      }
+
+      async function runDevCommand() {
+        const command = document.getElementById('devCommand').value.trim();
+        if (!command) return alert('请输入要执行的命令。');
+        if (/\b(rm\s+-rf|drop\s+database|truncate\s+table|prisma\s+migrate\s+reset|shutdown|reboot)\b/i.test(command)) {
+          const confirmDanger = prompt('检测到高风险命令。请输入 RUN_DANGEROUS_COMMAND 继续：');
+          if (confirmDanger !== 'RUN_DANGEROUS_COMMAND') return alert('已取消。');
+        }
+        const cwd = document.getElementById('devCwd').value;
+        const timeoutMs = Math.max(5, Number(document.getElementById('devTimeout').value || 1800)) * 1000;
+        const output = document.getElementById('devOutput');
+        output.textContent = '正在提交开发任务...';
+        document.getElementById('devJobStatus').textContent = 'starting';
+        try {
+          const result = await api(`${API_BASE}/dev/jobs`, {
+            method: 'POST',
+            body: JSON.stringify({ command, cwd, timeoutMs, lockKey: state.currentDevLockKey || undefined })
+          });
+          state.currentDevJobId = result.job.id;
+          renderDevJob(result.job);
+          pollDevJob(result.job.id);
+          loadDevJobs();
+        } catch (error) {
+          document.getElementById('devJobStatus').textContent = 'error';
+          output.textContent = `启动失败：${error.message}`;
+        }
+      }
+
+      async function cancelCurrentDevJob() {
+        if (!state.currentDevJobId) return alert('当前没有正在查看的开发任务。');
+        try {
+          const result = await api(`${API_BASE}/dev/jobs/${encodeURIComponent(state.currentDevJobId)}/cancel`, {
+            method: 'POST',
+            body: JSON.stringify({})
+          });
+          renderDevJob(result.job);
+          loadDevJobs();
+        } catch (error) {
+          alert(`取消失败：${error.message}`);
+        }
+      }
+
+      async function loadDevJobs() {
+        try {
+          const data = await api(`${API_BASE}/dev/jobs`);
+          state.activeLocks = data.activeLocks || [];
+          renderDevJobs(data.jobs || []);
+        } catch (error) {
+          document.getElementById('devJobs').innerHTML = `<div class="detail">无法读取任务：${escapeHtml(error.message)}</div>`;
+        }
+      }
+
+      function renderDevJobs(jobs) {
+        const target = document.getElementById('devJobs');
+        if (!jobs.length) {
+          target.innerHTML = '<div class="detail">暂无开发任务。</div>';
+          return;
+        }
+        target.innerHTML = jobs.slice(0, 10).map(job => `
+          <button class="job-item" data-dev-job="${escapeAttr(job.id)}">
+            <strong>${escapeHtml(job.command || job.id)}</strong>
+            <span>${escapeHtml(job.status)} · ${new Date(job.startedAt).toLocaleString()}</span>
+          </button>
+        `).join('');
+        document.querySelectorAll('[data-dev-job]').forEach(btn => {
+          btn.onclick = () => loadDevJob(btn.dataset.devJob);
+        });
+      }
+
+      async function loadDevJob(id) {
+        try {
+          const data = await api(`${API_BASE}/dev/jobs/${encodeURIComponent(id)}`);
+          state.currentDevJobId = data.job.id;
+          renderDevJob(data.job);
+          if (data.job.status === 'running') pollDevJob(data.job.id);
+        } catch (error) {
+          document.getElementById('devOutput').textContent = `无法读取任务：${error.message}`;
+        }
+      }
+
+      function pollDevJob(id) {
+        clearTimeout(state.devPollTimer);
+        state.devPollTimer = setTimeout(async () => {
+          try {
+            const data = await api(`${API_BASE}/dev/jobs/${encodeURIComponent(id)}`);
+            renderDevJob(data.job);
+            loadDevJobs();
+            if (data.job.status === 'running') {
+              pollDevJob(id);
+            } else {
+              // job 进入终态（ok/error/cancelled）：动作可能改变了服务状态，联动一次健康刷新
+              refresh();
+            }
+          } catch (error) {
+            document.getElementById('devOutput').textContent += `\n[ops-ui] 轮询失败：${error.message}`;
+          }
+        }, 1200);
+      }
+
+      function renderDevJob(job) {
+        const title = document.getElementById('devJobTitle');
+        const status = document.getElementById('devJobStatus');
+        const output = document.getElementById('devOutput');
+        title.textContent = `${job.id} · ${job.cwd || ''}`;
+        status.textContent = job.status;
+        status.style.color = job.status === 'ok' ? 'var(--accent-green)' : job.status === 'error' ? 'var(--accent-red)' : job.status === 'cancelled' ? 'var(--accent-orange)' : 'var(--text-secondary)';
+        output.textContent = job.output || '';
+        output.scrollTop = output.scrollHeight;
+      }
+
+      async function loadDevFile() {
+        const cwd = document.getElementById('devCwd').value;
+        const filePath = document.getElementById('devFilePath').value.trim();
+        if (!filePath) return alert('请输入文件相对路径。');
+        try {
+          const data = await api(`${API_BASE}/dev/files?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(filePath)}`);
+          document.getElementById('devFileContent').value = data.content || '';
+          document.getElementById('devFileMeta').textContent = `${data.path} · ${data.bytes} bytes · ${new Date(data.mtime).toLocaleString()}`;
+          document.getElementById('devFileDiff').textContent = 'Diff 预览会显示在这里。';
+        } catch (error) {
+          document.getElementById('devFileMeta').textContent = `读取失败：${error.message}`;
+          alert(`读取失败：${error.message}`);
+        }
+      }
+
+      async function diffDevFile() {
+        const cwd = document.getElementById('devCwd').value;
+        const filePath = document.getElementById('devFilePath').value.trim();
+        if (!filePath) return alert('请输入文件相对路径。');
+        try {
+          const data = await api(`${API_BASE}/dev/files/diff`, {
+            method: 'POST',
+            body: JSON.stringify({
+              cwd,
+              path: filePath,
+              content: document.getElementById('devFileContent').value
+            })
+          });
+          document.getElementById('devFileDiff').textContent = data.diff || 'No changes.';
+          document.getElementById('devFileMeta').textContent = `Diff ready · ${data.path}`;
+        } catch (error) {
+          document.getElementById('devFileDiff').textContent = `Diff 失败：${error.message}`;
+          alert(`Diff 失败：${error.message}`);
+        }
+      }
+
+      async function saveDevFile() {
+        const cwd = document.getElementById('devCwd').value;
+        const filePath = document.getElementById('devFilePath').value.trim();
+        if (!filePath) return alert('请输入文件相对路径。');
+        const confirmText = prompt(`保存远程文件：${filePath}\n原文件会自动备份。请输入 SAVE_REMOTE_FILE 确认：`);
+        if (confirmText !== 'SAVE_REMOTE_FILE') return alert('已取消。');
+        try {
+          const data = await api(`${API_BASE}/dev/files/write`, {
+            method: 'POST',
+            body: JSON.stringify({
+              cwd,
+              path: filePath,
+              content: document.getElementById('devFileContent').value,
+              confirm: 'SAVE_REMOTE_FILE'
+            })
+          });
+          document.getElementById('devFileMeta').textContent = `已保存 ${data.path} · ${data.bytes} bytes · 备份：${data.backupPath || '新文件无备份'}`;
+          diffDevFile();
+          loadDevJobs();
+        } catch (error) {
+          document.getElementById('devFileMeta').textContent = `保存失败：${error.message}`;
+          alert(`保存失败：${error.message}`);
+        }
+      }
+
+      async function rollbackDevFile() {
+        const cwd = document.getElementById('devCwd').value;
+        const filePath = document.getElementById('devFilePath').value.trim();
+        if (!filePath) return alert('请输入文件相对路径。');
+        try {
+          const backups = await api(`${API_BASE}/dev/files/backups?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(filePath)}`);
+          const latest = (backups.backups || [])[0];
+          if (!latest) return alert('没有可回滚的备份。');
+          const confirmText = prompt(`回滚 ${filePath}\n使用备份：${latest.id}\n请输入 ROLLBACK_REMOTE_FILE 确认：`);
+          if (confirmText !== 'ROLLBACK_REMOTE_FILE') return alert('已取消。');
+          const result = await api(`${API_BASE}/dev/files/rollback`, {
+            method: 'POST',
+            body: JSON.stringify({ cwd, path: filePath, backupId: latest.id, confirm: 'ROLLBACK_REMOTE_FILE' })
+          });
+          document.getElementById('devFileMeta').textContent = `已回滚 ${result.path} · ${result.bytes} bytes · ${result.backupId}`;
+          await loadDevFile();
+        } catch (error) {
+          document.getElementById('devFileMeta').textContent = `回滚失败：${error.message}`;
+          alert(`回滚失败：${error.message}`);
+        }
+      }
+
+      async function uploadDevFile() {
+        const cwd = document.getElementById('devCwd').value;
+        const filePath = document.getElementById('devFilePath').value.trim();
+        const file = document.getElementById('devUploadFile').files?.[0];
+        if (!file) return alert('请选择要上传的文件。');
+        if (!filePath) return alert('请输入上传目标相对路径。');
+        const confirmText = prompt(`上传 ${file.name} 到远程：${filePath}\n如果目标存在会自动备份。请输入 UPLOAD_REMOTE_FILE 确认：`);
+        if (confirmText !== 'UPLOAD_REMOTE_FILE') return alert('已取消。');
+        try {
+          const res = await fetch(`${API_BASE}/dev/files/upload?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(filePath)}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/octet-stream',
+              'X-Bambook-Ops-Token': tokenInput.value.trim(),
+              'X-Bambook-Dev-Confirm': 'UPLOAD_REMOTE_FILE'
+            },
+            body: await file.arrayBuffer()
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || data.ok === false) throw new Error(data.message || data.error || res.statusText);
+          document.getElementById('devFileMeta').textContent = `已上传 ${data.path} · ${data.bytes} bytes · 备份：${data.backupPath || '新文件无备份'}`;
+        } catch (error) {
+          document.getElementById('devFileMeta').textContent = `上传失败：${error.message}`;
+          alert(`上传失败：${error.message}`);
+        }
+      }
+
+      async function changeToken() {
+        const newTokenInput = document.getElementById('newToken');
+        const newToken = newTokenInput.value.trim();
+        if (newToken.length < 6) return alert('新密码至少 6 位。');
+        const confirmText = prompt('修改后旧 token 会失效。请输入 CHANGE_OPS_PASSWORD 确认：');
+        if (confirmText !== 'CHANGE_OPS_PASSWORD') return alert('已取消。');
+
+        try {
+          await api(`${API_BASE}/admin/token`, {
+            method: 'POST',
+            body: JSON.stringify({ newToken })
+          });
+          localStorage.setItem('bambookOpsToken', newToken);
+          tokenInput.value = newToken;
+          newTokenInput.value = '';
+          document.getElementById('log').textContent = '密码已修改，面板将在几秒内自动重启。';
+          setTimeout(refresh, 6000);
+        } catch (error) {
+          alert(`修改失败：${error.message}`);
+        }
+      }
+
+      async function setModelKey() {
+        const modelKey = prompt('请输入火山引擎 Ark API Key（不会显示，会写入 Mac mini 的 .env.local 并自动重启主 API）');
+        if (!modelKey) return;
+        const trimmed = modelKey.trim();
+        if (trimmed.length < 12) return alert('Key 太短，已取消。');
+
+        const logBox = document.getElementById('log');
+        logBox.textContent = '正在更新模型 API Key...';
+        try {
+          const result = await api(`${API_BASE}/admin/model-key`, {
+            method: 'POST',
+            body: JSON.stringify({ modelKey: trimmed })
+          });
+          logBox.textContent = `✓ ${result.message || '模型 Key 已更新，主 API 重启中。'}`;
+          setTimeout(refresh, 6000);
+        } catch (error) {
+          logBox.textContent = `✗ 模型 Key 更新失败：${error.message}`;
+          alert(`失败：${error.message}`);
+        }
+      }
+
+      async function setEmailKey() {
+        const fromInput = prompt(
+          '【1/2】请输入 Resend 发件人。\n' +
+          '格式 1：noreply@yourdomain.com\n' +
+          '格式 2：Bambook Neural <noreply@yourdomain.com>',
+          'Bambook Neural <noreply@pandaclothing.cn>'
+        );
+        if (!fromInput) return;
+        const from = fromInput.trim();
+        const fromEmail = from.match(/<([^>]+)>/)?.[1] || from;
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fromEmail)) {
+          return alert(`发件人邮箱格式不正确：${fromEmail}`);
+        }
+
+        const apiKey = prompt(`【2/2】请粘贴 Resend API Key（以 re_ 开头）。\n\n发件人将使用：${from}`);
+        if (!apiKey) return;
+        const trimmed = apiKey.trim();
+        if (!/^re_[A-Za-z0-9_\-]+$/.test(trimmed)) {
+          return alert('API Key 格式不对，应以 re_ 开头。已取消。');
+        }
+
+        notify(`正在配置 Resend (${fromEmail})...`);
+        try {
+          const result = await api(`${API_BASE}/admin/email-key`, {
+            method: 'POST',
+            body: JSON.stringify({ apiKey: trimmed, from })
+          });
+          notify(`✓ ${result.message || 'Resend 配置完成。'}\n发件人：${result.from || from}\n约 5~10 秒后自动生效。`);
+          setTimeout(refresh, 8000);
+        } catch (error) {
+          notify(`✗ Resend 配置失败：${error.message}`, 'error');
+          alert(`失败：${error.message}`);
+        }
+      }
+
+      function escapeHtml(value) {
+        return String(value).replace(/[&<>"']/g, ch => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;'
+        }[ch]));
+      }
+
+      function escapeAttr(value) {
+        return escapeHtml(value).replace(/\n/g, '&#10;');
+      }
+
+      refresh();
+    </script>
+  </body>
+</html>

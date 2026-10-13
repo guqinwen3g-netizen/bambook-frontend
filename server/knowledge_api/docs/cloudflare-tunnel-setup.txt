@@ -1,0 +1,55 @@
+Cloudflare Tunnel — Bambook API（Mac mini）
+
+当前生产约定（2026-05）
+- 域名：jiangsupanda.com（Cloudflare NS）
+- 隧道名称（示例）：Bambook
+- 对外路由：
+  1. 主数据 API：`jiangsupanda.com`，Path **`/bambook/api`**，Service **`http://127.0.0.1:8081`**
+  2. 知识库 API：`jiangsupanda.com`，Path **`/bambook`**，Service **`http://127.0.0.1:8091`**
+- Cloudflare Path 匹配必须让 **`/bambook/api` 优先于 `/bambook`**，否则主数据请求会落到知识库服务并返回 404。
+- 公网 Base URL：https://jiangsupanda.com/bambook/kb
+- 健康检查：
+  - 主数据：https://jiangsupanda.com/bambook/api/health
+  - 知识库：https://jiangsupanda.com/bambook/kb/health
+
+若改用子域名（可选）
+- 例如 Subdomain `api` + Path `/bambook` + Domain `jiangsupanda.com` → https://api.jiangsupanda.com/bambook
+- 服务器侧无需改路径规则时保持环境变量 URL_MOUNT_PATH=/bambook/kb 即可。
+
+前提
+- 域名已在 Cloudflare 托管（NS 指向 Cloudflare）。
+- Mac mini 上 API 已监听 127.0.0.1:8091（uvicorn），应用挂载路径为 /bambook/kb（即本机 http://127.0.0.1:8091/bambook/kb/...）。
+
+一、在 Cloudflare 创建隧道（浏览器拿 Token）
+1. https://one.dash.cloudflare.com/ → Networks → Tunnels → Add → Cloudflared。
+2. 命名隧道（如 Bambook），保存。
+3. Published application / Public hostname：
+   - 主数据：Subdomain **留空或 @**（根域）、Domain **jiangsupanda.com**、Path **/bambook/api**、HTTP、URL **http://127.0.0.1:8081**。
+   - 知识库：Subdomain **留空或 @**（根域）、Domain **jiangsupanda.com**、Path **/bambook**、HTTP、URL **http://127.0.0.1:8091**。
+   - 若用 api 子域：Subdomain **api**、Path **/bambook**、同上 Service URL。
+4. 复制安装步骤中的 **token**（仅字符串，不要引号）。
+
+二、在 Mac mini 写入 Token
+mkdir -p ~/.cloudflared
+nano ~/.cloudflared/bambook.tunnel.token
+chmod 600 ~/.cloudflared/bambook.tunnel.token
+
+三、启用随用户登录自启
+cd ~/bambook-knowledge-api/scripts
+./cloudflare-enable.sh
+
+四、验证
+- 日志：tail -f /tmp/cloudflared-bambook.log
+- 主数据外网：curl -sS https://jiangsupanda.com/bambook/api/health
+- 知识库外网：curl -sS https://jiangsupanda.com/bambook/kb/health
+- App 主数据 endpoint：https://jiangsupanda.com/bambook/api
+- App 知识库 endpoint：https://jiangsupanda.com/bambook/kb ，Authorization: Bearer <API_KEY>
+
+五、停用（可选）
+~/bambook-knowledge-api/scripts/cloudflare-disable.sh
+
+说明
+- 若 Dashboard 出现多个 Replicas：检查是否重复启动了 cloudflared（例如 root 与 LaunchAgent 各一份）；多余进程需在 Mac mini 上用 Activity Monitor 或 sudo 结束重复实例，仅保留 LaunchAgent 一路。
+- 当前 8091 知识库 API 挂载在 `/bambook/kb`，并内置 `/bambook/kb/api/*` fallback proxy 到本机 8081。Cloudflare 应显式配置 `/bambook/api` → 8081（优先级高于 `/bambook`），避免主数据请求落到知识库服务。
+- LaunchAgent 仅在当前 macOS 用户登录会话内运行；无人登录时需另行方案。
+- Token 泄露后应在 Cloudflare 控制台轮换隧道凭证并更新 bambook.tunnel.token。

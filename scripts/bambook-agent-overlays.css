@@ -1,0 +1,61 @@
+@import '../styles/bds/overlay-tokens.css';
+
+/* Shared modal material, deliberately scoped away from permanent workspaces. */
+[data-openbitfun-part="overlay"] {
+  background: var(--bds-overlay-backdrop) !important;
+  backdrop-filter: var(--bds-overlay-blur) !important;
+  -webkit-backdrop-filter: var(--bds-overlay-blur) !important;
+  transition-property: opacity, visibility !important;
+}
+[data-openbitfun-part="overlay"][data-bambook-scrim="suppressed"] {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+:is([data-openbitfun-component="dialog"], [data-openbitfun-component="sheet"])[data-openbitfun-part="surface"],
+[data-openbitfun-component="menu"],
+[data-openbitfun-part="popover"],
+.diff-fullscreen-container,
+.snapshot-fullscreen-container,
+.openbitfun-fmc__panel,
+[data-openbitfun-component="voice-call-panel"][data-openbitfun-part="root"],
+[data-openbitfun-component="tooltip"] [data-openbitfun-part="content"] {
+  background: var(--bds-overlay-surface) !important;
+  border: var(--bds-overlay-border) !important;
+  box-shadow: var(--bds-overlay-shadow) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+.openbitfun-fmc__panel {
+  transform: translate(12px, 12px) !important;
+  transition-property: display, opacity, transform, visibility !important;
+}
+.openbitfun-fmc__panel--open { transform: translate(0, 0) !important; }
+.diff-fullscreen-container { transform: translateY(0) !important; }
+.diff-fullscreen-overlay[data-state="closed"] .diff-fullscreen-container {
+  transform: translateY(4px) !important;
+}
+@starting-style {
+  .diff-fullscreen-container { transform: translateY(4px) !important; }
+}
+[data-openbitfun-component="tooltip"] {
+  transform: translate3d(var(--_enter-x), var(--_enter-y), 0) !important;
+}
+[data-openbitfun-component="tooltip"][data-openbitfun-state="visible"] {
+  transform: translate3d(0, 0, 0) !important;
+}
+:is([data-openbitfun-component="dialog"], [data-openbitfun-component="sheet"])[data-openbitfun-part="surface"] *,
+:is([data-openbitfun-component="dialog"], [data-openbitfun-component="sheet"])[data-openbitfun-part="surface"] *::before,
+:is(.diff-fullscreen-container, .snapshot-fullscreen-container, .openbitfun-fmc__panel) *,
+:is(.diff-fullscreen-container, .snapshot-fullscreen-container, .openbitfun-fmc__panel) *::before {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+@keyframes openbitfun-dialog-surface-enter {
+  from { opacity: 0; transform: translateY(var(--openbitfun-motion-distance-sm)); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes openbitfun-dialog-surface-exit {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(var(--openbitfun-motion-distance-sm)); }
+}

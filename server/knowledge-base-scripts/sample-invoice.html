@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Sample Invoice - PDAS260414K</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; font-size: 12px; padding: 40px; }
+    .header { text-align: center; margin-bottom: 30px; }
+    .company-name { font-size: 18px; font-weight: bold; }
+    .company-address { font-size: 11px; color: #666; }
+    .invoice-title { font-size: 16px; font-weight: bold; margin: 20px 0; text-align: center; }
+    .info-row { display: flex; justify-content: space-between; margin-bottom: 20px; }
+    .info-block { margin-bottom: 15px; }
+    .info-label { font-weight: bold; }
+    table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+    th, td { border: 1px solid #333; padding: 8px; text-align: left; }
+    th { background: #f0f0f0; font-weight: bold; }
+    .text-right { text-align: right; }
+    .total { font-size: 14px; font-weight: bold; text-align: right; margin: 15px 0; }
+    .footer { margin-top: 40px; border-top: 1px solid #333; padding-top: 15px; }
+    .footer p { margin: 3px 0; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="company-name">Jiangsu Panda Clothing Co.,Ltd.</div>
+    <div class="company-address">
+      ROOM A1028 WUYUE PLAZA<br>
+      ZHANGJIAGANG CITY,215600 PR<br>
+      CHINA
+    </div>
+  </div>
+
+  <div class="invoice-title">SAMPLE INVOICE</div>
+
+  <div class="info-row">
+    <div>
+      <div class="info-block"><span class="info-label">Invoice Number:</span> PDAS260414K</div>
+      <div class="info-block"><span class="info-label">Date:</span> 2026 April 14</div>
+    </div>
+  </div>
+
+  <div class="info-block">
+    <span class="info-label">BILL TO:</span><br>
+    ITOCHU PROMINENT USA LLC.
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>PO NUMBER</th>
+        <th>ZROH#</th>
+        <th>DESCRIPTION</th>
+        <th class="text-right">QTY (M)</th>
+        <th class="text-right">UNIT PRICE (USD)</th>
+        <th class="text-right">AMOUNT (USD)</th>
+      </tr>
+    </thead>
+    <tbody>
+      
+      <tr>
+        <td>4500159326</td>
+        <td>156111</td>
+        <td>70%WOOL/27%POLYESTER/3%SPANDEX - Navy Blue Suiting Fabric</td>
+        <td class="text-right">50</td>
+        <td class="text-right">$5.50</td>
+        <td class="text-right">$275.00</td>
+      </tr>
+      <tr>
+        <td>4500159326</td>
+        <td>156112</td>
+        <td>65%WOOL/35%POLYESTER - Grey Herringbone</td>
+        <td class="text-right">30</td>
+        <td class="text-right">$6.00</td>
+        <td class="text-right">$180.00</td>
+      </tr>
+      <tr>
+        <td>4500159326</td>
+        <td>156113</td>
+        <td>100%WOOL - Black Plain Weave</td>
+        <td class="text-right">20</td>
+        <td class="text-right">$7.25</td>
+        <td class="text-right">$145.00</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="total">TOTAL: $0.00 USD</div>
+
+  <div class="info-block"><span class="info-label">SHIP TO:</span><br>ITOCHU PROMINENT USA LLC.
+Attn: Fabric Department
+456 Textile Blvd, Los Angeles, CA 90001</div>
+
+  <div class="footer">
+    <p><span class="info-label">Payment Terms:</span> AS PER AGREEMENT</p>
+    <p><span class="info-label">Bank Information:</span> BANK OF CHINA ZHANGJIAGANG SUB-BRANCH</p>
+    <p>SWIFT CODE: BKCHCNBJ95L</p>
+    <p>USD ACCOUNT: 467668133096</p>
+  </div>
+</body>
+</html>

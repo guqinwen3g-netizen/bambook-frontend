@@ -1,0 +1,36 @@
+surface_id,页面,入口,导航分组,主导航,批次,覆盖状态,基准状态,子视图状态,容器组件清单,状态矩阵,视觉验收,交互验收,证据,备注
+dashboard,全景看板,components/Dashboard.tsx,overview,true,保护域,豁免,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,唯一设计改造豁免；仍保护共享组件引起的回归
+cockpit,经营驾驶舱,components/CockpitManager.tsx,overview,true,W5-财务经营,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,
+assistant,AI 助手,components/Assistant.tsx,platform,true,W6-客户协作平台,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,
+relations,关系智库,components/RelationsManager.tsx,customer,true,W6-客户协作平台,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,
+products,数字档案,components/ProductsManager.tsx,fulfillment,true,W4-订单履约,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,
+orders,订单管理,components/OrderManager.tsx,fulfillment,true,W3-样板返修,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,
+production-board,生产跟单,components/ProductionBoard.tsx,fulfillment,true,W4-订单履约,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,
+quotations,报价管理,components/QuotationManager.tsx,fulfillment,true,W4-订单履约,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,
+procurement,采购管理,components/ProcurementManager.tsx,fulfillment,true,W4-订单履约,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,
+inventory,库存管理,components/InventoryManager.tsx,fulfillment,true,W4-订单履约,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,
+bom,BOM 成本核算,components/BomManager.tsx,finance,true,W5-财务经营,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,
+crm,客户关系管理,components/CrmManager.tsx,customer,true,W6-客户协作平台,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,
+suppliers,供应商管理,components/SuppliersManager.tsx,customer,true,W6-客户协作平台,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,
+seasons,季节性与趋势,components/SeasonsManager.tsx,customer,true,W6-客户协作平台,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,
+risks,风险管理与合规,components/RisksManager.tsx,finance,true,W5-财务经营,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,
+qc-workbench,QC 工作台,components/QcWorkbenchManager.tsx,fulfillment,true,W4-订单履约,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,注册表子视图与实际 tab 不一致，须按运行界面补齐
+pricing,定价与利润,components/PricingManager.tsx,finance,true,W5-财务经营,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,
+marketing,营销推广,components/MarketingManager.tsx,customer,true,W6-客户协作平台,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,
+mes,历史加工记录,components/MesManager.tsx,platform,false,W4-订单履约,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,
+customs,外贸与报关,components/CustomsManager.tsx,fulfillment,true,W4-订单履约,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,
+document-center,单据中心,components/DocumentCenter.tsx,fulfillment,true,W4-订单履约,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,
+invoices,发票管理,components/FinanceManager.tsx,finance,false,W5-财务经营,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,FinanceManager 共享实现；保留独立入口检查，不重复计算同一组件修复
+payment-vouchers,财务管理,components/FinanceManager.tsx,finance,true,W5-财务经营,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,
+reports,报表中心,components/ReportCenter.tsx,overview,true,W5-财务经营,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,
+calendar,日历,components/CalendarManager.tsx,overview,true,W6-客户协作平台,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,
+claims,售后索赔,components/ClaimManager.tsx,finance,true,W3-样板返修,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,39e29499 已部署，用户仍不满意；重新打开，禁止作为通过样板
+shipments,货运管理,components/ShipmentManager.tsx,fulfillment,true,W4-订单履约,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,
+development,开发管理,components/DevelopmentManager.tsx,fulfillment,true,W3-样板返修,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,
+samples,样品管理,components/SampleManager.tsx,fulfillment,true,W4-订单履约,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,
+emails,智能邮箱,components/EmailManager.tsx,customer,true,W6-客户协作平台,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,
+data-center,数据中心,components/DataCenter.tsx,platform,true,W6-客户协作平台,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,
+settings,设置,components/Settings.tsx,platform,false,W3-样板返修,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,account/system 两入口均需走查
+business-tools,业务工具,components/BusinessTools.tsx,platform,true,W6-客户协作平台,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,
+admin,管理后台,components/AdminPanel.tsx,platform,true,W6-客户协作平台,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,
+hr,人事管理,components/HRManager.tsx,platform,true,W6-客户协作平台,已登记，未完成全状态审查,不作为新标准,待运行核对,待展开,待展开,未验收,未验收,,

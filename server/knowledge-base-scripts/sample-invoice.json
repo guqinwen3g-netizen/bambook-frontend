@@ -1,0 +1,31 @@
+{
+  "invoiceNumber": "PDAS260414K",
+  "invoiceDate": "2026-04-14",
+  "billTo": {
+    "name": "ITOCHU PROMINENT USA LLC.",
+    "address": "123 Fashion Avenue, New York, NY 10001"
+  },
+  "poNumber": "4500159326",
+  "items": [
+    {
+      "zroh": "156111",
+      "description": "70%WOOL/27%POLYESTER/3%SPANDEX - Navy Blue Suiting Fabric",
+      "qty": 50,
+      "unitPrice": 5.50
+    },
+    {
+      "zroh": "156112",
+      "description": "65%WOOL/35%POLYESTER - Grey Herringbone",
+      "qty": 30,
+      "unitPrice": 6.00
+    },
+    {
+      "zroh": "156113",
+      "description": "100%WOOL - Black Plain Weave",
+      "qty": 20,
+      "unitPrice": 7.25
+    }
+  ],
+  "shipTo": "ITOCHU PROMINENT USA LLC.\nAttn: Fabric Department\n456 Textile Blvd, Los Angeles, CA 90001",
+  "notes": "Sample invoice for fabric approval"
+}

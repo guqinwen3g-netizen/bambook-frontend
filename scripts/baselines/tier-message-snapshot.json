@@ -1,0 +1,154 @@
+{
+ "_readme": "B131 source-bound message keyword snapshot; not typed HTTP or business runtime proof. Measurement changed only after old/new meters on the exact fixed sources and explicit added/removed literals were independently recorded. Existing freeze-denial controls remain unchanged.",
+ "files": "server/src（排除 __tests__ 目录与 *.test.ts / *.d.ts）",
+ "count": 1511,
+ "byTier": {
+  "400": 1197,
+  "404": 161,
+  "409": 144,
+  "500": 9
+ },
+ "measurement": "ast-bound-error-sources-v1",
+ "sourceInventory": {
+  "total": 3285,
+  "public-message": 388,
+  "typed-contract": 1346,
+  "internal": 29,
+  "unresolved": 1522
+ },
+ "historicalRawCount": 371,
+ "_priorBaseline": {
+  "_readme": "B131 文案级快照基线。重跑：cd server && npx vitest run src/shared/__tests__/bizStatusTierSnapshot.test.ts -t \"打印\"。口径见该文件头部（只认单行字面量 throw；不含运行时错误对象 ⇒ 2c 在本快照恒不可见）。★ 首冻要显式：删掉本文件后必须带 TIER_SNAPSHOT_FREEZE=1 才重新生成（B146，无 flag ⇒ 红，不许静默自我印证）。",
+  "files": "server/src（排除 __tests__ 目录与 *.test.ts / *.d.ts）",
+  "count": 344,
+  "byTier": {
+   "400": 262,
+   "404": 33,
+   "409": 40,
+   "500": 9
+  },
+  "_priorBaseline": {
+   "count": 237,
+   "byTier": {
+    "400": 173,
+    "404": 27,
+    "409": 37
+   }
+  },
+  "_sourceEvidence": {
+   "sourceHead": "eaca22f975f3274ecb138acd8c08b8d59386187b",
+   "path": "artifacts/acceptance-20261001/execution/source-census/eaca22f9.json",
+   "change": "237-entry snapshot was stale before V1 (299 at fde1d263). Current 344 includes 45 added literals, no removed or changed original tiers versus fde1d263; typed runtime error objects require separate guards."
+  }
+ },
+ "_sourceEvidence": {
+  "sourceHead": "9b4c3245350dc2db30affa3cfa8a33084deb6c59",
+  "path": "artifacts/acceptance-20261001/execution/source-readings/v1-9b4c3245-bound-snapshot-refresh.json",
+  "sourceInventory": "artifacts/acceptance-20261001/execution/source-readings/v1-9b4c3245-message-source.inventory.json.gz",
+  "sourceInventorySha256": "1fa0f71f4734547ab708a40e2f6c8599102c8a9029fd5fa1a1e0b014cdce27d3",
+  "change": "Unchanged original meter/scanner: actual +0/-1 literal identity; zero changed survivor keyword tiers; complete typed/internal/unresolved source inventory retained. Source binding only."
+ },
+ "_previousSourceBaseline": {
+  "count": 951,
+  "byTier": {
+   "400": 740,
+   "404": 99,
+   "409": 106,
+   "500": 6
+  },
+  "sourceInventory": {
+   "total": 2532,
+   "public-message": 438,
+   "typed-contract": 669,
+   "internal": 28,
+   "unresolved": 1397
+  },
+  "sourceEvidence": {
+   "sourceHead": "b7586f0515c6f9d2d05c8925bf0ced93992e8c05",
+   "path": "artifacts/acceptance-20261001/execution/source-readings/v1-b758-message-source.adjudication.json.gz",
+   "sourceInventory": "artifacts/acceptance-20261001/execution/source-readings/v1-b758-message-source.inventory.json.gz",
+   "change": "Same old fixed eaca source: raw344 vs AST859. Same fixed b758 source: raw316 vs AST951. Actual literal delta AST+97/-5. Typed contracts, private result boundaries and all unresolved sources remain separately inventoried; no statusFromError behavior changed."
+  }
+ },
+ "_sourceBaselineHistory": [
+  {
+   "count": 999,
+   "byTier": {
+    "400": 779,
+    "404": 105,
+    "409": 109,
+    "500": 6
+   },
+   "measurement": "ast-bound-error-sources-v1",
+   "sourceInventory": {
+    "total": 2609,
+    "public-message": 404,
+    "typed-contract": 773,
+    "internal": 28,
+    "unresolved": 1404
+   },
+   "historicalRawCount": 328,
+   "_sourceEvidence": {
+    "sourceHead": "1cfcc69beb12c4b5152de28e7310895a48c07e93",
+    "path": "artifacts/acceptance-20261001/execution/source-readings/v1-1cfcc69b-message-source.adjudication.json.gz",
+    "sourceInventory": "artifacts/acceptance-20261001/execution/source-readings/v1-1cfcc69b-message-source.inventory.json.gz",
+    "sourceInventorySha256": "b9027ab5caebc38670105a7b8f452981dcda84a57f3ef0a31ae14881f41492b2",
+    "summary": "artifacts/acceptance-20261001/execution/source-readings/v1-1cfcc69b-g3-b131.json",
+    "change": "Same AST scanner and keyword meter on fixed b758 -> 1cfcc69b production sources. Literal delta +52/-4, 0 changed tiers for surviving messages. Source inventory 2532 -> 2609; typed/public/internal/unresolved remain distinct (1404 unresolved). This is source freshness, not HTTP, business debt clearance or UAT."
+   }
+  },
+  {
+   "count": 1080,
+   "byTier": {
+    "400": 842,
+    "404": 112,
+    "409": 120,
+    "500": 6
+   },
+   "measurement": "ast-bound-error-sources-v1",
+   "sourceInventory": {
+    "total": 2709,
+    "public-message": 392,
+    "typed-contract": 873,
+    "internal": 28,
+    "unresolved": 1416
+   },
+   "historicalRawCount": 355,
+   "corpusSha256": "f77ff1896d9f26b36d8c1249f4b9cff165c8d08ede3b89303b73df2790534b7a",
+   "_sourceEvidence": {
+    "sourceHead": "f921010975d0f6951cf4f1bb2c5e2cbff0c8c476",
+    "path": "artifacts/acceptance-20261001/execution/source-readings/v1-f9210109-shared-guard-adjudication.json",
+    "sourceInventory": "artifacts/acceptance-20261001/execution/source-readings/v1-f9210109-message-source.bound-inventory.json.gz",
+    "sourceInventorySha256": "018569d139896f42c1e4f8933b3beb9d96a5c06f11cbda689129cac659a539ac",
+    "change": "Same AST and keyword meter1cf→f9210109: public literal+83/-2, 0 survivor tiers changed. Complete expressions+136/-36; public392/typed873/internal28/unresolved1416, with nested wrappers retained. This is source freshness, not typedHTTP/PG/UAT proof."
+   }
+  },
+  {
+   "count": 1512,
+   "byTier": {
+    "400": 1198,
+    "404": 161,
+    "409": 144,
+    "500": 9
+   },
+   "measurement": "ast-bound-error-sources-v1",
+   "sourceInventory": {
+    "total": 3282,
+    "public-message": 388,
+    "typed-contract": 1344,
+    "internal": 29,
+    "unresolved": 1521
+   },
+   "historicalRawCount": 371,
+   "corpusSha256": "63eeaeae4ef9272dac538d06abe0e515d044eb9fd44ae0339f87b39245b7231f",
+   "_sourceEvidence": {
+    "sourceHead": "c9ab518964b927eb1db6838cb7e316af3247d743",
+    "path": "artifacts/acceptance-20261001/execution/source-readings/v1-c9ab5189-original-snapshot-refresh.json",
+    "sourceInventory": "artifacts/acceptance-20261001/execution/source-readings/v1-c9ab5189-message-source.inventory.json.gz",
+    "sourceInventorySha256": "4d7052221dba88a29ddae45a1dc813e62646cdc0017cab2d4e4aa5c75f1dce40",
+    "change": "Unchanged original AST scanner and keyword meter, full literal identity +436/-4, zero changed survivor keyword tiers. Exact typed/internal/unresolved classes retained. Source refresh is not functional/native/UI acceptance."
+   }
+  }
+ ],
+ "corpusSha256": "1efae050639955479f1ec53de2f4327e746f995af551d4bce827aef5a4ac6592"
+}

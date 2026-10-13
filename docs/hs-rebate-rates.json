@@ -1,0 +1,73 @@
+{
+  "6204.43.00": {
+    "rebateRate": null,
+    "description": "Ladies' Dress",
+    "category": "",
+    "_usedByDeclarationLines": 45,
+    "_goodsSamples": [
+      "Ladies' Dress"
+    ]
+  },
+  "6206.40.00": {
+    "rebateRate": null,
+    "description": "Ladies' Blouse",
+    "category": "",
+    "_usedByDeclarationLines": 5,
+    "_goodsSamples": [
+      "Ladies' Blouse"
+    ]
+  },
+  "6110.20.99": {
+    "rebateRate": null,
+    "description": "Ladies' Knit Top",
+    "category": "",
+    "_usedByDeclarationLines": 5,
+    "_goodsSamples": [
+      "Ladies' Knit Top"
+    ]
+  },
+  "5407.61.00": {
+    "rebateRate": null,
+    "description": "针织罗纹 Rib Knit（Indigo）",
+    "category": "",
+    "_usedByDeclarationLines": 5,
+    "_goodsSamples": [
+      "针织罗纹 Rib Knit（Indigo）",
+      "涤粘西装呢 Poly-viscose Suiting（Indigo）",
+      "莫代尔弹力斜纹 Modal Stretch Twill（Sky Blue）",
+      "针织罗纹 Rib Knit（Ivory）"
+    ]
+  },
+  "5208.52.00": {
+    "rebateRate": null,
+    "description": "天丝棉平纹 Tencel Cotton Poplin（Natural White）",
+    "category": "",
+    "_usedByDeclarationLines": 4,
+    "_goodsSamples": [
+      "天丝棉平纹 Tencel Cotton Poplin（Natural White）",
+      "全棉双绉 Cotton Crepe（Charcoal）",
+      "人棉印花布 Rayon Print（Sage）",
+      "天丝斜纹 Tencel Twill（Camel）"
+    ]
+  },
+  "6006.32.00": {
+    "rebateRate": null,
+    "description": "罗纹袖口布 Cuff Rib（Dusty Rose）",
+    "category": "",
+    "_usedByDeclarationLines": 2,
+    "_goodsSamples": [
+      "罗纹袖口布 Cuff Rib（Dusty Rose）",
+      "珠地网眼 Pique（Ivory）"
+    ]
+  },
+  "6006.21.00": {
+    "rebateRate": null,
+    "description": "蕾丝面料 Lace Fabric（Sage）",
+    "category": "",
+    "_usedByDeclarationLines": 2,
+    "_goodsSamples": [
+      "蕾丝面料 Lace Fabric（Sage）",
+      "空气层面料 Air Layer（Terracotta）"
+    ]
+  }
+}

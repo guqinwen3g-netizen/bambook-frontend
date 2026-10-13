@@ -1,0 +1,104 @@
+{
+  "buttons": [
+    {
+      "client": 38,
+      "left": 463,
+      "right": 501,
+      "scroll": 38,
+      "text": ""
+    },
+    {
+      "client": 38,
+      "left": 505,
+      "right": 543,
+      "scroll": 38,
+      "text": ""
+    },
+    {
+      "client": 38,
+      "left": 547,
+      "right": 585,
+      "scroll": 38,
+      "text": ""
+    },
+    {
+      "client": 38,
+      "left": 589,
+      "right": 627,
+      "scroll": 38,
+      "text": ""
+    },
+    {
+      "client": 97,
+      "left": 637,
+      "right": 734,
+      "scroll": 97,
+      "text": "问小竹"
+    },
+    {
+      "client": 112,
+      "left": 108,
+      "right": 220,
+      "scroll": 112,
+      "text": "返回库存与仓储"
+    },
+    {
+      "client": 59,
+      "left": 519,
+      "right": 578,
+      "scroll": 59,
+      "text": "出库"
+    },
+    {
+      "client": 59,
+      "left": 588,
+      "right": 647,
+      "scroll": 59,
+      "text": "退回"
+    },
+    {
+      "client": 59,
+      "left": 657,
+      "right": 716,
+      "scroll": 59,
+      "text": "移位"
+    },
+    {
+      "client": 245,
+      "left": 430.5500183105469,
+      "right": 676.0000152587891,
+      "scroll": 245,
+      "text": "SO-G-2026-0003 · FLOW-EXCEPTION-1013"
+    },
+    {
+      "client": 113,
+      "left": 130,
+      "right": 243,
+      "scroll": 113,
+      "text": "返回准确案件"
+    },
+    {
+      "client": 104,
+      "left": 253,
+      "right": 357.15625,
+      "scroll": 104,
+      "text": "查看来源CN"
+    }
+  ],
+  "cards": [
+    {
+      "bottom": 1263.550033569336,
+      "client": 608,
+      "scroll": 608,
+      "top": 221.15000915527344
+    }
+  ],
+  "document": {
+    "scroll": 768,
+    "width": 768
+  },
+  "viewport": {
+    "height": 900,
+    "width": 768
+  }
+}

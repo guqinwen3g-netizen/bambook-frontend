@@ -1,0 +1,2542 @@
+[
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "导出"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "新建"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "同步已返样版本"
+      },
+      {
+        "disabled": true,
+        "name": "上一页",
+        "text": ""
+      },
+      {
+        "disabled": true,
+        "name": "下一页",
+        "text": ""
+      }
+    ],
+    "inputs": [
+      {
+        "name": "搜索样品仓库",
+        "type": null
+      },
+      {
+        "name": "样品类别",
+        "type": null
+      }
+    ],
+    "title": "样品仓库",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=samples"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "从来源发起QC"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "成衣QC0"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "面料QC0"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "样品评审"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "生产检验"
+      }
+    ],
+    "inputs": [
+      {
+        "name": "来源、工厂或检查地点",
+        "type": null
+      }
+    ],
+    "title": "QC 工作台",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=qc-workbench"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "导出"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "新建"
+      },
+      {
+        "disabled": true,
+        "name": "上一页",
+        "text": ""
+      },
+      {
+        "disabled": true,
+        "name": "下一页",
+        "text": ""
+      }
+    ],
+    "inputs": [
+      {
+        "name": "搜索采购管理",
+        "type": null
+      },
+      {
+        "name": "采购状态",
+        "type": null
+      }
+    ],
+    "title": "采购管理",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=procurement"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "导出"
+      },
+      {
+        "disabled": true,
+        "name": "上一页",
+        "text": ""
+      },
+      {
+        "disabled": true,
+        "name": "下一页",
+        "text": ""
+      }
+    ],
+    "inputs": [
+      {
+        "name": "搜索库存与仓储",
+        "type": null
+      }
+    ],
+    "title": "库存与仓储",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=inventory"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "导出"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "新建出运"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "核对合同收货条款"
+      },
+      {
+        "disabled": true,
+        "name": "上一页",
+        "text": ""
+      },
+      {
+        "disabled": true,
+        "name": "下一页",
+        "text": ""
+      }
+    ],
+    "inputs": [
+      {
+        "name": "搜索货运管理",
+        "type": null
+      }
+    ],
+    "title": "货运管理",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=shipments"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "导出"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "新建"
+      },
+      {
+        "disabled": true,
+        "name": "上一页",
+        "text": ""
+      },
+      {
+        "disabled": true,
+        "name": "下一页",
+        "text": ""
+      }
+    ],
+    "inputs": [
+      {
+        "name": "搜索外贸与报关",
+        "type": null
+      }
+    ],
+    "title": "外贸与报关",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=customs"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "导出"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "新建"
+      },
+      {
+        "disabled": true,
+        "name": "上一页",
+        "text": ""
+      },
+      {
+        "disabled": true,
+        "name": "下一页",
+        "text": ""
+      }
+    ],
+    "inputs": [
+      {
+        "name": "搜索单据中心",
+        "type": null
+      }
+    ],
+    "title": "单据中心",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=document-center"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "导出"
+      },
+      {
+        "disabled": true,
+        "name": "上一页",
+        "text": ""
+      },
+      {
+        "disabled": true,
+        "name": "下一页",
+        "text": ""
+      }
+    ],
+    "inputs": [
+      {
+        "name": "搜索历史加工记录",
+        "type": null
+      }
+    ],
+    "title": "历史加工记录",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=mes"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "导出"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "新建"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "类别全部"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "从开发版本建档"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "产品"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "季节"
+      },
+      {
+        "disabled": true,
+        "name": "上一页",
+        "text": ""
+      },
+      {
+        "disabled": true,
+        "name": "下一页",
+        "text": ""
+      }
+    ],
+    "inputs": [
+      {
+        "name": "搜索数字档案",
+        "type": null
+      }
+    ],
+    "title": "数字档案",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=products"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "导出"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "状态全部"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "新建报价"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "报价"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "总金额"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "有效期"
+      },
+      {
+        "disabled": true,
+        "name": "上一页",
+        "text": ""
+      },
+      {
+        "disabled": true,
+        "name": "下一页",
+        "text": ""
+      }
+    ],
+    "inputs": [
+      {
+        "name": "搜索报价管理",
+        "type": null
+      }
+    ],
+    "title": "报价管理",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=quotations"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "导出"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "新建"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "供应商"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "月产能"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "新建"
+      },
+      {
+        "disabled": true,
+        "name": "上一页",
+        "text": ""
+      },
+      {
+        "disabled": true,
+        "name": "下一页",
+        "text": ""
+      }
+    ],
+    "inputs": [
+      {
+        "name": "搜索供应商管理",
+        "type": null
+      }
+    ],
+    "title": "供应商管理",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=suppliers"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "导出"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "新建"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "类别全部"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "组织"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "联系人"
+      },
+      {
+        "disabled": true,
+        "name": "上一页",
+        "text": ""
+      },
+      {
+        "disabled": true,
+        "name": "下一页",
+        "text": ""
+      }
+    ],
+    "inputs": [
+      {
+        "name": "搜索关系智库",
+        "type": null
+      }
+    ],
+    "title": "关系智库",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=relations"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "导出"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "新建"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "季节回顾0"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "趋势依据0"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "展会0"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "季节"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "期间"
+      },
+      {
+        "disabled": true,
+        "name": "上一页",
+        "text": ""
+      },
+      {
+        "disabled": true,
+        "name": "下一页",
+        "text": ""
+      }
+    ],
+    "inputs": [
+      {
+        "name": "搜索季节性与趋势",
+        "type": null
+      }
+    ],
+    "title": "季节性与趋势",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=seasons"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "创建活动"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "导出"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "营销活动0"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "产品画册0"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "创建活动"
+      }
+    ],
+    "inputs": [
+      {
+        "name": "搜索活动或目标客户群",
+        "type": null
+      }
+    ],
+    "title": "营销推广",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=marketing"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "导出"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "新建"
+      },
+      {
+        "disabled": true,
+        "name": "上一页",
+        "text": ""
+      },
+      {
+        "disabled": true,
+        "name": "下一页",
+        "text": ""
+      }
+    ],
+    "inputs": [
+      {
+        "name": "搜索发票管理",
+        "type": null
+      }
+    ],
+    "title": "发票管理",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=invoices"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "导出记录"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "保存定价记录"
+      }
+    ],
+    "inputs": [
+      {
+        "name": null,
+        "type": "number"
+      },
+      {
+        "name": null,
+        "type": "number"
+      },
+      {
+        "name": null,
+        "type": "number"
+      },
+      {
+        "name": null,
+        "type": "number"
+      },
+      {
+        "name": null,
+        "type": "number"
+      },
+      {
+        "name": null,
+        "type": null
+      }
+    ],
+    "title": "定价与利润",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=pricing"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "导出"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "新建"
+      },
+      {
+        "disabled": true,
+        "name": "上一页",
+        "text": ""
+      },
+      {
+        "disabled": true,
+        "name": "下一页",
+        "text": ""
+      }
+    ],
+    "inputs": [
+      {
+        "name": "搜索BOM 成本核算",
+        "type": null
+      }
+    ],
+    "title": "BOM 成本核算",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=bom"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "导出"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "新建"
+      },
+      {
+        "disabled": true,
+        "name": "上一页",
+        "text": ""
+      },
+      {
+        "disabled": true,
+        "name": "下一页",
+        "text": ""
+      }
+    ],
+    "inputs": [
+      {
+        "name": "搜索风险管理与合规",
+        "type": null
+      }
+    ],
+    "title": "风险管理与合规",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=risks"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "导出"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "新建"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "新建"
+      },
+      {
+        "disabled": true,
+        "name": "上一页",
+        "text": ""
+      },
+      {
+        "disabled": true,
+        "name": "下一页",
+        "text": ""
+      }
+    ],
+    "inputs": [
+      {
+        "name": "搜索售后索赔",
+        "type": null
+      }
+    ],
+    "title": "售后索赔",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=claims"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "导出当前报表"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "查看来源订单"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "查看发票"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "查看核销明细"
+      }
+    ],
+    "inputs": [
+      {
+        "name": null,
+        "type": "date"
+      },
+      {
+        "name": null,
+        "type": "date"
+      },
+      {
+        "name": null,
+        "type": null
+      }
+    ],
+    "title": "报表中心",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=reports"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "履行中订单0"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "逾期未收发票0"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "待处理风险0"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "进行中客诉0"
+      }
+    ],
+    "inputs": [],
+    "title": "业务全景",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=dashboard"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "刷新数据"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "当前工作空间逐页操作验收"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "数据版本2"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "关联问题0"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "查看"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "查看"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "查看"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "查看"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "查看"
+      }
+    ],
+    "inputs": [],
+    "title": "数据中心",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=data-center"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "导出"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "新建"
+      },
+      {
+        "disabled": true,
+        "name": "上一页",
+        "text": ""
+      },
+      {
+        "disabled": true,
+        "name": "下一页",
+        "text": ""
+      }
+    ],
+    "inputs": [
+      {
+        "name": "搜索人事管理",
+        "type": null
+      }
+    ],
+    "title": "人事管理",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=hr"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "退税美元定价"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "BOM成本核算"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "商业发票"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "收款核销"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "业务报表"
+      }
+    ],
+    "inputs": [
+      {
+        "name": null,
+        "type": "number"
+      },
+      {
+        "name": null,
+        "type": null
+      },
+      {
+        "name": null,
+        "type": null
+      }
+    ],
+    "title": "业务工具",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=business-tools"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "公司抬头"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "出口与收款"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "当前空间"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "本地使用"
+      },
+      {
+        "disabled": true,
+        "name": null,
+        "text": "保存资料"
+      }
+    ],
+    "inputs": [
+      {
+        "name": "公司中文抬头",
+        "type": "text"
+      },
+      {
+        "name": "公司英文抬头",
+        "type": "text"
+      },
+      {
+        "name": "中文地址",
+        "type": "text"
+      },
+      {
+        "name": "英文地址",
+        "type": "text"
+      },
+      {
+        "name": "联系电话",
+        "type": "tel"
+      },
+      {
+        "name": "公司联系邮箱",
+        "type": "email"
+      }
+    ],
+    "title": "管理后台",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=admin-panel"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "保存草稿"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "检查配置"
+      },
+      {
+        "disabled": true,
+        "name": null,
+        "text": "向模型提问"
+      }
+    ],
+    "inputs": [
+      {
+        "name": "检索对象",
+        "type": null
+      },
+      {
+        "name": "业务关键词",
+        "type": null
+      }
+    ],
+    "title": "竹衍助手",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=assistant"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "今天"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "本周"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "新建"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "在途开发案0个当前工作区的进行中开发"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "待 QC 评审0项待专业评审的任务与返样"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "本周出运0票按实际出运请求与记录"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "应收待核销0.000 张未结发票"
+      },
+      {
+        "disabled": true,
+        "name": null,
+        "text": "打开事项"
+      },
+      {
+        "disabled": true,
+        "name": null,
+        "text": "QC 报告"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "1本地操作员 工作空间从回收站恢复"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "2本地操作员 工作空间移入回收站"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "3本地操作员 留档 R1-A-1"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "问问这些事的来龙去脉…"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "排序按期限"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "管理任务"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "日历"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "一12"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "二13"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "三14"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "四15"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "五16"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "六17"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "日18"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "添加日程"
+      }
+    ],
+    "inputs": [],
+    "title": "上午好，逐页验收操作员",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=cockpit"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "面料寻样"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "新建开发案"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "开发案1"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "面料寻样0"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "草稿0"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "负责人全部"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "客户全部客户"
+      },
+      {
+        "disabled": false,
+        "name": "列表视图",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "看板视图",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "全部1"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "需求与计划0"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "工厂与实物0"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "QC 评审0"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "需求方确认0"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "成果留档1"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "开发对象"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "阶段"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "目标日期"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "导出"
+      },
+      {
+        "disabled": true,
+        "name": "上一页",
+        "text": ""
+      },
+      {
+        "disabled": true,
+        "name": "下一页",
+        "text": ""
+      }
+    ],
+    "inputs": [
+      {
+        "name": "名称、客户款式或编号",
+        "type": null
+      }
+    ],
+    "title": "开发与寻样",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=development"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "导出"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "新建订单"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "在途订单0单暂无在途条目"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "已出运0单暂无已出运订单"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "在途金额0.00按原币种统计"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "逾期收款0笔暂无逾期"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "成衣订单0"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "面料订单0"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "状态全部"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "订单"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "数量"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "金额"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "进度"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "交期"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "新建订单"
+      },
+      {
+        "disabled": true,
+        "name": "上一页",
+        "text": ""
+      },
+      {
+        "disabled": true,
+        "name": "下一页",
+        "text": ""
+      }
+    ],
+    "inputs": [
+      {
+        "name": "订单号、客户或季节",
+        "type": null
+      }
+    ],
+    "title": "订单管理",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=orders"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "导入流水"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "导出"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "收款核销0"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "付款凭证0"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "发票0"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "金额"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "导入流水"
+      }
+    ],
+    "inputs": [],
+    "title": "收款核销",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=payment-vouchers"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "新建客户"
+      },
+      {
+        "disabled": true,
+        "name": null,
+        "text": "写邮件"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "新建开发案"
+      },
+      {
+        "disabled": false,
+        "name": "编辑客户资料",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "概览"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "订单0"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "开发1"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "联系人0"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "文件1"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "今年下单0.00USD共 0 个订单"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "在途订单0单"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "应收余额0.00USD0 张发票"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "合作时长—年首单"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "展开"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "全部订单"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "新建订单"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "开发与寻样"
+      },
+      {
+        "disabled": false,
+        "name": "添加联系人",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "添加联系人"
+      },
+      {
+        "disabled": false,
+        "name": "业务动态统计",
+        "text": ""
+      }
+    ],
+    "inputs": [
+      {
+        "name": "选择客户",
+        "type": null
+      }
+    ],
+    "title": "逐页验收客户",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=crm"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "本周"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "本月"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "全部"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "甘特图"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "订单全部"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "查看全部生产单"
+      }
+    ],
+    "inputs": [
+      {
+        "name": "款式、生产单或工厂",
+        "type": null
+      }
+    ],
+    "title": "生产进度",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=production-board"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "新建日程"
+      },
+      {
+        "disabled": false,
+        "name": "上一周",
+        "text": "上一周"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "今天"
+      },
+      {
+        "disabled": false,
+        "name": "下一周",
+        "text": "下一周"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "刷新"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "一12"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "二13"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "三14"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "四15"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "五16"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "六17"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "日18"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "添加日程"
+      }
+    ],
+    "inputs": [],
+    "title": "日历",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=calendar"
+  },
+  {
+    "buttons": [
+      {
+        "disabled": false,
+        "name": "审批事项",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "搜索",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "通知",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "切换深色",
+        "text": ""
+      },
+      {
+        "disabled": false,
+        "name": "问竹衍",
+        "text": "问竹衍"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "外观"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "通知"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "工作空间"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "账号"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "安全"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "浅色雾蓝渐变"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "深色深夜蓝渐变"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "跟随系统自动切换"
+      },
+      {
+        "disabled": false,
+        "name": null,
+        "text": "完成"
+      }
+    ],
+    "inputs": [
+      {
+        "name": "列表密度",
+        "type": null
+      },
+      {
+        "name": "减少动效",
+        "type": "checkbox"
+      }
+    ],
+    "title": "系统设置",
+    "url": "http://127.0.0.1:3001/?intro=0&theme=light&view=settings"
+  }
+]

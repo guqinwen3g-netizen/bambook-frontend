@@ -1,0 +1,228 @@
+{
+  "readOnly": true,
+  "phase": "notification-cancelled",
+  "workspace": {
+    "id": "96430896-74a5-4b29-8ac7-c9b014ba7cc7",
+    "revision": 278
+  },
+  "snapshotSha256": "b95d8d1e3127616eedad88bd1cabfca1022b3d0791cccaf368379b1e3e870804",
+  "claim": {
+    "id": "9c3c1ec9-164c-4d20-99a2-6badbdff3998",
+    "code": "CLM-2026-9c3c1ec9-164c-4d20-99a2-6badbdff3998",
+    "orderId": "e32ac965-6f99-44f9-ac41-56b1af4c8280",
+    "invoiceId": "4cd30247-57ef-41ea-99c6-a8b45c616ab3",
+    "problem": "QA-NOTIFY-CLEAN",
+    "fileIds": [
+      "d105aed0-81ef-4dba-bef2-e3d0e9baa762"
+    ],
+    "state": "Cancelled",
+    "createdAt": "2026-10-13T06:07:20.217Z",
+    "dispositions": [
+      {
+        "id": "248216cc-c885-4551-a552-0b68981e04dd",
+        "kind": "Allowance",
+        "amount": 1,
+        "quantity": 0,
+        "unit": "",
+        "returnDisposition": "",
+        "basis": "QA-NOTIFY-CLEAN-NO-EXECUTE",
+        "fileIds": [
+          "d105aed0-81ef-4dba-bef2-e3d0e9baa762"
+        ],
+        "state": "Cancelled",
+        "requesterId": "local-operator",
+        "reviewerId": "local-reviewer",
+        "submittedAt": "2026-10-13T06:07:38.644Z",
+        "reviewFileIds": [
+          "d105aed0-81ef-4dba-bef2-e3d0e9baa762"
+        ],
+        "snapshot": "{\"case\":\"CLM-2026-9c3c1ec9-164c-4d20-99a2-6badbdff3998\",\"order\":\"SO-G-2026-0003\",\"invoice\":\"QA-EX-CI\",\"problem\":\"QA-NOTIFY-CLEAN\",\"kind\":\"Allowance\",\"amount\":1,\"currency\":\"USD\",\"quantity\":0,\"unit\":\"\",\"destination\":\"\",\"basis\":\"QA-NOTIFY-CLEAN-NO-EXECUTE\",\"attachments\":[\"QA-EXCEPTION-CI-v2.pdf\"]}",
+        "reviewDecision": "approved",
+        "decisionNote": "QA-NOTIFY-CLEAN-APPROVED",
+        "cancelledAt": "2026-10-13T06:09:45.060Z",
+        "cancelReason": "QA-NOTIFY-CLEAN-CANCEL-BEFORE-EXECUTION"
+      }
+    ],
+    "cancelReason": "QA-NOTIFY-CLEAN-CANCEL-BEFORE-EXECUTION"
+  },
+  "outputs": {
+    "credits": [],
+    "goods": [],
+    "applications": [],
+    "payments": []
+  },
+  "tasks": [
+    {
+      "id": "5bdbc414-58fa-4d5d-99da-a2977333b810",
+      "title": "生成售后履行单据 · CLM-2026-9c3c1ec9-164c-4d20-99a2-6badbdff3998 · 折让",
+      "due": "",
+      "done": true,
+      "kind": "claim-execution:248216cc-c885-4551-a552-0b68981e04dd",
+      "target": {
+        "view": "claims",
+        "id": "9c3c1ec9-164c-4d20-99a2-6badbdff3998"
+      }
+    }
+  ],
+  "notifications": [
+    {
+      "id": "363caefa-cb2c-467a-a358-05c8addde788",
+      "title": "CLM-2026-9c3c1ec9-164c-4d20-99a2-6badbdff3998 · 折让已批准",
+      "detail": "实际审批人 本地审批员 · QA-NOTIFY-CLEAN-APPROVED",
+      "at": "2026-10-13T06:07:53.605Z",
+      "readAt": "2026-10-13T06:08:38.105Z",
+      "target": {
+        "view": "claims",
+        "id": "9c3c1ec9-164c-4d20-99a2-6badbdff3998"
+      },
+      "category": "general"
+    }
+  ],
+  "events": [
+    {
+      "id": "c641bee1-7db8-4a16-9406-7d444a110de9",
+      "entityType": "claim",
+      "entityId": "9c3c1ec9-164c-4d20-99a2-6badbdff3998",
+      "at": "2026-10-13T06:09:45.060Z",
+      "actor": "本地操作员",
+      "text": "撤销案件：QA-NOTIFY-CLEAN-CANCEL-BEFORE-EXECUTION",
+      "fileIds": []
+    },
+    {
+      "id": "dc2fc2d9-dc8b-44de-bdec-74b6cf695bf1",
+      "entityType": "claim",
+      "entityId": "9c3c1ec9-164c-4d20-99a2-6badbdff3998",
+      "at": "2026-10-13T06:07:53.605Z",
+      "actor": "本地审批员",
+      "text": "审批 approved：QA-NOTIFY-CLEAN-APPROVED",
+      "fileIds": []
+    },
+    {
+      "id": "6ad377a2-78e7-4330-a3dd-72a9c7050d12",
+      "entityType": "claim",
+      "entityId": "9c3c1ec9-164c-4d20-99a2-6badbdff3998",
+      "at": "2026-10-13T06:07:38.644Z",
+      "actor": "本地操作员",
+      "text": "提交处置审批",
+      "fileIds": []
+    },
+    {
+      "id": "1d723902-b3cf-4c6a-be94-3a25b96c36ba",
+      "entityType": "claim",
+      "entityId": "9c3c1ec9-164c-4d20-99a2-6badbdff3998",
+      "at": "2026-10-13T06:07:20.217Z",
+      "actor": "本地操作员",
+      "text": "登记客诉案件",
+      "fileIds": []
+    }
+  ],
+  "primaryRefund": {
+    "claimId": "870d849a-4066-4b0d-b27e-821eebe25737",
+    "state": "Closed",
+    "originalAllocated": 60,
+    "refundPaid": 15,
+    "netCash": 45
+  },
+  "retainedCases": [
+    {
+      "claimId": "6b87433f-4260-43a7-9de5-4b4c0f47ebc2",
+      "state": "Cancelled",
+      "baseline": "/tmp/mist-exception-notification-cancelled.json",
+      "sha256": "58208416bc0801d93c93a0c7bd83bdad7d959840f3c07d76ea6741c9033f8950"
+    }
+  ],
+  "preservedOrders": [
+    {
+      "orderId": "8885a218-c5a0-4c95-a4c0-c9bce010e8a2",
+      "sha256": "24b370175da90de6938ba61005766362300dce70f49e1d61b8f91217a8e6c526"
+    },
+    {
+      "orderId": "873d79d1-fe97-4866-908e-d81fda26b404",
+      "sha256": "1109f5ff4eb1494919b85ed34e869dc5df1c02955b86cbae65ad3eeb8f832e1f"
+    }
+  ],
+  "checks": [
+    {
+      "key": "notification.exact_case_source",
+      "ok": true
+    },
+    {
+      "key": "notification.one_allowance1_no_goods",
+      "ok": true
+    },
+    {
+      "key": "notification.not_executed_no_outputs",
+      "ok": true
+    },
+    {
+      "key": "notification.unique_precise_task_due_empty",
+      "ok": true
+    },
+    {
+      "key": "notification.real_approval_actor_note_time",
+      "ok": true
+    },
+    {
+      "key": "notification.exact_clean_ascii_note",
+      "ok": true
+    },
+    {
+      "key": "notification.exact_clean_problem",
+      "ok": true
+    },
+    {
+      "key": "notification.exact_clean_basis",
+      "ok": true
+    },
+    {
+      "key": "notification.cancelled_preserves_review",
+      "ok": true
+    },
+    {
+      "key": "notification.cancelled_work_completed",
+      "ok": true
+    },
+    {
+      "key": "notification.cancel_keeps_snapshot_and_note",
+      "ok": true
+    },
+    {
+      "key": "notification.original_return_notification_retained",
+      "ok": true
+    },
+    {
+      "key": "primary.original_order_fulfillment_finance_unchanged",
+      "ok": true
+    },
+    {
+      "key": "primary.closed_case_unchanged",
+      "ok": true
+    },
+    {
+      "key": "primary.refund_records_unchanged",
+      "ok": true
+    },
+    {
+      "key": "primary.received60_refund15_net45",
+      "ok": true
+    },
+    {
+      "key": "preserved.8885a218-c5a0-4c95-a4c0-c9bce010e8a2",
+      "ok": true
+    },
+    {
+      "key": "preserved.873d79d1-fe97-4866-908e-d81fda26b404",
+      "ok": true
+    },
+    {
+      "key": "retained.case_history_unchanged.6b87433f-4260-43a7-9de5-4b4c0f47ebc2",
+      "ok": true
+    },
+    {
+      "key": "retained.no_execution_outputs.6b87433f-4260-43a7-9de5-4b4c0f47ebc2",
+      "ok": true
+    }
+  ],
+  "ok": true,
+  "limit": "This local sample audit proves stored return targets and facts, not browser navigation or external transfers."
+}

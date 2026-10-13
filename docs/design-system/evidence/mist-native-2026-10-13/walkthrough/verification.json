@@ -1,0 +1,82 @@
+{
+  "verifiedAt": "2026-10-13T02:19:46.281714+00:00",
+  "scope": "Current Mist local MVP; design tokens/layout retained; no legacy UI imported",
+  "browserRoutes": 34,
+  "browserCoverage": "34 business route entry/control inventories; deeper UI save/readback chains below. Not exhaustive permutations of every input value.",
+  "browserChains": [
+    "Empty workspace -> new customer -> draft development -> reopen draft -> inline actual supplier -> upload and download PDF -> submit development -> sample return -> measured QC -> requester confirmation -> archive version -> reload readback",
+    "Workspace currency and profile name -> saved and reflected; QC notification preference hides QC alert; on-demand daily digest appears",
+    "Archive workspace -> other active workspace -> recycle bin -> restore -> original development and attachment readback",
+    "Calendar create with exact development version -> source navigation -> back -> remove association -> save -> reload",
+    "Supplier filtered list -> exact detail -> close -> ID removed from URL and filter retained",
+    "Switch from an exact detail through a temporarily empty loading state to another workspace -> new workspace home, no stale object route"
+  ],
+  "uiWorkspace": {
+    "id": "1fb40731-4e8f-49c4-bfc8-1e3f7aa635f9",
+    "name": "逐页操作验收",
+    "revision": 20,
+    "records": "Local test only"
+  },
+  "uiDevelopment": {
+    "id": "eef41a6c-cbe1-4cd3-bbd2-b0b1ea4ca99c",
+    "versionId": "ea1c330b-8cec-4256-98e4-d9344968153a",
+    "customerId": "5e787840-8b18-4d2d-be5e-f58098e2bdea",
+    "supplierId": "fc7aed16-2d46-419d-b376-eb54cfdfe736"
+  },
+  "pdfRoundTrip": {
+    "bytes": 620,
+    "sha256": "76ed55dcca059a5b99f513c58342e7ace38cc89ddf890701b9eb2389e3e4ae21",
+    "sourceAndDownloadedEqual": true
+  },
+  "httpChains": {
+    "fulfillment": "39 stages, revision 33; fulfillment-http.json",
+    "market": "68 persisted revisions; market-http.json",
+    "recycle": "real local repository + multipart byte-preservation integration test"
+  },
+  "frontendTests": {
+    "files": 34,
+    "passed": 395,
+    "log": "/private/tmp/mist-walkthrough-final-frontend.log"
+  },
+  "serverTests": {
+    "files": 13,
+    "passed": 182,
+    "log": "/private/tmp/mist-walkthrough-final-server.log"
+  },
+  "types": {
+    "activeFrontendAndCurrentTests": "pass",
+    "retiredDevelopmentAdapterTests": "excluded",
+    "serverMistGraphEs2018": "pass"
+  },
+  "build": "pass",
+  "mistGuard": {
+    "files": 79,
+    "errors": 0,
+    "warnings": 0
+  },
+  "responsive": {
+    "mobileCss": [
+      390,
+      844
+    ],
+    "pageScrollWidth": 390,
+    "theme": "dark",
+    "notes": "Screenshots are of actual app panels, some cropped by desktop host dimensions; no full 1440 screenshot certification this round"
+  },
+  "externalModel": {
+    "configured": true,
+    "connected": false,
+    "providerType": "Ark",
+    "httpStatus": 400,
+    "reason": "subscription-expired",
+    "appError": "MIST_ASSISTANT_MODEL_UNAVAILABLE",
+    "probe": "zero source IDs; synthetic text only; no business data/attachments",
+    "configurationChanged": false
+  },
+  "limits": [
+    "No external shipping, customs filing, payment, email delivery or production deployment",
+    "Local identities do not support production MFA or device-session management",
+    "Language preference persists; current interface copy remains Chinese",
+    "Excludes mailbox by confirmed MVP scope"
+  ]
+}

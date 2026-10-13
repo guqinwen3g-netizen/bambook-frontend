@@ -1,0 +1,15 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 14
+    },
+    "auditLog": "logs/.0ccea2265e06f87b31fc99e91b5e509fd77c1009-audit.json",
+    "files": [
+        {
+            "date": 1791886913297,
+            "name": "logs/bambook-combined-2026-10-13.log",
+            "hash": "b33d2f174f1e5816fabd83476f41f51ecc25c4b10cd7dc15fd13c9f7281b8cb2"
+        }
+    ],
+    "hashType": "sha256"
+}

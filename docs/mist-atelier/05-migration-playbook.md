@@ -1,0 +1,164 @@
+# 05 · 在 Mist Atelier 上继续开发
+
+## 当前唯一推进方式（2026-10-13 用户最终纠正）
+
+项目只有 Mist Atelier 这一套运行前端。当前起点是外援已经完成的前端成果；沿其页面、信息组织、布局、组件和交互继续开发。当前优先将已有 demo 全部功能化；旧模拟库接入不属于当前优先事项。旧业务规则、接口和能力只按具体需要参考或复用。
+
+旧 App、旧 Manager 页面、BDS、Bencho 和其他历史 UI 不再作为前端宿主或改造对象。不在新壳里挂旧页面，不用隐藏旧模块或“接入中”页面代替新前端，也不从旧页面反向推导新布局。旧源码仅在核实业务功能、数据协议、权限和必要业务控制时按需参考。下载目录的原交接包保留为设计基线。
+
+## 唯一源码与入口
+
+- 当前唯一前端源码：`dev-ui-preview/mist-atelier/app/main.tsx` → `ReferenceApp.tsx` → `pages/*`。目录仍沿交接包名称，已经是当前前端开发基底。
+- 3001：`npm run dev` 或 `npm run dev:mist`，一并启动独立本地API并等待就绪，再使用 `vite.mist.config.ts` 启动前端；仅前端用 `npm run dev:mist:ui`。
+- 3131：`npm run mist:ref`，运行同一份源码用于查看与对照；不是另一套前端。
+- 默认 Web 构建和 Electron renderer：根 `index.html` → 根 `index.tsx` → 上述同一份 Mist main。根入口不加载旧 `App.tsx` 或旧全局 CSS。
+- 既有 demo 记录作为新工作空间的初始样例；已功能化页面读取同一持久化工作空间，原始交接包单独保留只读基线。初始样例不代表真实客户业务或旧模拟库迁移。
+
+## 开发顺序
+
+1. 锁定当前 Mist 页面基线，先确认 3001 与 3131 在相同页面、主题及视口下一致。
+2. 从一个既有 Mist 页面开始，核对它需要的真实数据和操作；查现有 services、请求/响应类型、权限、状态及业务回程。
+3. 建立不包含旧 JSX、旧 CSS 或旧 UI 组件的业务适配器。必要时从旧页面提取有效业务控制逻辑，并独立验证；不直接引入旧 Manager 作为新页面。
+4. 在原 Mist 页面的数据和动作槽位中接入适配器，保护已完成的构图、排版、材质、尺寸与交互。没有真实数据时使用同槽空态；不伪造已同步、成功或业务数量。
+5. 同一条业务链完成读取、操作、真实回执、失败恢复、权限与准确返回后，再扩展下一条。不能仅把演示数组换成接口就宣称完成。
+6. 未设计完整的模块，以 Mist 现有页型和组件继续扩展。新业务能力可以增加必要内容；不能擅自改造已认可页面或删减真实业务分支。
+
+## 业务边界
+
+业务员持续负责客户主线；领导、QC、后勤、财务在对应节点介入，并保留结果回程。沿项目有效业务裁决核实，不凭演示样板臆造规则。
+
+- 当前 MVP 无邮箱/未读邮件，演示邮件能力不是实施授权。
+- 开发样品无公差自动合格判断，QC 三结论及准确工厂版本分别保留。
+- 生产拖动演示不代替正式业务阶段、权限与质量门禁。
+- 数量/金额/单位、审批冻结、真实回执、原请求恢复及跨模块准确对象都属于接线契约。
+
+### QC 测量事实接口（2026-10-13）
+
+`development.recordQc` 继续按 `devId`、`versionId` 保存准确版本的 QC 报告，`qc.result` 仍由评审人独立填写。`qc` 新增可选字段：
+
+| 字段 | 约束与含义 |
+|---|---|
+| `measurements` | 最多 200 行；每行 `{ point, standard, actual, tolerance }`。部位必填，标准、实测和公差均为有限非负数，单位沿原测量表为 cm。允许零公差和各行不同公差。 |
+| `appearanceDefects` | 可选非负整数。缺省表示未记录，`0` 表示已记录且无外观缺陷。 |
+
+缺省测量兼容为 `[]`，原报告仍可读写。页面恢复原 `SummaryNumbers → MeasurementTable` 构图：测量点数来自已保存的实际行；公差内和需关注数只描述测量偏差，不推导或修改 QC 结论。无测量时保留表头与表内空态，不补造测量或统计。混合公差不再以首行公差冒充整表，各行提供实际公差说明。
+
+初始演示数据只映射原参考页明确列出的胸围、衣长、袖长、肩宽四行及外观缺陷 `0`，不采用原固定的 `24 / 23` 统计。已存在工作区缺少测量数据时继续显示空态，不在读取时补写。
+
+源码：`server/src/shared/mistWorkspace.ts`（`MistQc`、`development.recordQc`）、`dev-ui-preview/mist-atelier/app/pages/DevDetailPage.tsx`（录入与准确版本回读）、`components/mist/patterns.tsx`（`MeasurementTable`）。
+
+## 第一阶段历史检查点（2026-10-13，后续状态以下节为准）
+
+- 约束：只继续现成 Mist 页面；保留布局、token、组件材质与排版。旧 App/Manager/BDS 没有进入运行依赖图，旧业务模拟记录没有导入。
+- 原生页面：开发五步创建/草稿/附件、开发列表/寻样/准确版本详情，订单创建/条目/准备清单，生产进度、收款核销/CSV/付款凭证，客户/联系人、首页任务、日历、设置与通知已接 typed commands。组件展示和模块配方说明不计业务完成。
+- 身份沿用现有认证；新增 `MistWorkspace` / `MistCommandReceipt` 与私有附件。业务事实保存在服务端；本地仅记录操作恢复意图和所选空间 ID。当前工作空间按 owner 隔离，团队共享/全站专业流程尚未扩展。
+- 契约：`server/src/shared/mistWorkspace.ts`；服务：`server/src/mist/`（8082）；前端：`app/runtime/workspace.tsx`。前端 `/api/mist` 指向 8082，认证 `/api` 保留原服务。`npm --prefix server run dev:mist` 自动重载；Web 为3001，3131同源。
+- 修复：会话/工作空间范围、读取代次和 revision 单调保护；重复提交锁；原 requestId/上传内容摘要/创建 slug 恢复；所选空间跨刷新；金额按整数分/四位数量精度计算；已留档实物不能被替换。
+- 实际浏览器：3001走通草稿保存→刷新恢复→创建→返样→QC→需求方确认；确认后保持“已认可·待留档”。订单 `1.005×1=1.01` 刷新不变；CSV导入实际新增0.30流水；搜索读到新案；手机端切换空空间并刷新保持0记录，回原空间数据保留。
+- 联调记录：本地旧8082进程未重载时新建QA空空间没有新版创建回执，核对 revision=0、空记录、无回执后补齐该次已发生创建的回执，再从UI恢复；没有改写业务状态或重复建区。服务已改为轮询自动重载。
+- 测试/构建/守门/当前入口类型检查的本轮命令与结果见 `docs/design-system/evidence/mist-native-2026-10-13/functional/verification.json`。旧工作区的非运行源码全仓类型诊断未归零，不以局部检查冒充全仓通过。
+- 视觉：原始源码54文件哈希核实后在临时3134对照（现已停止）；开发详情原/现1253×894浅色同视口。首页1180×800浅色、390×844深色及空态有截图，无横向溢出；1440布局DOM已检查，完整截图受浏览器可见窗口裁切限制，未登记该宽度截图合格。
+- 证据：`docs/design-system/evidence/mist-native-2026-10-13/functional/`。带“功能验证”的开发案/订单/流水/空空间是本轮明确测试记录。
+- 未完成：侧栏中未画完整业务页的模块仍为配方说明；AI只有当前记录查询，未接模型服务；MFA、退出全部设备、删除空间等缺真实接口的设置禁用；团队跨角色协作、未覆盖业务分支、整站全部视觉状态和正式部署仍待推进。
+
+## 2026-10-13 剩余模板模块落地
+
+- 用户裁决：以现成 Mist 为唯一起点；没有旧库也必须可进入、可操作。不接回旧 UI，不导入旧业务模拟记录。
+- 当前35个映射入口中34个MVP业务入口已注册真实Mist页面，无ModuleTemplatePage运行回退；邮箱按既有MVP边界不启用。路由/文件清单见 `modules/coverage.json`。
+- 履约8入口：样品逐件/借还、专业QC与业务恢复、采购审批/实际收货、库存出入库、准确生产分支、出运/装箱/单证/报关、加工履行历史。
+- 市场6入口：产品与准确版本、供应商、关系档案、季节/趋势/展会、营销/线索、报价冻结审批与显式转订单；客户页另补直接创建。
+- 平台12入口：发票、BOM、定价、风险、索赔/CN/退款事实、报表、全景、数据关联检查、业务人员档案、工具、管理、只读模型助手。它们是当前Mist工作流，不宣称复刻旧系统所有深层功能。
+- 数据真源：`mistWorkspace.ts` 加 `mistFulfillment.ts/mistMarket.ts/mistPlatform.ts`；新字段以空集合兼容，命令同事务保存状态/版本/回执；来源、金额、数量和审批人均在服务端核验。
+- 本地入口：根 `npm run dev` / `npm run dev:mist` 同时启动8082与3001；API单独启动用 `npm --prefix server run dev:mist`。使用明确的元数据轮询重载、`MIST_LOCAL_WORKSPACE=1`，8082不构建Prisma/旧AuthRouter。3001自动进入签名本地工作身份，无邮箱密码或旧账号库依赖。已就绪的本地API会复用；占用端口的其他服务不会被停止。
+- 独立本地数据/附件/0600会话密钥位于被git忽略的 `server/private/mist-local/`；普通/生产模式仍走真实认证，生产与非loopback禁止本地身份。
+- 审批收件箱只暴露冻结快照及其中附件；本地操作员/审批员分别签名，跨身份决定可回到原业务，不开放对方完整工作空间。AI复用已有LLM配置，只读选定来源，不使用旧业务工具。
+- 实际HTTP验证：独立“本地联调验收”空间35阶段通过，最后revision34；客户/供应商→订单→两次跨身份采购审批→收货与库存20−5+2=17→准确生产/QC→装箱10件→CI应收120USD/PL→清关记录→文书交付记录→出运登记。两份650字节PDF下载SHA一致。详见 `modules/http-chain.json`。
+- 交付检查：测试/构建/类型/守门与截图结果集中于 `docs/design-system/evidence/mist-native-2026-10-13/modules/verification.json`。新模块按1180浅色逐页渲染，390深色复核采购、库存、本地管理、助手；有记录与空态均有截图。
+- 真实联调修复了旧进程不重载、文件下载字节被对象化、重复开票、样品QC误代生产QC、贷项后CI作废、取消案件继续执行、缺生产分支绕过数量、未来生产分支不可见，以及长表单StrictMode保存后不关闭。被动focus核验保持同身份未保存输入；身份/权限变化或核验失败仍清除旧上下文。
+- 保留边界：这是本地MVP功能化；未部署正式环境、未调用外部海关/银行/消息发送，也未用真实业务数据调用外部模型。HR为业务人员档案，模型与外部系统需相应真实配置，不虚构旧功能等价。
+
+## 2026-10-13 逐页动作验收与修复
+
+- 入口和设计保持不变；3001/3131的API代理统一到Mist 8082，不再将其他API回退到旧8081。原始token/布局不作改版。
+- 浏览器盘点34个MVP业务入口，按可见操作建立清单；深流程结合实际浏览器、独立HTTP空间和组件/域测试。控件清单、完整证据与边界见 `docs/design-system/evidence/mist-native-2026-10-13/walkthrough/`。
+- 浏览器实际跑通：空空间建客户→开发草稿/恢复→内联真实工厂→PDF上传下载→创建开发→返样→尺寸QC→需求方确认→成果留档→刷新；620字节PDF往返SHA-256一致。另验证日程精确来源与取消关联、供应商筛选/详情/返回、设置即时保存及空间回收/恢复。
+- 履约分支HTTP39阶段/revision33；市场分支最终68个持久化版本。每条验证均使用独立测试空间，未将测试记录写入默认Mist空间。
+- 主要断点已修：通用表格筛选导出、关闭详情清URL、跨工作空间加载后正确回首页、同页路由切换旧表单/迟到回执隔离；客户/联系人跨模块同步；报价及采购退回重审保留快照；样品库存逐位置余额、整批拒收、新交付使旧QC失效；正式原件冻结装箱；发票签发后准确回程；财务付款关系依据、跨年/跨币种统计、CSV防重；日程解绑和首页真实出运统计。
+- 创建开发不再提供静态工厂，使用真实供应商和历史来源，支持原表单内新增。客户使用ID定位，避免重名客户或默认第一客户串单。
+- 设置闭环：默认币种只初始化新记录，客户/来源已有币种优先；显示名不改变认证与审计身份；站内提醒偏好实际生效；每日摘要只读现有记录且不发邮件。语言偏好仍为已保存偏好，当前界面文案保持中文。
+- 回收站：仅owner可移入/恢复，保留全部记录与原件；有待审批时阻止归档。最后空间归档产生empty接续空间，默认入口复用active空间，不另建demo。原请求失联可恢复。
+- 最新验证：前端34文件395项、服务端13文件182项通过；当前Mist入口与当前测试/ES2018服务端类型检查通过；构建通过；Mist守门79文件零错误/警告。旧非运行适配器测试不纳入当前类型图，不宣称旧全仓诊断归零。
+- 外部依赖：真实零业务资料模型探针返回Ark HTTP400，编码订阅到期。已安全分类为 `MIST_ASSISTANT_MODEL_UNAVAILABLE` 并保留输入；未改凭据或模型设置，未发送真实业务资料。恢复订阅或授权可用配置前，模型回答不记为已接通。
+
+## 当前订单全链路实测检查点（2026-10-13）
+
+- 用户边界：Mist 是唯一运行前端；保留现成布局、组件、材质、排版与交互，业务参考有效原决策；AI 订阅先搁置。本轮完成一条本地订单全链路和详情空间修复，不代表所有历史业务分支或生产部署已验收。
+- 业务实测完成：根通过页面保存订单、主单审批、资金归属、采购审批/线下发送/工厂确认、PP/开产、独立完工、生产 QC NOK→复验→明确业务恢复、出运、船样、CI/PL、清关记录、发送、离港和收款核销；只读脚本未代替页面写业务。
+- 独立测试空间：`Mist 订单履约全链路验收`，ID `96430896-74a5-4b29-8ac7-c9b014ba7cc7`；当前完整核验 revision **92**。默认空间未写入本轮测试记录；本地身份为操作员与审批员，不依赖旧账号库。
+- 订单 `8885a218-c5a0-4c95-a4c0-c9bce010e8a2`（SO-G-2026-0001），行 `918aa5b5-7b3c-4da2-aa34-078e8e447fc9`：10件 × 12 USD = 120 USD，TT30%生产前定金/70%凭出运单据；主单有效版本1。PO测试原件已上传。
+- 采购 `37332f03-a6ca-4c96-9cb5-116c314e38dc`（PO-2026-00001），加工10件 × 3 USD = 30 USD；生产 `b3d8785f-451d-4d4c-8a2d-5a32798e3ace`，计划M:10、独立完工10/M:10、最终生产QC通过且业务明确恢复，Kanban处于done。进度、完工、采购服务交付及实际出运为独立事实。
+- PP `f7bfced3-225d-40cb-ae30-1d413e1d4364`；生产QC `98d9b0a1-8cf5-4890-a46d-f3f6a529a74c` 保留NOK与复验两份报告。船样 `24000aba-39c8-4380-8b81-e7f327918112`（SMP-2026-00002），本票M码1件；QC `84e43f81-37bd-43ad-b743-0f8f43c89bd6` 的QA-SHIP-QC-1013通过、客户确认采用、业务继续均已保存。
+- 出运 `508c03c3-a645-49d1-8b69-e352334dcd94`（SHP-2026-00001）：准确来源10件，1箱、净8.5kg/毛10.5kg/0.10m³；清关记录 `5b030ab5-f507-46d9-aecc-9a9e94e38b12`；已记录发送11:53:18+08及离港11:54:02+08，状态departed，原订单已出运10件。仅记录本地验收事实，未办理真实报关或运输。
+- CI `7c74cfda-6639-46dc-8839-f50fd8ca0a28`、PL `6644e532-f1b4-4e02-b2e5-096cda674f53` 均上传实际测试PDF并签发。CI应收 `e33a4889-e224-426d-b033-5c190a1345f2`（QA-CI-1013）120 USD。
+- 36 USD定金、84 USD尾款分别通过页面核销到同一CI，合计120 USD；两笔流水remaining=0、invoice.open=0。订单资金覆盖按同笔归属/核销取max，无重复计入定金；完工及出运数量仍各10件。刷新后财务与原订单回读一致。
+- 专业补齐：`mistOrderGovernance.ts`、`mistOrderFunding.ts`、`productionFacts`；旧无审批单不补假approved，草稿可准备采购但不可正式承诺。独立平台发票签发也核主单批准/当前快照。明确REVISION_CONFLICT后仅刷新同空间快照，保留表单、仍报冲突并等待人工再次保存，绝不自动重放；权限、未决请求及身份切换保护保留。
+- 详情空间修复：非preview完整记录使用整页；T2保留快预览与`detail=full`入口；返回保来源参数。详情动作局部换行、卡片按原Mist gap排列；开发T4页脚/卡头、订单条目及生产抽屉补齐局部空间。Market八分支显式sections，主资料/附件/历史为同级Card；附件直系section去除重复margin，未改token/字号/材质。
+- 实际渲染：出运、订单条目、生产、订单、样品、供应商、CI七类 × 1440/1180/390 CSS px × 明/暗，共42状态核查，无水平溢出。原7按钮856px挤在352px内的出运抽屉已改完整页。样品/CI最终通过相同应用的固定CSS子视口复核，以避开隐藏面板固定尺寸；具体截图、测量与范围见 `docs/design-system/evidence/mist-native-2026-10-13/detail-space/verification.json`。
+- 最终功能证据：`docs/design-system/evidence/mist-native-2026-10-13/order-chain/verification.json`（完整只读阶段、金额、来源与三份原件哈希）；`first-allocation.json` 保留36 USD核销后open84的中间态；截图`finance-settled-light.png`。此前NOK待业务恢复负例保留，未用后续通过状态覆盖。
+- 最新代码验证：当前Mist前端33文件451项全部通过；Mist后端19文件230项通过；Mist入口与服务端专用类型检查通过，构建通过，Mist守门79文件零错误/警告。未宣称退役旧全仓诊断归零。前端日志 `/private/tmp/mist-frozen-final-{tests,types,build,check}.log`；后端日志 `/private/tmp/mist-backend-ci-stage-regression.log`。
+- 运行：3001 `npm run dev:mist`（本地API8082），3131 `npm run mist:ref`，同一Mist源码；用户原tab9不接管，根最终成果tab11显示已完成订单，临时验收tab10已关闭。
+- 后续边界：真实外部凭证/账号与生产部署、更多订单类型及拆批/信用证等变体仍需相应验收。本轮没有恢复旧前端、操作真实银行、发送外部消息或恢复AI订阅任务。
+
+### 退回、分批与部分收款验收（已完成，2026-10-13）
+
+- 用户范围：真实页面走退回修改、分批出运及部分收款；Mist唯一前端和既有设计不变。本轮完成同一独立验收空间的新单，旧SO-G-2026-0001及其票款保持原状。
+- 新订单SO-G-2026-0002，ID `873d79d1-fe97-4866-908e-d81fda26b404`，条目 `ee49ac55-a450-4540-abba-6ed7d18dcc63`，款号FLOW-BRANCH-1013，10件。首录11USD被审批员退回，经原条目编辑为12USD后重新批准；两轮快照分别保留11与12，未覆盖历史。OA每票实际离港后30天，明确允许分批。
+- 唯一产品修复：`OrderDetailPage.tsx`及测试新增原条目Drawer的数量/单价编辑Dialog；完整条目集与既有合同经canonical saveDraft保存，pending锁定，approved只形成变更稿，已有履约门禁保留。实际从首页退回通知打开、修改、重新审批都已跑通。
+- 采购 `fa78c274-6bb5-4568-9b04-8199e23ce6f2`（PO-2026-00002）首版9件被退回，原单修为10件×3USD后第二版批准；两个版本与意见保留，只生成一个生产分支。
+- 生产 `38e89545-2bce-4a0e-8d1e-e5cf19c0e718`（FUL-PO-2026-00002）加工回交、独立最终完工均10/M:10；PP `b022be3b-90a1-44aa-9cf4-a37b14bfd181`及QC `18f3ca50-ef5a-49ff-9bfa-2c572cd5b88e`完成确认/继续，生产QC `ad112c70-d65f-433b-9cba-127f2818aa24`检查M10通过。业务实际拖qc→done、交接后勤。
+- 首票SHP-2026-00002 `e5e88d2e-c456-49aa-aefc-0d0a0927ffdd`已出运6件；当时订单明确显示部分出运、余4件，完工量仍10。次票SHP-2026-00003 `526f693d-9287-4fe8-a35e-0b573512b2e5`已出运4件，两票累计10。
+- 负例已实测：第二票误填5件保存被拒，改4才保存；第二票只有单据/装箱/清关、尚无自己的船样时ready被拒。补其独立实物、QC、需求方确认、业务继续后才通过。首票样品 `ab9c63f9-bdde-4042-b803-06e9bc856ced`，次票样品 `44acc5a2-8bc0-413b-a851-f69b5b2a6e98`，各自报告独立。
+- CI-1 `ca717e97-59d7-48d0-a444-d8f0f1b0c52c`为72USD，CI-2 `75a49f3d-7a5d-4c70-8ebc-fba3a098dcef`为48USD；五份PO/CI/PL测试原件已上传并核验大小/SHA-256。每票均独立记录清关、发送和实际离港，未执行真实外部运输或申报。
+- R1/R2/R3三笔到账为30/60/30USD，四条核销为30、42、18、30。中间状态依次为CI余额42/48、0/48且R2余18、0/30；最终两CI余额与三流水余额均0，总到账及核销120。刷新与返回原订单均一致，当前只读revision179，所有最终断言通过。
+- 证据入口：`docs/design-system/evidence/mist-native-2026-10-13/branch-chain/verification.json`；同目录保留各阶段只读JSON及超量、船样缺失、部分收款和完成截图。业务写入均由根通过UI完成，审计脚本 `/tmp/mist-branch-readonly.ts`只读，不改旧成功证据。
+- 最新验证：前端33文件456项、当前Mist后端19文件230项全过，类型检查/构建/Mist规范检查通过（79文件零错误/警告）；日志 `/private/tmp/mist-branch-final-{frontend,backend,types,build,check}.log`。根成果tab13保留新单完成页，早期tab12副本已关闭。
+
+### 订单变更、取消、单据重开及退款验收（2026-10-13 已完成本轮实际分支）
+
+- 最终revision278；workspace `96430896-74a5-4b29-8ac7-c9b014ba7cc7`。功能写入全部由根线程在Mist页面完成；审计脚本只读。本轮完成四类异常分支及新售后审批回程，不代表35模块或生产外部系统全部验收。
+- 订单SO-G-2026-0003 `e32ac965-6f99-44f9-ac41-56b1af4c8280`，行 `4f9bcf2f-5883-4d7d-aeb6-416a3980e865`：4×12=48初批→4×15=60/修订PO/交期11月25变更批准；待批保持原值，批准后生效，原48审批历史保留。差异表、同页审批刷新、从合同及头部编辑合并现提案已实测/回归。
+- 采购 `69daccbb-c522-449b-a7d5-09b549561e7b` 4×3批准/发出/确认/回交4；生产 `9dd97aa4-792e-4059-81d1-027d0067218e` M:4，PP及生产QC、需求方确认、业务继续、放行、独立完工4、done交接均已保存。快速拖放同步丢回调修复于 `components/mist/patterns.tsx`，保持原组件造型。
+- 取消票 `e5ed4ee4-b455-4242-82ce-5f73118210b2` 2件：有订舱时拒绝；明确撤销订舱后取消并释放预留，历史保留。正式票 `b1916208-faff-4eaa-a791-39f5b8f811bd` 4件，独立船样/QC及需求方确认通过。
+- 同票CI/PL V1在签发/发送后、未清关出运收款时作废，旧原件与发送包保留；更正EX-V1→EX-V2后重开V2 CI `26e3f995-8d3e-4d1f-969e-3e68416cd0fc` / PL `4ec08247-a412-4e4c-bf2e-efc9ee262e8d`。旧CI仍面额60/open0；唯一有效V2 AR `4cd30247-57ef-41ea-99c6-a8b45c616ab3` 60/open0。历史票面120不是有效应收120。
+- V2独立重发13:21，测试清关 `8be6d9c1-51f0-4ff7-9b9b-7b8e14a787c3`，13:23测试离港4件；离港取消禁用，实际提交V2作废被拒。R60流水 `a5989afe-78cc-4d07-a7a6-8e4458a2ab3f` 60全部核销V2，未核销作废V1。
+- 主售后 `870d849a-4066-4b0d-b27e-821eebe25737`，处置 `6657b4fa-79b2-45ce-ab65-4c26ee4e0f8e` ReturnRefund 1件/15USD/Scrap：领导审批→显式生成CN/退回履行→Received→独立退款15→Scrapped→Closed。CN `34176268-5c94-4293-ad1a-012c166e9ea2` 余额0；退回履行 `431276e5-d2c5-41a4-a852-a7f8c1ab96d2` 恰Received→Scrapped两事件；付款 `0cd3aa6d-119f-4449-a4fd-d4a12ac88442` 精确ref `CNcode · QA-EX-REFUND-15`。原核销60−退款15=净现金45；原订单、CI、收款、核销及出运事实不回写。
+- 负例实际保存回执：未批准无执行入口/提前关闭拒绝；未收货退款15拒绝；收货后退款16超过CN15拒绝。两次退款负例前后revision和全部关键款项/货物/原始事实及文件hash不变。关闭后新增处置禁用、案件上传入口退出。
+- 附件缺口已补：`platform.claim.attachFiles` 只追加/去重/审计案件事实，Closed/Cancelled拒绝。Claims使用Mist UploadZone真实上传；`uploadFile(file,{claimId})` 经当前workspace/目标/aftersales:write核验，通用products权限不变；关联失败保留上传ID恢复，scope隔离。提交时冻结 `reviewFileIds`（当时case+d并集），跨账号审核能下载；根实际下载59260字节且SHA匹配。审批后补签收.txt使case3附件、审核仍原2附件，快照逐字未改。
+- 新 `claim.decide` 通知/工作项回程已补，真实决定人/意见/时间/准确claim target；执行、修订、撤销、关闭完成相应事项，期限空显示未定期限。两本地通知案均批准后从“我的工作”和通知准确回原案，再未执行撤销，CN/货物/付款均0、待办完成。第一次 `6b87433f-4260-43a7-9de5-4b4c0f47ebc2` 意见被同期语音追加，原取消历史保留；独立CLEAN `9c3c1ec9-164c-4d20-99a2-6badbdff3998` 通过完整等值问题/依据/意见/取消原因复测，不以受污染记录冒充精确输入。
+- 代码复核额外修复：已有changeDraft的交期恢复原值仍走saveDraft，保提案合同与条目；差异表补kind/internalPurpose/receiver，审批摘要依据各轮冻结用途取真实客户/PO或内部用途/接收方；未修改用途转换规则、customerID及旧批准事实。锚点 `OrderDetailPage.tsx` / `mistOrderGovernance.ts`。
+- 最终只读：主退款75/75、业务/旧两单保全17/17、CLEAN取消20/20；8份原件hash通过，前两笔完成订单完整关联状态hash保持初始值。原样持久化29阶段JSON+1保全基线；reissued rev248保留27/28（已ready与预期preparing时点差异），最终有效应收/历史/重发/出运均已核实，不改早期证据。
+- 证据入口：`docs/design-system/evidence/mist-native-2026-10-13/exception-chain/verification.json`；同目录phase manifest及各原阶段JSON、负例/关闭/结清/干净回程截图。当前浅色1024×576实际截图已查看，按钮及当前卡片分区未溢出；本轮未重做上一轮42组合响应式验收。
+- 最终新鲜验证：前端36文件502/502，后端21文件272/272，UI/server类型均0诊断，build成功，Mist检查83文件0error/0warning；组件文档已生成。日志 `/private/tmp/mist-exception-final-*`。仅为jsdom补缺失matchMedia的共享fixture，未改AI产品；用户已搁置的AI订阅未推进。
+- 边界：仅隔离本地样例，未执行真实客户发送、海关申报、物流或银行转账。claimGoods是状态/事件，未接仓储库存台账；CLM/CN专业顺序编号和正式CN打印仍为独立缺口，不能声明已有完整专业后端一致性。唯一前端仍是Mist，3001与3131共用main；本轮不接旧页面。当前成果tab15保留主Closed案件；后台验收tab16结束时关闭，用户已查看的生产tab14及前两订单tab11/13不接管。
+
+### 退货库存联动、专业编号与正式CN打印（2026-10-13）
+
+- 用户授权本轮三项补齐，Mist是唯一前端，沿原组件、布局和交互，不接旧页面。业务依据为原returnReceipt/claimReturnFulfillment、BusinessNumber及claimCreditNoteVersion；业务组业务员经手，inventory:write为技术门禁，不新增仓管岗位。原Closed870缺少完整冻结来源，不补造库存或签发证明，不改旧编号/现金引用。
+- 业务编号复用合法CLM（案件与CN同全局池）、RT（客户/供应商退回共池）、PV（付款），年度至少4位序号。local.ts同clone/rename事务保存BusinessSequence；mist/businessNumbers.ts核对所有retained/archived/softdeleted占用及原专业数据delegate。权限/原回执/版本先检查，回执重放不再次取号；失败事务不耗号，缺配置不退回UUID。
+- 准确已签CI条目/出运分支/批准订单版本冻结来源；退回执行选active真实仓库，同案RT聚合且不混仓。库存唯一真源fulfillment.stock/stockMovements，实收Inbound→Lock，批准Scrap逐准确receivedEvent解锁→报废出库。累计、现存、隔离、可用分开，完整实收才可退货退款，普通领出/移位不能使用隔离批次；Repair/Replace完整发出分支不在本轮闭环范围。
+- 同案CN保持账户与编号，批准处置追加sourceVersions；现金余额独立，不添加原CI已收现金cap或打印前置门禁。正式issue冻结公司、客户、批准来源、实际签发人、模板和版本，PDF私有原件/filemeta/receipt同事务；正式GET按准确printVersion.id校验来源fingerprint及字节SHA，只读归档原件。preview下载明确DRAFT，不生成正式版本/耗号。
+- Root接线：shared/mistWorkspace Context.consumeBusinessNumber/creditDocumentIssue及requiredPlan；mist/repository/route、runtime/workspace。库存helper与Inventory、平台claims/CN、local/globalnumber/source/template分工实现。实际发现未提交草稿不能编辑，补platform.claim.updateDraft（严格Draft/未产生审批与履行，保留before/after审计）；不改已提交或执行事实。
+- 验收workspace96430896-74a5-4b29-8ac7-c9b014ba7cc7，原订单e32ac965… SO-G-2026-0003、有效CI4cd30247… QA-EX-CI。新增案件64cc2e8c-8fdd-4c64-824d-d56e952ca891 CLM-2026-0001。Draft4件被累计源量门禁拒绝（源票4、旧已退1），同Draft更正2件/30USD（283）→真实本地审批员批准（285）→生成RT-2026-0001/CN CLM-2026-0002（286），未改源单与旧事实。
+- 本地验收仓库QA-RET-WH-1013由实际UI登记，管理后台以明确软件测试主体/地址配置公司抬头（不造默认公司）；全部本轮业务写入由CUA真实UI完成，未脚本造live事实。B1/B2各实际1件（288/289），货权仍属来源客户，分别隔离；部分收货退款1被拒且无PV消耗。两批按批准Scrap执行（290/291），每批累计1/现存0/隔离0/可用0，8条流水完整。
+- 同案追加纯金额Allowance3送审批准（294）→执行sourceV2面额33（295），CN/RT编号不变，无额外货物。正式V1（287）/V2（296）均真实下载、解析及逐页验图；V2正式235031字节/SHA54a8f7aa0ad49772b9484cc154d013fecf067444a22ca1f36e377ddb8c10e3c8；V2DRAFT实际下载后仍295/正式1，不是正式签发。V2后复下载V1仍230615字节/SHA b2c86133b6e4ddf70191af722b851097adf7f0e3527eec82078c07bb3b3a9b6f，与原件逐字节一致。公司变更后冻结仅由repo测试覆盖，没有宣称实际再次改公司。
+- 实际退款34被余额门禁拒且仍296；退款33保存PV-2026-0001（297）→CN余额0→Closed（298）。只读stage核对原gross60-old15-new33=net12，原CI60/open0、旧Closed/CN15/refund15及前两完整订单商业金融hash未变；globalCLM2/RT1/PV1无撞号。原收款账与售后现金分别保留，不将退款改写原收款/核销。
+- PDF断点已修：既有Chrome renderer需本地dev进程的原生运行环境，root安全重启自己dev:mist服务，auto-review通过，不降Chrome安全设置；首次GET因Local事务structuredClone把Buffer转Uint8Array而误返JSON，route显式Buffer.from，真实临时LocalDB HTTP二进制回归验证。首次坏文件保存为failed-http-transfer JSON，不当成有效PDF；provider检查MIME/%PDF/EOF并处理跨realm FileReader/身份空间切换的迟到结果。
+- UI实际核对768/1024/1440内容宽度，详情按钮不越界、相邻CN/处置卡片间距18px、页面无横向溢出；恢复原窗口。实际最后发现库存“查看来源CN”误跳未注册credit-notes，root改claims+准确credit section并基于当前claim/credit/workspace/loading严格定位Card；实际B2点击后准确CN Card进入可视区（top64.88px），无404，Closed后V2复下载235031字节/SHA与签发归档一致。原错误跳转截图保留为failed-cn-return-route，修复后cn-versions-settled-ui为实际成果。
+- fresh隔离验证：Mist frontend37文件536/536、backend27文件357/357（含repo/HTTP27、provider72包含在前端总数）；UI/server专用类型0诊断、build通过、Mist guard84文件0error/0warning。两个旧fixture补合法Allowance/专业号consumer，保留通知回程与CI/CN/退款守卫；这些不替代实际UI/PDF验证。最后导航小修新增1项准确CN定位回归，定向Inventory9+Actions38共47/47；再跑完整前端536/536、UI类型/build/guard均0，后端无新修改不重复跑。
+- 证据入口docs/design-system/evidence/mist-native-2026-10-13/cn-stock-chain/verification.json与files/实际PDF/PNG/manifests；root临时阶段/readonly脚本在/private/tmp/mist-cn-stock-*。当前root tab18保留为验收成果，3001主入口持续运行，3131同源码参考仍可访问。无commit/PR/deploy；未核验真实银行物流、PostgreSQL并发或多进程local。
+
+## 完成证据
+
+功能、交互、视觉分别记录。功能要有真实数据、权限、成功/失败回执和回程证据；交互覆盖实际存在的加载、空态、错误、键盘及窄屏分支；视觉与原 Mist 同视口/主题/状态对照并附实际截图。
+
+构建通过、入口相同、组件导入或隐藏旧页面，都不等于全站完成。具体结果记录在本节，不另造一套前端或重复进度真源。
