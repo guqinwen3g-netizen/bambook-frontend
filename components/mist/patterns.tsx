@@ -97,10 +97,15 @@ export function Stepper({ steps, onSelect }: { steps: Array<{ label: string; sta
 
 /** 竖向步骤（创建向导、设置分区导航）。 */
 export function VerticalSteps({ steps, current, onSelect, mode = 'step' }: { steps: Array<{ id: string; label: string; done?: boolean; icon?: LucideIcon }>; current: string; onSelect: (id: string) => void; mode?: 'step' | 'page' }) {
+  const selected=React.useRef<HTMLButtonElement>(null);
+  React.useEffect(()=>{
+    const reveal=()=>{const button=selected.current,rail=button?.parentElement;if(!button||!rail||rail.scrollWidth<=rail.clientWidth)return;const item=button.getBoundingClientRect(),box=rail.getBoundingClientRect();rail.scrollLeft=Math.max(0,Math.min(rail.scrollWidth-rail.clientWidth,rail.scrollLeft+item.left-box.left-(rail.clientWidth-item.width)/2));};
+    reveal();window.addEventListener('resize',reveal);return()=>window.removeEventListener('resize',reveal);
+  },[current]);
   return (
     <Card as="nav" className="mist-vsteps">
       {steps.map((s, i) => (
-        <button key={s.id} type="button" aria-current={s.id === current ? mode : undefined} data-state={s.done ? 'done' : undefined} onClick={() => onSelect(s.id)}>
+        <button ref={s.id===current?selected:undefined} key={s.id} type="button" aria-current={s.id === current ? mode : undefined} data-state={s.done ? 'done' : undefined} onClick={() => onSelect(s.id)}>
           {mode === 'step' ? <span className="mist-step-k">{s.done && s.id !== current ? <Icon icon={Check} size="xs" /> : i + 1}</span> : s.icon && <Icon icon={s.icon} size="sm" />}
           {s.label}
         </button>

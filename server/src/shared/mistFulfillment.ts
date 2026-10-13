@@ -1,4 +1,5 @@
 /** Actual fulfillment records in the persisted Mist workspace. No fixture import. */
+import {developmentDomain} from './mistDevelopmentDomain';
 import { MistCommandError, lineAmount, mistMoneyMinor, assertMistOrderApproved, assertMistOrderDeposit, isActiveMistInvoice } from './mistWorkspace';
 import type { MistState, MistContext, MistCommandResult, MistQc, MistTarget, MistProduction } from './mistWorkspace';
 import type { MistReviewTask } from './mistReview';
@@ -689,7 +690,7 @@ function addSample(root: MistState, input: SampleInput, ctx: MistContext) {
     return id;
 }
 function sourceDomain(root: MistState, s: FulfillmentSource): 'garment' | 'fabric' { if (s.kind === 'orderLine')
-    return get(root.orders, s.orderId, '订单').type; return s.kind === 'version' && get(root.devs, s.devId, '开发案').values.category.includes('面料') ? 'fabric' : 'garment'; }
+    return get(root.orders, s.orderId, '订单').type; return s.kind === 'version' && developmentDomain(get(root.devs, s.devId, '开发案').values)==='fabric' ? 'fabric' : 'garment'; }
 export const fulfillmentSampleRoleLabel = (role?: FulfillmentSampleRole) => ({ pp: '产前样', pioneer: '先锋样', shipping: '船样' }[role || 'pp']);
 export function fulfillmentProductionFact(root: MistState, productionId: string) { return root.fulfillment.productionFacts?.find(fact => fact.productionId === productionId); }
 function productionFact(root: MistState, productionId: string): FulfillmentProductionFact {
@@ -799,7 +800,7 @@ export function applyFulfillmentCommand(root: MistState, command: FulfillmentCom
             const s = source(root, p.source);
             if (s.kind === 'version') {
                 const d = get(root.devs, s.devId, '开发案'), v = get(root.versions, s.versionId, '版本');
-                if (!d.values.category.includes('面料'))
+                if (developmentDomain(d.values)!=='fabric')
                     fail('成衣开发实物请从准确版本返样同步');
                 if (!v.returnedAt)
                     fail('请先登记来源版本返样');
@@ -813,19 +814,18 @@ export function applyFulfillmentCommand(root: MistState, command: FulfillmentCom
             for (const v of root.versions) {
                 if (!v.returnedAt || !v.sample)
                     continue;
+                const d = get(root.devs, v.devId, '开发案'), fabric = developmentDomain(d.values)==='fabric';
                 const existing = f.samples.filter(s => s.source.kind === 'version' && s.source.versionId === v.id);
                 if (existing.length) {
-                    if (sum(existing.map(s => s.quantity)) !== v.sampleQuantity || existing.some(s => s.sourceSampleCode && s.sourceSampleCode !== v.sample))
+                    if (!fabric && (sum(existing.map(s => s.quantity)) !== v.sampleQuantity || existing.some(s => s.sourceSampleCode && s.sourceSampleCode !== v.sample)))
                         fail('已同步入库的版本实物不能覆盖，请建立准确新版本');
                     continue;
                 }
-                const d = get(root.devs, v.devId, '开发案'), fabric = d.values.category.includes('面料');
-                if (fabric)
-                    continue;
+                if (fabric && (!v.sampleForm || !v.sampleUnit)) continue; // Legacy manual shapes are never guessed.
                 if (!fabric && !Number.isInteger(v.sampleQuantity))
                     fail('成衣来源件数无效');
                 for (let i = 0; i < (fabric ? 1 : v.sampleQuantity); i++) {
-                    addSample(root, { name: d.name, category: fabric ? '面料' : '成衣', form: fabric ? '米样' : '开发样', unit: fabric ? '米' : '件', quantity: fabric ? v.sampleQuantity : 1, location: '', size: v.size, color: d.values.color, source: { kind: 'version', devId: d.id, versionId: v.id }, fileIds: v.fileIds, note: `来源实物 ${v.sample}` }, ctx);
+                    addSample(root, { name: d.name, category: fabric ? '面料' : '成衣', form: fabric ? v.sampleForm! : '开发样', unit: fabric ? v.sampleUnit! : '件', quantity: fabric ? v.sampleQuantity : 1, location: fabric ? v.sampleLocation||'' : '', size: v.size, color: fabric ? v.sampleColor||d.values.color : d.values.color, source: { kind: 'version', devId: d.id, versionId: v.id }, fileIds: v.fileIds, note: `来源实物 ${v.sample}` }, ctx);
                     applied++;
                 }
             }

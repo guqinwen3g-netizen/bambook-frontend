@@ -1,3 +1,4 @@
+import {developmentDomain,emptyFabricRequirements,fabricRequirementError,validFabricSample,type DevelopmentDomain,type FabricDevelopmentRequirements} from './mistDevelopmentDomain';
 import {createFulfillmentState,applyFulfillmentCommand,fulfillmentCommandPermission,getFulfillmentReviews,assertProductionTransition,type FulfillmentState,type FulfillmentCommand} from './mistFulfillment';
 import {createMarketState,applyMarketCommand,marketCommandPermission,getMarketReviews,type MarketState,type MarketCommand} from './mistMarket';
 import {createPlatformState,applyPlatformCommand,platformCommandPermission,getPlatformReviews,platformCreditAppliedMinor,getRequiredBusinessNumberPlan as platformBusinessNumberPlan,type PlatformState,type PlatformCommand} from './mistPlatform';
@@ -12,6 +13,7 @@ export type MistImage = 'coat' | 'blazer' | 'suit' | 'clay';
 export type MistBusinessNumberPrefix = 'CLM' | 'RT' | 'PV';
 export type MistContext = { id: () => string; now: string; actorName: string; actorId?: string; consumeBusinessNumber?: (prefix: MistBusinessNumberPrefix) => string; creditDocumentIssue?: MistCreditDocumentIssue; authority?: { supplier: Record<string,{version:number;userIds:string[]}>; claimReviewerId?:string; businessReviewerId?:string; orderReviewerIds?:{garment:string[];fabric:string[]} } };
 export type DevelopmentValues = {
+  domain?:DevelopmentDomain; sampleForm?:string; sampleUnit?:string; targetCurrency?:string; targetUnit?:string; fabricRequirements?:FabricDevelopmentRequirements;
   name: string; customer: string; style: string; season: string; category: string;
   kind: 'new' | 'rev' | 'copy'; fabric: string; color: string; target: string;
   sizeBase: string; goal: string; factories: string[]; due: string;
@@ -22,11 +24,13 @@ export type MistDraft = { id: string; values: DevelopmentValues; fileIds: string
 export type MistConfirmation = { id: string; result: 'approved' | 'needs_adjustment' | 'rejected'; confirmer: string; organization: string; confirmedAt: string; basis: string; originalText: string; recordedAt: string; recordedBy: string };
 export type MistQc = {
   result: 'pass' | 'conditional' | 'reject'; reviewer: string; reviewedAt: string; report: string; opinion: string;
+  fabricMeasurements?:Array<{property:string;actual:number;unit:string}>;
   measurements?: Array<{ point: string; standard: number; actual: number; tolerance: number }>;
   appearanceDefects?: number;
 };
 export type MistVersion = {
   id: string; devId: string; label: string; factory: string; sample: string; sampleQuantity: number;
+  sampleForm?:string; sampleUnit?:string; sampleLocation?:string; sampleColor?:string; fabricRequirements?:FabricDevelopmentRequirements;
   size: string; fabric: string; img: MistImage; fileIds: string[]; returnedAt: string | null;
   qc: MistQc | null; confirmations: MistConfirmation[]; archivedAt: string | null; note: string;
   confirmationDraft?: Omit<MistConfirmation, 'id' | 'recordedAt' | 'recordedBy'>;
@@ -80,8 +84,8 @@ export type MistCommand = FulfillmentCommand | MarketCommand | PlatformCommand |
   | { type: 'development.submit'; payload: { draftId?: string; values: DevelopmentValues; fileIds: string[] } }
   | { type: 'development.update'; payload: { devId: string; patch: Partial<DevelopmentValues> } }
   | { type: 'development.move'; payload: { devId: string; stage: number } }
-  | { type: 'development.recordSample'; payload: { devId: string; versionId: string; sample: string; quantity: number; returnedAt: string } }
-  | { type: 'development.recordQc'; payload: { devId: string; versionId: string; qc: MistQc } }
+  | { type: 'development.recordSample'; payload: { devId: string; versionId: string; sample: string; quantity: number; returnedAt: string; form?:string; unit?:string; location?:string; color?:string } }
+  | { type: 'development.recordQc'; payload: { devId: string; versionId: string; qc: MistQc; domain?:DevelopmentDomain } }
   | { type: 'development.confirm'; payload: { devId: string; versionId: string; result: MistConfirmation['result']; confirmer: string; organization: string; confirmedAt: string; basis: string; originalText: string } }
   | { type: 'development.saveConfirmationDraft'; payload: { devId: string; versionId: string; draft: Omit<MistConfirmation, 'id' | 'recordedAt' | 'recordedBy'> } }
   | { type: 'development.revise'; payload: { devId: string; versionId: string; note: string } }
@@ -185,11 +189,19 @@ function emptyValues(): DevelopmentValues {
 }
 function values(input: DevelopmentValues, complete: boolean): DevelopmentValues {
   const v = {...emptyValues(), ...input};
-  for (const key of ['name','customer','style','season','category','fabric','color','target','sizeBase','goal','due'] as const) v[key] = text(v[key], key, complete && ['name','customer','style'].includes(key));
+  for (const key of ['name','customer','style','season','category','fabric','color','target','sizeBase','goal','due'] as const) v[key] = text(v[key], key, complete && (['name','customer'].includes(key)||(key==='style'&&developmentDomain(v)==='garment')));
   if (!['new','rev','copy'].includes(v.kind)) throw new MistCommandError('VALIDATION','开发类型无效');
   v.factories = strings(v.factories, '工厂'); v.collaborators = strings(v.collaborators, '协作人');
   if (v.due) v.due = date(v.due, '目标日期');
   v.sampleQuantity = positive(Number(v.sampleQuantity), '首样数量');
+  if(v.domain!==undefined&&!['garment','fabric'].includes(v.domain))throw new MistCommandError('VALIDATION','开发业务域无效');
+  if(developmentDomain(v)==='fabric'){
+    for(const key of ['sampleForm','sampleUnit','targetCurrency','targetUnit'] as const)v[key]=text(v[key]||'',key,false,120);
+    if(complete&&!validFabricSample(v.sampleQuantity,v.sampleForm||'',v.sampleUnit||''))throw new MistCommandError('VALIDATION','面料计划样品须记录实际形态与单位：米样按米，其他剪片类按整数份');
+    if(v.fabricRequirements){if(typeof v.fabricRequirements!=='object'||Array.isArray(v.fabricRequirements))throw new MistCommandError('VALIDATION','面料目标规格格式无效');v.fabricRequirements={...emptyFabricRequirements(),...v.fabricRequirements};for(const key of Object.keys(v.fabricRequirements) as Array<keyof FabricDevelopmentRequirements>)v.fabricRequirements[key]=text(v.fabricRequirements[key],key,false);const problem=fabricRequirementError(v.fabricRequirements);if(complete&&problem)throw new MistCommandError('VALIDATION',problem);}
+    if(complete&&v.target&&(!v.targetCurrency||!v.targetUnit))throw new MistCommandError('VALIDATION','面料目标价须同时填写币种与计价单位');
+    v.sizeBase='';
+  }
   if (v.target) mistMoneyMinor(v.target);
   return v;
 }
@@ -210,7 +222,7 @@ function versionOf(state: MistState, devId: string, versionId: string): [MistDev
 function addVersions(state: MistState, dev: MistDev, context: MistContext, round = 1) {
   dev.values.factories.forEach((factory,index) => {
     const id=context.id(), label='R'+round+'-'+String.fromCharCode(65+index)+'-1';
-    state.versions.push({id,devId:dev.id,label,factory,sample:'',sampleQuantity:dev.values.sampleQuantity,size:dev.values.sizeBase,fabric:dev.values.fabric,img:dev.img,fileIds:[...dev.fileIds],returnedAt:null,qc:null,confirmations:[],archivedAt:null,note:dev.values.goal});
+    state.versions.push({...((developmentDomain(dev.values)==='fabric'&&dev.values.fabricRequirements)?{fabricRequirements:JSON.parse(JSON.stringify(dev.values.fabricRequirements))}:{}),id,devId:dev.id,label,factory,sample:'',sampleQuantity:dev.values.sampleQuantity,size:dev.values.sizeBase,fabric:dev.values.fabric,img:dev.img,fileIds:[...dev.fileIds],returnedAt:null,qc:null,confirmations:[],archivedAt:null,note:dev.values.goal});
     dev.versionIds.push(id);
     if (!dev.currentVersionId) dev.currentVersionId=id;
   });
@@ -227,7 +239,7 @@ function updateDev(state: MistState, dev: MistDev, context: MistContext) {
   else if(version?.qc?.result==='reject'){dev.stage=2;dev.state='QC 不通过';dev.tone='bad';}
   else if(version?.qc){dev.stage=3;dev.state=version.qc.result==='conditional'?'有保留通过 · 待确认':'待需求方确认';dev.tone='accent';}
   else if(version?.returnedAt){dev.stage=2;dev.state='QC 待评审';dev.tone='warn';}
-  else if(version){dev.stage=1;dev.state='工厂制作中';dev.tone='neutral';}
+  else if(version){dev.stage=1;dev.state=developmentDomain(dev.values)==='fabric'?'待工厂试样':'工厂制作中';dev.tone='neutral';}
   else {dev.stage=0;dev.state='开发计划';dev.tone='neutral';}
 }
 function recalculate(state: MistState) {
@@ -313,7 +325,7 @@ export function mistCommandPermission(command: MistCommand): string | null {
   if(command.type.startsWith('fulfillment.'))return fulfillmentCommandPermission(command as FulfillmentCommand);
   if(command.type.startsWith('market.'))return marketCommandPermission(command as MarketCommand);
   if(command.type.startsWith('platform.'))return platformCommandPermission(command as PlatformCommand);
-  if(command.type==='development.recordQc')return 'qc:garment_chain:write';
+  if(command.type==='development.recordQc')return command.payload.domain==='fabric'?'qc:fabric_chain:write':'qc:garment_chain:write';
   if(command.type.startsWith('development.')||command.type.startsWith('fabric.')||command.type==='files.add')return 'products:write';
   if(command.type.startsWith('order.')||command.type.startsWith('production.'))return 'orders:write';
   if(command.type.startsWith('finance.'))return 'finance:write';
@@ -345,20 +357,25 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
       const v=values(p.values,true), fileIds=files(state,p.fileIds);
       if(p.draftId)find(state.drafts,p.draftId,'草稿');
       if(v.kind!=='new'&&!v.sourceDevId)throw new MistCommandError('VALIDATION','请选择来源开发案');
-      if(v.sourceDevId)find(state.devs,v.sourceDevId,'来源开发案');
-      const customer=state.customers.find(c=>c.name===v.customer||c.id===v.customer);
+      if(v.sourceVersionId){const source=find(state.versions,v.sourceVersionId,'来源版本');if(source.devId!==v.sourceDevId)throw new MistCommandError('VALIDATION','来源版本不属于准确来源开发案');}
+      if(v.sourceDevId&&developmentDomain(find(state.devs,v.sourceDevId,'来源开发案').values)!==developmentDomain(v))throw new MistCommandError('VALIDATION','来源开发案业务域不同，请分别创建开发案');
+      if(developmentDomain(v)==='fabric'){if(!v.factories.length)throw new MistCommandError('VALIDATION','请至少选择一家实际面料工厂');for(const name of v.factories){const matches=state.market.suppliers.filter(s=>s.name===name);if(matches.length!==1||matches[0].status!=='active'||!/面料|纺织|织造|染整|fabric|textile|weav|dye/i.test(matches[0].type+' '+matches[0].capabilities))throw new MistCommandError('VALIDATION','请选择当前有效且名称唯一的面料工厂');}if(!v.due)throw new MistCommandError('VALIDATION','请填写目标日期');}
+      const customer=state.customers.find(c=>c.id===v.customer)||(state.customers.filter(c=>c.name===v.customer).length===1?state.customers.find(c=>c.name===v.customer):undefined);
       if(!customer)throw new MistCommandError('VALIDATION','请选择已有客户');
       const id=context.id(), code='DEV-'+context.now.slice(0,4)+'-'+String(state.devs.length+1).padStart(4,'0');
-      const dev:MistDev={id,code,name:v.name,style:v.style,owner:context.actorName,due:v.due,dueRel:'',stage:0,state:'开发计划',tone:'neutral',ver:'—',fac:v.factories.length,img:v.category.includes('西装')?'suit':v.category.includes('Blazer')?'blazer':'coat',factory:v.factories[0]||'待定',sample:'—',fabric:v.fabric,goal:v.goal,customer:customer.name,customerId:customer.id,currentVersionId:null,versionIds:[],values:{...v,customer:customer.name},fileIds,createdAt:context.now,updatedAt:context.now};
+      const dev:MistDev={id,code,name:v.name,style:v.style,owner:context.actorName,due:v.due,dueRel:'',stage:0,state:'开发计划',tone:'neutral',ver:'—',fac:v.factories.length,img:developmentDomain(v)==='fabric'?'clay':v.category.includes('西装')?'suit':v.category.includes('Blazer')?'blazer':'coat',factory:v.factories[0]||'待定',sample:'—',fabric:v.fabric,goal:v.goal,customer:customer.name,customerId:customer.id,currentVersionId:null,versionIds:[],values:{...v,customer:customer.name},fileIds,createdAt:context.now,updatedAt:context.now};
       state.devs.unshift(dev); addVersions(state,dev,context); updateDev(state,dev,context);
       if(p.draftId)state.drafts=state.drafts.filter(d=>d.id!==p.draftId);
       state.tasks.unshift({id:context.id(),title:'推进 '+dev.name,due:dev.due,done:false,kind:'development',target:{view:'development/detail',id:dev.id}});
       event(state,context,'development',id,'创建开发案 '+code,{view:'development/detail',id}); result={id,devId:id,versionId:dev.currentVersionId||undefined}; break;
     }
     case 'development.update': {
-      const dev=find(state.devs,p.devId,'开发案'), v=values({...dev.values,...p.patch},true);
-      const customer=state.customers.find(c=>c.name===v.customer||c.id===v.customer);
+      const dev=find(state.devs,p.devId,'开发案');
+      if(p.patch?.domain!==undefined&&p.patch.domain!==developmentDomain(dev.values))throw new MistCommandError('PRECONDITION','已有开发案不能改变业务域，请另建案');
+      const v=values({...dev.values,domain:developmentDomain(dev.values),...p.patch},true);
+      const customer=state.customers.find(c=>c.id===v.customer)||(state.customers.filter(c=>c.name===v.customer).length===1?state.customers.find(c=>c.name===v.customer):undefined);
       if(!customer)throw new MistCommandError('VALIDATION','请选择已有客户');
+      if(developmentDomain(v)!==developmentDomain(dev.values))throw new MistCommandError('PRECONDITION','已有开发案不能改变业务域，请另建案');
       dev.values=v; dev.name=v.name;dev.style=v.style;dev.customer=customer.name;dev.customerId=customer.id;dev.goal=v.goal;dev.fabric=v.fabric;dev.due=v.due;
       if(!dev.versionIds.length)addVersions(state,dev,context);
       updateDev(state,dev,context);event(state,context,'development',dev.id,'更新开发计划');result={devId:dev.id,versionId:dev.currentVersionId||undefined};break;
@@ -380,6 +397,9 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
     case 'development.recordSample': {
       const [dev,v]=versionOf(state,p.devId,p.versionId);
       if(v.archivedAt||v.qc||v.confirmations.length)throw new MistCommandError('PRECONDITION','已有QC、确认或留档记录的实物不可替换，请创建新版本');
+      if(state.fulfillment.samples.some(s=>s.source.kind==='version'&&s.source.versionId===v.id))throw new MistCommandError('PRECONDITION','已有入库实物不能覆盖，请创建新版本或从样品仓库追加形态');
+      if(developmentDomain(dev.values)==='fabric'){if(!validFabricSample(p.quantity,p.form||'',p.unit||''))throw new MistCommandError('VALIDATION','面料返样须明确形态、数量和单位：米样按米，剪片类按整数份');v.sampleForm=text(p.form,'实际形态');v.sampleUnit=text(p.unit,'实际单位');v.sampleLocation=text(p.location||'','实际位置',false);v.sampleColor=text(p.color||dev.values.color,'实际颜色',false);v.size='';}
+      else if(!Number.isInteger(p.quantity))throw new MistCommandError('VALIDATION','成衣返样须为正整数件数');
       v.sample=text(p.sample,'样品编号',true,120);v.sampleQuantity=positive(p.quantity,'返样数量');v.returnedAt=instant(p.returnedAt,context);
       updateDev(state,dev,context);applyFulfillmentCommand(state,{type:'fulfillment.samples.sync',payload:{}},context);event(state,context,'development',dev.id,'记录 '+v.label+' 返样');result={devId:dev.id,versionId:v.id};break;
     }
@@ -387,6 +407,11 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
       const [dev,v]=versionOf(state,p.devId,p.versionId);
       if(v.archivedAt)throw new MistCommandError('PRECONDITION','本版已留档，请通过新版本继续记录');
       if(!v.returnedAt)throw new MistCommandError('PRECONDITION','请先记录实物返样');
+      if((p.domain||'garment')!==developmentDomain(dev.values))throw new MistCommandError('VALIDATION','QC专业权限域与准确开发版本不一致');
+      if(developmentDomain(dev.values)==='fabric'&&p.qc?.measurements?.length)throw new MistCommandError('VALIDATION','面料开发不套成衣尺寸公差，请填写面料实测');
+      const fabricMeasurements=p.qc?.fabricMeasurements||[];if(!Array.isArray(fabricMeasurements)||fabricMeasurements.length>200)throw new MistCommandError('VALIDATION','面料实测最多支持200行');
+      const fabricFacts=fabricMeasurements.map((row:any)=>{if(!row||typeof row.actual!=='number'||!Number.isFinite(row.actual)||row.actual<0)throw new MistCommandError('VALIDATION','面料实测须为有限非负数');return{property:text(row.property,'实测项目',true,120),actual:row.actual,unit:text(row.unit,'实测单位',true,120)};});
+      if(developmentDomain(dev.values)==='garment'&&fabricFacts.length)throw new MistCommandError('VALIDATION','成衣QC不接收面料实测');
       if(!['pass','conditional','reject'].includes(p.qc?.result))throw new MistCommandError('VALIDATION','QC结论无效');
       const measurements=p.qc.measurements===undefined?[]:p.qc.measurements;
       if(!Array.isArray(measurements)||measurements.length>200)throw new MistCommandError('VALIDATION','测量记录最多支持200行');
@@ -397,7 +422,7 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
         return{point:text(item.point,label+'部位',true,120),standard:measured(item.standard,label+'标准'),actual:measured(item.actual,label+'实测'),tolerance:measured(item.tolerance,label+'公差')};
       });
       if(p.qc.appearanceDefects!==undefined&&(!Number.isSafeInteger(p.qc.appearanceDefects)||p.qc.appearanceDefects<0))throw new MistCommandError('VALIDATION','外观缺陷数量须为非负整数');
-      v.qc={result:p.qc.result,reviewer:text(p.qc.reviewer,'评审人',true,120),reviewedAt:instant(p.qc.reviewedAt,context),report:text(p.qc.report,'报告编号',true,120),opinion:text(p.qc.opinion,'专业意见'),measurements:facts,...(p.qc.appearanceDefects===undefined?{}:{appearanceDefects:p.qc.appearanceDefects})};
+      v.qc={result:p.qc.result,reviewer:text(p.qc.reviewer,'评审人',true,120),reviewedAt:instant(p.qc.reviewedAt,context),report:text(p.qc.report,'报告编号',true,120),opinion:text(p.qc.opinion,'专业意见'),measurements:facts,...(developmentDomain(dev.values)==='fabric'?{fabricMeasurements:fabricFacts}:{}),...(p.qc.appearanceDefects===undefined?{}:{appearanceDefects:p.qc.appearanceDefects})};
       updateDev(state,dev,context);event(state,context,'development',dev.id,'记录 '+v.label+' QC评审',{view:'development/detail',id:dev.id,versionId:v.id},'qc');result={devId:dev.id,versionId:v.id};break;
     }
     case 'development.move': {
@@ -413,7 +438,7 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
       const [dev,previous]=versionOf(state,p.devId,p.versionId), note=text(p.note,'改版说明');
       const round=Math.max(...state.versions.filter(v=>v.devId===dev.id).map(v=>Number(v.label.match(/^R(\d+)/)?.[1]||1)))+1;
       const id=context.id(), version:MistVersion={...previous,id,label:'R'+round+'-'+(previous.label.match(/^R\d+-([A-Z]+)-/)?.[1]||'A')+'-1',sample:'',fileIds:[...previous.fileIds],returnedAt:null,qc:null,confirmations:[],archivedAt:null,note};
-      delete version.confirmationDraft;state.versions.push(version);dev.versionIds.push(id);dev.currentVersionId=id;updateDev(state,dev,context);
+      if(developmentDomain(dev.values)==='fabric')version.sampleQuantity=dev.values.sampleQuantity;delete version.confirmationDraft;delete version.sampleForm;delete version.sampleUnit;delete version.sampleLocation;delete version.sampleColor;state.versions.push(version);dev.versionIds.push(id);dev.currentVersionId=id;updateDev(state,dev,context);
       event(state,context,'development',dev.id,'创建改版 '+version.label,{view:'development/detail',id:dev.id,versionId:id});result={devId:dev.id,versionId:id};break;
     }
     case 'development.archive': {

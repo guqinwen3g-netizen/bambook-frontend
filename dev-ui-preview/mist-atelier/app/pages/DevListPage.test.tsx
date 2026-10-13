@@ -62,3 +62,9 @@ describe('persisted workspace development list',()=>{
     await select('客户','客户 B');expect(host.querySelectorAll('.mist-tr')).toHaveLength(1);expect(host.textContent).toContain('乙草稿');expect(host.textContent).not.toContain('甲草稿');
   });
 });
+
+
+describe('separate fabric and garment development entry',()=>{
+ it('selects the business line before entering the existing five-step layout',async()=>{await mount();await act(async()=>[...host.querySelectorAll('button')].find(b=>b.textContent==='新建开发案')!.click());expect(go).not.toHaveBeenCalled();await act(async()=>[...document.querySelectorAll('button')].find(b=>b.textContent?.includes('面料开发')&&b.textContent?.includes('目标规格'))!.click());expect(go).toHaveBeenCalledWith('development/new',undefined,{section:'fabric'});});
+ it('filters by saved domain rather than arbitrary classification strings',async()=>{bridge.current.state.devs.push({...dev(3),name:'真实面料开发',img:'clay',values:{domain:'fabric',category:'原始斜纹'}});await mount();expect(host.querySelectorAll('.mist-tr')).toHaveLength(2);await act(async()=>[...host.querySelectorAll('button')].find(b=>b.textContent==='面料开发')!.click());expect(host.querySelectorAll('.mist-tr')).toHaveLength(1);expect(host.textContent).toContain('真实面料开发');expect(host.textContent).not.toContain('实际开发 1');});
+});

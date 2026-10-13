@@ -120,3 +120,21 @@ describe('development plan factory source and return context',()=>{
   const candidate=[...document.querySelectorAll('label')].find(label=>label.textContent==='真实新增工厂')?.querySelector<HTMLInputElement>('input');expect(candidate).toBeTruthy();await act(async()=>candidate!.click());await click('保存计划');expect(bridge.current.run).toHaveBeenCalledWith({type:'development.update',payload:{devId:'dev-a',patch:expect.objectContaining({goal:'保留的计划目标',factories:expect.arrayContaining(['真实新增工厂'])})}});
  });
 });
+
+
+describe('fabric exact version detail',()=>{
+ const useFabric=()=>{bridge.current.state.devs=[{...record,img:'clay',values:{...record.values,domain:'fabric',category:'斜纹',sizeBase:'',sampleForm:'米样',sampleUnit:'米'}}];bridge.current.state.versions[0]={...bridge.current.state.versions[0],qc:null,returnedAt:null,sample:'',size:''};};
+ it('records an actual decimal metre sample and shows no garment size or stock photo',async()=>{
+  useFabric();await mount();expect(host.textContent).not.toContain('尺码');expect(host.textContent).toContain('尚未上传本版实物图片');expect(host.querySelector('.mist-thumb img')).toBeNull();await click('登记返样');await fill('实物编号','QA-FABRIC-REAL');await fill('数量 / 长度','1.25');await fill('实际位置','样品架A');await click('保存返样');
+  expect(bridge.current.run).toHaveBeenCalledWith(expect.objectContaining({type:'development.recordSample',payload:expect.objectContaining({devId:'dev-a',versionId:'va',quantity:1.25,form:'米样',unit:'米',location:'样品架A'})}));
+ });
+ it('records independent fabric measurements using fabric permission and no garment tolerance',async()=>{
+  useFabric();bridge.current.state.versions[0].returnedAt='2026-10-13T00:00:00Z';await mount();await click('录入报告');expect(document.body.textContent).not.toContain('尺寸测量');expect(document.body.textContent).not.toContain('公差内');await fill('报告编号或附件','QC-FABRIC-TEST');await click('添加面料实测');await fill('实测项目 1','克重');await fill('实测值 1','260');await fill('原单位 1','g/m²');await click('保存报告');
+  expect(bridge.current.run).toHaveBeenCalledWith(expect.objectContaining({type:'development.recordQc',payload:expect.objectContaining({domain:'fabric',versionId:'va',qc:expect.objectContaining({measurements:[],fabricMeasurements:[{property:'克重',actual:260,unit:'g/m²'}],result:'pass'})})}));
+ });
+});
+
+
+it('keeps rejected fabric sample input and feedback inside the still-open dialog',async()=>{
+ bridge.current.state.devs=[{...record,values:{...record.values,domain:'fabric',sampleForm:'米样',sampleUnit:'米'}}];bridge.current.state.versions[0]={...bridge.current.state.versions[0],qc:null,returnedAt:null,size:''};bridge.current.run.mockRejectedValueOnce(new Error('来源版本已更新，请核对'));await mount();await click('登记返样');await fill('实物编号','保留实物编号');await fill('数量 / 长度','1.25');await click('保存返样');const modal=document.querySelector('[role="dialog"]')!;expect(modal.textContent).toContain('来源版本已更新，请核对');expect(modal.textContent).toContain('返样尚未保存');expect([...modal.querySelectorAll('input')].some(i=>i.value==='1.25')).toBe(true);
+});
