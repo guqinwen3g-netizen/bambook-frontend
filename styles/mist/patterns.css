@@ -446,3 +446,11 @@
   .mist-domain-nums > span { flex-direction: row; align-items: baseline; justify-content: space-between; gap: 8px; }
   .mist-domain-nums b { font-size: var(--mist-text-base); font-weight: var(--mist-fw-medium); }
 }
+/* 按单位分行的数量（单位从不相加） */
+.mist-unit-lines { display: flex; flex-direction: column; gap: 2px; font-variant-numeric: tabular-nums; }
+.mist-unit-lines > span { white-space: nowrap; }
+.mist-unit-lines small { font-size: var(--mist-text-xs); color: var(--mist-ink-3); margin-left: 3px; font-weight: var(--mist-fw-regular, 400); }
+.mist-unit-lines > small { margin-left: 0; }
+@media (max-width: 760px) {
+  .mist-unit-lines { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; column-gap: 10px; }
+}
