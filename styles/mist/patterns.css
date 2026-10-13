@@ -415,7 +415,7 @@
   .mist-task { grid-template-columns: minmax(0,1fr) auto; gap: 8px; } .mist-task > :is(.mist-task-when, .mist-stack, .mist-go) { display: none; }
   .mist-task[data-workbench-item] { grid-template-columns: minmax(0, 1fr) auto; }
   .mist-thead { display: none; } .mist-tr { grid-template-columns: minmax(0, 1fr) auto !important; padding: 10px 14px; } .mist-tr > [data-hide-sm] { display: none; }
-  .mist-pipeline { grid-template-columns: repeat(3, 1fr); } .mist-search { min-width: 0; flex: 1 1 100%; } .mist-toolbar-right { margin-left: 0; }
+  .mist-pipeline { grid-template-columns: repeat(3, minmax(0, 1fr)); } .mist-pipeline > button { min-width: 0; padding: 10px 12px; gap: 6px; } .mist-pipeline small { white-space: normal; align-items: flex-start; line-height: 1.3; } .mist-pipeline small i { margin-top: 4px; } .mist-pipeline b { font-size: 22px; } .mist-search { min-width: 0; flex: 1 1 100%; } .mist-toolbar-right { margin-left: 0; }
   .mist-idrow { flex-wrap: wrap; } .mist-idrow-people { margin-left: 0; width: 100%; flex-wrap: wrap; gap: 18px; }
   .mist-stepper { grid-template-columns: 1fr; } .mist-detail, .mist-detail > .mist-detail-rail { grid-template-columns: 1fr !important; }
   .mist-choices { grid-template-columns: 1fr; } .mist-form, .mist-form[data-cols="3"] { grid-template-columns: 1fr; }
