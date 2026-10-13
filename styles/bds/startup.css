@@ -1,0 +1,17 @@
+/* Original startup surface values, scoped to its portal. No legacy page theme. */
+.bds-auth-entrance-anchor {
+  --z-startup: 240;
+  --brand-mist-light: #C6DAE3;
+  --brand-mist: radial-gradient(130% 160% at 18% -22%, rgba(255,255,255,0.30), rgba(255,255,255,0) 55%), linear-gradient(155deg, #7FA3B3 0%, #A2C0CD 52%, var(--brand-mist-light) 100%);
+  --on-mist: #FFFFFF;
+  --brand-cyan: #8DD5DE;
+}
+html[data-mist-boot-theme="dark"] .bds-auth-entrance-anchor {
+  --brand-mist: radial-gradient(130% 160% at 18% -22%, rgba(255,255,255,0.10), rgba(255,255,255,0) 55%), linear-gradient(155deg, #132A36 0%, #1A3543 52%, #243F4C 100%);
+  --on-mist: #8DD5DE;
+}
+.bds-auth-entrance { position:fixed; inset:0; z-index:var(--z-startup); isolation:isolate; color:var(--on-mist); }
+.bds-auth-entrance__curtain { position:absolute; inset:0; background:var(--brand-mist); }
+.bds-auth-entrance__mark { color:var(--on-mist); z-index:11; position:fixed; left:calc(50% - 110px); top:calc(50% - 110px); width:220px; height:220px; pointer-events:none; }
+.bds-auth-entrance__line,.bds-auth-entrance__solid { position:absolute; inset:0; }
+.bds-auth-entrance__breath { position:absolute; inset:0; transform-origin:center; }

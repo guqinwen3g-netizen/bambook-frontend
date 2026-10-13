@@ -3,8 +3,28 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script>
+    // Paint the startup surface before module loading; freeze it through the entrance.
+    (() => {
+      let saved;
+      try { saved = localStorage.getItem('bambook.mist.boot-theme'); } catch {}
+      const requested = new URLSearchParams(location.search).get('theme');
+      const theme = requested === 'dark' || requested === 'light' ? requested : saved === 'dark' || saved === 'light' ? saved : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      document.documentElement.dataset.mistBootTheme = theme;
+      document.documentElement.style.colorScheme = theme;
+      if (new URLSearchParams(location.search).get('intro') === '0') document.documentElement.dataset.mistSkipIntro = 'true';
+    })();
+  </script>
+  <style>
+    html,body { margin:0; min-height:100%; }
+    html { background:#7FA3B3; }
+    html[data-mist-boot-theme="dark"] { background:#101C35; }
+    #mist-boot-surface { position:fixed; inset:0; z-index:240; background:radial-gradient(130% 160% at 18% -22%, rgba(255,255,255,.30), rgba(255,255,255,0) 55%), linear-gradient(155deg,#7FA3B3 0%,#A2C0CD 52%,#C6DAE3 100%); }
+    html[data-mist-boot-theme="dark"] #mist-boot-surface { background:radial-gradient(130% 160% at 18% -22%, rgba(255,255,255,.10), rgba(255,255,255,0) 55%), linear-gradient(155deg,#132A36 0%,#1A3543 52%,#243F4C 100%); }
+    html[data-mist-skip-intro="true"] #mist-boot-surface { display:none; }
+  </style>
   <title>Bambook 竹衍 · Mist Atelier</title>
   <link rel="icon" href="/brand/bambook-v3-favicon.svg" />
 </head>
-<body><div id="root"></div><script type="module" src="./main.tsx"></script></body>
+<body><div id="mist-boot-surface" aria-hidden="true"></div><div id="root"></div><script type="module" src="./main.tsx"></script></body>
 </html>

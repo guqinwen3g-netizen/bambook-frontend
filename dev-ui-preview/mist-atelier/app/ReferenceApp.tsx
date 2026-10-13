@@ -1,7 +1,7 @@
 import React from 'react';
 import { ClipboardList, Component, KeyRound, Layers, LogOut, Moon, Settings2, ShieldCheck, Sparkles, SquareDashed } from 'lucide-react';
 import {
-  AssistantDrawer, Banner, Button, Card, CardHeader, CommandPalette, Drawer, EmptyState, Field, KeyValue, TextInput, MistAppShell, MistPage, MistRoot, MistSidebarPresentation, MistSplash, MistTopbar, ToastProvider, MistDensityContext, useHotkey, useToast,
+  AssistantDrawer, Banner, Button, Card, CardHeader, CommandPalette, Drawer, EmptyState, Field, KeyValue, TextInput, MistAppShell, MistPage, MistRoot, MistSidebarPresentation, MistTopbar, ToastProvider, MistDensityContext, useHotkey, useToast,
   type ChatMessage, type CommandItem, type Crumb, type NavSection, type ThemeMode,
 } from '../../../components/mist';
 import { getModuleByView, getPrimaryNavigationModules, groupPrimaryNavigationModules } from '../../../components/moduleRegistry';
@@ -9,6 +9,7 @@ import { View } from '../../../types';
 import { MODULE_MAP } from './moduleMap';
 import { Nav, type Route, type RouteTarget } from './nav';
 import { MistSessionProvider, useMistSession } from './runtime/auth';
+import { LegacyStartup } from '../../../components/mist/LegacyStartup';
 import { MistWorkspaceProvider, useMistWorkspace } from './runtime/workspace';
 import { HomePage } from './pages/HomePage';
 import { DevListPage } from './pages/DevListPage';
@@ -204,7 +205,7 @@ function AppInner({ theme, setTheme }: { theme: ThemeMode; setTheme: (theme: The
     { id: 'ai', group: '操作', label: '问小竹', hint: '⌘ J', icon: Sparkles, run: ()=>openAI() },
   ];
   const nav = { route, go, theme, toggleTheme, openPalette: () => setPalette(true), openAI };
-  if (session.status === 'loading') return <MistSplash visible />;
+  if (session.status === 'loading') return null;
   if (session.status === 'anonymous' && session.localMode) return <MistPage width="narrow"><Card><CardHeader title="工作区连接待核对" sub="本地工作身份由本机服务提供，无需输入旧账号密码。"/><div className="mist-card-body"><p>{session.error||'暂时无法读取本地工作身份，请重新连接。'}</p><Button variant="primary" loading={session.refreshing} onClick={()=>void session.refresh()}>重新进入本地工作区</Button></div></Card></MistPage>;
   if (session.status === 'anonymous' || route.view === 'login') {
     const loginGo = (view: string, id?: string) => {
@@ -263,19 +264,22 @@ function AppInner({ theme, setTheme }: { theme: ThemeMode; setTheme: (theme: The
   );
 }
 
+function StartupGate() {
+  const session = useMistSession();
+  return <LegacyStartup ready={session.status !== 'loading'} />;
+}
+
 export function ReferenceApp() {
   const qs = new URLSearchParams(location.search);
-  const [theme, setTheme] = React.useState<ThemeMode>(() => (qs.get('theme') as ThemeMode) || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
-  const [splash, setSplash] = React.useState(qs.get('intro') !== '0');
-  React.useEffect(() => { document.documentElement.style.colorScheme = theme; document.body.style.background = theme === 'dark' ? '#101C35' : '#7FA3B3'; }, [theme]); // mist-allow: original outer-body background outside MistRoot
-  React.useEffect(() => { if (splash) { const timer = window.setTimeout(() => setSplash(false), 1500); return () => window.clearTimeout(timer); } }, []);
+  const [theme, setTheme] = React.useState<ThemeMode>(() => (qs.get('theme') as ThemeMode) || (document.documentElement.dataset.mistBootTheme as ThemeMode) || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+  React.useEffect(() => { try { localStorage.setItem('bambook.mist.boot-theme', theme); } catch {} document.documentElement.style.colorScheme = theme; document.body.style.background = theme === 'dark' ? '#101C35' : '#7FA3B3'; }, [theme]); // mist-allow: original outer-body background outside MistRoot
   return (
     <MistRoot theme={theme}>
       <ToastProvider>
         <MistSessionProvider>
+          {qs.get('intro') !== '0' && <StartupGate />}
           <MistWorkspaceProvider><AppInner theme={theme} setTheme={setTheme} /></MistWorkspaceProvider>
         </MistSessionProvider>
-        {qs.get('intro') !== '0' && <MistSplash visible={splash} />}
       </ToastProvider>
     </MistRoot>
   );

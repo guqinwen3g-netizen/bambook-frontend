@@ -1,0 +1,48 @@
+/* Compact bilingual wordmark shared by login, sidebar and brand launch. */
+.bds-brand-launch { position:fixed; inset:0; z-index:var(--z-startup); isolation:isolate; display:grid; place-items:center; background:var(--brand-mist, #A2C0CD); color:#fff; }
+html:has(.bds-brand-launch) body, html:has(.bds-brand-launch) #root { min-width:0; min-height:0; }
+.bds-brand-launch__identity { display:flex; flex-direction:column; align-items:center; gap:var(--space-6); }
+.bds-brand-launch .bds-brand-caption { color:inherit; }
+:root[data-theme="dark"] .bds-brand-launch, :root[data-bambook-theme="dark"] .bds-brand-launch, .dark .bds-brand-launch { background:var(--brand-mist); color:var(--brand-cyan); }
+.bds-sidebar .bds-sidebar-brand-toggle { left:var(--space-5); right:auto; top:var(--space-7); width:152px; height:40px; display:flex; align-items:center; gap:var(--space-2); padding:0; color:var(--bds-sidebar-ink); transition:left .5s cubic-bezier(.22,1,.36,1), width .5s cubic-bezier(.22,1,.36,1); }
+.bds-sidebar-brand-symbol { position:absolute; left:6px; top:6px; width:28px; height:28px; display:block; transform-origin:center; pointer-events:none; }
+.bds-sidebar-brand__name { position:absolute; left:42px; font:var(--font-lg); font-weight:300; transition:opacity .15s; }
+.bds-sidebar-brand__name .bds-brand-caption { color:inherit; text-align:left; }
+.bds-sidebar-brand-toggle[aria-disabled="true"] { cursor:default; }
+.bds-sidebar .bds-sidebar-collapse { left:auto; right:var(--space-4); top:var(--space-7); width:32px; height:40px; color:var(--bds-sidebar-ink); }
+:root[data-theme="dark"] .bds-sidebar .bds-sidebar-brand-toggle, .dark .bds-sidebar .bds-sidebar-brand-toggle { color:#FFFFFF; }
+.bds-sidebar .bds-sidebar-brand-toggle:focus-visible { outline:1px solid currentColor; outline-offset:2px; border-radius:var(--r-card-sm); }
+.bds-sidebar[data-sidebar-state="collapsed"] .bds-sidebar-brand-toggle { left:var(--space-3); width:40px; }
+.bds-sidebar[data-sidebar-state="collapsed"] .bds-sidebar-brand__name { opacity:0; pointer-events:none; }
+.bds-brand-caption { display: block; margin: 0; font: var(--font-xs); letter-spacing: normal; color: var(--text-secondary); text-align: center; white-space: nowrap; }
+.bds-brand-caption__english { font:var(--font-sm); }
+.bds-brand-status { display: flex; flex-direction: column; align-items: center; gap: var(--space-4); color: var(--text-primary); text-align: center; }
+.bds-brand-status__title { font: var(--font-lg); }
+.bds-brand-status__detail { font: var(--font-sm); color: var(--text-secondary); max-width: 42ch; overflow-wrap: anywhere; }
+/* Tiles are only for explicitly requested assets/app icons, never the About logo. */
+.bds-brand-mark {
+  --bb-brand-mist: linear-gradient(155deg, #7FA3B3 0%, #A2C0CD 52%, #C6DAE3 100%);
+  --bb-brand-deep: linear-gradient(155deg, #101C35 0%, #162640 52%, #213551 100%);
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  color: inherit;
+  aspect-ratio: 1;
+  pointer-events: none;
+  user-select: none;
+}
+.bds-brand-mark > .bb-v3-mark { display: block; width: 100%; height: 100%; }
+.bds-brand-mark:not([data-palette="inherit"]) { border-radius: var(--r-card-xl); }
+.bds-brand-mark[data-palette="mist"],
+.bds-brand-mark[data-palette="brand"] { background: var(--bb-brand-mist); color: #FFFFFF; --bb-flow-ink: #7FA3B3; }
+.bds-brand-mark[data-palette="deep"],
+:root[data-theme="dark"] .bds-brand-mark[data-palette="brand"],
+:root[data-bambook-theme="dark"] .bds-brand-mark[data-palette="brand"] { background: var(--bb-brand-deep); color: var(--brand-cyan); --bb-flow-ink: #101C35; }
+.bds-brand-mark[data-palette="mono"] { background: #FFFFFF; color: #000000; --bb-flow-ink: #FFFFFF; }
+:root[data-theme="dark"] .bds-brand-mark[data-palette="mono"],
+:root[data-bambook-theme="dark"] .bds-brand-mark[data-palette="mono"] { background: #000000; color: #FFFFFF; --bb-flow-ink: #000000; }
+@media (prefers-reduced-motion: reduce) {
+  .bds-brand-mark, .bds-brand-mark * { animation: none !important; transition: none !important; }
+}
