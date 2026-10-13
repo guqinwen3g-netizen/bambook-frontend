@@ -228,6 +228,51 @@
 - 原生后端已有面料开发及换算服务，本批是 Mist 接入扩展，不是全工程无面料后端；业务组/属性完整权限映射仍需衔接，未宣称完成原生 API 全面验收。
 - 当前 Actions 工作流权限仍未解决：首批含工作流推送403，远端未有该工作流；本批不包含该文件，本地通过不代表 GitHub CI 通过。未测试生产 PostgreSQL 并发，未对外发送工厂任务、客户通知或执行银行/物流/生产部署。
 
+### Handoff
+
+**接手范围与版本**
+
+- 功能提交：`d8961b4b1c88a8ac5f972cd63fbd70b315b0077e`；分支 `feat/mist-fabric-development`；[PR #2](https://github.com/guqinwen3g-netizen/bambook-frontend/pull/2)。本节是该批交接，不覆盖前文既有事实或另立进度真源。
+- 基线为 [PR #1](https://github.com/guqinwen3g-netizen/bambook-frontend/pull/1) 的 `6f43a3d7b2d1bb2bf328ea3e32dd83f817156851`，当前 PR #2 的 base 仍是首批分支。先评审 PR #1；合并后核对 squash/rebase 差异，再正确重定基线，不能盲改 base 后把首批重复带入。
+- 此次交接只更新文档；以上567/385测试和26张截图对应功能提交，不将文档提交称为重新完成全量测试。main未改，未合并/部署。
+- 接手前现场检查 `git status --short`、`git log -1` 和远端 PR 状态，保留别人的未提交内容；不要用 reset --hard 恢复历史检查点。
+
+**定位入口与约束**
+
+- 先读本文件“面料开发入口、实物与独立 QC”小节、`AGENTS.md` 及 `.qoder/skills/bambook-ui/SKILL.md`；业务核对总账 §1.1.1 / §4 / §19，UI核对 Mist T9 / T4，继续原设计而非旧 Manager/BDS。
+- 前端：`dev-ui-preview/mist-atelier/app/pages/DevListPage.tsx`（双域入口/筛选）；`DevCreatePage.tsx`（草稿、规格、工厂计划）；`DevDetailPage.tsx`（准确版本返样、独立QC、失败保值）。对应同名测试。
+- 公用行为：`components/mist/patterns.tsx` 的 `VerticalSteps`；手机当前步骤滚动回归在 `components/mist/verticalSteps.test.tsx`，不要改变已认可几何/token。
+- 域及规格校验：`server/src/shared/mistDevelopmentDomain.ts` 的 `developmentDomain`、`fabricRequirementError`、`validFabricSample`；显式域优先，旧分类兼容只读，不猜新记录。
+- 版本/写命令：`server/src/shared/mistWorkspace.ts` 的 `values`、`addVersions`、`applyMistCommand`、`mistCommandPermission`；新版本目标快照、不可跨域改造、禁止覆盖已入库实物、QC专业域必须匹配保存域。
+- 同版实物仓库：`server/src/shared/mistFulfillment.ts` 的 `sourceDomain` 及 `fulfillment.samples.sync`；旧缺形态/单位实物不猜，多种单位不混加，保留成衣逐件校验。
+- 重点回归：`server/src/shared/mistFabricDevelopment.test.ts`；原生能力入口 `server/src/development/fabricDevelopmentService.ts`。当前 Mist 合同不等于完整原生流程，接入先查既有契约与权限，不复制新后端。
+
+**复现和验收**
+
+```bash
+# 在干净克隆中检出 PR 分支；使用 .nvmrc 指定的 Node 22
+npm ci
+npm --prefix server ci
+(cd server && npm exec -- prisma generate)
+npm run verify:mist
+# 另一个终端，确认环境只指向本地隔离数据后启动
+npm run dev:mist
+```
+
+- 全量成功记录：前端567/37文件、后端385/29文件、类型检查及build通过、Mist85文件0error/0warning。组件改动后仍需 `node scripts/gen-mist-docs.mjs` 与相应回归；不要靠忽略错误或降守卫通过。
+- 真实软件场景：新建面料案，目标250 g/m²、计价EUR/码、计划2.5米；登记实际1.25米/位置/颜色；同版仓库仅一次入库；录入260 g/m²实测与独立专业意见，再刷新确认目标未被覆盖。
+- 反向场景：无效比例/原值缺单位、失效或重复工厂、色样1.5份、跨域参考、替换已入库实物、伪造QC专业域、后改共同目标污染版本。后端及UI测试已有覆盖，不当成全部人工操作证据。
+- 实际旧验收 UUID 见上一节，运行数据不随仓库提交；新克隆应新建明确软件测试数据，不依赖旧UUID或拿种子记录当真实实物。未测生产PG并发、外部发送、银行/物流或部署。
+- 会话已交付 `Bambook-面料开发-PR2-验收包.zip`（补丁、26张最终PNG、verify日志、verification.json、SHA256清单）；附件不是源码依赖。仓库内本节和上节可独立接手；必要时重新复现截图，不假设沙箱目录永久可达。
+
+**下一步与阻塞（按顺序）**
+
+1. 先查 `dev-ui-preview/mist-atelier/app/pages/modules/MarketPages.tsx` 的版本来源报价，与 `server/src/shared/mistMarket.ts` 的 `market.product.fromVersion` / `market.quotation.convert`：去掉既有默认件/简化米造成的面料商业单位误用，接准确来源、实际单位/币种及原生属性；保留成衣回归，不以同数字隐式换算。
+2. 每工厂/每色要求、数量与独立通知单，版本冻结与真实发送/回执分离；共同目标修改不覆盖已发要求。先核对既有原生工厂任务规则再扩展UI。
+3. 目标、工厂分析、QC分层及GSM/全幅/有效幅宽转换字段矩阵；资料缺失就待分析。PDMLCSV20CPXL分类源未找到，不凭模板编分类；内部自主开发和完整业务组/属性权限仍未完成。
+4. Actions工作流首批含文件推送403，远端仍未上传该工作流，PR #2检查数0；后续获得明确工作流权限再补交此前配置并查看真实CI，不把本地成绩写成远端通过。
+- 继续执行只在独立分支；没有合并、部署、外部发送或真实付款授权。若新增业务规则待裁决，记录具体缺口，不悄悄设计替代规则。
+
 ## 完成证据
 
 功能、交互、视觉分别记录。功能要有真实数据、权限、成功/失败回执和回程证据；交互覆盖实际存在的加载、空态、错误、键盘及窄屏分支；视觉与原 Mist 同视口/主题/状态对照并附实际截图。
