@@ -101,9 +101,9 @@ type Domain = FulfillmentShipment['domain'];
 type Stage = 'intake' | 'logistics' | 'business' | 'departure' | 'departed' | 'cancelled';
 type StageFilter = 'all' | Stage;
 type FlagFilter = 'all' | 'overdue' | 'packing' | 'mine';
-const STAGE_LABEL: Record<Stage, string> = { intake: '待物流接手', logistics: '物流处理中', business: '资料已回业务', departure: '待离港', departed: '已出运', cancelled: '已取消' };
-const STAGE_TONE: Record<Stage, Tone> = { intake: 'warn', logistics: 'accent', business: 'warn', departure: 'accent', departed: 'ok', cancelled: 'neutral' };
-const MODE_LABEL: Record<FulfillmentShipment['mode'], string> = { sea: '海运', air: '空运' };
+export const STAGE_LABEL: Record<Stage, string> = { intake: '待物流接手', logistics: '物流处理中', business: '资料已回业务', departure: '待离港', departed: '已出运', cancelled: '已取消' };
+export const STAGE_TONE: Record<Stage, Tone> = { intake: 'warn', logistics: 'accent', business: 'warn', departure: 'accent', departed: 'ok', cancelled: 'neutral' };
+export const MODE_LABEL: Record<FulfillmentShipment['mode'], string> = { sea: '海运', air: '空运' };
 const round = (value: number) => Math.round(value * 10000) / 10000;
 /** Logistics workbench stage derived only from recorded facts (packing, booking, documents, customs, dispatch, departure). */
 export function shipmentStage(root: MistState, s: FulfillmentShipment): Stage {
@@ -114,8 +114,8 @@ export function shipmentStage(root: MistState, s: FulfillmentShipment): Stage {
   const touched = !!s.booking || f.packing.some(row => row.shipmentId === s.id) || f.documents.some(row => row.shipmentId === s.id && row.status !== 'void') || f.customs.some(row => row.shipmentId === s.id);
   return touched ? 'logistics' : 'intake';
 }
-const packedFor = (root: MistState, s: FulfillmentShipment, line: FulfillmentShipment['lines'][number]) => round(root.fulfillment.packing.filter(row => row.shipmentId === s.id && row.lineId === line.lineId && row.productionId === line.productionId).reduce((sum, row) => sum + row.quantity, 0));
-const packingMatched = (root: MistState, s: FulfillmentShipment) => s.lines.length > 0 && s.lines.every(line => packedFor(root, s, line) === line.quantity);
+export const packedFor = (root: MistState, s: FulfillmentShipment, line: FulfillmentShipment['lines'][number]) => round(root.fulfillment.packing.filter(row => row.shipmentId === s.id && row.lineId === line.lineId && row.productionId === line.productionId).reduce((sum, row) => sum + row.quantity, 0));
+export const packingMatched = (root: MistState, s: FulfillmentShipment) => s.lines.length > 0 && s.lines.every(line => packedFor(root, s, line) === line.quantity);
 function shipmentFlags(root: MistState, s: FulfillmentShipment, day: string) {
   const flags: Array<{ key: 'overdue' | 'packing'; label: string }> = [], stage = shipmentStage(root, s);
   if (stage !== 'departed' && stage !== 'cancelled' && s.plannedDate && s.plannedDate < day) flags.push({ key: 'overdue', label: '计划出运日已过' });
