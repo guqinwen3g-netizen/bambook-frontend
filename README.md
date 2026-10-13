@@ -7,8 +7,10 @@
 推荐 Node.js 22 LTS。
 
 ```sh
+nvm use # 或使用 Node.js 22
 npm ci
 npm ci --prefix server
+(cd server && npm exec -- prisma generate)
 npm run dev:mist
 ```
 
@@ -30,3 +32,13 @@ npm run dev:mist
 ## 本快照验证
 
 在隔离发布目录验证：Mist前端36文件549项、Mist后端27文件357项通过；主构建通过；Mist规则检查84文件0错误/0警告；独立本地API health返回`mode=local, storage=local-file`。`npm test`用于当前Mist前端，`npm run test:mist:server`用于当前Mist后端。安装依赖验证使用本机既有依赖，未声称所有平台的全新npm ci已实测。视觉/真实业务验收及其范围见推进手册和最新Mist证据，不以构建或单元测试代替视觉认可。
+
+## 当前 Mist 的可复现检查
+
+```sh
+npm run verify:mist
+```
+
+包含当前 Mist UI/服务类型检查、前后端测试、构建及 Mist 规范检查。配套 `.github/workflows/mist.yml` 已随本轮补丁提供，但因当前连接推送含工作流的批次返回403，暂不随远端功能提交写入；待工作流写权限核对后补交。该配置用于 PR/main 检查，不部署；现阶段不能声明远端 CI 已启用。类型检查只覆盖当前 Mist 入口和服务依赖图，不代表历史目录或整个生产 API 无类型问题。
+
+本轮在 Linux / Node.js 22 完成前后端全新 `npm ci`；Node.js 24 安装服务端时遇到现有 `better-sqlite3` 原生构建兼容问题，暂不声明支持。现有依赖审计告警尚未消除，不能据此宣称生产发布就绪。最新功能与视觉验收边界见推进手册。

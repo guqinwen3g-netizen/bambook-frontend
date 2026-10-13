@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "files": [
+    "dev-ui-preview/mist-atelier/app/main.tsx",
+    "vite-env.d.ts"
+  ],
+  "include": [],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "out"
+  ]
+}

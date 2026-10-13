@@ -2,7 +2,7 @@
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, expect, it, vi } from 'vitest';
-import { CommandPalette, Dialog, Drawer, Dropdown, MistRoot } from './index';
+import { CommandPalette, Dialog, Drawer, Dropdown, MistRoot, ToastProvider, useToast } from './index';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -111,4 +111,34 @@ it('resets a controlled search on opening and executes a real result after typin
   });
   expect(host.querySelector('.mist-palette-it')?.textContent).toContain('订单 SO-1');
   key(input, 'Enter'); expect(run).toHaveBeenCalledTimes(1); expect(host.querySelector('[role="dialog"]')).toBeNull();
+});
+
+
+it('clears the toast timer on unmount so no callback outlives the workspace', () => {
+  vi.useFakeTimers();
+  try {
+    function Trigger() { const toast=useToast(); return <button onClick={()=>toast('已保存')}>保存</button>; }
+    const host=render(<MistRoot><ToastProvider><Trigger /></ToastProvider></MistRoot>);
+    click(host.querySelector<HTMLButtonElement>('button')!);
+    expect(host.querySelector('[role="status"]')?.textContent).toContain('已保存');
+    expect(vi.getTimerCount()).toBe(1);
+    cleanups.pop()!();
+    expect(vi.getTimerCount()).toBe(0);
+    act(()=>vi.advanceTimersByTime(2600));
+  } finally { vi.useRealTimers(); }
+});
+
+it('replaces an earlier toast timer and expires only the latest feedback', () => {
+  vi.useFakeTimers();
+  try {
+    function Trigger() { const toast=useToast(); return <><button onClick={()=>toast('首次保存')}>首次</button><button onClick={()=>toast('再次保存')}>再次</button></>; }
+    const host=render(<MistRoot><ToastProvider><Trigger /></ToastProvider></MistRoot>);
+    const buttons=host.querySelectorAll<HTMLButtonElement>('button');
+    click(buttons[0]);act(()=>vi.advanceTimersByTime(1000));click(buttons[1]);
+    expect(vi.getTimerCount()).toBe(1);
+    act(()=>vi.advanceTimersByTime(1600));
+    expect(host.querySelector('[role="status"]')?.textContent).toContain('再次保存');
+    act(()=>vi.advanceTimersByTime(1000));
+    expect(host.querySelector('[role="status"]')).toBeNull();
+  } finally { vi.useRealTimers(); }
 });

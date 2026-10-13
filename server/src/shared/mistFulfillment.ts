@@ -1139,11 +1139,18 @@ export function applyFulfillmentCommand(root: MistState, command: FulfillmentCom
             purchase.revisionHistory.at(-1)!.decision = { ...purchase.decision };
             if (p.decision === 'approved' && purchase.kind !== 'material' && !root.productions.some(job => job.sourcePurchaseId === purchase.id)) {
                 const order = get(root.orders, purchase.orderId, '来源订单'), line = get(root.orderLines, purchase.lineId, '来源条目');
+                // Fabric has one full-item factory branch, not garment-style capacity splitting.
+                // Raw-material purchases are independent costs and must not count as production branches.
+                if (order.type === 'fabric') {
+                    if (root.productions.some(job => job.orderId === order.id && job.lineId === line.id)) fail('面料条目仅允许一个工厂履约分支，请返回已有分支继续处理');
+                    if (purchase.unit !== line.unit) fail('面料履约单位须与订单条目一致，不能按相同数字自动换算');
+                    if (purchase.quantity !== line.qty) fail('面料单工厂分支须覆盖完整订单条目数量；分次交付在原单登记');
+                }
                 const other = f.purchases.filter(item => item.id !== purchase.id && item.lineId === line.id && item.state === 'approved' && item.kind !== 'material');
                 if (other.some(item => item.kind !== purchase.kind)) fail('同一订单条目不得混用加工与成品履约模式');
                 if (sum([...other.map(item => item.quantity), purchase.quantity]) > line.qty) fail('批准的生产分配总量超过订单条目数量');
                 const productionId = ctx.id();
-                root.productions.push({ id: productionId, sourcePurchaseId: purchase.id, code: 'FUL-' + purchase.code, orderId: order.id, lineId: line.id, order: order.code, name: purchase.description, factory: purchase.supplier, qty: purchase.quantity, due: purchase.due, pct: 0, img: line.img, col: purchase.kind === 'processing' ? 'cut' : 'finish', risk: '待合同确认、产前样与业务开产放行' });
+                root.productions.push({ id: productionId, sourcePurchaseId: purchase.id, code: 'FUL-' + purchase.code, orderId: order.id, lineId: line.id, order: order.code, name: purchase.description, factory: purchase.supplier, qty: purchase.quantity, due: purchase.due, pct: 0, img: line.img, col: purchase.kind === 'processing' ? 'cut' : 'finish', risk: order.type === 'fabric' ? '待合同确认、先锋样与业务开产放行' : '待合同确认、产前样与业务开产放行' });
                 productionFact(root, productionId);
             }
             audit(root, ctx, 'procurement', purchase.id, `采购审批${p.decision === 'approved' ? '通过' : '退回'}：${note}`, { view: 'procurement', id: purchase.id });

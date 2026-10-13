@@ -27,7 +27,8 @@
     "seed:company": "tsx scripts/seed-company-sim.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:mist": "vitest run src/mist src/shared/mist*.test.ts"
+    "test:mist": "vitest run src/mist src/shared/mist*.test.ts",
+    "typecheck:mist": "tsc -p tsconfig.mist.json"
   },
   "dependencies": {
     "@prisma/client": "^5.10.2",

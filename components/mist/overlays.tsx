@@ -202,6 +202,7 @@ const ToastCtx = React.createContext<(text: string, tone?: 'ok' | 'bad') => void
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [t, setT] = React.useState<ToastState>(null);
   const timer = React.useRef<number | undefined>(undefined);
+  React.useEffect(() => () => { window.clearTimeout(timer.current); }, []);
   const show = React.useCallback((text: string, tone?: 'ok' | 'bad') => {
     window.clearTimeout(timer.current); setT({ id: Date.now(), text, tone });
     timer.current = window.setTimeout(() => setT(null), 2600);

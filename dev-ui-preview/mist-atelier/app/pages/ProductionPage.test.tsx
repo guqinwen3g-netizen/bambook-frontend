@@ -31,3 +31,12 @@ describe('Mist production complete range',()=>{
 });
 
 it('parses actual size entries without inventing a default size',()=>{expect(parseProductionSizes('M:4\nL：6')).toEqual([{size:'M',quantity:4},{size:'L',quantity:6}]);expect(parseProductionSizes('')).toEqual([]);expect(()=>parseProductionSizes('M = ten')).toThrow('逐行');});
+
+
+it('shows fabric quantities in their source unit and never asks for garment size planning',async()=>{
+ bridge.state!.orders[0].type='fabric';for(const line of bridge.state!.orderLines)line.unit='码';const branch=bridge.state!.productions[1];bridge.state!.fulfillment.productionFacts.find(fact=>fact.productionId===branch.id)!.release=undefined;
+ await mount({view:'production-board',productionId:branch.id});await range('全部');expect(getByRole(host,'button',{name:/未来分支乙/}).textContent).toContain('20 码');expect(queryByRole(document.body,'button',{name:'登记生产尺码'})).toBeNull();expect(document.body.textContent).not.toContain('计划尺码');await click('核对先锋样并继续大货');expect(getByRole(document.body,'dialog',{name:'业务确认继续大货'})).toBeTruthy();expect(getByRole(document.body,'textbox',{name:/合同、先锋样与继续大货核对依据/})).toBeTruthy();
+});
+it('records fabric final quantity without a garment size matrix',async()=>{
+ bridge.state!.orders[0].type='fabric';bridge.state!.orderLines[1].unit='米';await mount({view:'production-board',productionId:'production-b'});await click('登记最终完工数量');expect(getByRole(document.body,'dialog',{name:'登记最终实际完工'})).toBeTruthy();expect(queryByRole(document.body,'textbox',{name:/各实际尺码数量/})).toBeNull();expect(getByRole(document.body,'spinbutton',{name:/最终实际完工数量/})).toBeTruthy();
+});

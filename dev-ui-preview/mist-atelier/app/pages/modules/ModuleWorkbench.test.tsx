@@ -5,7 +5,7 @@ import {createRoot,type Root} from 'react-dom/client';
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import {getByRole,queryByRole,getByText,queryByText} from '@testing-library/dom';
 import {Card,MistRoot,ToastProvider,type Column} from '../../../../../components/mist';
-import {ModuleWorkbench,type ModuleEditorSpec} from './ModuleWorkbench';
+import {ModuleWorkbench,moduleEditorSections,type ModuleEditorSpec} from './ModuleWorkbench';
 
 const bridge=vi.hoisted(()=>({workspace:null as any,route:{view:'test-ledger'} as any,go:vi.fn()}));
 vi.mock('../../runtime/workspace',()=>({useMistWorkspace:()=>bridge.workspace}));
@@ -222,4 +222,11 @@ describe.each(['dialog','page'] as const)('ModuleWorkbench %s select decisions',
   await click(mode==='page'?'下一步':'保存决定');expect(getByText(document.body,'请填写需求方决定')).toBeTruthy();
   expect(spec.submit).not.toHaveBeenCalled();
  });
+});
+
+
+describe('ModuleWorkbench domain-owned T9 sections',()=>{
+ it('uses explicit business boundaries instead of splitting related fields after six',()=>{const spec=editor();spec.sections=[{id:'identity',label:'来源与责任',fields:['name','source']},{id:'commercial',label:'业务约定',description:'核对实际约定',fields:['quantity','category','due','note','active']}];const groups=moduleEditorSections(spec);expect(groups.map(g=>g.label)).toEqual(['来源与责任','业务约定','确认提交']);expect(groups[0].fields.map(f=>f.key)).toEqual(['name','source']);expect(groups[1].description).toBe('核对实际约定');});
+ it('keeps every undeclared field visible and does not duplicate a repeated field key',()=>{const spec=editor();spec.sections=[{id:'identity',label:'来源',fields:['name','name','missing']}];const fields=moduleEditorSections(spec).flatMap(g=>g.fields);expect(fields.map(f=>f.key).sort()).toEqual(spec.fields.map(f=>f.key).sort());expect(fields.filter(f=>f.key==='name')).toHaveLength(1);});
+ it('validates the explicit section and retains values on a failed save',async()=>{const submit=vi.fn().mockRejectedValueOnce(new Error('业务门禁未通过'));const spec=editor(submit);spec.sections=[{id:'identity',label:'来源与责任',description:'核对准确来源',fields:['name','source']},{id:'commercial',label:'业务约定',fields:['quantity','category','due','note','active']}];await mount(spec);await click('新建');expect(getByText(host.querySelector('.mist-form-section')!,'来源与责任',{exact:true})).toBeTruthy();expect(getByText(document.body,'核对准确来源')).toBeTruthy();await fill('来源依据','实际来源');expect(host.querySelector('.mist-vsteps button[aria-current="step"]')?.textContent).toContain('来源与责任');await click('下一步');expect(getByText(host.querySelector('.mist-form-section')!,'业务约定',{exact:true})).toBeTruthy();await act(async()=>host.querySelector<HTMLButtonElement>('.mist-vsteps button')!.click());expect(getByText(host.querySelector('.mist-form-section')!,'来源与责任',{exact:true})).toBeTruthy();expect((getByRole(document.body,'textbox',{name:'来源依据'}) as HTMLInputElement).value).toBe('实际来源');await click('下一步');await click('下一步');await click('确认创建');expect(getByText(document.body,'业务门禁未通过')).toBeTruthy();await click('上一步');await click('上一步');expect((getByRole(document.body,'textbox',{name:'来源依据'}) as HTMLInputElement).value).toBe('实际来源');expect(submit.mock.calls[0][0].source).toBe('实际来源');});
 });

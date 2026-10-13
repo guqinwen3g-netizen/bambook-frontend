@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "rootDir": "..", "noEmit": true },
+  "include": ["src/mist/**/*.ts", "src/shared/mist*.ts"],
+  "exclude": ["node_modules", "src/**/*.test.ts", "src/**/__tests__/**"]
+}
