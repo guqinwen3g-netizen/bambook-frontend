@@ -301,6 +301,7 @@
 .mist-checklist > div[data-done] > span:nth-child(2) { color: var(--mist-ink-3); }
 .mist-checklist small { margin-left: auto; font-size: var(--mist-text-xs); color: var(--mist-ink-3); white-space: nowrap; }
 .mist-checklist small[data-tone="bad"] { color: var(--mist-bad-ink); }
+@media (max-width: 640px) { .mist-checklist > div { flex-wrap: wrap; row-gap: 2px; } .mist-checklist small { margin-left: 34px; flex-basis: 100%; white-space: normal; } }
 
 .mist-donut { display: flex; align-items: center; gap: 22px; padding: 18px 22px 22px; }
 .mist-donut svg { width: 124px; height: 124px; flex: none; }
