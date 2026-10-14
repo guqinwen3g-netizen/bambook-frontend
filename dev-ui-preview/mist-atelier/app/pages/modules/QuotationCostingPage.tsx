@@ -29,6 +29,7 @@ import {
   type QuoteCostComponent,
   type QuoteCostInput,
   type QuoteCostSnapshot,
+  type QuoteCostResult,
 } from "../../../../../server/src/shared/mistQuotationCosting";
 import {
   freezeQuotationHistoryEvidence,
@@ -68,6 +69,59 @@ const blankComponent = (): QuoteCostComponent => ({
   basis: "",
   outsideSupplierPrice: false,
 });
+function AllocationSummary({
+  allocation,
+  unit,
+  currency,
+}: {
+  allocation: QuoteCostResult["allocation"];
+  unit: string;
+  currency: string;
+}) {
+  if (!allocation) return null;
+  return (
+    <Banner title="本报价行整笔费用分摊">
+      整笔合计 {allocation.total} {currency} ÷ 本行报价数量{" "}
+      {allocation.quantity} {unit} ＝ 单位分摊 {allocation.unitCost} {currency}/
+      {unit}。
+      整笔金额按四位精度逐项计算，先合计再除以本行数量；分项单位展示可能有尾差，以合计分摊为准。仅为本次报价参考，不是实际费用归属，不跨条目或订单分摊。
+    </Banner>
+  );
+}
+function componentEvidence(
+  x: QuoteCostResult["components"][number],
+  input: QuoteCostInput,
+) {
+  return (
+    (x.scope === "per_line" ? "本行整笔：" : "每" + input.unit + "：") +
+    x.quantity +
+    " " +
+    x.unit +
+    " × " +
+    x.unitPrice +
+    " " +
+    input.currency +
+    (x.scope === "per_line"
+      ? " = " +
+        x.lineAmount +
+        " " +
+        input.currency +
+        "；按本行 " +
+        input.allocationQuantity +
+        " " +
+        input.unit +
+        " 分摊"
+      : "；损耗 " + x.lossPercent + "%") +
+    "；单位计入 " +
+    x.amount +
+    " " +
+    input.currency +
+    "/" +
+    input.unit +
+    "；" +
+    x.basis
+  );
+}
 function Snapshot({ r }: { r: QuoteCostSnapshot }) {
   const { go } = useNav();
   return (
@@ -167,6 +221,11 @@ function Snapshot({ r }: { r: QuoteCostSnapshot }) {
             },
           ]}
         />
+        <AllocationSummary
+          allocation={r.result.allocation}
+          unit={r.input.unit}
+          currency={r.input.currency}
+        />
         {r.historyEvidence && (
           <FrozenHistoryEvidence evidence={r.historyEvidence} />
         )}
@@ -191,16 +250,14 @@ function Snapshot({ r }: { r: QuoteCostSnapshot }) {
                       {kinds[x.kind]} · {x.description}
                     </span>
                     <small className="mist-note">
-                      {x.quantity} {x.unit} / 每{r.input.unit} · 单价{" "}
-                      {x.unitPrice} {r.input.currency} · 损耗 {x.lossPercent}% ·{" "}
-                      {x.basis}
+                      {componentEvidence(x, r.input)}
                     </small>
                   </span>
                 ),
               },
               {
                 key: "amount",
-                header: "金额",
+                header: "单位计入",
                 align: "right",
                 width: "130px",
                 render: (x) => x.amount + " " + r.input.currency,
@@ -229,6 +286,7 @@ export function QuotationCostingPage() {
     latest = lineSnapshots.at(-1);
   const initial = (): QuoteCostInput => ({
     mode: "supplier",
+    allocationQuantity: line?.qty || "",
     currency: q?.currency || "",
     unit: line?.unit || "",
     sourceSpecification: line?.specification || "",
@@ -295,7 +353,18 @@ export function QuotationCostingPage() {
   const back = () => go("quotations", q?.id || route.id);
   const begin = () => {
     if (!q || !line || disabled) return;
-    setInput(latest ? JSON.parse(JSON.stringify(latest.input)) : initial());
+    setInput(
+      latest
+        ? {
+            ...JSON.parse(JSON.stringify(latest.input)),
+            allocationQuantity: line.qty,
+            components: latest.input.components.map((r) => ({
+              ...r,
+              ...(r.scope === "per_line" ? { lineOnlyConfirmed: false } : {}),
+            })),
+          }
+        : initial(),
+    );
     setOrigin(quotationCostingTarget(q, line));
     setStep(0);
     setApplyPrice(false);
@@ -637,9 +706,9 @@ export function QuotationCostingPage() {
                   title={
                     input.mode === "supplier"
                       ? "未包含的额外费用"
-                      : "每个报价计价单位的成本拆解"
+                      : "报价成本拆解与整笔费用"
                   }
-                  sub="每项写清耗用量、耗用单位、损耗、单价及依据，不猜标准用量。"
+                  sub="每项明确按计价单位计入，或作为仅属于本行的整笔费用分摊；写清计费量、单位、单价及依据。"
                   tools={
                     <Button
                       disabled={disabled || input.components.length >= 100}
@@ -654,9 +723,36 @@ export function QuotationCostingPage() {
                     </Button>
                   }
                 />
+                {input.components.some((r) => r.scope === "per_line") && (
+                  <Banner title="分摊数量绑定准确报价行">
+                    当前 {line.qty} {line.unit}
+                    ，仅本行，不使用整份报价数量或将同一费用再次分给其他行。报价数量变化须重新核算；税费、MOQ、可否退还及费用范围仍须人工写入依据，不自动认定。
+                  </Banner>
+                )}
                 {input.components.map((r, i) => (
                   <FormSection key={i} title={`第${i + 1}项成本`}>
                     <FormGrid>
+                      <Field label="费用计入范围" required>
+                        <Select
+                          aria-label={`成本${i + 1}计入范围`}
+                          disabled={disabled}
+                          value={r.scope || "per_unit"}
+                          options={[
+                            { value: "per_unit", label: "每个报价计价单位" },
+                            {
+                              value: "per_line",
+                              label: "仅本报价行的整笔费用",
+                            },
+                          ]}
+                          onChange={(e) =>
+                            patchRow(i, {
+                              scope: e.target
+                                .value as QuoteCostComponent["scope"],
+                              lineOnlyConfirmed: false,
+                            })
+                          }
+                        />
+                      </Field>
                       <Field label="类型">
                         <Select
                           aria-label={`成本${i + 1}类型`}
@@ -694,11 +790,18 @@ export function QuotationCostingPage() {
                       ).map((field, j) => (
                         <Field
                           key={field}
+                          hint={
+                            r.scope === "per_line" && field === "lossPercent"
+                              ? "整笔费用不再加损耗，明确填0；材料损耗使用按单位路径。"
+                              : undefined
+                          }
                           label={
                             [
                               "项目名称",
-                              "每单位耗用量",
-                              "耗用单位",
+                              r.scope === "per_line"
+                                ? "整笔计费数量"
+                                : "每单位耗用量",
+                              r.scope === "per_line" ? "计费单位" : "耗用单位",
                               "损耗率 %",
                               "原币单价",
                               "项目依据",
@@ -716,6 +819,16 @@ export function QuotationCostingPage() {
                           />
                         </Field>
                       ))}
+                      {r.scope === "per_line" && (
+                        <Checkbox
+                          label={`已确认第${i + 1}项整笔费用仅归属本报价行，未重复计入其他行`}
+                          disabled={disabled}
+                          checked={r.lineOnlyConfirmed === true}
+                          onChange={(value) =>
+                            patchRow(i, { lineOnlyConfirmed: value })
+                          }
+                        />
+                      )}
                       {input.mode === "supplier" && (
                         <Checkbox
                           label={`已确认第${i + 1}项不包含在供应商成品价中`}
@@ -874,19 +987,7 @@ export function QuotationCostingPage() {
                               (x) =>
                                 x.description +
                                 "：" +
-                                x.quantity +
-                                " " +
-                                x.unit +
-                                " × " +
-                                x.unitPrice +
-                                " " +
-                                input.currency +
-                                "；损耗 " +
-                                x.lossPercent +
-                                "% → " +
-                                x.amount +
-                                " " +
-                                input.currency,
+                                componentEvidence(x, input),
                             )
                             .join("；") || "没有额外成本项",
                       },
@@ -897,6 +998,11 @@ export function QuotationCostingPage() {
                         value: input.sourceSpecification + " / " + input.unit,
                       },
                     ]}
+                  />
+                  <AllocationSummary
+                    allocation={calculation?.result.allocation}
+                    unit={input.unit}
+                    currency={input.currency}
                   />
                   {historyReference && (
                     <Banner title="本次同时冻结人工历史依据">
@@ -1013,6 +1119,8 @@ export function QuotationCostingPage() {
                 "成本依据",
                 "策略依据",
                 "人工历史依据冻结原文",
+                "本行整笔费用分摊",
+                "成本项冻结原文",
               ],
               lineSnapshots.map((r) => [
                 r.id,
@@ -1029,6 +1137,10 @@ export function QuotationCostingPage() {
                 r.historyEvidence
                   ? JSON.stringify(r.historyEvidence)
                   : "未选历史依据",
+                r.result.allocation
+                  ? JSON.stringify(r.result.allocation)
+                  : "没有整笔分摊",
+                JSON.stringify(r.result.components),
               ]),
             )
           }

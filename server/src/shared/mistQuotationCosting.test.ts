@@ -4,6 +4,7 @@ import {
   calculateQuoteCosting,
   quotationCostingTarget,
   activeQuoteCostSnapshots,
+  quoteCostModelVersion,
   type QuoteCostInput,
   type QuoteCostComponent,
 } from "./mistQuotationCosting";
@@ -595,5 +596,172 @@ describe("manual historical evidence freeze", () => {
     t.run(t.command());
     expect(t.q().costingSnapshots![0].historyEvidence).toBeDefined();
     expect(t.q().costingSnapshots![1].historyEvidence).toBeUndefined();
+  });
+});
+
+describe("exact quote-line fixed fee allocation", () => {
+  const fee = (patch: Partial<QuoteCostComponent> = {}) =>
+    component({
+      scope: "per_line",
+      lineOnlyConfirmed: true,
+      description: "本行独享开版费",
+      quantity: "1",
+      unit: "笔",
+      unitPrice: "100",
+      ...patch,
+    });
+  it("adds fixed fees once, keeps variable expenses per unit, and versions only the new calculation", () => {
+    const r = calculateQuoteCosting({
+      ...input(),
+      supplierPrice: "10",
+      allocationQuantity: "10",
+      components: [component({ unitPrice: "2" }), fee()],
+    });
+    expect(r.result).toMatchObject({
+      cost: "22.0000",
+      suggestedQuotePrice: "27.50",
+      allocation: {
+        quantity: "10.0000",
+        total: "100.0000",
+        unitCost: "10.0000",
+      },
+    });
+    expect(r.result.components[1]).toMatchObject({
+      amount: "10.0000",
+      lineAmount: "100.0000",
+      scope: "per_line",
+      lineOnlyConfirmed: true,
+    });
+    expect(quoteCostModelVersion(r.input)).toBe(
+      "quote-cost-line-allocation-v2",
+    );
+    expect(quoteCostModelVersion(calculateQuoteCosting(input()).input)).toBe(
+      "quote-cost-v1",
+    );
+    expect(calculateQuoteCosting(input()).result.allocation).toBeUndefined();
+  });
+  it("sums four-decimal line fees before division, instead of summing rounded per-item thirds", () => {
+    const r = calculateQuoteCosting({
+      ...input(),
+      supplierPrice: "10",
+      allocationQuantity: "3",
+      components: [
+        fee({ unitPrice: "1" }),
+        fee({ unitPrice: "1" }),
+        fee({ unitPrice: "1" }),
+      ],
+    }).result;
+    expect(r.components.map((x) => x.amount)).toEqual([
+      "0.3333",
+      "0.3333",
+      "0.3333",
+    ]);
+    expect(r.allocation).toEqual({
+      quantity: "3.0000",
+      total: "3.0000",
+      unitCost: "1.0000",
+    });
+    expect(r.cost).toBe("11.0000");
+  });
+  it("calculates fractional fabric quantities without numeric conversion or intermediate denominator rounding", () => {
+    const r = calculateQuoteCosting({
+      ...input(),
+      mode: "breakdown",
+      allocationQuantity: "0.0001",
+      components: [fee({ unitPrice: "0.0001" })],
+    }).result;
+    expect(r.cost).toBe("1.0000");
+    expect(
+      calculateQuoteCosting({
+        ...input(),
+        allocationQuantity: "12.5",
+        components: [fee()],
+      }).result.cost,
+    ).toBe("108.0000");
+  });
+  it.each(["", "0", "-1", "1e2", "1.00001", "Infinity"])(
+    "rejects invalid allocation quantity %s",
+    (allocationQuantity) => {
+      expect(() =>
+        calculateQuoteCosting({
+          ...input(),
+          allocationQuantity,
+          components: [fee()],
+        }),
+      ).toThrow();
+    },
+  );
+  it.each([
+    { scope: "invented" },
+    { lineOnlyConfirmed: false },
+    { lossPercent: "1" },
+  ])("rejects unclear scope, ownership or loss %j", (patch) => {
+    expect(() =>
+      calculateQuoteCosting({
+        ...input(),
+        allocationQuantity: "10",
+        components: [fee(patch as any)],
+      }),
+    ).toThrow();
+  });
+  it("retains supplier exclusions and prevents allocating already-included fabric or CMT again", () => {
+    for (const patch of [
+      { outsideSupplierPrice: false },
+      { kind: "fabric" },
+      { kind: "cmt" },
+    ])
+      expect(() =>
+        calculateQuoteCosting({
+          ...input(),
+          allocationQuantity: "10",
+          components: [fee(patch as any)],
+        }),
+      ).toThrow(/不叠加/);
+  });
+  it("server rejects a forged denominator atomically even when supplied results look valid", () => {
+    const t = setup(),
+      before = JSON.stringify(t.state());
+    expect(() =>
+      t.run(
+        t.command({
+          input: {
+            ...input(),
+            supplierId: t.supplier,
+            allocationQuantity: "100",
+            components: [fee()],
+          },
+          result: { cost: "1" },
+        }),
+      ),
+    ).toThrow("费用分摊数量须等于当前准确报价行数量");
+    expect(JSON.stringify(t.state())).toBe(before);
+  });
+  it("freezes the exact denominator, preserves other lines, includes approval provenance and invalidates after quantity changes", () => {
+    const t = setup(),
+      other = structuredClone(t.q().lines[1]);
+    t.run(
+      t.command({
+        input: {
+          ...input(),
+          supplierId: t.supplier,
+          allocationQuantity: "10",
+          components: [fee()],
+        },
+      }),
+    );
+    const snap = t.q().costingSnapshots![0];
+    expect(snap.modelVersion).toBe("quote-cost-line-allocation-v2");
+    expect(snap.result.cost).toBe("110.0000");
+    expect(t.q().lines[1]).toEqual(other);
+    expect(t.q().lines[0].price).toBe("20");
+    expect(activeQuoteCostSnapshots(t.q())).toHaveLength(1);
+    t.run({ type: "market.quotation.submit", payload: { id: t.id } });
+    expect(
+      t.q().approval!.details.find((d) => d.label === "本行整笔费用分摊")
+        ?.value,
+    ).toContain("100.0000 USD / 10.0000 米");
+    t.q().lines[0].qty = "20";
+    expect(activeQuoteCostSnapshots(t.q())).toHaveLength(0);
+    expect(snap.result.allocation?.quantity).toBe("10.0000");
   });
 });

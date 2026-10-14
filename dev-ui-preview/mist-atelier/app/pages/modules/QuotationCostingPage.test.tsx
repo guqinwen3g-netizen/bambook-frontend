@@ -440,3 +440,83 @@ it("source changes after selection cannot be frozen silently", async () => {
   expect(host.textContent).toContain("请重新选择并核对历史依据");
   expect(bridge.w.run).not.toHaveBeenCalled();
 });
+
+it("separates line-only fees, requires ownership, freezes allocation and exports the full original inputs", async () => {
+  render();
+  await click("增加成本项");
+  field("成本1计入范围", "per_line");
+  field("成本1名称", "软件验收本行整笔运费");
+  field("成本1用量", "1");
+  field("成本1单位", "笔");
+  field("成本1单价", "100");
+  field("成本1依据", "软件验收：仅本行承担，其他报价行不重复计入");
+  act(() =>
+    getByRole(host, "checkbox", {
+      name: "已确认第1项不包含在供应商成品价中",
+    }).click(),
+  );
+  field("适用规格", "软件验收 150cm");
+  field("来源日期", "2026-10-14");
+  field("来源供应商", bridge.w.state.market.suppliers[0].id);
+  field("供应商成品单价", "10");
+  field("来源交付与费用包含条件", "软件验收：包装已含，整笔运费未含");
+  field("成本来源依据", "软件验收，不是真实成本");
+  await click("下一步");
+  expect(host.textContent).toContain("须确认整笔费用仅归属本报价行");
+  act(() =>
+    getByRole(host, "checkbox", {
+      name: "已确认第1项整笔费用仅归属本报价行，未重复计入其他行",
+    }).click(),
+  );
+  await fill();
+  await click("下一步");
+  expect(host.textContent).toContain("本报价行整笔费用分摊");
+  await click("保存核算快照");
+  const snap = q().costingSnapshots!.at(-1)!;
+  expect(snap.modelVersion).toBe("quote-cost-line-allocation-v2");
+  expect(snap.result.allocation).toEqual({
+    quantity: "1200.0000",
+    total: "100.0000",
+    unitCost: "0.0833",
+  });
+  expect(snap.result.cost).toBe("10.0833");
+  expect(snap.appliedPrice).toBe(false);
+  await click("导出本条目核算");
+  expect(JSON.stringify(bridge.csv.mock.calls)).toContain("lineAmount");
+  expect(host.textContent).toContain("100.0000");
+  expect(host.textContent).toContain("软件验收本行整笔运费");
+  await click("新建核算");
+  expect(
+    (
+      getByRole(host, "checkbox", {
+        name: "已确认第1项整笔费用仅归属本报价行，未重复计入其他行",
+      }) as HTMLInputElement
+    ).checked,
+  ).toBe(false);
+  expect(
+    (getByLabelText(host, "成本1计入范围") as HTMLSelectElement).value,
+  ).toBe("per_line");
+});
+it("leaves the previous per-unit formula unchanged when the scope is omitted", async () => {
+  render();
+  await click("增加成本项");
+  expect(
+    (getByLabelText(host, "成本1计入范围") as HTMLSelectElement).value,
+  ).toBe("per_unit");
+  field("成本1名称", "软件验收每件包装");
+  field("成本1用量", "1");
+  field("成本1单位", "份");
+  field("成本1单价", "2");
+  field("成本1依据", "软件验收按件包装");
+  act(() =>
+    getByRole(host, "checkbox", {
+      name: "已确认第1项不包含在供应商成品价中",
+    }).click(),
+  );
+  await fill();
+  await click("下一步");
+  await click("保存核算快照");
+  expect(q().costingSnapshots!.at(-1)!.modelVersion).toBe("quote-cost-v1");
+  expect(q().costingSnapshots!.at(-1)!.result.cost).toBe("12.0000");
+  expect(q().costingSnapshots!.at(-1)!.result.allocation).toBeUndefined();
+});
