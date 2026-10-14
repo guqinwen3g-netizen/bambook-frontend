@@ -20,8 +20,10 @@ export class MistPrivateFiles {
     if (!file.startsWith(root + path.sep)) fail('INVALID_FILE_PATH', '附件路径无效', 400);
     return { root, file, directory: path.dirname(file) };
   }
-  async write(workspaceId: string, input: MistFileInput, now: string): Promise<MistStoredFile> {
-    const meta = validateFileInput(input), id = randomUUID(), target = this.checked(workspaceId, id);
+  async write(workspaceId: string, input: MistFileInput, now: string): Promise<MistStoredFile> { return this.writeWithId(workspaceId, randomUUID(), input, now); }
+  /** 以既定附件 ID 写入（演示工作区创建时使用）；ID 必须是 UUID 且尚不存在。 */
+  async writeWithId(workspaceId: string, id: string, input: MistFileInput, now: string): Promise<MistStoredFile> {
+    const meta = validateFileInput(input), target = this.checked(workspaceId, id);
     await fs.mkdir(target.directory, { recursive: true, mode: 0o700 });
     const realRoot = await fs.realpath(target.root), realDirectory = await fs.realpath(target.directory);
     if (realDirectory !== path.join(realRoot, workspaceId)) fail('INVALID_FILE_PATH', '附件目录无效', 400);

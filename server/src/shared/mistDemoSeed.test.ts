@@ -1,0 +1,45 @@
+import { describe, expect, it } from 'vitest';
+import { createMistState, type MistContext } from './mistWorkspace';
+import { DEMO_SEED_VERSION } from './mistDemoSeed';
+import { isDemoFile, renderDemoFile } from './mistDemoFiles';
+
+const context = (): MistContext => { let n = 0; return { id: () => `demo-${++n}`, now: '2026-10-14T02:00:00.000Z', actorName: '演示' }; };
+const demo = () => { let failures: unknown[] = []; const state = createMistState(context(), 'demo', f => { failures = f; }); return { state, failures }; };
+
+describe('演示工作区数据', () => {
+  it('所有示例数据都经由真实业务命令生成，没有失败步骤并记录种子版本', () => {
+    const { state, failures } = demo();
+    expect(failures).toEqual([]);
+    expect(state.settings.demoSeed).toEqual({ version: DEMO_SEED_VERSION, seededAt: '2026-10-14T02:00:00.000Z' });
+  });
+  it('每个已完成前端的页面都有内容', () => {
+    const { state } = demo(), m = state.market, f = state.fulfillment;
+    const slices: Record<string, unknown[]> = {
+      products: m.products, suppliers: m.suppliers, relations: m.relations, seasons: m.seasons, quotations: m.quotations, leads: m.leads,
+      opportunities: state.crm.opportunities, followUps: state.crm.followUps, samples: f.samples, qcTasks: f.qcTasks, qcReports: f.qcReports,
+      purchases: f.purchases, receipts: f.receipts, stock: f.stock, shipments: f.shipments, packing: f.packing, customs: f.customs, documents: f.documents,
+      funding: state.orderFunding.assignments, mail: state.email.messages, orders: state.orders,
+    };
+    for (const [name, rows] of Object.entries(slices)) expect(rows.length, name).toBeGreaterThan(0);
+    expect(state.orders.every(o => o.governance?.status === 'approved')).toBe(true);
+    expect(new Set(state.orders.map(o => o.state)).size).toBeGreaterThan(2);
+    expect(m.quotations.some(q => q.status === 'Accepted') && m.quotations.some(q => q.status === 'Draft')).toBe(true);
+    expect(f.shipments[0].state).toBe('departed');
+  });
+  it('示例附件生成为可下载的英文 PDF，并标明演示用途', () => {
+    const { state } = demo(), files = state.files.filter(isDemoFile);
+    expect(files.length).toBeGreaterThanOrEqual(5);
+    for (const file of files) {
+      const text = Buffer.from(renderDemoFile(state, file)).toString('latin1');
+      expect(text.startsWith('%PDF-1.4')).toBe(true);
+      expect(text.trimEnd().endsWith('%%EOF')).toBe(true);
+      expect(text).toContain('Bambook demo workspace');
+      expect(/^[\x09\x0a\x0d\x20-\x7e]*$/.test(text)).toBe(true);
+    }
+  });
+  it('空白工作区不带任何示例数据', () => {
+    const state = createMistState(context(), 'empty');
+    expect(state.settings.demoSeed).toBeUndefined();
+    expect(state.orders).toEqual([]); expect(state.market.products).toEqual([]); expect(state.fulfillment.samples).toEqual([]); expect(state.files).toEqual([]);
+  });
+});

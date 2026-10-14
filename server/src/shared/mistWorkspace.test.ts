@@ -58,14 +58,14 @@ describe('Mist workspace domain integrity',()=>{
     expect(result.state.versions.length).toBe(s.versions.length);expect(result.state.versions.find(x=>x.id===v.id)?.archivedAt).toBeNull();expect(s.versions.find(x=>x.id===v.id)?.confirmations).toHaveLength(0);
   });
   it('rolls partial and complete physical shipment facts back to the source order',()=>{
-    const ctx=context(),s=createMistState(ctx),order=s.orders[0],lines=s.orderLines.filter(l=>l.orderId===order.id);
+    const ctx=context(),s=createMistState(ctx),order=s.orders.find(o=>o.code==='SO-G-2026-018')!,lines=s.orderLines.filter(l=>l.orderId===order.id);
     s.fulfillment.shipments.push({id:'physical-shipment',state:'departed',lines:[{orderId:order.id,lineId:lines[0].id,quantity:lines[0].qty/2}]} as any);
     let result=applyMistCommand(s,{type:'settings.update',payload:{density:'compact'}},ctx).state;
     expect(result.orders.find(o=>o.id===order.id)?.state).toBe('部分出运');
-    result.fulfillment.shipments[0].lines=lines.map(l=>({orderId:order.id,lineId:l.id,quantity:l.qty,factoryConfirmedAt:'2026-10-13'}));
+    result.fulfillment.shipments.find(x=>x.id==='physical-shipment')!.lines=lines.map(l=>({orderId:order.id,lineId:l.id,quantity:l.qty,factoryConfirmedAt:'2026-10-13'}));
     result=applyMistCommand(result,{type:'settings.update',payload:{density:'default'}},ctx).state;
     expect(result.orders.find(o=>o.id===order.id)?.state).toBe('待收尾款');
-    expect(s.orders[0].state).not.toBe('部分出运');
+    expect(order.state).not.toBe('部分出运');
   });
 });
 

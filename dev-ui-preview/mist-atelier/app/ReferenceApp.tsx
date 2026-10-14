@@ -227,7 +227,7 @@ function AppInner({ theme, setTheme }: { theme: ThemeMode; setTheme: (theme: The
       <MistAppShell collapsed={collapsed} scrollKey={route.view + (route.id ?? '')}
         sidebar={<MistSidebarPresentation sections={sections} activeId={base === 'development' ? 'development' : base}
           onNavigate={id => go(id)} collapsed={collapsed} onToggleCollapsed={() => setCollapsed(value => !value)}
-          workspace={{ symbol: (workspace.workspace?.name || name).slice(0,1), name: workspace.workspace?.name || '我的工作空间', caption: '当前工作空间', onClick:()=>setSpaces(true) }}
+          workspace={{ symbol: (workspace.workspace?.name || name).slice(0,1), name: workspace.workspace?.name || '我的工作空间', caption: state?.settings.demoSeed ? '演示工作空间 · 示例数据' : '当前工作空间', onClick:()=>setSpaces(true) }}
           account={{ name, caption: roles, avatarUrl: user.avatarUrl ?? undefined, onClick: () => setAccount(true) }}
           onSearch={() => setPalette(true)}
           assistant={{ title: '小竹', text: '查询当前工作空间的进展', onClick: ()=>openAI() }} />}
@@ -252,8 +252,13 @@ function AppInner({ theme, setTheme }: { theme: ThemeMode; setTheme: (theme: The
       </Drawer>
       <Drawer open={spaces} onClose={()=>setSpaces(false)} title="工作空间" sub="切换后只查看对应空间中的记录" footer={<Button onClick={()=>setSpaces(false)}>完成</Button>}>
         {workspace.workspaces.map(w=><p key={w.id}><Button disabled={workspace.loading||!!workspace.pending} variant={w.id===workspace.workspace?.id?'primary':'secondary'} onClick={()=>void workspace.switchWorkspace(w.id).catch(report)}>{w.name}</Button></p>)}
+        {state?.settings.demoSeed&&<p className="mist-note">当前是演示工作空间：其中的客户、订单、样品、质检、采购、库存、出运等示例记录都按真实业务流程逐步生成，附件为标注了演示用途的示例 PDF。可以放心试用，不影响其他工作空间。</p>}
         <Field label="新工作空间名称"><TextInput value={spaceName} onChange={e=>setSpaceName(e.target.value)} /></Field>
-        <Button disabled={!spaceName.trim()||workspace.loading||!!workspace.pending} onClick={()=>void workspace.createWorkspace(spaceName.trim(),'empty').then(()=>setSpaceName('')).catch(report)}>创建空白工作空间</Button>
+        <div className="mist-row">
+          <Button disabled={!spaceName.trim()||workspace.loading||!!workspace.pending} onClick={()=>void workspace.createWorkspace(spaceName.trim(),'empty').then(()=>setSpaceName('')).catch(report)}>创建空白工作空间</Button>
+          <Button disabled={!spaceName.trim()||workspace.loading||!!workspace.pending} onClick={()=>void workspace.createWorkspace(spaceName.trim(),'demo').then(()=>setSpaceName('')).catch(report)}>创建演示工作空间</Button>
+        </div>
+        <p className="mist-note">演示工作空间会带上一套完整的示例业务数据，便于了解各页面；空白工作空间用于正式记录。</p>
       </Drawer>
       <Drawer open={account} onClose={() => setAccount(false)} title={session.localMode?'本地工作区':'账号'} sub={name}
         footer={session.localMode?<Button loading={session.refreshing} onClick={()=>void session.refresh()}>重新进入本地工作区</Button>:<Button icon={LogOut} loading={session.signingOut} onClick={() => { void session.logout().catch(failure => toast(failure instanceof Error ? failure.message : '退出失败', 'bad')); }}>退出登录</Button>}>

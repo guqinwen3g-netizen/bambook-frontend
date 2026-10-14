@@ -2,6 +2,7 @@ import {developmentDomain,emptyFabricRequirements,fabricRequirementError,validFa
 import {createFulfillmentState,applyFulfillmentCommand,fulfillmentCommandPermission,getFulfillmentReviews,assertProductionTransition,type FulfillmentState,type FulfillmentCommand} from './mistFulfillment';
 import {createMarketState,applyMarketCommand,marketCommandPermission,getMarketReviews,type MarketState,type MarketCommand} from './mistMarket';
 import {createCrmState,applyCrmCommand,crmCommandPermission,type CrmState,type CrmCommand} from './mistCrm';
+import {seedDemoModules,DEMO_SEED_VERSION} from './mistDemoSeed';
 import {createEmailState,applyEmailCommand,emailCommandPermission,seedEmailExamples,type EmailState,type EmailCommand} from './mistEmail';
 import {createPlatformState,applyPlatformCommand,platformCommandPermission,getPlatformReviews,platformCreditAppliedMinor,getRequiredBusinessNumberPlan as platformBusinessNumberPlan,type PlatformState,type PlatformCommand} from './mistPlatform';
 import type {MistCreditDocumentIssue} from './mistCreditDocuments';
@@ -69,7 +70,7 @@ export type MistTask = { id: string; title: string; due: string; done: boolean; 
 export type MistNotification = { id: string; title: string; detail: string; at: string; readAt: string | null; target: MistTarget; category?:'qc'|'shipping'|'suggestion'|'general' };
 export type MistCalendarEvent = { id: string; title: string; date: string; time: string; note: string; target?: MistTarget };
 export type MistCompanyProfile={legalName:string;englishName:string;address:string;englishAddress:string;phone:string;email:string;taxId:string;customsCode:string;bankName:string;bankAccount:string;swift:string;defaultCurrency:string};
-export type MistSettings = { companyProfile?:MistCompanyProfile; theme: 'light' | 'dark' | 'system'; density: 'compact' | 'default' | 'comfy'; reducedMotion: boolean; notifications: { qc: boolean; shipping: boolean; suggestions: boolean; digest: boolean }; workspaceName: string; profileName: string; profileEmail: string; locale: string };
+export type MistSettings = { companyProfile?:MistCompanyProfile; theme: 'light' | 'dark' | 'system'; density: 'compact' | 'default' | 'comfy'; reducedMotion: boolean; notifications: { qc: boolean; shipping: boolean; suggestions: boolean; digest: boolean }; workspaceName: string; profileName: string; profileEmail: string; locale: string; /** 仅演示工作区：示例数据版本；客户端不可设置。 */ demoSeed?: { version: number; seededAt: string } };
 export type MistState = {
   orderFunding?:OrderFundingState;
   workspaceArchive?: {at:string;actorId:string};
@@ -270,7 +271,7 @@ function recalculate(state: MistState) {
     }else if((state.fulfillment?.purchases||[]).some(p=>p.orderId===order.id&&p.state==='approved')){order.state='备料中';order.tone='neutral';}
   }
 }
-export function createMistState(context: MistContext, seed: 'demo'|'empty' = 'demo'): MistState {
+export function createMistState(context: MistContext, seed: 'demo'|'empty' = 'demo', onDemoSeedFailures?: (failures: Array<{step:string;message:string}>) => void): MistState {
   const state={schemaVersion:1,devs:[],versions:[],drafts:[],fabrics:[],orders:[],orderLines:[],productions:[],receipts:[],invoices:[],allocations:[],payments:[],customers:[],contacts:[],files:[],events:[],tasks:[],notifications:[],calendar:[],settings:{theme:'system',density:'default',reducedMotion:false,notifications:{qc:true,shipping:true,suggestions:true,digest:false},workspaceName:'成衣一组',profileName:context.actorName,profileEmail:'',locale:'zh-CN'}} as unknown as MistState;
   normalizeMistState(state,context);
   if(seed==='empty') return state;
@@ -289,7 +290,7 @@ export function createMistState(context: MistContext, seed: 'demo'|'empty' = 'de
     }
   }
   state.fabrics=Seed.FABRICS.map(row=>({...row,code:row.id,tone:row.tone as MistTone,due:iso(row.due,context),request:row.name,answer:row.state==='已结案'?'已按要求找到并确认面料。':'',confirmed:row.state==='已结案',fileIds:[]}));
-  state.orders=Seed.ORDERS.map(row=>({...row,code:row.id,type:'garment',img:row.img as MistImage,tone:row.tone as MistTone,customerId:state.customers.find(c=>c.name===row.customer)!.id,due:iso(row.due,context),handoffAt:null,createdAt:context.now,updatedAt:context.now,checklist:['装箱单草稿','唛头确认','尾期 QC 预约','报关资料','订舱'].map((label,index)=>({id:row.id+'-check-'+index,label,done:index<2,note:index===3?'待补齐':'',...(index<2?{actor:'顾言',at:context.now}:{})}))}));
+  state.orders=Seed.ORDERS.map(row=>({...row,code:row.id,type:'garment',img:row.img as MistImage,tone:row.tone as MistTone,customerId:state.customers.find(c=>c.name===row.customer)!.id,due:iso(row.due,context),handoffAt:null,createdAt:context.now,updatedAt:context.now,checklist:['拟发范围确认','收货与贸易条款确认','收款条件核对','装箱单草稿','唛头确认','尾期 QC 预约','报关资料','订舱'].map((label,index)=>({id:row.id+'-check-'+index,label,done:index===3||index===4,note:index===6?'待补齐':'',...(index===3||index===4?{actor:'顾言',at:context.now}:{})}))}));
   for(const order of state.orders){
     const base=order.code==='SO-G-2026-018'?Seed.ORDER_LINES:null;
     const jobs=Seed.PRODS.filter(p=>p.order===order.code);
@@ -318,7 +319,11 @@ export function createMistState(context: MistContext, seed: 'demo'|'empty' = 'de
   state.notifications=[{id:context.id(),category:'qc',title:'首样评审报告已回传',detail:'查看当前版本的专业评审结果。',at:context.now,readAt:null,target:{view:'development/detail',id:state.devs[0].id,versionId:state.devs[0].currentVersionId||undefined}}];
   seedEmailExamples(state,context);
   recalculate(state);
-  return state;
+  // 各模块示例数据：经真实业务命令生成，失败步骤被跳过（测试要求零失败）。
+  const demo=seedDemoModules(state,context),seeded=demo.state;onDemoSeedFailures?.(demo.failures);
+  seeded.settings.demoSeed={version:DEMO_SEED_VERSION,seededAt:context.now};
+  recalculate(seeded);
+  return seeded;
 }
 
 export function getRequiredBusinessNumberPlan(state: MistState, command: MistCommand) { return platformBusinessNumberPlan(state, command); }
@@ -619,3 +624,4 @@ export function normalizeMistState(state:MistState,context:MistContext):void {
   recalculate(state);
 }
 export function getMistReviewTasks(state:MistState):MistReviewTask[]{return [...getOrderGovernanceReviews(state),...getFulfillmentReviews(state),...getMarketReviews(state),...getPlatformReviews(state)];}
+export { renderDemoFile } from './mistDemoFiles';

@@ -13,6 +13,8 @@ import { buildIssueArchive, bindIssueArchive, prepareCreditDocumentSnapshot, ass
 import { canonicalCreditDocument, creditDocumentFingerprint, creditSourceFingerprint, type MistBusinessNumberNeed, type MistCreditPrintSnapshot } from '../shared/mistCreditDocuments';
 export type MistContract = {
   createMistState: (context: MistContext, seed?: 'demo' | 'empty') => MistState;
+  /** 演示工作区的示例附件：按工作区数据生成可下载 PDF，创建时写入私有存储。 */
+  renderDemoFile?: (state: MistState, file: MistState['files'][number]) => Uint8Array;
   applyMistCommand: (state: MistState, command: MistCommand, context: MistContext) => { state: MistState; result: Record<string, unknown> };
   mistCommandPermission: (command: MistCommand) => string | null;
   getMistReviewTasks?: (state:MistState)=>MistReviewTask[];
@@ -104,9 +106,10 @@ export class MistRepository {
           return publicWorkspace(active);
         }
       }
-      const state = this.contract.createMistState(this.context(actor), seed);
+      const state = this.contract.createMistState(this.context(actor), seed), workspaceId = randomUUID();
       state.settings.workspaceName = name;
-      const row = await db.mistWorkspace.create({ data: { id: randomUUID(), ownerId: actor.userId, slug, name, revision: 0, state } });
+      await this.writeDemoFiles(workspaceId, state);
+      const row = await db.mistWorkspace.create({ data: { id: workspaceId, ownerId: actor.userId, slug, name, revision: 0, state } });
       if (!defaultOnly) await db.mistCommandReceipt.create({ data: { id: randomUUID(), workspaceId: row.id, requestId, actorId: actor.userId, inputHash, expectedRevision: 0, result: { revision: 0, result: { workspaceId: row.id } } } });
       await this.authorize(db, prior);
       return publicWorkspace(row);
@@ -195,6 +198,16 @@ export class MistRepository {
         });
       }
       throw error;
+    }
+  }
+  /** 演示种子里的附件只有占位记录；这里生成真实 PDF 并改写为工作区私有存储路径。 */
+  private async writeDemoFiles(workspaceId: string, state: MistState) {
+    const render = this.contract.renderDemoFile;
+    if (!render) return;
+    for (const file of state.files) {
+      if (!file.storageKey.startsWith('demo-seed/')) continue;
+      const stored = await this.files.writeWithId(workspaceId, file.id, { bytes: Buffer.from(render(state, file)), name: file.name, mimeType: file.mimeType }, file.createdAt);
+      file.size = stored.size; file.storageKey = stored.storageKey;
     }
   }
   private reviews(state:MistState):MistReviewTask[]{return this.contract.getMistReviewTasks?.(state)||[];}

@@ -2,15 +2,26 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { createMistState, applyMistCommand, mistCommandPermission, mistMoneyMinor } from '../shared/mistWorkspace';
+import { createMistState, applyMistCommand, mistCommandPermission, mistMoneyMinor, renderDemoFile } from '../shared/mistWorkspace';
 import { MistRepository, type MistContract } from './repository';
 import { MistPrivateFiles } from './files';
 import { MemoryMistDatabase, testActor, testAuthority } from './__tests__/support';
-const contract: MistContract = { createMistState, applyMistCommand, mistCommandPermission };
+const contract: MistContract = { createMistState, applyMistCommand, mistCommandPermission, renderDemoFile };
 let root: string, db: MemoryMistDatabase, repo: MistRepository;
 beforeEach(async () => { root = await mkdtemp(path.join(tmpdir(), 'mist-real-contract-')); db = new MemoryMistDatabase(); repo = new MistRepository(db, contract, new MistPrivateFiles(root), testAuthority().authorize, () => new Date('2026-10-13T04:00:00Z')); });
 afterEach(async () => { await rm(root, { recursive: true, force: true }); });
 describe('Mist repository with the real shared business commands', () => {
+  it('creates demo workspaces with downloadable sample PDFs stored privately, and empty workspaces without them', async () => {
+    const workspace = await repo.create(testActor(), { name: 'Demo', seed: 'demo' });
+    const demoFiles = workspace.state.files.filter(file => file.mimeType === 'application/pdf' && file.storageKey === `${workspace.id}/${file.id}`);
+    expect(workspace.state.files.some(file => file.storageKey.startsWith('demo-seed/'))).toBe(false);
+    expect(demoFiles.length).toBeGreaterThanOrEqual(5);
+    const download = await repo.download(testActor(), workspace.id, demoFiles[0].id);
+    expect(download.bytes.subarray(0, 8).toString('latin1')).toBe('%PDF-1.4');
+    expect(download.bytes.length).toBe(demoFiles[0].size);
+    const empty = await repo.create(testActor(), { name: 'Empty', seed: 'empty' });
+    expect(empty.state.files).toEqual([]);
+  });
   it('persists real reconciliation and its receipt once, rejects excess amounts without partially changing either balance', async () => {
     const workspace = await repo.create(testActor(), { name: 'Real contract', seed: 'demo' });
     const receipt = workspace.state.receipts.find(row => row.remaining > 100.25 && row.currency === 'USD')!;

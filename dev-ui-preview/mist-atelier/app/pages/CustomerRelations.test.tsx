@@ -15,7 +15,7 @@ const ctx={id:()=>'id-'+(++n),now:'2026-10-14T02:00:00Z',actorName:'顾言'} as 
 const wrap=(node:React.ReactNode)=>act(()=>root.render(<MistRoot><ToastProvider><Nav.Provider value={{route:{view:'crm'},go,theme:'light',toggleTheme:vi.fn(),openPalette:vi.fn(),openAI:vi.fn()}}>{node}</Nav.Provider></ToastProvider></MistRoot>));
 const button=(label:string)=>[...document.querySelectorAll('button')].find(b=>b.textContent?.trim()===label) as HTMLButtonElement|undefined;
 const opp=(id:string,patch:Partial<CrmOpportunity>):CrmOpportunity=>({id,customerId:store.state!.customers[0].id,title:'商机 '+id,domain:'garment',stage:'intent',amount:'100.50',currency:'USD',expectedDate:'2026-12-01',owner:'顾言',note:'',lossReason:'',devIds:[],quotationIds:[],orderIds:[],history:[{at:'2026-10-01T00:00:00Z',actor:'顾言',from:null,to:'intent',note:'建立商机'}],createdAt:'2026-10-01T00:00:00Z',updatedAt:'2026-10-01T00:00:00Z',...patch});
-beforeEach(()=>{store.state=createMistState(ctx,'demo');store.run.mockReset();store.run.mockResolvedValue({result:{id:'x'}});go.mockReset();host=document.createElement('div');document.body.append(host);root=createRoot(host);});
+beforeEach(()=>{store.state=createMistState(ctx,'demo');store.state.crm.opportunities=[];store.state.crm.followUps=[];store.run.mockReset();store.run.mockResolvedValue({result:{id:'x'}});go.mockReset();host=document.createElement('div');document.body.append(host);root=createRoot(host);});
 afterEach(()=>{act(()=>root.unmount());host.remove();});
 
 it('totals open opportunities per currency without mixing currencies or closed deals',()=>{
