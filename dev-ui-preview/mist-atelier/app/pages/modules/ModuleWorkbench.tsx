@@ -46,6 +46,7 @@ export function ModuleEditorDialog({spec,onClose,onSaved}:{spec:ModuleEditorSpec
   const change=(key:string,value:ModuleValue)=>setValues(v=>({...v,[key]:value}));
   return <Dialog open={!!spec} title={spec?.title||'编辑'} onClose={()=>{if(!busy)onClose();}} width={760}
     footer={<><Button disabled={busy} onClick={onClose}>取消</Button><Button variant="primary" loading={busy} disabled={disabled} onClick={()=>void submit()}>{spec?.submitLabel||'保存'}</Button></>}>
+    {spec?.description&&<p className="mist-sub" style={{margin:'0 0 12px'}}>{spec.description}</p>}
     {error&&<Banner tone="bad" title="未能保存">{error}</Banner>}
     {(pending||pendingCreate)&&!saving&&<Banner tone="warn" title="请先核对上次操作的结果">输入会保留；使用页面上的原请求核对入口后继续。</Banner>}
     <FormGrid>{spec?.fields.map(f=><Field key={f.key} label={f.label} required={f.required} hint={f.hint} full={f.type==='textarea'}>

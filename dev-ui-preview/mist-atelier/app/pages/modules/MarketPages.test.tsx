@@ -31,7 +31,7 @@ function sectionFixture(kind:string){
  return target[kind];
 }
 describe('Market explicit detail sections',()=>{
- it.each(['product','supplier','relation','trend','show','season','lead','lookbook'])('keeps %s facts, attachments and history in independent sibling cards',async kind=>{
+ it.each(['product','relation','trend','show','season','lead','lookbook'])('keeps %s facts, attachments and history in independent sibling cards',async kind=>{
   const target=sectionFixture(kind);await mount(target.view,target.id,target.section,'full');
   const region=host.querySelector('[data-detail-surface="sections"]')!;expect(region).not.toBeNull();
   expect(region.closest('.mist-card')).toBeNull();expect([...region.children].filter(element=>element.classList.contains('mist-card'))).toHaveLength(target.cards);
@@ -80,7 +80,7 @@ describe('market action audit component regressions',()=>{
 describe('market filtered export',()=>{
  it('exports the displayed supplier subset rather than the complete collection',async()=>{
   const base={code:'SUP',type:'工厂',country:'CN',address:'',capabilities:'缝制',capacity:1,capacityUnit:'件',leadDays:1,status:'active',blockReason:'',contacts:[],fileIds:[],note:'',createdAt:'',updatedAt:''};bridge.current.state.market.suppliers=[{...base,id:'a',name:'Alpha supplier'},{...base,id:'b',name:'Beta supplier'}];let captured:Blob|undefined;const oldCreate=URL.createObjectURL,oldRevoke=URL.revokeObjectURL;URL.createObjectURL=vi.fn(blob=>{captured=blob as Blob;return 'blob:export';});URL.revokeObjectURL=vi.fn();const anchor=vi.spyOn(HTMLAnchorElement.prototype,'click').mockImplementation(()=>undefined);
-  try{await mount('suppliers');const search=host.querySelector<HTMLInputElement>('input[placeholder="搜索供应商管理"]')!;await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(search,'Alpha');search.dispatchEvent(new Event('input',{bubbles:true}));});await click('导出');const contents=await new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=()=>reject(reader.error);reader.readAsText(captured!);});expect(contents).toContain('Alpha supplier');expect(contents).not.toContain('Beta supplier');}finally{anchor.mockRestore();URL.createObjectURL=oldCreate;URL.revokeObjectURL=oldRevoke;}
+  try{await mount('suppliers');const search=host.querySelector<HTMLInputElement>('input[placeholder="搜索名称、编码、工艺、地址或联系人"]')!;await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(search,'Alpha');search.dispatchEvent(new Event('input',{bubbles:true}));});await click('导出');const contents=await new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=()=>reject(reader.error);reader.readAsText(captured!);});expect(contents).toContain('Alpha supplier');expect(contents).not.toContain('Beta supplier');}finally{anchor.mockRestore();URL.createObjectURL=oldCreate;URL.revokeObjectURL=oldRevoke;}
  });
 });
 

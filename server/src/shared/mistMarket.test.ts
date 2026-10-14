@@ -30,6 +30,26 @@ describe('Mist market business handoffs',()=>{
  it('does not claim that preparing a lookbook externally publishes it',()=>{const {ctx,s}=setup();const p=run(s,{type:'market.product.save',payload:{input:productInput}},ctx).id!;const id=run(s,{type:'market.lookbook.save',payload:{input:{name:'秋冬画册',customerId:'c',productIds:[p]}}},ctx).id!;run(s,{type:'market.lookbook.status',payload:{id,status:'Prepared'}},ctx);expect(s.market.lookbooks[0].snapshots[0].sku).toBe('P1');expect(s.market.lookbooks[0].status).toBe('Prepared');});
 });
 
+describe('supplier certificates, ratings and cooperation status',()=>{
+ const supplierInput={code:'S1',name:'织厂',type:'织造',country:'中国',address:'绍兴',capabilities:'平纹',capacity:1000,capacityUnit:'米/月',leadDays:20,fileIds:[],note:''};
+ it('records certificates and rating history and keeps them across profile edits',()=>{const {ctx,s}=setup();const id=run(s,{type:'market.supplier.save',payload:{input:supplierInput}},ctx).id!;
+  run(s,{type:'market.supplier.certificate.save',payload:{supplierId:id,name:'GOTS',number:'G-1',issuer:'CU',validUntil:'2026-12-01',fileIds:[]}},ctx);
+  expect(()=>run(s,{type:'market.supplier.certificate.save',payload:{supplierId:id,name:'gots',number:'G-1',issuer:'',validUntil:'2027-01-01',fileIds:[]}},ctx)).toThrow(/已登记/);
+  expect(()=>run(s,{type:'market.supplier.certificate.save',payload:{supplierId:id,name:'BSCI',number:'',issuer:'',validUntil:'2026-13-01',fileIds:[]}},ctx)).toThrow(/有效期/);
+  expect(()=>run(s,{type:'market.supplier.rate',payload:{supplierId:id,grade:'E' as 'A',period:'Q3',note:'x'}},ctx)).toThrow(/评级/);
+  run(s,{type:'market.supplier.rate',payload:{supplierId:id,grade:'B',period:'2026 Q2',note:'色差'}},ctx);run(s,{type:'market.supplier.rate',payload:{supplierId:id,grade:'A',period:'2026 Q3',note:'改善'}},ctx);
+  run(s,{type:'market.supplier.save',payload:{id,input:{...supplierInput,name:'织厂二'}}},ctx);const row=s.market.suppliers.find(x=>x.id===id)!;
+  expect(row.certificates!.map(c=>c.name)).toEqual(['GOTS']);expect(row.ratings!.map(r=>r.grade)).toEqual(['B','A']);
+  run(s,{type:'market.supplier.certificate.delete',payload:{supplierId:id,id:row.certificates![0].id}},ctx);expect(s.market.suppliers.find(x=>x.id===id)!.certificates).toEqual([]);});
+ it('pauses from an effective date: new business is blocked only once the date arrives',()=>{const {ctx,s}=setup();const id=run(s,{type:'market.supplier.save',payload:{input:supplierInput}},ctx).id!;
+  expect(()=>run(s,{type:'market.supplier.status',payload:{id,status:'paused',reason:'',effectiveDate:'2026-10-20'}},ctx)).toThrow(/暂停原因/);
+  expect(()=>run(s,{type:'market.supplier.status',payload:{id,status:'paused',reason:'整改',effectiveDate:'2026-10-01'}},ctx)).toThrow(/早于今天/);
+  run(s,{type:'market.supplier.status',payload:{id,status:'paused',reason:'整改',effectiveDate:'2026-10-20'}},ctx);
+  run(s,{type:'market.product.save',payload:{input:{...productInput,sku:'P2',supplierId:id}}},ctx);
+  const later={...ctx,now:'2026-10-21T02:00:00.000Z'};expect(()=>run(s,{type:'market.product.save',payload:{input:{...productInput,sku:'P3',supplierId:id}}},later)).toThrow(/暂停合作：整改/);
+  run(s,{type:'market.supplier.status',payload:{id,status:'active',reason:''}},later);run(s,{type:'market.product.save',payload:{input:{...productInput,sku:'P3',supplierId:id}}},later);
+  const row=s.market.suppliers.find(x=>x.id===id)!;expect(row).toMatchObject({status:'active',blockReason:''});expect(row.statusHistory!.map(h=>h.status+h.effectiveDate)).toEqual(['paused2026-10-20','active2026-10-21']);});
+});
 describe('market action audit regressions',()=>{
  it('synchronizes CRM names and the same contact identity in relations',()=>{
   const {ctx,s}=setup();const c=run(s,{type:'market.contact.save',payload:{kind:'customer',parentId:'c',name:'采购主管',role:'采购',email:'buyer@example.com',phone:'123',primary:true}},ctx);const r=s.market.relations.find(r=>r.customerId==='c')!;

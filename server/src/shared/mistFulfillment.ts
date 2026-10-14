@@ -3,6 +3,7 @@ import {developmentDomain} from './mistDevelopmentDomain';
 import { MistCommandError, lineAmount, mistMoneyMinor, assertMistOrderApproved, assertMistOrderDeposit, isActiveMistInvoice } from './mistWorkspace';
 import type { MistState, MistContext, MistCommandResult, MistQc, MistTarget, MistProduction } from './mistWorkspace';
 import type { MistReviewTask } from './mistReview';
+import { supplierBusinessDay, supplierUnavailableReason } from './mistSupplierStatus';
 import {applyClaimInventoryCommand,claimInventoryPermission,type ClaimInventoryCommand,type ClaimInventoryWarehouse,type ClaimReturnReceipt,type ClaimReceivedRecord} from './mistClaimInventory';
 export type FulfillmentSource = {
     kind: 'version';
@@ -1083,8 +1084,9 @@ export function applyFulfillmentCommand(root: MistState, command: FulfillmentCom
             const quantity = qty(p.quantity), price = qty(p.price, '单价', true);
             lineAmount(quantity, price);
             const supplierId = text(p.supplierId, '供应商ID'), supplierRecord = get(root.market.suppliers, supplierId, '供应商');
-            if (supplierRecord.status !== 'active')
-                fail('该供应商已停用');
+            const supplierBlocked = supplierUnavailableReason(supplierRecord, supplierBusinessDay(ctx.now));
+            if (supplierBlocked)
+                fail(supplierBlocked);
             const supplier = supplierRecord.name;
             const id = existing?.id || ctx.id();
             const currency = text(p.currency, '币种').toUpperCase();

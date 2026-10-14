@@ -298,21 +298,21 @@ describe('one Mist entry with real authentication and workspace state', () => {
     expect((getByRole(host!, 'textbox', { name: '本批次草稿' }) as HTMLInputElement).value).toBe('');
     expect(requests.filter(request => request.path.endsWith('/auth/logout'))).toHaveLength(1);
   });
-  it('keeps a module list filter while opening and closing its exact record', async () => {
+  it('keeps the supplier search while opening its exact record', async () => {
     await signIn('staff-a',['suppliers:read']);
     const state=currentContext().state!;
     state.market.suppliers=[
-      {id:'supplier-a',code:'SA',name:'甲工厂',type:'成衣加工厂',country:'中国',address:'',capabilities:'',capacity:0,capacityUnit:'件',leadDays:0,status:'active',blockReason:'',contacts:[],fileIds:[],note:'',createdAt:'2026-10-13',updatedAt:'2026-10-13'},
-      {id:'supplier-b',code:'SB',name:'乙工厂',type:'成衣加工厂',country:'中国',address:'',capabilities:'',capacity:0,capacityUnit:'件',leadDays:0,status:'active',blockReason:'',contacts:[],fileIds:[],note:'',createdAt:'2026-10-13',updatedAt:'2026-10-13'},
+      {id:'supplier-a',code:'SA',name:'甲工厂',type:'成衣加工',country:'中国',address:'',capabilities:'',capacity:0,capacityUnit:'件',leadDays:0,status:'active',blockReason:'',contacts:[],fileIds:[],note:'',createdAt:'2026-10-13',updatedAt:'2026-10-13'},
+      {id:'supplier-b',code:'SB',name:'乙工厂',type:'成衣加工',country:'中国',address:'',capabilities:'',capacity:0,capacityUnit:'件',leadDays:0,status:'active',blockReason:'',contacts:[],fileIds:[],note:'',createdAt:'2026-10-13',updatedAt:'2026-10-13'},
     ];
     history.replaceState({},'', '/?intro=0&view=suppliers&theme=light');
-    await mount();await waitFor(()=>expect(queryByRole(host!,'textbox',{name:'搜索供应商管理'})).not.toBeNull());
-    const query=getByRole(host!,'textbox',{name:'搜索供应商管理'}) as HTMLInputElement;input(query,'乙工厂');
+    await mount();await waitFor(()=>expect(host!.querySelector('[aria-label="供应商列表"]')).not.toBeNull());
+    const query=host!.querySelector<HTMLInputElement>('input[placeholder^="搜索名称"]')!;input(query,'乙工厂');
+    await waitFor(()=>expect([...host!.querySelectorAll<HTMLElement>('[role="row"][tabindex]')].some(item=>item.textContent?.includes('甲工厂'))).toBe(false));
     const row=[...host!.querySelectorAll<HTMLElement>('[role="row"][tabindex]')].find(item=>item.textContent?.includes('乙工厂'))!;await click(row);
     expect(new URLSearchParams(location.search).get('id')).toBe('supplier-b');
-    expect(getByRole(host!,'heading',{name:'供应商管理详情'})).toBeTruthy();expect(queryByRole(host!,'textbox',{name:'搜索供应商管理'})).toBeNull();
-    await click(getByRole(host!,'button',{name:'返回供应商管理'}));
-    expect(new URLSearchParams(location.search).has('id')).toBe(false);expect((getByRole(host!,'textbox',{name:'搜索供应商管理'}) as HTMLInputElement).value).toBe('乙工厂');
+    await waitFor(()=>expect(host!.querySelector('[data-supplier-detail="supplier-b"]')).not.toBeNull());
+    expect(host!.querySelector<HTMLInputElement>('input[placeholder^="搜索名称"]')!.value).toBe('乙工厂');
   });
 
   it('returns to the workbench after switching through an empty loading state to another workspace', async()=>{

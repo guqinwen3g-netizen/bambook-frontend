@@ -9,7 +9,7 @@ import { applyMistCommand, type MistCommand, type MistContext, type MistState } 
 import { emptyFabricRequirements } from './mistDevelopmentDomain';
 import { demoFileRecord, type DemoFileTemplate } from './mistDemoFiles';
 
-export const DEMO_SEED_VERSION = 4;
+export const DEMO_SEED_VERSION = 5;
 export type DemoSeedFailure = { step: string; message: string };
 
 const DAY = 86400000;
@@ -54,10 +54,24 @@ export function seedDemoModules(initial: MistState, context: MistContext): { sta
     if (sid) run('supplier contact ' + name, { type: 'market.contact.save', payload: { kind: 'supplier', parentId: sid, name: contact[0], role: contact[1], email: contact[2], phone: contact[3], primary: true } });
     return sid;
   };
-  const jiangnan = supplier('SUP-0001', '江南成衣', '成衣加工厂', '大衣 · 西装 · 双面呢手工', 6000, '件/月', 35, '浙江嘉兴秀洲区新塍镇工业园 8 号', ['王建国', '厂长', 'wang@jiangnan-garment.cn', '0573-8312 6608']);
-  const yuanshan = supplier('SUP-0002', '远山服装', '成衣加工厂', '精纺西装 · Blazer · 衬里', 4500, '件/月', 40, '江苏常熟虞山镇海虞北路 126 号', ['李慧', '业务经理', 'lihui@yuanshan-fashion.cn', '0512-5277 1180']);
-  const huasheng = supplier('SUP-0003', '华盛毛纺', '面料工厂', '粗纺 / 精纺羊毛 · 双面呢 · 染整', 80000, '米/月', 25, '江苏张家港塘桥镇毛纺工业区', ['赵琳', '跟单', 'zhaolin@huasheng-wool.cn', '0512-5868 2203']);
-  const baotai = supplier('SUP-0004', '宝泰辅料', '辅料供应商', '树脂扣 · 牛角扣 · 金属扣 · 衬布', 2000000, '粒/月', 12, '浙江义乌稠城街道辅料市场 3 区', ['钱多多', '销售', 'sales@baotai-trims.cn', '0579-8551 0921']);
+  const jiangnan = supplier('SUP-0001', '江南成衣', '成衣加工', '大衣 · 西装 · 双面呢手工', 6000, '件/月', 35, '浙江嘉兴秀洲区新塍镇工业园 8 号', ['王建国', '厂长', 'wang@jiangnan-garment.cn', '0573-8312 6608']);
+  const yuanshan = supplier('SUP-0002', '远山服装', '成衣加工', '精纺西装 · Blazer · 衬里', 4500, '件/月', 40, '江苏常熟虞山镇海虞北路 126 号', ['李慧', '业务经理', 'lihui@yuanshan-fashion.cn', '0512-5277 1180']);
+  const huasheng = supplier('SUP-0003', '华盛毛纺', '织造', '粗纺 / 精纺羊毛 · 双面呢 · 染整', 80000, '米/月', 25, '江苏张家港塘桥镇毛纺工业区', ['赵琳', '跟单', 'zhaolin@huasheng-wool.cn', '0512-5868 2203']);
+  const baotai = supplier('SUP-0004', '宝泰辅料', '辅料', '树脂扣 · 牛角扣 · 金属扣 · 衬布', 2000000, '粒/月', 12, '浙江义乌稠城街道辅料市场 3 区', ['钱多多', '销售', 'sales@baotai-trims.cn', '0579-8551 0921']);
+  const hengcai = supplier('SUP-0005', '恒彩印花', '印花', '数码印花 · 圆网印花 · 小批量打样', 30000, '米/月', 18, '浙江绍兴柯桥区齐贤街道印染园 21 号', ['孙蕾', '业务主管', 'sunlei@hengcai-print.cn', '0575-8410 3367']);
+  const cert = (sid: string, name: string, number: string, issuer: string, validDays: number) => { if (sid) run('supplier cert ' + name, { type: 'market.supplier.certificate.save', payload: { supplierId: sid, name, number, issuer, validUntil: day(validDays), fileIds: [] } }); };
+  cert(huasheng, 'OEKO-TEX Standard 100', 'SH025 168432', 'TESTEX', 20);
+  cert(huasheng, 'GRS 全球回收标准', 'CU-GRS-883104', 'Control Union', 300);
+  cert(jiangnan, 'BSCI 社会责任审核', 'DBID 429-8811', 'amfori', -5);
+  cert(jiangnan, 'ISO 9001', 'CN-QMS-22178', 'SGS', 410);
+  cert(baotai, 'OEKO-TEX Standard 100', 'HK-024 77310', 'Hohenstein', 160);
+  const rate = (sid: string, grade: 'A' | 'B' | 'C' | 'D', period: string, note: string) => { if (sid) run('supplier rate ' + period, { type: 'market.supplier.rate', payload: { supplierId: sid, grade, period, note } }, buyer); };
+  rate(jiangnan, 'B', '2026 Q2', '交期稳定，返修率 2.1%，略高于目标');
+  rate(jiangnan, 'A', '2026 Q3', '准交 100%，返修率降到 0.8%');
+  rate(huasheng, 'B', '2026 Q3', '准交良好；一批燕麦色双面呢色差 20 米退回');
+  rate(baotai, 'A', '2026 Q3', '到货点数无误，响应快');
+  rate(hengcai, 'C', '2026 Q3', '两批色牢度不达标，已要求整改');
+  if (hengcai) run('supplier pause', { type: 'market.supplier.status', payload: { id: hengcai, status: 'paused', reason: '色牢度两批不达标，整改报告待复核' } }, buyer);
 
   /* ───────── 往来单位：客户身份、货代、报关行 ───────── */
   const relation = (name: string, category: 'Customer' | 'Agent' | 'Partner' | 'Government', country: string, address: string, aliases: string[], customerId = '') => id(run('relation ' + name, { type: 'market.relation.save', payload: { input: { name, category, customerId, supplierId: '', country, address, aliases, fileIds: [], note: '' } } }));

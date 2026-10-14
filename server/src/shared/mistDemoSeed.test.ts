@@ -25,6 +25,7 @@ describe('演示工作区数据', () => {
     expect(new Set(state.orders.map(o => o.state)).size).toBeGreaterThan(2);
     expect(m.quotations.some(q => q.status === 'Accepted') && m.quotations.some(q => q.status === 'Draft')).toBe(true);
     expect(f.shipments[0].state).toBe('departed');
+    expect(m.suppliers.some(x => x.status === 'paused') && m.suppliers.some(x => x.certificates?.some(c => c.validUntil < '2026-10-14')) && m.suppliers.filter(x => x.ratings?.length).length).toBeTruthy();
   });
   it('示例附件生成为可下载的英文 PDF，并标明演示用途', () => {
     const { state } = demo(), files = state.files.filter(isDemoFile);
