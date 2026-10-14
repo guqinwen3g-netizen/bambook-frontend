@@ -608,7 +608,7 @@ export function normalizeMistState(state:MistState,context:MistContext):void {
     'market.supplier.save':'保存供应商档案','market.supplier.status':'更新供应商合作状态',
     'market.relation.save':'保存关系档案','market.contact.save':'保存联系人',
     'market.product.save':'保存数字档案','market.product.fromVersion':'从确认版本建立数字档案',
-    'market.quotation.costing.save':'保存报价条目专业核算','market.quotation.save':'保存报价草稿','market.quotation.submit':'提交报价审批',
+    'market.quotation.feedback.add':'追加报价客户反馈','market.quotation.costing.save':'保存报价条目专业核算','market.quotation.save':'保存报价草稿','market.quotation.submit':'提交报价审批',
     'market.quotation.decide':'记录报价审批决定','market.quotation.send':'记录报价交付',
     'market.quotation.respond':'记录客户报价答复','market.quotation.convert':'报价转为订单',
     'market.season.save':'保存季节规划','market.season.review':'记录季节回顾',
