@@ -36,7 +36,7 @@ export const MODULE_MAP: ModuleMapEntry[] = [
   { id: 'payment-vouchers', view: 'payment-vouchers', label: '财务管理', group: '财务与成本', entry: 'dev-ui-preview/mist-atelier/app/pages/FinancePage.tsx', lines: 133, template: 'reconcile', detail: 'document', wave: 2, notes: '收款核销=参考页；凭证列表=宽表' },
   { id: 'invoices', view: 'invoices', label: '发票管理', group: '财务与成本', entry: 'dev-ui-preview/mist-atelier/app/pages/modules/PlatformPages.tsx', lines: 58, template: 'list-table', detail: 'document', create: true, wave: 2 },
   { id: 'pricing', view: 'pricing', label: '定价与利润', group: '财务与成本', entry: 'dev-ui-preview/mist-atelier/app/pages/modules/PlatformPages.tsx', lines: 58, template: 'analytics', wave: 2, notes: '计算器=表单(FormGrid)+右侧 SummaryBar；利润表/退税率/价格历史/佣金=宽表 Tabs' },
-  { id: 'bom', view: 'bom', label: 'BOM 成本核算', group: '财务与成本', entry: 'dev-ui-preview/mist-atelier/app/pages/modules/PlatformPages.tsx', lines: 58, template: 'list-table', detail: 'document', create: true, wave: 2 },
+  { id: 'bom', view: 'bom', label: '成本与利润核算', group: '财务与成本', entry: 'dev-ui-preview/mist-atelier/app/pages/modules/PlatformPages.tsx', lines: 58, template: 'list-table', detail: 'document', create: true, wave: 2 },
   { id: 'risks', view: 'risks', label: '风险管理与合规', group: '财务与成本', entry: 'dev-ui-preview/mist-atelier/app/pages/modules/PlatformPages.tsx', lines: 58, template: 'list-table', detail: 'record-detail', wave: 2, notes: '风险等级用 Pill tone：bad/warn/ok' },
   { id: 'claims', view: 'claims', label: '售后索赔', group: '财务与成本', entry: 'dev-ui-preview/mist-atelier/app/pages/modules/PlatformPages.tsx', lines: 58, template: 'list-table', detail: 'record-detail', create: true, wave: 2 },
   // ── Wave 3：客户与市场 + 产品 ──
