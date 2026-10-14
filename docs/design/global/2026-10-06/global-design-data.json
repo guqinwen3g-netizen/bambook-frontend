@@ -1314,7 +1314,7 @@
     },
     {
       "id": "bom",
-      "label": "成本核算",
+      "label": "成本与利润核算",
       "view": "bom",
       "viewEnum": "BOM",
       "entry": "components/BomManager.tsx",
@@ -1350,8 +1350,8 @@
       "roleResponsibilitySuggestion": null,
       "owner": "业务员填报 L1；财务核算 L2–L4；主管/领导按授权审批或查看",
       "purpose": "从单件参考、单批实际成本、单笔订单利润到公司周期经营结果的四层核算",
-      "boundary": "原 BOM 保留为 L1 成本输入，不作为自动定价依据；QC 不写 BOM/成本。预测、承诺与实际分开，计算规则仍待 D14 确认。",
-      "designStatus": "讨论稿：职责/功能建议待冻结",
+      "boundary": "BOM 仅参考成本输入；订单、周期为核算中心，预测、承诺、实际及收付款分开。专业报价在报价内引用成本依据，AI 仅辅助推荐。具体公式、收入确认、分摊与结案规则仍待确认，接线状态见 Mist 进度。",
+      "designStatus": "2026-10-14 用户确认模块命名与核算/专业报价/AI 架构方向；具体计算规则及服务接线仍待落实",
       "kind": "module",
       "capabilities": [
         {
