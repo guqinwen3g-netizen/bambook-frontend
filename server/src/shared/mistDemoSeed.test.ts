@@ -18,11 +18,12 @@ describe('演示工作区数据', () => {
       products: m.products, suppliers: m.suppliers, relations: m.relations, seasons: m.seasons, quotations: m.quotations, leads: m.leads, campaigns: m.campaigns, lookbooks: m.lookbooks,
       opportunities: state.crm.opportunities, followUps: state.crm.followUps, samples: f.samples, qcTasks: f.qcTasks, qcReports: f.qcReports,
       purchases: f.purchases, receipts: f.receipts, stock: f.stock, shipments: f.shipments, packing: f.packing, customs: f.customs, documents: f.documents,
-      payments: state.payments, funding: state.orderFunding.assignments, mail: state.email.messages, orders: state.orders,
+      pricing: state.platform.pricing, payments: state.payments, funding: state.orderFunding.assignments, mail: state.email.messages, orders: state.orders,
     };
     for (const [name, rows] of Object.entries(slices)) expect(rows.length, name).toBeGreaterThan(0);
     expect(state.orders.every(o => o.governance?.status === 'approved')).toBe(true);
     expect(new Set(state.payments.map(p => p.currency)).size).toBeGreaterThan(1);
+    expect(state.platform.pricing.every(p => p.basis.includes('软件演示试算'))).toBe(true);
     expect(state.payments.every(p => p.ref.includes('软件演示付款记录'))).toBe(true);
     expect(new Set(state.orders.map(o => o.state)).size).toBeGreaterThan(2);
     expect(m.quotations.some(q => q.status === 'Accepted') && m.quotations.some(q => q.status === 'Draft')).toBe(true);
