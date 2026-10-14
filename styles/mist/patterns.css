@@ -509,3 +509,22 @@
   .mist-mail-navitem { width: auto; flex: none; white-space: nowrap; }
   .mist-mail-navitem .mist-mail-ellipsis { max-width: 160px; }
 }
+
+/* ───────────── 数字档案 ───────────── */
+.mist-product-thumb { width: 36px; height: 36px; flex: none; border-radius: var(--mist-r-md); background: var(--mist-sunken); color: var(--mist-ink-3); display: inline-flex; align-items: center; justify-content: center; font-size: var(--mist-text-xs); overflow: hidden; }
+.mist-product-thumb[data-category="fabric"] { background: var(--mist-accent-tint); color: var(--mist-accent); }
+.mist-product-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.mist-product-codes { gap: 2px; min-width: 0; }
+.mist-product-codes small, .mist-product-basis { color: var(--mist-ink-3); font-size: var(--mist-text-xs); }
+.mist-product-profile { gap: 20px; }
+.mist-product-section { display: flex; flex-direction: column; gap: 8px; }
+.mist-product-chain { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.mist-product-chain li { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: var(--mist-r-md); background: var(--mist-fill); min-width: 0; position: relative; }
+.mist-product-chain li > span { font-size: var(--mist-text-xs); color: var(--mist-ink-3); }
+.mist-product-chain li > small { font-size: var(--mist-text-xs); color: var(--mist-ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mist-product-actions { flex-wrap: wrap; gap: 8px; padding-top: 4px; }
+.mist-product-code-row { align-items: flex-end; gap: 8px; }
+.mist-product-code-row > .mist-field { flex: 1; min-width: 0; }
+@media (max-width: 720px) {
+  .mist-product-chain { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
