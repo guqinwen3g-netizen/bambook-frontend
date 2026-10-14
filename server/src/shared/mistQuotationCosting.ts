@@ -56,6 +56,8 @@ export type QuoteCostResult = {
   components: Array<QuoteCostComponent & { amount: string }>;
 };
 export type QuoteCostSnapshot = {
+  /** Server-resolved immutable manual evidence; absent on older snapshots. */
+  historyEvidence?: import("./mistQuotationHistoryEvidence").QuoteHistoryEvidence;
   id: string;
   quotationId: string;
   lineId: string;

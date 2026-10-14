@@ -30,6 +30,14 @@ import {
   type QuoteCostInput,
   type QuoteCostSnapshot,
 } from "../../../../../server/src/shared/mistQuotationCosting";
+import {
+  freezeQuotationHistoryEvidence,
+  type QuoteHistoryReference,
+} from "../../../../../server/src/shared/mistQuotationHistoryEvidence";
+import {
+  QuotationHistoryEvidencePicker,
+  FrozenHistoryEvidence,
+} from "./QuotationCostEvidence";
 import { useMistWorkspace } from "../../runtime/workspace";
 import { useMistSession } from "../../runtime/auth";
 import { useNav } from "../../nav";
@@ -159,6 +167,9 @@ function Snapshot({ r }: { r: QuoteCostSnapshot }) {
             },
           ]}
         />
+        {r.historyEvidence && (
+          <FrozenHistoryEvidence evidence={r.historyEvidence} />
+        )}
         {r.supplier && (
           <Button onClick={() => go("suppliers", r.supplier!.id)}>
             来源供应商
@@ -243,6 +254,9 @@ export function QuotationCostingPage() {
     [applyPrice, setApplyPrice] = useRouteDraft(false),
     [failure, setFailure] = useRouteDraft(""),
     [busy, setBusy] = useRouteDraft(false);
+  const [historyReference, setHistoryReference] = useRouteDraft<
+    QuoteHistoryReference | undefined
+  >(undefined);
   const lock = React.useRef(false);
   const key = session.user?.id + ":" + w.workspace?.id,
     activeKey = React.useRef(key);
@@ -252,7 +266,14 @@ export function QuotationCostingPage() {
       q?.status !== "Draft" ||
       q?.approval?.status === "pending" ||
       !!q?.convertedOrderId,
-    disabled = busy || w.saving || w.loading || !!w.pending || !can || frozen;
+    disabled =
+      busy ||
+      w.saving ||
+      w.loading ||
+      !!w.pending ||
+      !can ||
+      frozen ||
+      !!w.error;
   const patch = (field: keyof QuoteCostInput, value: any) => {
     setInput((x) => ({ ...x, [field]: value }));
     setFailure("");
@@ -278,6 +299,7 @@ export function QuotationCostingPage() {
     setOrigin(quotationCostingTarget(q, line));
     setStep(0);
     setApplyPrice(false);
+    setHistoryReference(undefined);
     setFailure("");
     setEditing(true);
   };
@@ -304,6 +326,7 @@ export function QuotationCostingPage() {
           expectedTarget: origin,
           input: calculation.input,
           applyPrice,
+          ...(historyReference ? { historyReference } : {}),
         },
       });
       if (
@@ -770,6 +793,14 @@ export function QuotationCostingPage() {
                     />
                   </Field>
                 </FormGrid>
+                <QuotationHistoryEvidencePicker
+                  state={w.state!}
+                  quote={q}
+                  line={line}
+                  value={historyReference}
+                  disabled={disabled}
+                  onChange={setHistoryReference}
+                />
               </FormSection>
             ) : (
               <>
@@ -867,6 +898,13 @@ export function QuotationCostingPage() {
                       },
                     ]}
                   />
+                  {historyReference && (
+                    <Banner title="本次同时冻结人工历史依据">
+                      来源报价 / 条目：{historyReference.quotationId} /{" "}
+                      {historyReference.lineId}；采用理由：
+                      {historyReference.reason}。不自动采用历史价格。
+                    </Banner>
+                  )}
                   <Checkbox
                     label="我确认将人工拟报价写入这条报价行"
                     checked={applyPrice}
@@ -902,6 +940,21 @@ export function QuotationCostingPage() {
                       } catch (e) {
                         setFailure(
                           e instanceof Error ? e.message : "请补齐本步来源",
+                        );
+                        return;
+                      }
+                    }
+                    if (step === 1) {
+                      try {
+                        freezeQuotationHistoryEvidence(
+                          w.state!,
+                          q,
+                          line,
+                          historyReference,
+                        );
+                      } catch (e) {
+                        setFailure(
+                          e instanceof Error ? e.message : "请核对历史依据",
                         );
                         return;
                       }
@@ -959,6 +1012,7 @@ export function QuotationCostingPage() {
                 "写入售价",
                 "成本依据",
                 "策略依据",
+                "人工历史依据冻结原文",
               ],
               lineSnapshots.map((r) => [
                 r.id,
@@ -972,6 +1026,9 @@ export function QuotationCostingPage() {
                 r.appliedPrice ? "是" : "否",
                 r.input.basis,
                 r.input.strategyBasis,
+                r.historyEvidence
+                  ? JSON.stringify(r.historyEvidence)
+                  : "未选历史依据",
               ]),
             )
           }
