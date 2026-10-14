@@ -195,6 +195,14 @@ describe('one Mist entry with real authentication and workspace state', () => {
     expect(probes.home).not.toHaveBeenCalled();
   });
 
+  it('opens authenticated workspace settings without granting system administration permission', async () => {
+    await signIn('staff-a', ['products:read']);
+    history.replaceState(null, '', '/?intro=0&view=workspace-settings');
+    await mount(); await waitFor(() => expect(probes.settings).toHaveBeenCalled());
+    expect(actor?.permissions).not.toContain('settings:system:read');
+    expect(host!.textContent).toContain('工作空间设置');
+    expect(host!.textContent).not.toContain('没有查看权限');
+  });
   it.each(['development/detail', 'orders/detail', 'system-settings'])('does not mount an unauthorized direct link to %s', async view => {
     await signIn('limited', []); requests = []; history.replaceState(null, '', `/?intro=0&theme=light&view=${view}&id=dev-a&versionId=version-a`);
     await mount(); await waitFor(() => expect(host!.textContent).toContain('没有查看权限'));

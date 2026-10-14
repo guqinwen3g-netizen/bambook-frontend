@@ -43,11 +43,11 @@ const PAGES: Record<string, React.FC> = {
   ...FULFILLMENT_PAGES,...MARKET_PAGES,...PLATFORM_PAGES,
   emails: EmailsPage, cockpit: HomePage, development: DevListPage, 'development/detail': DevDetailPage, 'development/new': DevCreatePage,
   orders: OrderListPage, 'orders/detail': OrderDetailPage, 'orders/new': OrderCreatePage, calendar: CalendarPage, 'payment-vouchers': FinancePage, crm: CustomerPage,
-  'production-board': ProductionPage, 'system-settings': SettingsPage, settings: SettingsPage, states: StatesPage, 'design-system': DesignSystemPage,
+  'production-board': ProductionPage, 'system-settings': SettingsPage, settings: SettingsPage, 'workspace-settings': SettingsPage, states: StatesPage, 'design-system': DesignSystemPage,
 };
-const LIVE_VIEWS = new Set(['emails','cockpit','development','development/detail','development/new','orders','orders/detail','orders/new','payment-vouchers','crm','production-board','calendar','system-settings','settings']);
+const LIVE_VIEWS = new Set(['emails','cockpit','development','development/detail','development/new','orders','orders/detail','orders/new','payment-vouchers','crm','production-board','calendar','system-settings','settings','workspace-settings']);
 const ROUTE_KEYS = ['view','id','versionId','batchId','section','customerId','orderLineId','productionId','detail'] as const;
-const LABELS: Record<string, string> = { 'design-system': '设计系统', states: '空 / 加载 / 错误', 'system-settings': '系统设置', settings: '系统设置' };
+const LABELS: Record<string, string> = { 'design-system': '设计系统', states: '空 / 加载 / 错误', 'system-settings': '系统设置', settings: '系统设置', 'workspace-settings': '工作空间设置' };
 const GROUPS: Record<string, string> = { overview: '我的事务', customer: '客户与市场', fulfillment: '订单履约', finance: '财务与成本', platform: '平台' };
 
 export function readMistRoute(): Route {
@@ -85,7 +85,7 @@ function useSections(): NavSection[] {
 function crumbsFor(route: Route, go: (view: string, id?: string) => void, objectLabel?: string, versionLabel?: string): Crumb[] {
   const base = route.view.split('/')[0], mod = getModuleByView(base as View);
   const label = mod?.productLabel ?? LABELS[base] ?? base;
-  const crumbs: Crumb[] = [{ label: mod ? GROUPS[mod.nav.group] : '设计系统', hideOnMobile: true }];
+  const crumbs: Crumb[] = [{ label: mod ? GROUPS[mod.nav.group] : base === 'workspace-settings' ? '我的事务' : '设计系统', hideOnMobile: true }];
   if (route.view.includes('/')) {
     crumbs.push({ label, onClick: () => go(base) });
     crumbs.push(route.view.endsWith('/new') ? { label: base === 'orders' ? '新建订单' : '新建开发案' } : { label: objectLabel || route.id || '未指定对象', mono: true });
@@ -216,7 +216,8 @@ function AppInner({ theme, setTheme }: { theme: ThemeMode; setTheme: (theme: The
     return <Nav.Provider value={{ ...nav, go: loginGo }}><LoginPage /></Nav.Provider>;
   }
   const base = route.view.split('/')[0], module = getModuleByView(base as View);
-  const permitted = !module || session.canAccessView(base as View), live = LIVE_VIEWS.has(route.view) || !!FULFILLMENT_PAGES[route.view] || !!MARKET_PAGES[route.view] || !!PLATFORM_PAGES[route.view];
+  // 空间设置只处理当前空间；不能为此授予系统设置/后台管理权限。
+  const permitted = route.view === 'workspace-settings' ? !!workspace.workspace : !module || session.canAccessView(base as View), live = LIVE_VIEWS.has(route.view) || !!FULFILLMENT_PAGES[route.view] || !!MARKET_PAGES[route.view] || !!PLATFORM_PAGES[route.view];
   const Page = session.localMode && route.view === 'admin-panel' ? LocalAdminPanel
     : session.localMode && route.view === 'mes' ? LocalMesPage
     : PAGES[route.view] ?? null;
@@ -252,7 +253,9 @@ function AppInner({ theme, setTheme }: { theme: ThemeMode; setTheme: (theme: The
         {visibleNotifications.length?visibleNotifications.slice().reverse().map(n=><Card key={n.id}><CardHeader title={n.title} sub={new Date(n.at).toLocaleString()} tools={<Button variant="quiet" onClick={()=>{void (n.readAt?Promise.resolve():workspace.run({type:'notification.read',payload:{id:n.id}})).then(()=>{if(n.target)go(n.target.view,n.target.id,n.target);}).catch(report);}}>{n.readAt?'查看':'阅读'}</Button>} /><p className="mist-card-body">{n.detail}</p></Card>):<EmptyState title="暂无通知" />}
       </Drawer>
       <Drawer open={spaces} onClose={()=>setSpaces(false)} title="工作空间" sub="切换后只查看对应空间中的记录" footer={<Button onClick={()=>setSpaces(false)}>完成</Button>}>
-        {workspace.workspaces.map(w=><p key={w.id}><Button disabled={workspace.loading||!!workspace.pending} variant={w.id===workspace.workspace?.id?'primary':'secondary'} onClick={()=>void workspace.switchWorkspace(w.id).catch(report)}>{w.name}</Button></p>)}
+        {workspace.workspaces.map(w=><p key={w.id}><Button disabled={workspace.loading||!!workspace.pending} variant={w.id===workspace.workspace?.id?'primary':'secondary'} onClick={()=>void workspace.switchWorkspace(w.id).catch(report)}>{w.name}{w.shared?' · 被授权':''}</Button></p>)}
+        {workspace.workspaces.some(w=>w.shared)&&<p className="mist-note">“被授权”的空间由其所有者授权你进入；能看到和办理的内容仍按你本人岗位权限决定。</p>}
+        {workspace.workspace&&<Button disabled={workspace.loading} onClick={()=>{setSpaces(false);go('workspace-settings');}}>工作空间设置与授权</Button>}
         {state?.settings.demoSeed&&<p className="mist-note">当前是演示工作空间：其中的客户、订单、样品、质检、采购、库存、出运等示例记录都按真实业务流程逐步生成，附件为标注了演示用途的示例 PDF。可以放心试用，不影响其他工作空间。</p>}
         <Field label="新工作空间名称"><TextInput value={spaceName} onChange={e=>setSpaceName(e.target.value)} /></Field>
         <div className="mist-row">
@@ -265,6 +268,7 @@ function AppInner({ theme, setTheme }: { theme: ThemeMode; setTheme: (theme: The
         footer={session.localMode?<Button loading={session.refreshing} onClick={()=>void session.refresh()}>重新进入本地工作区</Button>:<Button icon={LogOut} loading={session.signingOut} onClick={() => { void session.logout().catch(failure => toast(failure instanceof Error ? failure.message : '退出失败', 'bad')); }}>退出登录</Button>}>
         {session.localMode&&<><p className="mist-note">选择本地工作身份；权限和名称由本机服务提供。</p><div className="mist-row">{session.localProfiles?.map(profile=><Button key={profile.id} aria-pressed={profile.id===user.id} disabled={session.signingIn} variant={profile.id===user.id?'primary':'secondary'} onClick={()=>void session.selectLocalProfile?.(profile.id).catch(failure=>toast(failure instanceof Error?failure.message:'身份切换未完成','bad'))}>{profile.name}</Button>)}</div></>}
         <Button onClick={()=>{setAccount(false);setSpaces(true);}}>切换工作空间</Button>
+        {workspace.workspace&&<Button onClick={()=>{setAccount(false);go('workspace-settings');}}>工作空间设置与授权</Button>}
         <KeyValue items={[{ label: '当前工作身份', value: user.displayName || user.email }, { label: '工作区显示名', value: name }, { label: '工作邮箱', value: user.email }, { label: '职责', value: roles || '未设置' }, { label: '部门', value: user.department || '未设置' }]} />
         {account&&<MistVersionInfo demoSeed={state?.settings.demoSeed} />}
       </Drawer>

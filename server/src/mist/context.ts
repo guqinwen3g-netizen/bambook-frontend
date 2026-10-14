@@ -7,8 +7,9 @@ import { createApprovalRoutingService } from '../approvals/approvalRoutingServic
 export async function mistApprovalAuthority(db:any,actor:TokenPayload,kind:string):Promise<NonNullable<MistContext['authority']>>{
   const authority:NonNullable<MistContext['authority']>={supplier:{}};
   if((actor as any).mistLocal===true && process.env.MIST_LOCAL_WORKSPACE==='1' && process.env.NODE_ENV!=='production'){
-    for(const contract of ['purchase','processing'])for(const family of ['fabric','garment'])authority.supplier[`supplierCommitment.approvers.${contract}.${family}`]={version:1,userIds:['local-reviewer']};
-    authority.claimReviewerId='local-reviewer';authority.businessReviewerId='local-reviewer';authority.orderReviewerIds={garment:['local-operator','local-reviewer'],fabric:['local-operator','local-reviewer']};return authority;
+    for(const contract of ['purchase','processing'])for(const family of ['fabric','garment'])authority.supplier[`supplierCommitment.approvers.${contract}.${family}`]={version:1,userIds:['local-reviewer','local-manager']};
+    // 本地测试审批人：原全权限审批员 + 按现有岗位持有 procurement:approve / orders:write 的业务主管测试身份。
+    authority.claimReviewerId='local-reviewer';authority.businessReviewerId='local-reviewer';authority.orderReviewerIds={garment:['local-operator','local-reviewer','local-manager'],fabric:['local-operator','local-reviewer','local-manager']};return authority;
   }
   if(kind.startsWith('order.governance.')){
     const {createOrderMainApprovalService}=await import('../orders/orderMainApprovalService');

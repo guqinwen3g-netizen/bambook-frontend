@@ -1,3 +1,4 @@
+import { MIST_FINANCE_SCOPES } from './mistFinancePermissions';
 import { MistCommandError, mistMoneyMinor, type MistState, type MistContext, type MistCommandResult } from './mistWorkspace';
 
 export type OrderFundingAssignment = {
@@ -15,7 +16,7 @@ const text=(value:unknown,label:string)=>typeof value==='string'&&value.trim()&&
 const cents=(value:number)=>{const result=mistMoneyMinor(value);if(result<=0)fail('归属金额必须大于零');return result;};
 const active=(root:Root)=>(root.orderFunding?.assignments||[]).filter(row=>row.state==='active');
 export const createOrderFundingState=(_context?:MistContext,_root?:unknown):OrderFundingState=>({assignments:[]});
-export function orderFundingCommandPermission(command:OrderFundingCommand){if(command.type==='funding.assign'||command.type==='funding.release')return 'finance:write';return fail('未知资金归属操作');}
+export function orderFundingCommandPermission(command:OrderFundingCommand){if(command.type==='funding.assign'||command.type==='funding.release')return MIST_FINANCE_SCOPES.reconcile;return fail('未知资金归属操作');}
 
 /** Customer balances can fund that customer's invoices; order deposits cannot be spent on another order. */
 export function assertOrderFundingIntegrity(root:Root){

@@ -1,4 +1,6 @@
 /** Finance reads existing receivables; CI creation belongs to the source business, never this ledger. */
+import { AccessHiddenNotice } from '../AccessHiddenNotice';
+import { MIST_FINANCE_WRITE_PERMISSIONS } from '../../../../../server/src/shared/mistFinancePermissions';
 import React from 'react';
 import { Download, RefreshCw, ArrowLeft, Receipt, Clock, FileText, ArrowUpRight } from 'lucide-react';
 import { Banner, Button, Card, DataTable, EmptyState, Facts, MistPage, Mono, ObjectCell, PageHeader, Pill, SearchField, Segmented, Select, StatCard, StatGrid, Tabs, Toolbar, type Column } from '../../../../../components/mist';
@@ -69,7 +71,8 @@ export function InvoicePage() {
   return <MistPage>
     <PageHeader eyebrow="财务与成本 · 票据" title={current ? current.code : '发票管理'} description="财务查看来源票据与账款，不制作业务 CI / PL，也不以票款状态代替履约。" actions={current ? <Button icon={ArrowLeft} onClick={back}>返回发票台账</Button> : <><Button icon={Download} disabled={tab !== 'ar' || w.loading} onClick={exportRows}>导出当前台账 CSV</Button><Button icon={RefreshCw} disabled={w.loading || w.saving} onClick={() => void w.refresh()}>刷新</Button></>} />
     {w.error && <Banner tone="bad" title="票据读取未完成" actions={<Button onClick={() => void w.refresh()}>重试</Button>}>{w.error}</Banner>}
-    {!session.hasPermission('finance:write') && <Banner title="财务结果只读">当前账号可查看授权范围内的票据与核销来源；资金登记和核销由财务处理。</Banner>}
+    <AccessHiddenNotice keys={['receivables','receipts','payments']} />
+    {!MIST_FINANCE_WRITE_PERMISSIONS.some(scope=>session.hasPermission(scope as any)) && <Banner title="财务结果只读">当前账号可查看授权范围内的票据与核销来源；资金登记和核销由财务处理。</Banner>}
     {missing && <Banner tone="warn" title="未找到指定票据" actions={<Button onClick={back}>返回台账</Button>}>当前空间中没有这个票据或历史草稿，未自动打开其他来源。</Banner>}
     {current && facts ? <div className="mist-col" data-module-detail>
       <Card><div className="mist-card-body mist-col"><Pill tone={current.state === 'void' ? 'bad' : current.state === 'settled' ? 'ok' : 'neutral'}>{labels[current.state]}</Pill>

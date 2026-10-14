@@ -18,7 +18,7 @@ const bill = (supplierId: string, lines: Array<{ purchaseId: string; amount: num
 describe('供应商票据登记', () => {
   it('财务权限；已批准合同才能登记，票据形成应付，合同剩余待登记同步减少', () => {
     const { state, po1 } = demo();
-    expect(mistCommandPermission(bill(po1.supplierId, []) as any)).toBe('finance:write');
+    expect(mistCommandPermission(bill(po1.supplierId, []) as any)).toBe('invoices:write');
     expect(payableSources(state).find(r => r.purchase.id === po1.id)!.uninvoiced).toBe(111600);
     const { state: s1, result } = run(state, bill(po1.supplierId, [{ purchaseId: po1.id, amount: 33480 }], { taxAmount: 3851.68 }));
     const b = payableBills(s1, today).find(x => x.id === result.id)!;

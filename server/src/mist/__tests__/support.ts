@@ -11,7 +11,7 @@ export class MemoryMistDatabase {
       $queryRawUnsafe: async () => [],
       mistWorkspace: {
         findFirst: async ({ where }: any) => [...workspaces.values()].find(row => Object.entries(where).every(([key, value]) => row[key] === value)) ?? null,
-        findMany: async ({ where }: any = {}) => [...workspaces.values()].filter(row => !where || !Object.keys(where).length ? true : where.OR ? where.OR.some((rule:any)=>rule.ownerId===row.ownerId || (rule.state && (row.state.reviewerIds||[]).includes(rule.state.array_contains[0]))) : row.ownerId === where.ownerId),
+        findMany: async ({ where }: any = {}) => [...workspaces.values()].filter(row => !where || !Object.keys(where).length ? true : where.OR ? where.OR.some((rule:any)=>rule.ownerId===row.ownerId || (rule.state && (row.state[rule.state.path?.[0]||'reviewerIds']||[]).includes(rule.state.array_contains[0]))) : row.ownerId === where.ownerId),
         findUnique: async ({ where }: any) => [...workspaces.values()].find(row => row.ownerId === where.ownerId_slug.ownerId && row.slug === where.ownerId_slug.slug) ?? null,
         create: async ({ data }: any) => {
           if ([...workspaces.values()].some(row => row.ownerId === data.ownerId && row.slug === data.slug)) throw Object.assign(new Error('unique'), { code: 'P2002' });
@@ -38,9 +38,9 @@ export class MemoryMistDatabase {
     finally { release(); }
   }
 }
-export const testActor = (id = 'owner'): TokenPayload => ({ userId: id, displayName: id, roles: ['owner'], departmentIds: [], permissions: ['products:write', 'finance:write'] });
+export const testActor = (id = 'owner'): TokenPayload => ({ userId: id, displayName: id, roles: ['owner'], departmentIds: [], permissions: ['products:write', 'finance:write', 'vouchers:write', 'invoices:reconcile', 'invoices:write'] });
 export function testAuthority() {
-  const users = new Map([['owner', { active: true, permissions: ['products:write', 'finance:write'] }], ['other', { active: true, permissions: ['products:write'] }]]);
+  const users = new Map([['owner', { active: true, permissions: ['products:write', 'finance:write', 'vouchers:write', 'invoices:reconcile', 'invoices:write'] }], ['other', { active: true, permissions: ['products:write'] }]]);
   return { users, authorize: async (_db: any, prior: TokenPayload, permission?: string | null) => {
     const current = users.get(prior?.userId);
     if (!current?.active) throw new MistApiError('ACCOUNT_DISABLED', '账号已失效', 401);
