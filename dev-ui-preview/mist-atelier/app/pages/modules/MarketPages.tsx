@@ -1,3 +1,4 @@
+import {QuotationHistoryPage} from './QuotationHistoryPage';
 import {QuotationFeedbackPage} from './QuotationFeedbackPage';
 import {QuotationCostingPage} from './QuotationCostingPage';
 import React from 'react';
@@ -129,6 +130,7 @@ export function QuotationEditor({existing,previous,onClose}:{existing?:MarketQuo
 }
 type QuoteEditing={mode:'new'}|{mode:'edit'|'revise';id:string};
 function QuotationPage(){const w=useMarket(),[editing,setEditing]=useRouteDraft<QuoteEditing|null>(null);
+ if(w.route.section?.startsWith('compare:'))return <QuotationHistoryPage key={(w.session.user?.id||'')+':'+(w.workspace?.id||'')+':'+JSON.stringify(w.route)}/>;
  if(w.route.section?.startsWith('feedback'))return <QuotationFeedbackPage key={(w.session.user?.id||'')+':'+(w.workspace?.id||'')+':'+JSON.stringify(w.route)}/>;
  if(w.route.section==='cost-history'||w.route.section?.startsWith('costing:'))return <QuotationCostingPage key={(w.session.user?.id||'')+':'+(w.workspace?.id||'')+':'+JSON.stringify(w.route)}/>;
  if(!editing&&!w.route.id&&w.route.section?.startsWith('product:'))return <QuotationEditor key={w.route.section} onClose={()=>w.go('quotations')}/>;
