@@ -10,6 +10,7 @@ import type {MistCreditDocumentIssue} from './mistCreditDocuments';
 import type {MistReviewTask} from './mistReview';
 import {createOrderGovernance,applyOrderGovernanceCommand,orderGovernancePermission,getOrderGovernanceReviews,assertOrderApproved,type OrderGovernanceFields,type OrderGovernanceCommand,type OrderGovernanceInput} from './mistOrderGovernance';
 import {createOrderFundingState,applyOrderFundingCommand,orderFundingCommandPermission,assertOrderDepositCovered,assertOrderFundingIntegrity,type OrderFundingState,type OrderFundingCommand} from './mistOrderFunding';
+import {createPayablesState,applyPayablesCommand,payablesCommandPermission,type PayablesState,type PayablesCommand} from './mistPayables';
 
 /** Mist's typed business workspace. Shared by its API and the approved frontend. */
 export type MistTone = 'neutral' | 'accent' | 'ok' | 'warn' | 'bad' | 'ai';
@@ -74,6 +75,7 @@ export type MistCompanyProfile={legalName:string;englishName:string;address:stri
 export type MistSettings = { companyProfile?:MistCompanyProfile; theme: 'light' | 'dark' | 'system'; density: 'compact' | 'default' | 'comfy'; reducedMotion: boolean; notifications: { qc: boolean; shipping: boolean; suggestions: boolean; digest: boolean }; workspaceName: string; profileName: string; profileEmail: string; locale: string; /** 仅演示工作区：示例数据版本；客户端不可设置。 */ demoSeed?: { version: number; seededAt: string } };
 export type MistState = {
   orderFunding?:OrderFundingState;
+  payables?:PayablesState;
   workspaceArchive?: {at:string;actorId:string};
   schemaVersion: 1; devs: MistDev[]; versions: MistVersion[]; drafts: MistDraft[]; fabrics: MistFabric[];
   orders: MistOrder[]; orderLines: MistOrderLine[]; productions: MistProduction[];
@@ -83,7 +85,7 @@ export type MistState = {
   settings: MistSettings; fulfillment:FulfillmentState; market:MarketState; platform:PlatformState; email:EmailState; crm:CrmState; reviewerIds?:string[];
 };
 export type MistOrderInput = { type: 'garment' | 'fabric'; customerId: string; season: string; currency: string; due: string; owner: string; governance?:OrderGovernanceInput; lines: Array<Omit<MistOrderLine, 'id' | 'orderId' | 'made' | 'qc'>> };
-export type MistCommand = FulfillmentCommand | MarketCommand | PlatformCommand | EmailCommand | CrmCommand | OrderGovernanceCommand | OrderFundingCommand
+export type MistCommand = FulfillmentCommand | MarketCommand | PlatformCommand | EmailCommand | CrmCommand | OrderGovernanceCommand | OrderFundingCommand | PayablesCommand
   | { type: 'development.saveDraft'; payload: { draftId?: string; values: DevelopmentValues; fileIds: string[] } }
   | { type: 'development.submit'; payload: { draftId?: string; values: DevelopmentValues; fileIds: string[] } }
   | { type: 'development.update'; payload: { devId: string; patch: Partial<DevelopmentValues> } }
@@ -331,6 +333,7 @@ export function getRequiredBusinessNumberPlan(state: MistState, command: MistCom
 export function mistCommandPermission(command: MistCommand): string | null {
   if(command.type.startsWith('order.governance.'))return orderGovernancePermission(command as OrderGovernanceCommand);
   if(command.type.startsWith('funding.'))return orderFundingCommandPermission(command as OrderFundingCommand);
+  if(command.type.startsWith('payable.'))return payablesCommandPermission(command as PayablesCommand);
   if(command.type.startsWith('fulfillment.'))return fulfillmentCommandPermission(command as FulfillmentCommand);
   if(command.type.startsWith('market.'))return marketCommandPermission(command as MarketCommand);
   if(command.type.startsWith('platform.'))return platformCommandPermission(command as PlatformCommand);
@@ -352,6 +355,7 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
   normalizeMistState(state,context);
   if(command.type.startsWith('order.governance.')){const result=applyOrderGovernanceCommand(state,command as OrderGovernanceCommand,context);recalculate(state);assertOrderFundingIntegrity(state);return {state,result};}
   if(command.type.startsWith('funding.')){const result=applyOrderFundingCommand(state,command as OrderFundingCommand,context);recalculate(state);return {state,result};}
+  if(command.type.startsWith('payable.')){const result=applyPayablesCommand(state,command as PayablesCommand,context);recalculate(state);return {state,result};}
   if(command.type.startsWith('fulfillment.')){const result=applyFulfillmentCommand(state,command as FulfillmentCommand,context);normalizeMistState(state,context);recalculate(state);return {state,result};}
   if(command.type==='market.lead.convertToCrm'){const result=convertLeadToCrm(state,command.payload as Extract<MarketCommand,{type:'market.lead.convertToCrm'}>['payload'],context);recalculate(state);return {state,result};}
   if(command.type.startsWith('market.')){const result=applyMarketCommand(state,command as MarketCommand,context);for(const order of state.orders)if(!original.orders.some(old=>old.id===order.id)&&!order.governance){order.governance=createOrderGovernance(context);order.state='订单草稿';order.tone='neutral';order.checklist=['拟发范围确认','收货与贸易条款确认','收款条件核对'].map((label,index)=>({id:order.id+'-check-'+index,label,done:false,note:''}));}normalizeMistState(state,context);recalculate(state);return {state,result};}
@@ -618,8 +622,8 @@ export function normalizeMistState(state:MistState,context:MistContext):void {
     'market.attachment.set':'关联业务附件'
   };
   for(const event of state.events||[])if(eventLabels[event.text])event.text=eventLabels[event.text];
-  const defaults={fulfillment:createFulfillmentState(context,state),market:createMarketState(context,state),platform:createPlatformState(context,state),email:createEmailState(context,state),crm:createCrmState(context,state),orderFunding:createOrderFundingState(context,state)};
-  for(const name of ['fulfillment','market','platform','email','crm','orderFunding'] as const){
+  const defaults={fulfillment:createFulfillmentState(context,state),market:createMarketState(context,state),platform:createPlatformState(context,state),email:createEmailState(context,state),crm:createCrmState(context,state),orderFunding:createOrderFundingState(context,state),payables:createPayablesState(context,state)};
+  for(const name of ['fulfillment','market','platform','email','crm','orderFunding','payables'] as const){
     if(!state[name]) (state as any)[name]=defaults[name];
     else for(const [key,value] of Object.entries(defaults[name])) if((state[name] as any)[key]===undefined)(state[name] as any)[key]=structuredClone(value);
   }
