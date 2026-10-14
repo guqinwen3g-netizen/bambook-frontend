@@ -1,3 +1,4 @@
+import { MIST_FINANCE_SCOPES } from './mistFinancePermissions';
 import {developmentDomain,emptyFabricRequirements,fabricRequirementError,validFabricSample,type DevelopmentDomain,type FabricDevelopmentRequirements} from './mistDevelopmentDomain';
 import { relationHoldReason } from './mistRelationHold';
 import {createFulfillmentState,applyFulfillmentCommand,fulfillmentCommandPermission,getFulfillmentReviews,assertProductionTransition,type FulfillmentState,type FulfillmentCommand} from './mistFulfillment';
@@ -24,7 +25,7 @@ export type DevelopmentValues = {
   sizeBase: string; goal: string; factories: string[]; due: string;
   collaborators: string[]; sampleQuantity: number; sourceDevId?: string; sourceVersionId?: string;
 };
-export type MistFile = { id: string; name: string; mimeType: string; size: number; storageKey: string; createdAt: string; url?: string };
+export type MistFile = { id: string; name: string; mimeType: string; size: number; storageKey: string; createdAt: string; uploadedBy?: string; url?: string };
 export type MistDraft = { id: string; values: DevelopmentValues; fileIds: string[]; updatedAt: string };
 export type MistConfirmation = { id: string; result: 'approved' | 'needs_adjustment' | 'rejected'; confirmer: string; organization: string; confirmedAt: string; basis: string; originalText: string; recordedAt: string; recordedBy: string };
 export type MistQc = {
@@ -83,6 +84,8 @@ export type MistState = {
   customers: MistCustomer[]; contacts: MistContact[]; files: MistFile[];
   events: MistEvent[]; tasks: MistTask[]; notifications: MistNotification[]; calendar: MistCalendarEvent[];
   settings: MistSettings; fulfillment:FulfillmentState; market:MarketState; platform:PlatformState; email:EmailState; crm:CrmState; reviewerIds?:string[];
+  /** 所有者明确授权进入本空间的账号（只管进入，不授予业务权限）与授权历史。 */
+  memberIds?:string[]; members?:MistWorkspaceMember[]; memberLog?:MistWorkspaceMemberLog[];
 };
 export type MistOrderInput = { type: 'garment' | 'fabric'; customerId: string; season: string; currency: string; due: string; owner: string; governance?:OrderGovernanceInput; lines: Array<Omit<MistOrderLine, 'id' | 'orderId' | 'made' | 'qc'>> };
 export type MistCommand = FulfillmentCommand | MarketCommand | PlatformCommand | EmailCommand | CrmCommand | OrderGovernanceCommand | OrderFundingCommand | PayablesCommand
@@ -132,7 +135,11 @@ export function assertMistOrderDeposit(state:MistState,orderId:string):void {
 }
 
 export type MistCommandResult = { id?: string; draftId?: string; devId?: string; versionId?: string; orderId?: string; contactId?: string; fileId?: string; applied?: number; [key: string]: unknown };
-export type MistWorkspaceEnvelope = { id: string; ownerId: string; name: string; revision: number; state: MistState };
+export type MistWorkspaceMember={userId:string;name:string;addedBy:string;addedByName:string;addedAt:string};
+export type MistWorkspaceMemberLog={id:string;action:'add'|'remove';userId:string;name:string;actorId:string;actorName:string;at:string};
+/** 服务端按当前账号现有读权限裁剪数据后附带的说明：hidden 为当前账号无权查看、已被隐藏的数据范围。 */
+export type MistWorkspaceAccess={role:'owner'|'member';canManageMembers:boolean;hidden:Array<{key:string;label:string;permissions:string[]}>};
+export type MistWorkspaceEnvelope = { id: string; ownerId: string; name: string; revision: number; state: MistState; access?: MistWorkspaceAccess };
 export type MistRunReceipt = { requestId: string; revision: number; result: MistCommandResult };
 
 import * as Seed from './mistSeed';
@@ -342,7 +349,9 @@ export function mistCommandPermission(command: MistCommand): string | null {
   if(command.type==='development.recordQc')return command.payload.domain==='fabric'?'qc:fabric_chain:write':'qc:garment_chain:write';
   if(command.type.startsWith('development.')||command.type.startsWith('fabric.')||command.type==='files.add')return 'products:write';
   if(command.type.startsWith('order.')||command.type.startsWith('production.'))return 'orders:write';
-  if(command.type.startsWith('finance.'))return 'finance:write';
+  if(command.type==='finance.importReceipts'||command.type==='finance.payment.save')return MIST_FINANCE_SCOPES.voucher;
+  if(command.type==='finance.reconcile'||command.type==='finance.acceptSuggestions')return MIST_FINANCE_SCOPES.reconcile;
+  if(command.type.startsWith('finance.'))throw new MistCommandError('VALIDATION','未知财务操作');
   if(command.type.startsWith('customer.')||command.type.startsWith('contact.'))return 'relations:write';
   if(['settings.update','notification.read','notification.readAll','task.complete','calendar.save'].includes(command.type))return null;
   throw new MistCommandError('VALIDATION','未知操作');
