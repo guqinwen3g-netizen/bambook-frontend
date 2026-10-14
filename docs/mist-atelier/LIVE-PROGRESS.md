@@ -2,12 +2,14 @@
 
 > 所有协作者 / Agent 每次任务推送同步更新本人记录；开工、检查点、阻塞、review、合入和交接均须记录。最新一条放在最上面。本机预览跟随本分支即可看到同一份代码。
 > 本文件只记录过程；正式交接仍写入 `05-migration-playbook.md`。
+> 2026-10-14 起 GitHub 仓库更名为 `guqinwen3g-netizen/bambook-main`（原 `bambook-frontend`，旧 PR 链接由 GitHub 自动跳转）。
 
 ## 当前协作任务（先读这里）
 
 | 负责人 | 状态 | 基线 / 分支 | 范围与协作触点 | 当前验证 / 阻塞 | 下一步 |
 | --- | --- | --- | --- | --- | --- |
-| Notion AI（风险会话） | 已验证，待 CI / 合入 | main `0cdab37`；`feat/mist-risks-workbench`；[PR #10](https://github.com/guqinwen3g-netizen/bambook-frontend/pull/10) | 批次 3 风险管理与合规首轮：`server/src/shared/mistRisk.ts`（新）、`mistPlatform.ts` 分发、`RisksPage.tsx`（新）、`PlatformPages.tsx` 入口、演示种子 v11；不碰报价核算 / AI 顾问文件 | 本地 `verify:mist` 通过：UI 63 文件 / 793 项、服务端 36 / 519、工具链 1 / 4，Mist 147 文件 0 / 0；浏览器浅深 1440 + 390 实渲无报错 / 横溢 | PR CI 通过后 merge commit 合入 main；下一批售后索赔 |
+| Notion AI（售后索赔会话） | 已验证，待 CI / 合入 | main `d77e4c3`；`feat/mist-claims-coordination`；PR 见仓库 `bambook-main` | 批次 3 售后索赔协同首轮：`server/src/shared/mistClaimCoordination.ts`（新）、`mistPlatform.ts` 分发 / 关闭与撤销门禁、`ClaimCoordination.tsx`（新）、`PlatformPages.tsx` 索赔详情接入；不改原处置审批 / 贷项 / 退货库存契约，不碰报价核算 / AI 顾问文件 | 本地 `verify:mist` 通过；本地真实 API 建案 + 浏览器表单通知回读通过，浅深 1440 / 1180 / 390 无报错 / 横溢 | PR CI 通过后 merge commit 合入 main |
+| Notion AI（风险会话） | 已合入 main `d77e4c3` | main `0cdab37`；`feat/mist-risks-workbench`；[PR #10](https://github.com/guqinwen3g-netizen/bambook-frontend/pull/10) | 批次 3 风险管理与合规首轮（见下方 10-14 记录） | 本地 `verify:mist` 与 PR CI `verify` 通过 | 已结束；售后索赔见上一行 |
 | Notion AI（本会话，协作规范独立批次） | 已提交文档；验证 / 合入状态见 PR 回执 | main `369e657`；`docs/realtime-collaboration`；[PR #9](https://github.com/guqinwen3g-netizen/bambook-frontend/pull/9) | AGENTS / README / PR 模板 / 当前任务登记；不含报价 AI 源码 | 文档链接与无私有文件检查通过；本批本地 / 云端验证待执行 | 完成验证 → merge commit 到主线，让协作者立即读取 |
 | Notion AI（本会话） | 开发中，未验收、未合入 | main `369e657`；`feat/quote-cost-ai-advisor`；PR [#8](https://github.com/guqinwen3g-netizen/bambook-frontend/pull/8)，最新开发 `20bb547`（初始检查点 `fa3f23d`） | 准确报价行只读 AI 审阅、人工采纳、操作规范；`server/src/mist/route.ts`、新增 advisor 契约及报价核算页面；同时补 AGENTS / README / 本进度协作入口 | 新沙箱已从云端主线恢复；Node22 锁定依赖安装完成，定向回归及 review 已执行；定向 UI27 / 后端34通过；权限前提修复后全量重验及云端 CI 执行中；隔离浏览器浅深三宽30画面，真实 HTTP 人工保存并刷新回读通过（模拟 provider，不是真实 AI）；没有真实模型凭据，不宣称 GPT / DeepSeek 已实连 | 完成 UI 与安全回归 → review → 完整验证 / 实际浏览器 → PR CI → merge commit |
 
@@ -31,6 +33,15 @@
 - 代码：从最新 main 创建短任务分支，验收后通过 PR 合入；当前预览分支和提交以 mist-version.json 为准，不以历史分支名推定已同步。
 - 数据：双方都使用 `seed: "demo"` 生成的“Mist 示例数据”空间。云端测试时新建的数据只存在云端沙箱，结果以本文件里的测试记录和截图为准。
 - 测试：云端每轮在 Node 22 下运行 `npm run verify:mist`，数字写在下面。
+
+---
+
+## 2026-10-14 · 售后索赔协同首轮
+
+- 从 main `d77e4c3` 开短分支 `feat/mist-claims-coordination`。按用户描述的实际做法：业务员接到客诉 → 通知质检、负责人、跟单与工厂（工厂只记录实际通知方式，不代表认定责任或答应金额）→ 质检牵头核实（工厂配合）→ 对客户方案走原审批 → 向工厂追偿单独记账 → 两边都落实才能关闭。
+- 两笔账：对客户已批准金额、工厂已同意 / 已落实金额、公司自担（同币种才算）。贷项未结清时“客户这边”不算处理完；工厂补偿未落实时页面提示“客户这边已解决，但还在等工厂补偿”，关闭被拒绝。放弃追偿须 aftersales:approve 且提出人不能自批；撤销案件撤回未落实追偿，已落实的拒绝撤销。
+- 验证：服务端新增 6 项、UI 新增 4 项；完整 `verify:mist` 通过（服务端 37 文件 / 525 项，Mist 规范 0 错误 0 警告）。本地独立服务新示例空间用真实 API 完成建案 → 通知 → 核实 → 折让提交 → 本地审批员批准 → 执行（CLM 号与贷项正常）→ 追偿提出 / 同意，关闭被“贷项未结清”拦下；浏览器表单完成另一案的“通知相关人员”并回读。浅深 1440、1180、390 无 pageerror / 横溢。截图不入库。
+- 未接：工厂扣款进应付账、按人推送、汇率换算；演示种子未加索赔样例。
 
 ---
 
