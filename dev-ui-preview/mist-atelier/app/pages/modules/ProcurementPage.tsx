@@ -5,6 +5,7 @@ import { Banner, Button, Card, Checklist, DataTable, Dropdown, EmptyState, Facts
 import type { MistState } from '../../../../../server/src/shared/mistWorkspace';
 import type { FulfillmentPurchase } from '../../../../../server/src/shared/mistFulfillment';
 import { fulfillmentSourceLabel } from '../../../../../server/src/shared/mistFulfillment';
+import { purchaseContractMinor, purchasePayableReadback } from '../../../../../server/src/shared/mistPayables';
 import { supplierBusinessDay, supplierStatusOn, supplierUnavailableReason } from '../../../../../server/src/shared/mistSupplierStatus';
 import { useMistWorkspace } from '../../runtime/workspace';
 import { useMistSession } from '../../runtime/auth';
@@ -167,6 +168,7 @@ function PurchaseDetail({ purchase: p, state, day, me, can, canApprove, locked, 
 }) {
   const stage = purchaseStage(p), flags = purchaseFlags(p, day), processing = p.kind === 'processing';
   const receipts = state.fulfillment.receipts.filter(receipt => receipt.purchaseId === p.id);
+  const billed = purchasePayableReadback(state, p.id, day).filter(r => r.bill.status !== 'void'), invoicedMinor = billed.reduce((n, r) => n + Math.round(r.lineAmount * 100), 0);
   const rejectedQty = round(receipts.reduce((sum, receipt) => sum + receipt.rejected, 0));
   const writeReason = can ? false : '需要采购写权限';
   const reviewerReason = !canApprove ? '需要供应商承诺审批权限' : !p.reviewerIds.includes(me) ? '你不在本单提交时的审批名单中' : false;
@@ -175,7 +177,7 @@ function PurchaseDetail({ purchase: p, state, day, me, can, canApprove, locked, 
     : stage === 'pending' ? { tone: 'warn', title: '等待审批', text: `已提交 ${p.submittedAt ? shortWhen(p.submittedAt) : ''}，审批名单 ${p.reviewerIds.length} 人；批准前不能发给供应商。` }
     : !p.offlineSend ? { tone: 'accent', title: '已批准 · 待线下发出', text: `${p.decision?.actor || '审批人'}已批准。把批准版本发给供应商后，在此登记发出方式与依据。` }
     : !p.supplierConfirmation ? { tone: 'accent', title: '合同已发出 · 待供应商确认', text: '收到对方盖章确认后登记；确认交期须与批准交期一致，不同需先走商业变更。' }
-    : stage === 'done' ? { tone: 'ok', title: processing ? '已全部回交' : '已全部交付', text: `累计 ${p.received} / ${p.quantity} ${p.unit}。验收、对账与付款申请尚未接入，暂在线下处理。` }
+    : stage === 'done' ? { tone: 'ok', title: processing ? '已全部回交' : '已全部交付', text: `累计 ${p.received} / ${p.quantity} ${p.unit}。验收尚未接入；供应商票据与付款由财务在应付待办登记。` }
     : { tone: 'accent', title: processing ? '加工中 · 分批回交' : '供应履约中', text: `供应商承诺 ${p.supplierConfirmation.confirmedDue}；已${processing ? '回交' : '交付'} ${p.received} / ${p.quantity} ${p.unit}。` };
   const track = [
     { label: '提交审批', done: !!p.submittedAt || stage !== 'draft', note: p.submittedAt ? shortWhen(p.submittedAt) : '未提交' },
@@ -185,7 +187,7 @@ function PurchaseDetail({ purchase: p, state, day, me, can, canApprove, locked, 
     ...(processing ? [{ label: '原料交接', done: false, note: '发料、损耗与余料归还尚未接入' }] : []),
     { label: processing ? '分批回交' : '分批交付', done: stage === 'done', note: `${p.received} / ${p.quantity} ${p.unit}` },
     { label: '验收', done: false, note: rejectedQty ? `已拒收 ${rejectedQty} ${p.unit} · 退换尚未接入` : '独立验收尚未接入', noteTone: rejectedQty ? 'bad' as const : undefined },
-    { label: '对账与付款申请', done: false, note: '尚未接入，付款由财务线下处理' },
+    { label: '财务登记供应商票据与付款', done: billed.length > 0 && invoicedMinor >= purchaseContractMinor(p) && billed.every(r => r.bill.open <= 0), note: billed.length ? `已登记票据 ${(invoicedMinor / 100).toFixed(2)} / 合同 ${(purchaseContractMinor(p) / 100).toFixed(2)} ${p.currency} · ${billed.filter(r => r.bill.open > 0).length ? billed.filter(r => r.bill.open > 0).length + ' 张未付清' : '已付清'}` : '财务尚未登记供应商票据' },
   ];
   return <DetailBody data-purchase-detail={p.id} heading={<div>
       <span className="mist-mono mist-muted">{p.code}</span>
