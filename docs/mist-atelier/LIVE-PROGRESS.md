@@ -7,7 +7,8 @@
 
 以下按本次核对的 GitHub 状态校正；接续前仍须核对最新分支和 PR。
 
-- **结算确认、预付抵扣与票据去重批次：进行中。** 分支 `feat/mist-settlements`，基线 main `bd0c3ba`；最新提交与 CI 以对应 PR 为准。未部署、不涉及真实资金。
+- **应付收尾批次：进行中。** 分支 `feat/mist-ap-closeout`，基线 main `ff6cf96`；最新提交与 CI 以对应 PR 为准。未部署、不涉及真实资金。
+- **结算确认、预付抵扣与票据去重批次：已合入。** [PR #18](https://github.com/guqinwen3g-netizen/bambook-main/pull/18) 以 merge commit 进入 main `ff6cf96`；范围与验收见下方历史检查点。
 - **供应商预付款批次：已合入。** [PR #17](https://github.com/guqinwen3g-netizen/bambook-main/pull/17) 以 merge commit 进入 main `bd0c3ba`；范围与验收见下方历史检查点。
 - **跨账号、跨岗位办理同一笔业务：已合入。** [PR #16](https://github.com/guqinwen3g-netizen/bambook-main/pull/16) 以 merge commit 进入 main `eaa301d`；范围与验收见下方历史检查点。
 - **供应商票据与应付首轮：已合入。** [PR #15](https://github.com/guqinwen3g-netizen/bambook-main/pull/15) 已进入 main `e5aa0ce`。范围为公司端票据登记、付款分配、未分配保留和采购回读；不代表预付款闭环、付款申请审批、冲回、银行账户或部署完成。下方历史中的“发票到才算应付、付款不另审批、财务直接作废”不是已确认规则，已由后续方向覆盖。
@@ -15,6 +16,17 @@
 - **售后索赔公司端修订：已合入。** [PR](https://github.com/guqinwen3g-netizen/bambook-main/pull/12) 已进入主线，核对时主线为 `46053f9`，对应 CI 成功。范围仅公司端，通知工厂记录方式和内部备注；不代表客户 / 供应商平台或正式部署完成。
 - **协作规范批次：已合入。** [PR](https://github.com/guqinwen3g-netizen/bambook-main/pull/9) 已进入主线，不再等待原批次验证或合入。当前规则以根 `AGENTS.md` 为准。
 - **风险管理首轮：已合入。** [PR](https://github.com/guqinwen3g-netizen/bambook-main/pull/10) 已进入主线；后续缺口按具体任务继续。
+
+## 当前交接 · 应付收尾批次
+
+### 检查点 · 2026-10-15
+
+- 用户授权开“应付收尾”批：短交剩余预付退款 / 转抵、索赔工厂扣款抵应付、来料拒收退换、发票先于结算到达暂挂，以及审批材料千分位和手机汇总表列名两处显示修复。口径写入决策总账 8.4.1“应付收尾实现口径”。
+- 服务端：`mistPayables.ts` 暂挂票据（行 `awaitingSettlement`，`payable.bill.link` 关联结算）、索赔扣款（DD-，`payable.deduction.register/reverse`，“从货款中扣”扣满自动落实追偿）、剩余预付处理（PM-，`payable.prepayment.refund/transfer/reverse`，退款另记负数收付款），冲回顺序受保护；审批材料与提示金额千分位。`mistClaimCoordination.ts` 落实规则；`mistFulfillment.ts` 收货退换 `fulfillment.procurement.return` / `.return.reverse`。
+- 界面：新 `FinanceCloseout.tsx`；票据登记可选“待关联结算”，票据详情显示暂挂、关联结算、索赔扣款与冲回；最终结算详情显示“合同预付去向”及退款 / 转抵 / 冲回；索赔“两笔账”显示已扣进度并可跳应付；采购详情“拒收退换”进度与收货拒收的“登记退货 / 换货”；提交结算弹窗提示不再补发数量。修复：汇总表手机宽度数字补标签；详情侧栏阶段轨迹的长说明不再把步骤名挤成竖排。
+- **隔离本地浏览器验收**（`dev:mist` local-file 演示空间，非生产、非 PostgreSQL；测试数据非真实资金）：PO-2026-00004 业务员登记收货 100 米（拒收 20）并为上一批拒收 10 米登记“不再补发” → 财务先登记暂挂票据 1,880（汇总单列“1 张待关联结算”，申请付款禁用）→ 业务员提交最终结算 → 财务确认抵扣 1,880，最终结算后剩余预付 940 → 关联暂挂票据（未付 0）→ 登记退款 940（预付去向：已付 6,204 / 抵扣 5,264 / 退回 940 / 剩余 0），冲回结算按钮按规则禁用。浅 / 深 × 1440 / 390 共 16 个视图无横向溢出、无页面错误；控制台仅有已知“承诺与审批版本”时间线 `<p>` 嵌 `<div>` 警告（非本批）。索赔扣款界面由组件测试覆盖，样本空间未建索赔案例。
+- 完整 `npm run verify:mist` 本地通过：UI 66 文件 / 832 项、服务端 41 文件 / 573 项、工具链 1 文件 / 4 项，Mist 检查 156 文件 0 error 0 warning；云端 CI 见 PR。
+- 留后续：按结算不等票付款、无申请历史付款与计划对应、合同未执行取消时的预付退款、“从货款中扣”改为工厂付款的变更路径、真实环境联调（PostgreSQL / Electron / 1180）、PR #8 报价 AI 收尾。
 
 ## 当前交接 · 结算确认、预付抵扣与票据去重批次
 

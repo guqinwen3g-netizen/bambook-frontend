@@ -45,13 +45,13 @@ describe('售后索赔协同',()=>{
   const rid=f.run({type:'platform.claim.recovery.open',payload:{claimId:f.claimId,supplierId:f.supplierId,currency:'usd',requested:50,basis:'染色批次偏差，工厂责任'}}).id;
   expect(()=>f.run({type:'platform.claim.recovery.open',payload:{claimId:f.claimId,supplierId:f.supplierId,currency:'USD',requested:1,basis:'重复'}})).toThrow('未落实的追偿');
   expect(()=>f.run({type:'platform.claim.recovery.settle',payload:{id:rid,amount:1,reference:'x',date:'2026-10-14'}},f.finance)).toThrow('须先记录工厂同意');
-  f.run({type:'platform.claim.recovery.agree',payload:{id:rid,agreed:30,method:'deduction',note:'工厂邮件确认承担 30'}});
+  f.run({type:'platform.claim.recovery.agree',payload:{id:rid,agreed:30,method:'payment',note:'工厂邮件确认承担 30'}});
   let ledger=claimLedger(f.state,f.claim() as any);expect(ledger).toMatchObject({currency:'USD',customer:50,recoveryAgreed:30,recoverySettled:0,companyLoss:20,customerSettled:true,recoveryOpen:true});
   f.state.platform!.credits.forEach(n=>{f.run({type:'platform.credit.refund',payload:{creditId:n.id,amount:50,date:'2026-10-14',reference:'TT-1'}},f.finance);});
   expect(()=>f.run({type:'platform.claim.close',payload:{id:f.claimId}})).toThrow('工厂补偿未落实');
   expect(()=>f.run({type:'platform.claim.recovery.settle',payload:{id:rid,amount:35,reference:'x',date:'2026-10-14'}},f.finance)).toThrow('不能超过');
   expect(()=>f.run({type:'platform.claim.recovery.settle',payload:{id:rid,amount:30,reference:'x',date:'2026-12-01'}},f.finance)).toThrow('未来');
-  f.run({type:'platform.claim.recovery.settle',payload:{id:rid,amount:30,reference:'PO-1 货款扣 30 · 付款单 PV-9',date:'2026-10-14'}},f.finance);
+  f.run({type:'platform.claim.recovery.settle',payload:{id:rid,amount:30,reference:'工厂电汇 30 · 银行回单 TT-9',date:'2026-10-14'}},f.finance);
   ledger=claimLedger(f.state,f.claim() as any);expect(ledger).toMatchObject({recoverySettled:30,companyLoss:20,recoveryOpen:false});
   f.run({type:'platform.claim.close',payload:{id:f.claimId}});expect(f.claim().state).toBe('Closed');
   expect(f.state.tasks.filter(t=>t.target.id===f.claimId&&!t.done)).toHaveLength(0);

@@ -52,7 +52,8 @@ describe('售后索赔协同面板', () => {
     expect(host.textContent).toContain('客户这边已解决，但还在等工厂补偿');
     expect(host.textContent).toContain('已执行并结清');
     expect(host.textContent).toContain('40.00 ' + cur);
-    expect(button('登记实际落实')).toBeTruthy(); expect(button('批准放弃')).toBeUndefined();
+    expect(button('登记实际落实')).toBeUndefined(); expect(button('批准放弃')).toBeUndefined();
+    expect(host.textContent).toContain('由财务在应付里按工厂票据扣款');
   });
   it('默认工厂仅在生产分支工厂名与供应商档案唯一匹配时预选', () => {
     const claim = claimFor(); const rows = state.productions.filter(p => p.orderId === claim.orderId); expect(rows.length).toBeGreaterThan(0);

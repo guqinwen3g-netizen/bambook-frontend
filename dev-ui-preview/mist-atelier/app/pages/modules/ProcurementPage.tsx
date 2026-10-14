@@ -3,8 +3,8 @@ import React from 'react';
 import { CheckCircle2, Download, FileSignature, PackageCheck, Pencil, Plus, SearchX, Send, ShoppingCart, Undo2, Workflow } from 'lucide-react';
 import { Banner, Button, Card, Checklist, DataTable, Dropdown, EmptyState, Facts, MistPage, Mono, PageHeader, Pill, Pipeline, SearchField, Segmented, Tabs, Timeline, Toolbar, type Column, type Tone } from '../../../../../components/mist';
 import type { MistState } from '../../../../../server/src/shared/mistWorkspace';
-import type { FulfillmentPurchase } from '../../../../../server/src/shared/mistFulfillment';
-import { fulfillmentSourceLabel } from '../../../../../server/src/shared/mistFulfillment';
+import type { FulfillmentPurchase, FulfillmentReceipt, FulfillmentReceiptReturn } from '../../../../../server/src/shared/mistFulfillment';
+import { fulfillmentSourceLabel, receiptReturnedQuantity } from '../../../../../server/src/shared/mistFulfillment';
 import { purchaseContractMinor, purchasePayableReadback, purchasePrepaymentReadback, supplierSettlements } from '../../../../../server/src/shared/mistPayables';
 import { supplierBusinessDay, supplierStatusOn, supplierUnavailableReason } from '../../../../../server/src/shared/mistSupplierStatus';
 import { useMistWorkspace } from '../../runtime/workspace';
@@ -104,6 +104,12 @@ export function ProcurementPage() {
   const sendSpec = (p: FulfillmentPurchase): ModuleEditorSpec => ({ title: '登记批准合同线下发出', submitLabel: '登记发出', fields: [field('at', '实际发出时间', 'datetime-local'), field('evidence', '发出方式与依据', 'textarea')], initialValues: { at: localNow(), evidence: '' }, submit: values => run({ type: 'fulfillment.procurement.send', payload: { id: p.id, at: new Date(text(values, 'at')).toISOString(), evidence: text(values, 'evidence'), fileIds: [] } }) });
   const confirmSpec = (p: FulfillmentPurchase): ModuleEditorSpec => ({ title: '登记供应商线下确认', submitLabel: '登记确认', fields: [field('at', '实际确认时间', 'datetime-local'), { ...field('confirmedDue', '确认交期', 'date'), hint: '须与批准交期一致；不同需先走商业变更。' }, field('evidence', '供应商确认依据', 'textarea')], initialValues: { at: localNow(), confirmedDue: p.due, evidence: '' }, submit: values => run({ type: 'fulfillment.procurement.confirm', payload: { id: p.id, at: new Date(text(values, 'at')).toISOString(), confirmedDue: text(values, 'confirmedDue'), evidence: text(values, 'evidence'), fileIds: [] } }) });
   const receiveSpec = (p: FulfillmentPurchase): ModuleEditorSpec => ({ title: p.kind === 'processing' ? '登记加工回交' : '登记真实交付 / 收货', submitLabel: '登记本次交付', fields: [field('quantity', `接收数量（${p.unit}）`, 'number'), field('rejected', `拒收数量（${p.unit}）`, 'number'), field('destination', '真实路径', 'select', true, [{ value: 'warehouse', label: '入我方仓库' }, { value: 'supplier', label: p.kind === 'processing' ? '加工服务交付' : '供应商直送加工方' }]), field('location', '实际交接地点'), field('date', '实际交付日', 'date'), field('evidence', '点数与交接依据', 'textarea')], initialValues: { quantity: Math.max(0, round(p.quantity - p.received)), rejected: 0, destination: p.kind === 'processing' ? 'supplier' : 'warehouse', location: p.destination, date: today(), evidence: '' }, submit: values => run({ type: 'fulfillment.procurement.receive', payload: { id: p.id, quantity: number(values, 'quantity'), rejected: number(values, 'rejected'), destination: text(values, 'destination') as 'warehouse' | 'supplier', location: text(values, 'location'), date: text(values, 'date'), evidence: text(values, 'evidence'), fileIds: [] } }) });
+  const returnSpec = (p: FulfillmentPurchase, r: FulfillmentReceipt): ModuleEditorSpec => ({ title: '登记拒收货物退换', description: `${r.date} 收货拒收 ${r.rejected} ${p.unit}，尚可登记 ${round(r.rejected - receiptReturnedQuantity(r))} ${p.unit}。供应商补发的货另行登记收货；不再补发的按实收结算，可在提交结算时勾选最终结算。`, submitLabel: '登记退换',
+    fields: [{ ...field('quantity', `退回数量（${p.unit}）`, 'number'), min: 0.0001 }, field('disposition', '供应商处理', 'select', true, [{ value: 'replace', label: '供应商补发（补货另行收货）' }, { value: 'noReplace', label: '不再补发（短交，按实收结算）' }]), field('date', '退回日期', 'date'), field('evidence', '退货单 / 供应商确认依据', 'textarea')],
+    initialValues: { quantity: round(r.rejected - receiptReturnedQuantity(r)), disposition: 'replace', date: today(), evidence: '' },
+    submit: values => run({ type: 'fulfillment.procurement.return', payload: { receiptId: r.id, quantity: number(values, 'quantity'), disposition: text(values, 'disposition') as FulfillmentReceiptReturn['disposition'], date: text(values, 'date'), evidence: text(values, 'evidence') } }) });
+  const returnReverseSpec = (p: FulfillmentPurchase, r: FulfillmentReceipt, row: FulfillmentReceiptReturn): ModuleEditorSpec => ({ title: '冲回退换登记', description: `${row.date} 退回 ${row.quantity} ${p.unit}（${row.disposition === 'replace' ? '供应商补发' : '不再补发'}）。原记录保留并标记已冲回。`, submitLabel: '确认冲回',
+    fields: [field('reason', '冲回原因', 'textarea')], initialValues: { reason: '' }, submit: values => run({ type: 'fulfillment.procurement.return.reverse', payload: { receiptId: r.id, returnId: row.id, reason: text(values, 'reason') } }) });
   const decideSpec = (p: FulfillmentPurchase, decision: 'approved' | 'rejected'): ModuleEditorSpec => ({ title: decision === 'approved' ? '批准采购承诺' : '退回采购', submitLabel: decision === 'approved' ? '批准' : '退回修改', fields: [field('note', '审批意见', 'textarea')], initialValues: { note: '' }, submit: values => run({ type: 'fulfillment.procurement.decide', payload: { id: p.id, decision, note: text(values, 'note') } }) });
 
   const stageCount = (value: StageFilter) => value === 'all' ? searched.length : searched.filter(p => purchaseStage(p) === value).length;
@@ -125,6 +131,7 @@ export function ProcurementPage() {
         onSubmit={() => void act(() => run({ type: 'fulfillment.procurement.submit', payload: { id: selected.id } }))}
         onDecide={decision => setDialog(decideSpec(selected, decision))}
         onSend={() => setDialog(sendSpec(selected))} onConfirm={() => setDialog(confirmSpec(selected))} onReceive={() => setDialog(receiveSpec(selected))}
+        onReturn={r => setDialog(returnSpec(selected, r))} onReturnReverse={(r, row) => setDialog(returnReverseSpec(selected, r, row))}
         onDownload={() => void act(async () => downloadApprovedPurchase(state, selected))}
         onAttach={ids => run({ type: 'fulfillment.procurement.save', payload: { ...selected, fileIds: ids } })}
         onInventory={() => go('inventory', undefined, { section: selected.id })} onSupplier={() => go('suppliers', selected.supplierId)} />
@@ -161,9 +168,10 @@ export function ProcurementPage() {
   </MistPage>;
 }
 
-function PurchaseDetail({ purchase: p, state, day, me, can, canApprove, locked, onEdit, onSubmit, onDecide, onSend, onConfirm, onReceive, onDownload, onAttach, onInventory, onSupplier }: {
+function PurchaseDetail({ purchase: p, state, day, me, can, canApprove, locked, onEdit, onSubmit, onDecide, onSend, onConfirm, onReceive, onReturn, onReturnReverse, onDownload, onAttach, onInventory, onSupplier }: {
   purchase: FulfillmentPurchase; state: MistState; day: string; me: string; can: boolean; canApprove: boolean; locked: boolean;
   onEdit: () => void; onSubmit: () => void; onDecide: (decision: 'approved' | 'rejected') => void; onSend: () => void; onConfirm: () => void; onReceive: () => void; onDownload: () => void;
+  onReturn: (receipt: FulfillmentReceipt) => void; onReturnReverse: (receipt: FulfillmentReceipt, row: FulfillmentReceiptReturn) => void;
   onAttach: (ids: string[]) => Promise<unknown>; onInventory: () => void; onSupplier: () => void;
 }) {
   const stage = purchaseStage(p), flags = purchaseFlags(p, day), processing = p.kind === 'processing';
@@ -173,6 +181,8 @@ function PurchaseDetail({ purchase: p, state, day, me, can, canApprove, locked, 
   const settledQty = round(confirmedSt.reduce((n, x) => n + x.quantity, 0)), finalSt = confirmedSt.some(x => x.final);
   const billed = purchasePayableReadback(state, p.id, day).filter(r => r.bill.status !== 'void'), invoicedMinor = billed.reduce((n, r) => n + Math.round(r.lineAmount * 100), 0);
   const rejectedQty = round(receipts.reduce((sum, receipt) => sum + receipt.rejected, 0));
+  const replaceQty = round(receipts.reduce((n, r) => n + receiptReturnedQuantity(r, 'replace'), 0)), noReplaceQty = round(receipts.reduce((n, r) => n + receiptReturnedQuantity(r, 'noReplace'), 0)), openRejected = round(rejectedQty - replaceQty - noReplaceQty);
+  const amt = (v: number) => v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const writeReason = can ? false : '需要采购写权限';
   const reviewerReason = !canApprove ? '需要供应商承诺审批权限' : !p.reviewerIds.includes(me) ? '你不在本单提交时的审批名单中' : false;
   const next: { tone: Tone; title: string; text: string } = p.state === 'rejected' ? { tone: 'bad', title: '审批退回', text: `${p.decision?.actor || '审批人'}：${p.decision?.note || '未写明原因'}。修订草稿后重新提交。` }
@@ -180,7 +190,7 @@ function PurchaseDetail({ purchase: p, state, day, me, can, canApprove, locked, 
     : stage === 'pending' ? { tone: 'warn', title: '等待审批', text: `已提交 ${p.submittedAt ? shortWhen(p.submittedAt) : ''}，审批名单 ${p.reviewerIds.length} 人；批准前不能发给供应商。` }
     : !p.offlineSend ? { tone: 'accent', title: '已批准 · 待线下发出', text: `${p.decision?.actor || '审批人'}已批准。把批准版本发给供应商后，在此登记发出方式与依据。` }
     : !p.supplierConfirmation ? { tone: 'accent', title: '合同已发出 · 待供应商确认', text: '收到对方盖章确认后登记；确认交期须与批准交期一致，不同需先走商业变更。' }
-    : stage === 'done' ? { tone: 'ok', title: processing ? '已全部回交' : '已全部交付', text: `累计 ${p.received} / ${p.quantity} ${p.unit}。验收尚未接入；供应商票据与付款由财务在应付待办登记。` }
+    : stage === 'done' ? { tone: 'ok', title: processing ? '已全部回交' : '已全部交付', text: `累计 ${p.received} / ${p.quantity} ${p.unit}。供应商票据与付款由财务在应付待办登记。` }
     : { tone: 'accent', title: processing ? '加工中 · 分批回交' : '供应履约中', text: `供应商承诺 ${p.supplierConfirmation.confirmedDue}；已${processing ? '回交' : '交付'} ${p.received} / ${p.quantity} ${p.unit}。` };
   const track = [
     { label: '提交审批', done: !!p.submittedAt || stage !== 'draft', note: p.submittedAt ? shortWhen(p.submittedAt) : '未提交' },
@@ -189,10 +199,10 @@ function PurchaseDetail({ purchase: p, state, day, me, can, canApprove, locked, 
     { label: '供应商确认', done: !!p.supplierConfirmation, note: p.supplierConfirmation ? `承诺 ${p.supplierConfirmation.confirmedDue}` : '未登记' },
     ...(processing ? [{ label: '原料交接', done: false, note: '发料、损耗与余料归还尚未接入' }] : []),
     { label: processing ? '分批回交' : '分批交付', done: stage === 'done', note: `${p.received} / ${p.quantity} ${p.unit}` },
-    { label: '验收', done: false, note: rejectedQty ? `已拒收 ${rejectedQty} ${p.unit} · 退换尚未接入` : '独立验收尚未接入', noteTone: rejectedQty ? 'bad' as const : undefined },
-    ...(prepay.plans.length ? [{ label: '合同预付款', done: prepay.paid >= prepay.planned && prepay.available <= 0, note: `计划 ${prepay.planned.toFixed(2)} · 已付 ${prepay.paid.toFixed(2)} · 已抵扣 ${prepay.applied.toFixed(2)} ${p.currency}${prepay.residualAfterFinal > 0 ? ` · 最终结算后剩余 ${prepay.residualAfterFinal.toFixed(2)} 待退款或转抵（另行登记）` : prepay.available > 0 ? ` · 待抵扣 ${prepay.available.toFixed(2)}` : ''}`, noteTone: prepay.residualAfterFinal > 0 ? 'bad' as const : undefined }] : []),
+    { label: '拒收退换', done: rejectedQty > 0 && openRejected <= 0, note: rejectedQty ? `已拒收 ${rejectedQty} ${p.unit}${replaceQty ? ` · 供应商补发 ${replaceQty}` : ''}${noReplaceQty ? ` · 不再补发 ${noReplaceQty}（短交）` : ''}${openRejected > 0 ? ` · ${openRejected} 待登记退换` : ''}` : '没有拒收', noteTone: openRejected > 0 ? 'bad' as const : undefined },
+    ...(prepay.plans.length || prepay.transferredIn ? [{ label: '合同预付款', done: prepay.paid >= prepay.planned && prepay.available <= 0, note: `计划 ${amt(prepay.planned)} · 已付 ${amt(prepay.paid)}${prepay.transferredIn ? ` · 转入 ${amt(prepay.transferredIn)}` : ''} · 已抵扣 ${amt(prepay.applied)}${prepay.refunded ? ` · 已退款 ${amt(prepay.refunded)}` : ''}${prepay.transferredOut ? ` · 已转出 ${amt(prepay.transferredOut)}` : ''} ${p.currency}${prepay.residualAfterFinal > 0 ? ` · 最终结算后剩余 ${amt(prepay.residualAfterFinal)} 待退款或转抵（财务在结算详情登记）` : prepay.available > 0 ? ` · 待抵扣 ${amt(prepay.available)}` : ''}`, noteTone: prepay.residualAfterFinal > 0 ? 'bad' as const : undefined }] : []),
     { label: '结算确认', done: finalSt, note: settled.length ? `已确认 ${settledQty} / ${p.quantity} ${p.unit}${pendingSt ? ` · ${pendingSt} 笔待财务复核` : ''}${finalSt ? ' · 已最终结算' : ''}` : '业务员按实际收货在应付待办提交结算' },
-    { label: '财务登记供应商票据与付款', done: billed.length > 0 && invoicedMinor >= purchaseContractMinor(p) && billed.every(r => r.bill.open <= 0), note: billed.length ? `已登记票据 ${(invoicedMinor / 100).toFixed(2)} / 合同 ${(purchaseContractMinor(p) / 100).toFixed(2)} ${p.currency} · ${billed.filter(r => r.bill.open > 0).length ? billed.filter(r => r.bill.open > 0).length + ' 张未付清' : '已付清'}` : '财务尚未登记供应商票据' },
+    { label: '财务登记供应商票据与付款', done: billed.length > 0 && invoicedMinor >= purchaseContractMinor(p) && billed.every(r => r.bill.open <= 0), note: billed.length ? `已登记票据 ${amt(invoicedMinor / 100)} / 合同 ${amt(purchaseContractMinor(p) / 100)} ${p.currency} · ${billed.filter(r => r.bill.open > 0).length ? billed.filter(r => r.bill.open > 0).length + ' 张未付清' : '已付清'}` : '财务尚未登记供应商票据' },
   ];
   return <DetailBody data-purchase-detail={p.id} heading={<div>
       <span className="mist-mono mist-muted">{p.code}</span>
@@ -230,6 +240,10 @@ function PurchaseDetail({ purchase: p, state, day, me, can, canApprove, locked, 
         { key: 'evidence', header: '依据', hideOnMobile: true, render: receipt => receipt.evidence },
       ]} /> : <span className="mist-note">还没有{processing ? '回交' : '交付'}记录</span>}
     </DetailBlock>
+    {rejectedQty > 0 && <DetailBlock title="拒收退换">{receipts.filter(r => r.rejected > 0).map(r => { const left = round(r.rejected - receiptReturnedQuantity(r)); return <div className="mist-col" key={r.id} data-receipt-returns={r.id} style={{ gap: 4 }}>
+      <div className="mist-row mist-module-actions"><span>{r.date} 收货拒收 {r.rejected} {p.unit}</span><span className="mist-spacer" />{left > 0 ? <Pill tone="warn">{left} {p.unit} 待登记退换</Pill> : <Pill tone="ok">已登记退换</Pill>}{left > 0 && can && !locked && p.state === 'approved' && <Button size="sm" onClick={() => onReturn(r)}>登记退货 / 换货</Button>}</div>
+      {(r.returns || []).map(row => <div className="mist-row mist-module-actions" key={row.id} data-receipt-return={row.id}><span className="mist-note">{row.date} 退回 {row.quantity} {p.unit} · {row.disposition === 'replace' ? '供应商补发' : '不再补发（短交）'} · {row.evidence}</span><span className="mist-spacer" />{row.reversed ? <Pill>已冲回</Pill> : can && !locked && <Button size="sm" variant="quiet" onClick={() => onReturnReverse(r, row)}>冲回</Button>}</div>)}
+    </div>; })}</DetailBlock>}
     <div className="mist-row mist-module-actions"><Button onClick={onInventory}>查看来源库存</Button><Button onClick={onSupplier}>供应商档案</Button></div>
     <DetailBlock title="附件">
       <RecordFiles key={p.id} ids={p.fileIds} onAttach={can && stage === 'draft' ? onAttach : undefined} />

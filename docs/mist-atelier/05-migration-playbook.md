@@ -1,5 +1,11 @@
 # 05 · 在 Mist Atelier 上继续开发
 
+## 2026-10-15 应付收尾批次
+
+- 基于 main `ff6cf96`（PR #18 已合入），分支 `feat/mist-ap-closeout`。`mistPayables.ts` 新增 `payables.deductions`（DD-）与 `payables.prepaymentMoves`（PM-），命令 `payable.bill.link`、`payable.deduction.register/reverse`、`payable.prepayment.refund/transfer/reverse`；`payable.bill.register` 行可带 `awaitingSettlement: true`。推导：`billHeld`、`billDeductedMinor`（未付扣除扣款）、`deductibleRecoveries`、`recoveryDeductedMinor`、`prepaymentTransferTargets`，`purchasePrepaymentReadback` 增加转入 / 退款 / 转出 / 记录。审批材料与提示金额统一千分位（`fx`）。
+- `mistClaimCoordination.ts`：`recovery.settle` 拒绝“从货款中扣”，组合方式合计已扣。`mistFulfillment.ts`：收货记录 `returns[]`，命令 `fulfillment.procurement.return` / `.return.reverse`，`receiptReturnedQuantity`。
+- 界面：`FinanceCloseout.tsx`（关联结算、登记索赔扣款、剩余预付退款 / 转抵弹窗，合同预付去向与扣款列表）；票据登记弹窗的结算下拉增加“待关联结算”；结算详情（最终结算）显示预付去向；索赔“两笔账”显示已扣进度并可跳到应付；采购详情“拒收退换”进度和收货行“登记退货 / 换货”；`.mist-cell-sm-label` 为手机宽度隐藏表头时的单元格标签。
+
 ## 2026-10-15 结算确认、预付抵扣与票据去重批次
 
 - 基于 main `bd0c3ba`（PR #17 已合入），分支 `feat/mist-settlements`。仍在 `server/src/shared/mistPayables.ts`：新增 `payables.settlements`（ST-）与命令 `payable.settlement.submit / cancel`（`procurement:write`）、`confirm / return / reverse`（`invoices:reconcile`，不能复核本人提交）。票据行可带 `settlementId`；计划增加 `stage`（prepayment / progress / final，旧记录视为预付），付款申请和付款可带 `planId`。

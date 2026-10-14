@@ -300,6 +300,8 @@
 .mist-root[data-theme="dark"] .mist-checklist > div[data-done] .mist-checklist-bx, :is(.dark,[data-theme="dark"]) .mist-root:not([data-theme="light"]) .mist-checklist > div[data-done] .mist-checklist-bx { color: var(--mist-brand-deep-1); }
 .mist-checklist > div[data-done] > span:nth-child(2) { color: var(--mist-ink-3); }
 .mist-checklist small { margin-left: auto; font-size: var(--mist-text-xs); color: var(--mist-ink-3); white-space: nowrap; }
+/* 窄栏（详情侧栏）里说明过长时换到下一行右对齐，不挤压步骤名。 */
+.mist-checklist > div { flex-wrap: wrap; row-gap: 2px; } .mist-checklist small { white-space: normal; text-align: right; max-width: 100%; }
 .mist-checklist small[data-tone="bad"] { color: var(--mist-bad-ink); }
 @media (max-width: 640px) { .mist-checklist > div { flex-wrap: wrap; row-gap: 2px; } .mist-checklist small { margin-left: 34px; flex-basis: 100%; white-space: normal; } }
 
@@ -549,3 +551,6 @@
 .mist-season-dot { position: absolute; top: 50%; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: var(--mist-card); box-shadow: 0 0 0 2px var(--mist-accent-ink); }
 .mist-season-dot[data-done] { background: var(--mist-accent-ink); }
 .mist-season-today { position: absolute; top: -2px; bottom: -2px; width: 2px; margin-left: -1px; background: var(--mist-warn); border-radius: 1px; }
+/* 表格单元格内的移动端标签：手机宽度隐藏表头时说明数字含义。 */
+.mist-cell-sm-label { display: none; }
+@media (max-width: 760px) { .mist-cell-sm-label { display: block; font-size: 12px; } }

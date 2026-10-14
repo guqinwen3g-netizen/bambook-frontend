@@ -4,7 +4,8 @@ import React from 'react';
 import { Banner, Button, Checkbox, Dialog, Facts, Field, FormGrid, Mono, ObjectCell, Pill, Select, TextArea, TextInput, type Column, type Tone } from '../../../../components/mist';
 import { type MistState } from '../../../../server/src/shared/mistWorkspace';
 import { platformBusinessDate } from '../../../../server/src/shared/mistPlatform';
-import { purchaseContractMinor, purchasePrepaymentReadback, settlementReceipts, settlementSuggestedPrepaymentMinor, type PayablesCommand, type SettlementView } from '../../../../server/src/shared/mistPayables';
+import { receiptReturnedQuantity } from '../../../../server/src/shared/mistFulfillment';
+import { prepaymentMoves, purchaseContractMinor, purchasePrepaymentReadback, settlementReceipts, settlementSuggestedPrepaymentMinor, type PayablesCommand, type SettlementView } from '../../../../server/src/shared/mistPayables';
 import { ActionBar, DetailBlock, DetailBody } from './modules/pageKit';
 
 const money = (amount: number, currency: string) => `${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
@@ -22,10 +23,11 @@ export function settlementColumns(): Column<SettlementView>[] {
   ];
 }
 
-export function SettlementDetail({ settlement: st, state, me, busy, canSettle, canConfirm, canBill, onConfirm, onReason, onBill, onPurchase }: {
+export function SettlementDetail({ settlement: st, state, me, busy, canSettle, canConfirm, canBill, onConfirm, onReason, onBill, onPurchase, children }: {
   settlement: SettlementView; state: MistState; me: string; busy: boolean; canSettle: boolean; canConfirm: boolean; canBill: boolean;
-  onConfirm: () => void; onReason: (kind: 'return-settlement' | 'cancel-settlement' | 'reverse-settlement') => void; onBill: () => void; onPurchase: () => void;
+  onConfirm: () => void; onReason: (kind: 'return-settlement' | 'cancel-settlement' | 'reverse-settlement') => void; onBill: () => void; onPurchase: () => void; children?: React.ReactNode;
 }) {
+  const moved = st.final && st.state === 'confirmed' && prepaymentMoves(state).some(m => !m.reversed && m.purchaseId === st.purchaseId);
   const receipts = state.fulfillment.receipts.filter(r => st.receiptIds.includes(r.id));
   const own = st.submitterId === me;
   return <DetailBody data-settlement={st.id} heading={<h2 className="mist-h2">{st.code}</h2>}>
@@ -48,19 +50,20 @@ export function SettlementDetail({ settlement: st, state, me, busy, canSettle, c
       { label: '退回结算', onClick: () => onReason('return-settlement'), reason: !canConfirm ? '需要核销权限（财务）' : own ? '不能复核本人提交的结算' : undefined, hidden: st.state !== 'pending' },
       { label: '撤回结算', onClick: () => onReason('cancel-settlement'), reason: !canSettle ? '需要采购经办权限' : !own ? '只有提交人可以撤回' : undefined, hidden: st.state !== 'pending' },
       { label: '按结算登记票据', onClick: onBill, reason: !canBill ? '需要票据登记权限' : st.uninvoiced <= 0 ? '本结算已全部开票' : undefined, hidden: st.state !== 'confirmed' },
-      { label: '冲回结算', onClick: () => onReason('reverse-settlement'), reason: !canConfirm ? '需要核销权限（财务）' : st.invoiced > 0 ? '已关联票据，请先作废关联票据' : undefined, hidden: st.state !== 'confirmed' },
+      { label: '冲回结算', onClick: () => onReason('reverse-settlement'), reason: !canConfirm ? '需要核销权限（财务）' : st.invoiced > 0 ? '已关联票据，请先作废关联票据' : moved ? '剩余预付已退款或转抵，请先冲回这些记录' : undefined, hidden: st.state !== 'confirmed' },
       { label: '查看合同', onClick: onPurchase },
     ]} />
     <DetailBlock title="对应收货记录">{receipts.map(r => <div className="mist-row mist-module-actions" key={r.id}><span>{r.date}</span><span className="mist-note">{r.location} · {r.evidence}</span><span className="mist-spacer" /><span className="mist-num">实收 {r.quantity}{r.rejected ? ` · 拒收 ${r.rejected}` : ''} {st.unit}</span></div>)}
       {!receipts.length && <span className="mist-note">收货记录未找到。</span>}</DetailBlock>
     <DetailBlock title="争议 / 未确认扣款（单列，不抵减）">{st.disputes.map((d, i) => <div className="mist-row mist-module-actions" key={i}><span>{d.description}</span><span className="mist-spacer" /><span className="mist-num">{money(d.amount, st.currency)}</span></div>)}
       {!st.disputes.length && <span className="mist-note">没有登记争议或扣款。</span>}</DetailBlock>
+    {children}
   </DetailBody>;
 }
 
 type SubmitDraft = { purchaseId: string; receipts: Record<string, boolean>; final: boolean; disputes: Array<{ description: string; amount: string }>; note: string };
 /** 多个控件的分组：不能用 <label>（会把整组文字当成第一个控件的名称，点说明文字也会误触按钮）。 */
-function FieldGroup({ label, required, hint, children }: { label: string; required?: boolean; hint?: React.ReactNode; children: React.ReactNode }) {
+export function FieldGroup({ label, required, hint, children }: { label: string; required?: boolean; hint?: React.ReactNode; children: React.ReactNode }) {
   return <div className="mist-field" role="group" aria-label={label}><span className="mist-field-label">{label}{required && <em>*</em>}</span>{children}{hint && <span className="mist-field-hint">{hint}</span>}</div>;
 }
 
@@ -97,6 +100,7 @@ export function SettlementSubmitDialog({ open, state, busy, canSettle, failure, 
           <Checkbox checked={!!draft.receipts[r.id] && !settled} disabled={settled || r.quantity <= 0} onChange={v => setDraft({ ...draft, receipts: { ...draft.receipts, [r.id]: v } })} label={<span>{r.date} · {r.location} · 实收 {r.quantity}{r.rejected ? ` · 拒收 ${r.rejected}` : ''} {po.unit}{settled ? ' · 已在结算中' : r.quantity <= 0 ? ' · 无实收' : ''}</span>} /></div>)}
           {!rows.length && <span className="mist-note">这张合同还没有实际收货记录；先在采购详情登记收货。</span>}</div>
       </FieldGroup>}
+      {po && (() => { const all = state ? state.fulfillment.receipts.filter(r => r.purchaseId === po.id) : [], noReplace = all.reduce((n, r) => n + receiptReturnedQuantity(r, 'noReplace'), 0), open = all.reduce((n, r) => n + r.rejected - receiptReturnedQuantity(r), 0); return noReplace > 0 || open > 0 ? <Banner tone={open > 0 ? 'warn' : undefined} title="拒收与退换">{noReplace > 0 ? `供应商已确认不再补发 ${Math.round(noReplace * 10000) / 10000} ${po.unit}；如本合同不再交货，可勾选最终结算。` : ''}{open > 0 ? `还有 ${Math.round(open * 10000) / 10000} ${po.unit} 拒收未登记退换，请先在采购详情登记供应商补发或不再补发。` : ''}</Banner> : null; })()}
       {po && <Checkbox checked={draft.final} onChange={v => setDraft({ ...draft, final: v })} label="这是本合同最终结算（短交关闭或已全部交付）；将抵扣剩余全部预付" />}
       {po && prepay && prepay.paid > 0 && <Banner title="预付抵扣建议（由财务确认）">合同已付预付 {money(prepay.paid, po.currency)}，已抵扣 {money(prepay.applied, po.currency)}。本次建议抵扣 {money(suggested / 100, po.currency)}{draft.final || qty === 0 ? '' : `（预付 × ${qty} ÷ ${po.quantity}）`}。</Banner>}
       <FieldGroup label="争议 / 未确认扣款" hint="例如色差、短码待供应商确认的扣款；单列记录，不抵减结算金额">

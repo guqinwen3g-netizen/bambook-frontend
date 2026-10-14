@@ -166,7 +166,12 @@ export type FulfillmentReceipt = {
     fileIds: string[];
     actor: string;
     createdAt: string;
+    /** 拒收货物的退换登记：replace=供应商补发（后续另行收货），noReplace=退回不补（短交，按实收结算）。 */
+    returns?: FulfillmentReceiptReturn[];
 };
+export type FulfillmentReceiptReturn = { id: string; quantity: number; disposition: 'replace' | 'noReplace'; date: string; evidence: string; actor: string; at: string; reversed?: { at: string; actor: string; reason: string } };
+/** 某次收货中已登记退换（未冲回）的拒收数量。 */
+export function receiptReturnedQuantity(receipt: FulfillmentReceipt, disposition?: FulfillmentReceiptReturn['disposition']) { return (receipt.returns || []).filter(r => !r.reversed && (!disposition || r.disposition === disposition)).reduce((n, r) => Math.round((n + r.quantity) * 1e6) / 1e6, 0); }
 export type FulfillmentStock = {
     id: string;
     purchaseId?: string;
@@ -433,6 +438,12 @@ export type FulfillmentCommand = {
         evidence: string;
         fileIds: string[];
     };
+} | {
+    type: 'fulfillment.procurement.return';
+    payload: { receiptId: string; quantity: number; disposition: 'replace' | 'noReplace'; date: string; evidence: string };
+} | {
+    type: 'fulfillment.procurement.return.reverse';
+    payload: { receiptId: string; returnId: string; reason: string };
 } | {
     type: 'fulfillment.procurement.send';
     payload: { id: string; at: string; evidence: string; fileIds: string[] };
@@ -1196,6 +1207,31 @@ export function applyFulfillmentCommand(root: MistState, command: FulfillmentCom
             }
             audit(root, ctx, 'procurement', purchase.id, `登记真实交付 ${quantity} ${purchase.unit}${purchase.received !== purchase.quantity ? ' · 数量差异待处理' : ''}`, { view: 'orders/detail', id: purchase.orderId, orderLineId: purchase.lineId });
             return { id, purchaseId: purchase.id };
+        }
+        case 'fulfillment.procurement.return': {
+            const receipt = get(f.receipts, p.receiptId, '收货记录');
+            const purchase = get(f.purchases, receipt.purchaseId, '采购');
+            if (purchase.state !== 'approved') fail('仅已批准采购可登记退换', 'PRECONDITION');
+            const quantity = qty(p.quantity, '退换数量'), date = day(p.date, '退换日期'), evidence = text(p.evidence, '退换依据');
+            if (!['replace', 'noReplace'].includes(p.disposition)) fail('请选择供应商补发或不再补发');
+            if (date > ctx.now.slice(0, 10)) fail('退换日期不得在未来');
+            if (date < receipt.date) fail('退换日期不能早于收货日期');
+            const left = sum([receipt.rejected, -receiptReturnedQuantity(receipt)]);
+            if (quantity > left) fail(`该次收货拒收 ${receipt.rejected} ${purchase.unit}，尚可登记退换 ${left} ${purchase.unit}`);
+            const id = ctx.id();
+            (receipt.returns ||= []).push({ id, quantity, disposition: p.disposition, date, evidence, actor: ctx.actorName, at: ctx.now });
+            audit(root, ctx, 'procurement', purchase.id, `拒收货物退回供应商 ${quantity} ${purchase.unit} · ${p.disposition === 'replace' ? '供应商补发，补货另行收货' : '不再补发，按实收结算'} · ${evidence}`, { view: 'orders/detail', id: purchase.orderId, orderLineId: purchase.lineId });
+            return { id, purchaseId: purchase.id };
+        }
+        case 'fulfillment.procurement.return.reverse': {
+            const receipt = get(f.receipts, p.receiptId, '收货记录');
+            const purchase = get(f.purchases, receipt.purchaseId, '采购');
+            const row = (receipt.returns || []).find(r => r.id === p.returnId) || fail('退换记录不存在', 'NOT_FOUND');
+            if (row.reversed) fail('该退换记录已冲回', 'PRECONDITION');
+            const reason = text(p.reason, '冲回原因');
+            row.reversed = { at: ctx.now, actor: ctx.actorName, reason };
+            audit(root, ctx, 'procurement', purchase.id, `冲回退换登记 ${row.quantity} ${purchase.unit}：${reason}`, { view: 'orders/detail', id: purchase.orderId, orderLineId: purchase.lineId });
+            return { id: row.id, purchaseId: purchase.id };
         }
         case 'fulfillment.inventory.move': {
             const stock = get(f.stock, p.id, '库存批次');

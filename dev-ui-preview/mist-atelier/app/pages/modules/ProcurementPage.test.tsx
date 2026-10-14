@@ -120,3 +120,17 @@ it('keeps the ledger readable without write permission',()=>{
   expect((getByRole(host,'button',{name:'提交审批'}) as HTMLButtonElement).disabled).toBe(true);
   expect(host.textContent).toContain('提交审批：需要采购写权限');
 });
+
+it('records rejected goods returned to the supplier per receipt and shows replace / no-replace in the track',async()=>{
+  store.state!.fulfillment.purchases.push(purchase('recv',approved({offlineSend:{at:'2026-10-04T08:00:00Z',actor:'经办人',evidence:'邮件',fileIds:[],revision:1},supplierConfirmation:{at:'2026-10-05T08:00:00Z',actor:'经办人',evidence:'回签',confirmedDue:'2026-10-30',fileIds:[],revision:1} as any,received:90})));
+  store.state!.fulfillment.receipts.push({id:'r1',purchaseId:'recv',quantity:90,rejected:10,destination:'warehouse',location:'上海仓',date:'2026-10-12',evidence:'收货单',fileIds:[],actor:'仓库',createdAt:'2026-10-12T02:00:00Z',returns:[{id:'ret-1',quantity:4,disposition:'noReplace',date:'2026-10-12',evidence:'退货单',actor:'经办人',at:'2026-10-12T03:00:00Z'}]});
+  render('recv');
+  const detail=host.querySelector('[data-purchase-detail="recv"]') as HTMLElement;
+  expect(detail.textContent).toContain('已拒收 10 个 · 不再补发 4（短交） · 6 待登记退换');
+  await click(getByRole(detail,'button',{name:'登记退货 / 换货'}));
+  const dialog=getByRole(document.body,'dialog');
+  expect(dialog.textContent).toContain('尚可登记 6 个');
+  typeInto(getByRole(dialog,'textbox',{name:'退货单 / 供应商确认依据'}) as HTMLTextAreaElement,'退货单 RT-9');
+  await click(getByRole(dialog,'button',{name:'登记退换'}));
+  expect(store.run).toHaveBeenCalledWith(expect.objectContaining({type:'fulfillment.procurement.return',payload:expect.objectContaining({receiptId:'r1',quantity:6,disposition:'replace',evidence:'退货单 RT-9'})}));
+});

@@ -12,6 +12,7 @@
  * - 客户处理完、工厂补偿落实或经批准放弃，案件才能关闭。
  */
 import { MistCommandError, mistMoneyMinor, type MistContext, type MistState } from './mistWorkspace';
+import { recoveryDeductedMinor } from './mistPayables';
 
 export type ClaimGoodsLocation = 'factory' | 'transit' | 'customer' | 'sold' | 'unknown';
 export type ClaimVerifyResult = 'confirmed' | 'partial' | 'notConfirmed';
@@ -148,7 +149,12 @@ export function applyClaimCoordinationCommand(root: MistState, claims: ClaimLike
     case 'platform.claim.recovery.settle': {
       const v = command.payload, { claim, row } = recoveryOf(claims, v.id); active(claim); actor(c);
       if (row.state !== 'Agreed') fail('须先记录工厂同意的金额与方式，才能登记实际落实');
-      const settled = amount(v.amount, '实际落实金额'); if (mistMoneyMinor(settled) > mistMoneyMinor(row.agreed ?? 0)) fail('实际落实金额不能超过工厂同意金额');
+      // 从货款中扣：由财务在应付里按票据登记扣款，扣满后自动落实；组合方式：已扣部分 + 本次其他方式落实合计不超过同意金额。
+      if (row.method === 'deduction') fail('该追偿方式为“从货款中扣”，请由财务在应付里按工厂票据登记索赔扣款，扣满后自动落实', 'PRECONDITION');
+      const deducted = row.method === 'mixed' ? recoveryDeductedMinor(root, row.id) : 0;
+      const other = amount(v.amount, '实际落实金额'), settledMinor = deducted + mistMoneyMinor(other);
+      if (settledMinor > mistMoneyMinor(row.agreed ?? 0)) fail(deducted ? `已从货款中扣 ${(deducted / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}，加上本次落实会超过工厂同意金额` : '实际落实金额不能超过工厂同意金额');
+      const settled = settledMinor / 100;
       const date = day(v.date); if (date > businessDay(c.now)) fail('落实日期不能在未来');
       row.settled = settled; row.settledRef = text(v.reference, '实际扣款 / 收款凭据'); row.settledDate = date; row.state = 'Settled';
       row.events.push({ at: c.now, by: c.actorName, action: 'settle', note: '实际落实 ' + row.currency + ' ' + settled + ' · ' + row.settledRef });
