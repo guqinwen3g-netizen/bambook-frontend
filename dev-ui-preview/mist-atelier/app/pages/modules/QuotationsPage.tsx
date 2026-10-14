@@ -217,12 +217,13 @@ function QuotationDetail({ q, state, all, day, me, can, canOrder, canApprove, lo
     {q.note && <p className="mist-sub">{q.note}</p>}
     <DetailBlock title="报价条目">
       <div className="mist-col" style={{ gap: 0 }} role="list" aria-label={`${q.code} 报价条目`}>{q.lines.map(l => { const m = margin(l.price, l.cost); return <div key={l.id} role="listitem" className="mist-col mist-quote-line" style={{ gap: 4, padding: '10px 0' }}>
-        <div className="mist-row" style={{ gap: 8 }}><strong>{l.name}</strong><span className="mist-spacer" /><Button variant="quiet" onClick={() => l.productId ? onOpen('products', l.productId) : onOpen('development/detail', l.sourceDevId, { versionId: l.sourceVersionId })}>{l.productId ? '档案' : '开发版本'}</Button></div>
+        <div className="mist-row" style={{ gap: 8, flexWrap: 'wrap' }}><strong>{l.name}</strong><span className="mist-spacer" /><Button variant="quiet" onClick={() => l.productId ? onOpen('products', l.productId) : onOpen('development/detail', l.sourceDevId, { versionId: l.sourceVersionId })}>{l.productId ? '档案' : '开发版本'}</Button><Button onClick={()=>onOpen('quotations',q.id,{section:'costing:'+l.id})}>条目核算</Button></div>
         <small className="mist-muted"><Mono>{l.style}</Mono>{l.specification ? ' · ' + l.specification : ''}</small>
         <div className="mist-row" style={{ gap: 8, flexWrap: 'wrap' }}><span className="mist-num">{l.qty} {l.unit} × {l.price} = {q.currency} {l.amount}</span><span className="mist-spacer" />{m === null ? <span className="mist-muted">成本待核</span> : <span className={m < 0 ? 'mist-tone-bad mist-num' : 'mist-num mist-muted'}>毛利 {m}%</span>}</div>
       </div>; })}</div>
-      <span className="mist-note">毛利参考 = (单价 − 成本) / 单价，按报价币种的条目成本计算；定价参数与汇率版本尚未接入。</span>
+      <span className="mist-note">毛利参考 = (单价 − 成本) / 单价，仅按已记录条目成本，不是实际订单利润。专业核算从准确条目进入；历史行业基准、汇率换算与 AI 尚未接入。</span>
     </DetailBlock>
+    {!!q.costingSnapshots?.length&&<DetailBlock title="核算历史"><span className="mist-note">{q.costingSnapshots.length} 份不可覆盖快照；编辑草稿重建条目后，旧快照仅历史，不自动绑定新行。当前行从条目核算查看。</span><Button onClick={()=>onOpen('quotations',q.id,{section:'cost-history'})}>查看全部核算历史</Button></DetailBlock>}
     {versions.length > 1 && <DetailBlock title="版本">
       <div className="mist-col" style={{ gap: 6 }} data-quotation-versions>{versions.map(v => <Button key={v.id} variant={v.id === q.id ? 'secondary' : 'quiet'} aria-current={v.id === q.id || undefined} onClick={() => onOpen('quotations', v.id)}>
         <span className="mist-row" style={{ gap: 8, width: '100%' }}><Pill tone={v.id === q.id ? 'accent' : 'neutral'}>{version(v)}</Pill><span className="mist-num">{v.currency} {v.total}</span><span className="mist-muted">至 {v.validUntil.slice(5)}</span><span className="mist-spacer" /><span>{quotationStageLabel(v)}</span></span>
