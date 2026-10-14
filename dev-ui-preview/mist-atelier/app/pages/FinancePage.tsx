@@ -92,7 +92,7 @@ export function FinancePage() {
   });
   React.useEffect(()=>{operation.current=false;fileSequence.current++;routed.current='';setWorking(false);setFailure('');setImportRows([]);setPaymentOpen(false);setInvoiceId(null);setSel('');setPick(undefined);setPayment({date:financeDay(new Date()),payee:'',amount:'',currency:'USD',ref:''});},[scope]);
   React.useEffect(()=>{const key=scope+':'+(route.id||'')+':'+(route.section||'');if(routed.current===key)return;if(route.id&&invoices.some(invoice=>invoice.id===route.id)){setInvoiceId(route.id);setTab('inv');routed.current=key;}else if(route.id&&receipts.some(receipt=>receipt.id===route.id)){setSel(route.id);setTab('recv');routed.current=key;}else if(sourceOrderId){setTab('recv');routed.current=key;}else if(hasInvoiceFilter){setTab('inv');routed.current=key;}},[route.id,route.section,scope,invoices,receipts,hasInvoiceFilter]);
-  const unknownTarget=!!state&&!!route.id&&!loading&&!receipts.some(item=>item.id===route.id)&&!invoices.some(item=>item.id===route.id)&&!(area==='records'&&payments.some(item=>item.id===route.id));
+  const unknownTarget=!!state&&!!route.id&&!loading&&!receipts.some(item=>item.id===route.id)&&!invoices.some(item=>item.id===route.id)&&!(area==='records'&&payments.some(item=>item.id===route.id))&&!(area==='payables'&&[...(state.payables?.bills??[]),...(state.payables?.payments??[])].some(item=>item.id===route.id));
   const receipt = unknownTarget?undefined:receipts.find(item => item.id === sel) ?? receipts.find(item=>item.remaining>0) ?? receipts[0];
   const receiptDisplay=receipt?financeReceiptDisplay(receipt,fundingRows,allocations):null;
   React.useEffect(() => { if (receipt) setPick(receipt.suggest); else setPick(undefined); }, [receipt?.id, receipt?.suggest]);
@@ -208,7 +208,7 @@ export function FinancePage() {
       if (!payment.date || !payment.payee.trim() || !Number.isFinite(Number(payment.amount)) || Number(payment.amount) <= 0) { setFailure('请填写付款日期、收款方和大于零的金额。'); return; }
       void execute({ type: 'finance.payment.save', payload: { ...payment, amount: Number(payment.amount) } }, () => { setPaymentOpen(false); setPayment(value => ({ ...value, payee: '', amount: '', ref: '' })); toast('付款凭证已保存'); });
     }}>保存付款</Button>}>
-      {failure && <Banner tone="bad" title="付款尚未保存">{failure}</Banner>}<Banner title="只登记已发生的付款事实">不发起银行付款，不审核付款申请，也不核销供应商应付；账户与应付分配尚未接入。</Banner><FormGrid>
+      {failure && <Banner tone="bad" title="付款尚未保存">{failure}</Banner>}<Banner title="只登记已发生的付款事实">不发起银行付款，也不分配到供应商应付；供应商货款请在“应付待办”登记供应商付款。公司账户尚未接入。</Banner><FormGrid>
         <Field label="付款日期" required><TextInput type="date" value={payment.date} onChange={event => setPayment(value => ({ ...value, date: event.target.value }))} /></Field>
         <Field label="收款方" required><TextInput value={payment.payee} onChange={event => setPayment(value => ({ ...value, payee: event.target.value }))} /></Field>
         <Field label="金额" required><TextInput type="number" min="0.01" step="0.01" value={payment.amount} onChange={event => setPayment(value => ({ ...value, amount: event.target.value }))} /></Field>
