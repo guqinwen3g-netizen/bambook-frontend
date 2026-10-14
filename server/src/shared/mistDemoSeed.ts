@@ -8,8 +8,9 @@
 import { applyMistCommand, type MistCommand, type MistContext, type MistState } from './mistWorkspace';
 import { emptyFabricRequirements } from './mistDevelopmentDomain';
 import { demoFileRecord, type DemoFileTemplate } from './mistDemoFiles';
+import { riskSignals } from './mistRisk';
 
-export const DEMO_SEED_VERSION = 10;
+export const DEMO_SEED_VERSION = 11;
 export type DemoSeedFailure = { step: string; message: string };
 
 const DAY = 86400000;
@@ -311,6 +312,28 @@ export function seedDemoModules(initial: MistState, context: MistContext): { sta
   if (boyuanRelation && boyuanSupplier) run('relation link boyuan', { type: 'market.relation.linkSupplier', payload: { id: boyuanRelation, supplierId: boyuanSupplier } });
   const luneRelation = state.market.relations.find(r => r.customerId === c2.id);
   if (luneRelation) run('relation hold lune', { type: 'market.relation.hold', payload: { id: luneRelation.id, frozen: true, reason: '尾款逾期 45 天未付，暂停新报价与新订单，待财务确认回款后解冻' } }, reviewer);
+
+  /* ───────── 风险管理：从真实预警登记；一条待审批升级、一条新发现、一条已关闭可回读 ───────── */
+  const signals = riskSignals(state, day(0));
+  const register = (step: string, key: string, owner: string, ctx: MistContext) => { const sig = signals.find(x => x.key.startsWith(key)); return sig ? id(run(step, { type: 'platform.risk.save', payload: { title: sig.title, level: sig.level, basis: sig.basis, owner, type: sig.type, source: { kind: sig.source.kind, id: sig.source.id }, signalKey: sig.key } } as MistCommand, ctx)) : ''; };
+  const holdRisk = register('risk hold', 'relation-hold:', '林舒', finance);
+  if (holdRisk) {
+    run('risk hold ack', { type: 'platform.risk.transition', payload: { id: holdRisk, state: 'Acknowledged', resolution: '财务牵头催收，业务配合' } } as MistCommand, finance);
+    run('risk hold plan', { type: 'platform.risk.plan', payload: { id: holdRisk, plan: '①本周内与客户确认付款计划；②已在途订单暂停出运放行，待收到 50% 尾款后恢复；③新报价保持冻结。', planDue: day(7) } } as MistCommand, finance);
+    run('risk hold escalate', { type: 'platform.risk.escalate', payload: { id: holdRisk, approver: '周敏', reason: '客户申请分两期付清，需负责人授权在收到首期后放行一票已备货出运。' } } as MistCommand, finance);
+  }
+  register('risk cert', 'cert-expired:', '沈禾', buyer);
+  if (order018) {
+    const late = id(run('risk 018', { type: 'platform.risk.save', payload: { title: 'SO-G-2026-018 面料到货晚影响交期', level: 'warning', basis: '华盛毛纺回复主面料晚到 5 天，裁剪顺延；客户交期无缓冲。', owner: '顾言', type: 'delivery', source: { kind: 'order', id: order018.id } } } as MistCommand, sales));
+    if (late) {
+      run('risk 018 ack', { type: 'platform.risk.transition', payload: { id: late, state: 'Acknowledged', resolution: '' } } as MistCommand, sales);
+      run('risk 018 plan', { type: 'platform.risk.plan', payload: { id: late, plan: '工厂加开夜班追回 3 天；剩余 2 天与客户协商，首批 60% 按期海运。', planDue: day(-2) } } as MistCommand, sales);
+      run('risk 018 escalate', { type: 'platform.risk.escalate', payload: { id: late, approver: '周敏', reason: '夜班加工费 CNY 4,800 超出订单预算。' } } as MistCommand, sales);
+      const esc = state.platform?.risks.find(r => r.id === late)?.escalations?.[0];
+      if (esc) run('risk 018 decide', { type: 'platform.risk.decide', payload: { id: late, escalationId: esc.id, decision: 'approved', note: '同意加班，费用记入本单成本，交期不再顺延。' } } as MistCommand, reviewer);
+      run('risk 018 close', { type: 'platform.risk.transition', payload: { id: late, state: 'Resolved', resolution: '客户书面同意首批 60% 按期、余量顺延 2 天；工厂排期已确认。' } } as MistCommand, sales);
+    }
+  }
 
   return { state, failures };
 }
