@@ -7,9 +7,15 @@
 
 | 负责人 | 状态 | 基线 / 分支 | 范围与协作触点 | 当前验证 / 阻塞 | 下一步 |
 | --- | --- | --- | --- | --- | --- |
-| Notion AI（本会话） | 开发中，未验收、未合入 | main `369e657`；`feat/quote-cost-ai-advisor`；PR [#8](https://github.com/guqinwen3g-netizen/bambook-frontend/pull/8)，初始检查点 `fa3f23d` | 准确报价行只读 AI 审阅、人工采纳、操作规范；`server/src/mist/route.ts`、新增 advisor 契约及报价核算页面；同时补 AGENTS / README / 本进度协作入口 | 新沙箱已从云端主线恢复；Node22 锁定依赖安装完成，定向回归及 review 已执行；最终全量尚有测试权限前提修复后需重验；隔离浏览器浅深三宽30画面，真实 HTTP 人工保存并刷新回读通过（模拟 provider，不是真实 AI）；没有真实模型凭据，不宣称 GPT / DeepSeek 已实连 | 完成 UI 与安全回归 → review → 完整验证 / 实际浏览器 → PR CI → merge commit |
+| Notion AI（本会话，协作规范独立批次） | 已提交文档；验证 / 合入状态见 PR 回执 | main `369e657`；`docs/realtime-collaboration`；[PR #9](https://github.com/guqinwen3g-netizen/bambook-frontend/pull/9) | AGENTS / README / PR 模板 / 当前任务登记；不含报价 AI 源码 | 文档链接与无私有文件检查通过；本批本地 / 云端验证待执行 | 完成验证 → merge commit 到主线，让协作者立即读取 |
+| Notion AI（本会话） | 开发中，未验收、未合入 | main `369e657`；`feat/quote-cost-ai-advisor`；PR [#8](https://github.com/guqinwen3g-netizen/bambook-frontend/pull/8)，最新开发 `20bb547`（初始检查点 `fa3f23d`） | 准确报价行只读 AI 审阅、人工采纳、操作规范；`server/src/mist/route.ts`、新增 advisor 契约及报价核算页面；同时补 AGENTS / README / 本进度协作入口 | 新沙箱已从云端主线恢复；Node22 锁定依赖安装完成，定向回归及 review 已执行；定向 UI27 / 后端34通过；权限前提修复后全量重验及云端 CI 执行中；隔离浏览器浅深三宽30画面，真实 HTTP 人工保存并刷新回读通过（模拟 provider，不是真实 AI）；没有真实模型凭据，不宣称 GPT / DeepSeek 已实连 | 完成 UI 与安全回归 → review → 完整验证 / 实际浏览器 → PR CI → merge commit |
 
 并行协作者只追加 / 更新自己的任务行，不覆盖其他人的状态。此表是最后提交时的声明，**不是自动在线锁或实时监控**；开工仍需 fetch / 查看开放 PR 和未提交改动。需要共同修改同一文件或契约时，先在对应 PR 留评论确认负责人及整合方式。
+
+### 协作规范独立收口
+
+- 用户要求所有协作者及时记录、review、提交和交接；协作规范是独立文档批次，单独从主线发起 PR，不携带未收口 AI 源码。功能分支 #8 保持 Draft，人工截图复核及真实模型实连仍未完成。
+- 完整本地 / 云端检查与合入回执完成后写在 [PR #9](https://github.com/guqinwen3g-netizen/bambook-frontend/pull/9)；准确 HEAD / merge SHA 以该回执为真源，避免文档自引用提交号；未取得回执前不声称已合入。此登记不是实时在线锁，不代替 fetch 和并行冲突协商。
 
 ### 本轮思路及交接检查点 · 2026-10-14
 
