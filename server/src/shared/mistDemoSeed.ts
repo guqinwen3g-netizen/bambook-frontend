@@ -9,7 +9,7 @@ import { applyMistCommand, type MistCommand, type MistContext, type MistState } 
 import { emptyFabricRequirements } from './mistDevelopmentDomain';
 import { demoFileRecord, type DemoFileTemplate } from './mistDemoFiles';
 
-export const DEMO_SEED_VERSION = 8;
+export const DEMO_SEED_VERSION = 9;
 export type DemoSeedFailure = { step: string; message: string };
 
 const DAY = 86400000;
@@ -195,6 +195,8 @@ export function seedDemoModules(initial: MistState, context: MistContext): { sta
 
   /* ───────── 定金到账与归属：导入银行流水后确认归属到订单（开产前置条件） ───────── */
   const finance = actor('林舒', 'demo-finance');
+  run('demo payment CNY', { type: 'finance.payment.save', payload: { date: day(-6), payee: '华盛毛纺', amount: 12600, currency: 'CNY', ref: 'DEMO-PAY-CNY-01 · 软件演示付款记录，未关联应付或银行账户' } }, finance);
+  run('demo payment USD', { type: 'finance.payment.save', payload: { date: day(-3), payee: '演示物流服务商', amount: 850, currency: 'USD', ref: 'DEMO-PAY-USD-01 · 软件演示付款记录，未关联应付或银行账户' } }, finance);
   const orderByCode = (code: string) => state.orders.find(o => o.code === code);
   const deposits: Array<[string, string, number, string]> = [['SO-G-2026-017', 'NORTHWIND ATELIER AB', 12555, 'DEPOSIT SO-G-2026-017 PO-017'], ['SO-G-2026-015', 'CEDAR & CROWN LTD', 35520, 'DEPOSIT SO-G-2026-015']];
   if (fabricOrderCode()) { const fo = orderByCode(fabricOrderCode()); if (fo) deposits.push([fo.code, 'CEDAR & CROWN LTD', Math.round(fo.amount * 30) / 100, 'DEPOSIT ' + fo.code]); }
