@@ -1,5 +1,12 @@
 # 05 · 在 Mist Atelier 上继续开发
 
+## 2026-10-14 售后索赔协同首轮
+
+- 从 main `d77e4c3` 新建 `feat/mist-claims-coordination`。新增 `server/src/shared/mistClaimCoordination.ts`（通知 / 质检核实 / 工厂追偿命令 + 两笔账推导），`mistPlatform.ts` 只做类型、权限与分发接线；索赔详情新增 `ClaimCoordination.tsx` 面板（处理进度、通知与核实、两笔账）。原处置审批 / 贷项 / 退货库存契约不变。
+- 业务口径（用户 10-14 确认的实际做法）：业务员登记并通知质检、负责人、跟单与工厂；通知工厂只是请其配合核实，不认定责任、不答应金额，系统不对外发送，只记录实际方式与给工厂的说明（内部说明单独存放、标“不对外”）。质检牵头核实（属实 / 部分 / 不属实、范围、数量、货物位置、减损、工厂回复、安全隐患）；未核实就有处置时提示，不硬性阻断紧急处置。对客户处置沿用原审批；向工厂追偿单独记录：协商中 → 工厂已同意（金额 + 扣货款 / 付款 / 补货返修 / 组合）→ 已落实（实际凭据），或负责人批准放弃（提出人不能自批）。公司自担 = 对客户已批准 − 工厂已同意，仅同币种计算。
+- 契约：新增 `platform.claim.notify`（aftersales:write）、`platform.claim.verify`（qc:inspect）、`platform.claim.recovery.open/agree`（aftersales:write）、`.settle`（invoices:reconcile，金额不超过同意额、日期不在未来）、`.waive`（aftersales:approve）。`platform.claim.close` 增加“工厂补偿未落实不能关闭”；`platform.claim.cancel` 撤回未落实追偿、已落实追偿时拒绝撤销。待办：`claim-verify:` / `claim-factory:` / `claim-recovery:`，关闭 / 撤销时完成。旧案件无 `coordination` 字段，按“未通知”读取，不补造。
+- 边界：工厂扣款未接应付 / 采购付款账（只记凭据）；不按人推送；无汇率换算；演示种子未加索赔（种子不经业务编号服务，不能生成 CLM 号），本地验收通过真实 API 建案。
+
 ## 2026-10-14 风险管理与合规首轮
 
 - 从 main `0cdab37` 新建 `feat/mist-risks-workbench`（[PR #10](https://github.com/guqinwen3g-netizen/bambook-frontend/pull/10)）。新增 `server/src/shared/mistRisk.ts`（预警推导 + 风险命令），`mistPlatform.ts` 只做类型与分发接线；新页面 `RisksPage.tsx` 取代 `PlatformPages.tsx` 内旧 RisksPage。演示种子 v11 增加三条风险（待审批升级 / 新发现 / 已关闭）。
