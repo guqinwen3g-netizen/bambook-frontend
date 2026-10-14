@@ -5,6 +5,7 @@ import { Banner, Button, Card, Checklist, DataTable, Dropdown, EmptyState, Facts
 import type { MistState } from '../../../../../server/src/shared/mistWorkspace';
 import type { FulfillmentPurchase } from '../../../../../server/src/shared/mistFulfillment';
 import { fulfillmentSourceLabel } from '../../../../../server/src/shared/mistFulfillment';
+import { supplierBusinessDay, supplierStatusOn, supplierUnavailableReason } from '../../../../../server/src/shared/mistSupplierStatus';
 import { useMistWorkspace } from '../../runtime/workspace';
 import { useMistSession } from '../../runtime/auth';
 import { useNav } from '../../nav';
@@ -47,7 +48,7 @@ export function ProcurementPage() {
   const [picked, setPicked] = React.useState<string | null>(route.id || null), [drawer, setDrawer] = React.useState(!!route.id);
   const [dialog, setDialog] = useRouteDraft<ModuleEditorSpec | null>(null), [failure, setFailure] = useRouteDraft('');
   React.useEffect(() => { if (route.id) { setPicked(route.id); setDomainChoice(null); setEntryChoice(null); } }, [route.id]);
-  const day = today();
+  const day = supplierBusinessDay(new Date());
   const expectedOrderId = route.section?.startsWith('order:') ? route.section.slice(6) : undefined;
   const incomingLine = state?.orderLines.find(line => line.id === route.orderLineId);
   const incomingOrder = state?.orders.find(order => order.id === incomingLine?.orderId);
@@ -75,6 +76,9 @@ export function ProcurementPage() {
   const changeDomain = (value: Domain) => { setDomainChoice(value); setEntryChoice(null); setStageFilter('all'); setPicked(null); };
   const changeEntry = (value: Entry) => { setEntryChoice(value); setStageFilter('all'); setPicked(null); };
   const act = async (work: () => Promise<unknown>) => { setFailure(''); try { await work(); } catch (e) { setFailure(e instanceof Error ? e.message : String(e)); } };
+  const supplierOptions = (currentId?: string) => (state?.market.suppliers || [])
+    .filter(s => s.id === currentId || supplierStatusOn(s, day) === 'active')
+    .map(s => { const reason = supplierUnavailableReason(s, day); return { value: s.id, label: reason ? `${s.name} · 原供应商（${reason}）` : s.name }; });
   const purchaseSpec = (p?: FulfillmentPurchase): ModuleEditorSpec => ({
     title: p ? `修订${ENTRY_LABEL[entryOf(p)]}草稿` : `新建${ENTRY_LABEL[entry]}`, submitLabel: p ? '保存草稿' : '保存为草稿',
     description: '先核对来源与供应商，再确认数量、费用及交付约定。保存草稿不会形成对外承诺；批准后才能对外发出。',
@@ -83,7 +87,7 @@ export function ProcurementPage() {
       { id: 'commercial', label: '数量与费用', description: '按本次供给的实际计量单位记录数量与单价，不自动换算单位或币种。', fields: ['quantity', 'unit', 'price', 'currency'] },
       { id: 'delivery', label: '交付约定', description: '交期、付款条件与主要交付地点将随提交版本冻结，批准后再登记线下发出。', fields: ['due', 'terms', 'destination', 'note'] },
     ],
-    fields: [{ ...field('source', '来源条目', 'select', true, sourceOptions(state, false)), hint: sourceHint }, field('kind', '采购类型', 'select', true, [{ value: 'material', label: '材料' }, { value: 'finished', label: '成品' }, { value: 'processing', label: '加工服务' }]), field('supplierId', '供应商', 'select', true, [emptyOption, ...(state?.market.suppliers || []).filter(s => s.status === 'active').map(s => ({ value: s.id, label: s.name }))]), field('description', '采购内容 / 规格'), field('quantity', '承诺数量', 'number'), field('unit', '计量单位'), field('price', '含税 / 约定单价', 'number'), field('currency', '币种'), field('due', '交期', 'date'), field('terms', '付款条件'), field('destination', '主要交付地点'), field('note', '补充约定', 'textarea', false)],
+    fields: [{ ...field('source', '来源条目', 'select', true, sourceOptions(state, false)), hint: sourceHint }, field('kind', '采购类型', 'select', true, [{ value: 'material', label: '材料' }, { value: 'finished', label: '成品' }, { value: 'processing', label: '加工服务' }]), field('supplierId', '供应商', 'select', true, [emptyOption, ...supplierOptions(p?.supplierId)]), field('description', '采购内容 / 规格'), field('quantity', '承诺数量', 'number'), field('unit', '计量单位'), field('price', '含税 / 约定单价', 'number'), field('currency', '币种'), field('due', '交期', 'date'), field('terms', '付款条件'), field('destination', '主要交付地点'), field('note', '补充约定', 'textarea', false)],
     initialValues: { source: p ? 'line:' + p.lineId : sourceLine ? 'line:' + sourceLine.id : '', kind: p?.kind || (entry === 'processing' ? 'processing' : 'material'), supplierId: p?.supplierId || '', description: p?.description || '', quantity: p?.quantity || sourceLine?.qty || 1, unit: p?.unit || sourceLine?.unit || '', price: p?.price || 0, currency: p?.currency || sourceOrder?.currency || 'USD', due: p?.due || today(), terms: p?.terms || '', destination: p?.destination || '', note: p?.note || '' },
     submit: async values => {
       if (!state) return;

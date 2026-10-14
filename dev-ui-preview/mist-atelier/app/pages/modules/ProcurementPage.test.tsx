@@ -20,7 +20,33 @@ function typeInto(input:HTMLInputElement|HTMLTextAreaElement,value:string){act((
 function purchase(id:string,patch:Partial<FulfillmentPurchase>={}):FulfillmentPurchase{return {id,code:id.toUpperCase(),orderId:'o',lineId:'l',kind:'material',domain:'garment',supplierId:'s',supplier:'青禾辅料',description:'主唛与洗标',quantity:100,unit:'个',price:0.3,currency:'CNY',due:'2026-10-30',terms:'月结30天',destination:'江南成衣',note:'',fileIds:[],state:'draft',requesterId:'buyer',createdBy:'经办人',createdAt:'2026-10-01T08:00:00Z',reviewerIds:['boss'],configVersions:{},received:0,...patch};}
 const approved=(patch:Partial<FulfillmentPurchase>={})=>({state:'approved' as const,submittedAt:'2026-10-02T08:00:00Z',decision:{actorId:'boss',actor:'审批人',at:'2026-10-03T08:00:00Z',decision:'approved' as const,note:'同意'},...patch});
 beforeEach(()=>{session.id='buyer';session.denied=new Set();store.state=createMistState({id:()=>crypto.randomUUID(),now:'2026-10-13T10:00:00Z',actorName:'经办人'},'empty');store.state.orders.push({id:'o',code:'SO-1',type:'garment',customerId:'c',currency:'USD'} as any);store.state.orderLines.push({id:'l',orderId:'o',name:'风衣',style:'TR-1',img:'coat',qty:100,unit:'件',price:10,made:0,qc:0});store.run.mockReset();store.run.mockResolvedValue({result:{}});go.mockReset();host=document.createElement('div');document.body.append(host);root=createRoot(host);});
-afterEach(()=>{act(()=>root.unmount());host.remove();});
+afterEach(()=>{act(()=>root.unmount());host.remove();vi.useRealTimers();});
+
+it('keeps future supplier suspensions selectable and excludes suppliers unavailable on the Shanghai business day',async()=>{
+  vi.useFakeTimers({toFake:['Date']});vi.setSystemTime(new Date('2026-10-13T16:30:00Z'));
+  const base={type:'面料贸易',country:'CN',address:'',capabilities:'面料',capacity:100,capacityUnit:'米',leadDays:7,blockReason:'待核实',contacts:[],fileIds:[],note:'',createdAt:'',updatedAt:''};
+  store.state!.market.suppliers=[
+    {...base,id:'active',code:'A',name:'正常供应商',status:'active'},
+    {...base,id:'future-paused',code:'FP',name:'明天暂停',status:'paused',statusFrom:'2026-10-15'},
+    {...base,id:'future-blocked',code:'FB',name:'明天停用',status:'blocked',statusFrom:'2026-10-15'},
+    {...base,id:'paused',code:'P',name:'今天已暂停',status:'paused',statusFrom:'2026-10-14'},
+    {...base,id:'blocked',code:'B',name:'已停用',status:'blocked',statusFrom:'2026-10-13'},
+  ];
+  render();await click(getAllByRole(host,'button',{name:'新建采购订单'})[0]);
+  const supplier=getByRole(host,'combobox',{name:'供应商'}) as HTMLSelectElement;
+  expect([...supplier.options].map(option=>option.value)).toEqual(['','active','future-paused','future-blocked']);
+  expect(store.run).not.toHaveBeenCalled();
+});
+
+it('preserves an existing draft supplier with its unavailable reason instead of clearing the reference',async()=>{
+  vi.useFakeTimers({toFake:['Date']});vi.setSystemTime(new Date('2026-10-13T16:30:00Z'));
+  store.state!.market.suppliers=[{id:'s',code:'S',name:'青禾辅料',type:'辅料',country:'CN',address:'',capabilities:'辅料',capacity:100,capacityUnit:'个',leadDays:7,status:'paused',statusFrom:'2026-10-14',blockReason:'交付整改',contacts:[],fileIds:[],note:'',createdAt:'',updatedAt:''}];
+  store.state!.fulfillment.purchases.push(purchase('existing'));
+  render('existing');await click(getByRole(host,'button',{name:'编辑草稿'}));
+  const supplier=getByRole(host,'combobox',{name:'供应商'}) as HTMLSelectElement;
+  expect(supplier.value).toBe('s');expect(supplier.selectedOptions[0].textContent).toContain('已暂停合作');
+  expect(host.textContent).toContain('交付整改');expect(store.run).not.toHaveBeenCalled();
+});
 
 it('keeps purchase orders and outsourced processing as separate entries inside each business group',async()=>{
   store.state!.fulfillment.purchases.push(purchase('po-1'),purchase('wo-1',{kind:'processing',description:'水洗加工'}),purchase('fb-1',{domain:'fabric',description:'面料染色'}));

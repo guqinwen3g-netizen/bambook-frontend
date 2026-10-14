@@ -11,7 +11,7 @@ vi.mock('../../runtime/workspace',()=>({useMistWorkspace:()=>bridge.current}));
 vi.mock('../../runtime/auth',()=>({useMistSession:()=>({user:{id:'sales'},hasPermission:()=>true,hasRole:()=>false,canAccessView:()=>true})}));
 let host:HTMLDivElement,root:Root|undefined;const go=vi.fn();
 beforeEach(()=>{(globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;go.mockReset();let next=0;const ctx:MistContext={id:()=>`market-test-${++next}`,actorName:'业务员',now:'2026-10-13T00:00:00.000Z'};const state=createMistState(ctx,'empty');state.market=createMarketState(ctx,state);state.customers=[{id:'c1',name:'现有客户',code:'C1',country:'',city:'',industry:'',owner:'业务员',grade:'',currency:'USD',terms:'',incoterm:'',categories:'',creditLimit:0,since:''}];applyMarketCommand(state,{type:'market.product.save',payload:{input:{sku:'P-001',name:'真实羊毛面料',category:'fabric',season:'AW26',supplierId:'',supplierCode:'',composition:'羊毛',specification:'150cm',color:'米色',unit:'米',cost:'0.10',currency:'USD',sourceDevId:'',sourceVersionId:''}}},ctx);bridge.current={state,loading:false,saving:false,error:'',pending:null,pendingCreate:null,run:vi.fn(async()=>({requestId:'req-1',revision:1,result:{id:'saved-quote'}})),uploadFile:vi.fn(),downloadFile:vi.fn(),refresh:vi.fn()};});
-afterEach(async()=>{if(root)await act(async()=>root!.unmount());root=undefined;host?.remove();});
+afterEach(async()=>{if(root)await act(async()=>root!.unmount());root=undefined;host?.remove();vi.useRealTimers();});
 async function mount(view:string,id?:string,section?:string,detail?:'full'){host=document.createElement('div');document.body.append(host);root=createRoot(host);const Page=MARKET_PAGES[view];await act(async()=>root!.render(<Nav.Provider value={{route:{view,id,section,detail},go,theme:'light',toggleTheme:vi.fn(),openPalette:vi.fn(),openAI:vi.fn()}}><Page/></Nav.Provider>));}
 async function click(label:string){const button=[...document.body.querySelectorAll('button')].find(b=>b.textContent?.trim()===label);expect(button,label).toBeTruthy();await act(async()=>button!.click());}
 async function fill(label:string,value:string){const e=host.querySelector(`[aria-label="${label}"]`) as HTMLInputElement|HTMLSelectElement|HTMLTextAreaElement;expect(e,label).toBeTruthy();await act(async()=>{const p=e.tagName==='SELECT'?HTMLSelectElement.prototype:e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(p,'value')!.set!.call(e,value);e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));});}
@@ -49,6 +49,32 @@ describe('Market explicit detail sections',()=>{
  });
 });
 describe('Mist market screens',()=>{
+ it('shows merged relation processing history under its original entity ids without including unrelated records',async()=>{
+  const target=sectionFixture('relation'),state=bridge.current.state;
+  state.market.relations[0].mergedRelationIds=['old-supplier-relation'];
+  state.events=[{id:'old',entityType:'relation',entityId:'old-supplier-relation',actor:'采购员',at:'2026-10-13T00:00:00Z',text:'原供应商冻结依据',fileIds:[]},{id:'survivor',entityType:'relation',entityId:target.id,actor:'业务员',at:'2026-10-14T00:00:00Z',text:'已合并供应商身份',fileIds:[]},{id:'other',entityType:'relation',entityId:'unrelated',actor:'业务员',at:'2026-10-14T00:00:00Z',text:'其它组织保密记录',fileIds:[]}];
+  await mount(target.view,target.id);
+  expect(host.textContent).toContain('原供应商冻结依据');expect(host.textContent).toContain('已合并供应商身份');expect(host.textContent).not.toContain('其它组织保密记录');
+  expect(state.events[0].entityId).toBe('old-supplier-relation');expect(bridge.current.run).not.toHaveBeenCalled();
+ });
+ it('offers future supplier suspensions for a new product but excludes suppliers already unavailable in Shanghai',async()=>{
+  vi.useFakeTimers({toFake:['Date']});vi.setSystemTime(new Date('2026-10-13T16:30:00Z'));
+  const base={type:'面料贸易',country:'CN',address:'',capabilities:'面料',capacity:100,capacityUnit:'米',leadDays:7,blockReason:'待核实',contacts:[],fileIds:[],note:'',createdAt:'',updatedAt:''};
+  bridge.current.state.market.suppliers=[{...base,id:'future-paused',code:'FP',name:'明天暂停',status:'paused',statusFrom:'2026-10-15'},{...base,id:'future-blocked',code:'FB',name:'明天停用',status:'blocked',statusFrom:'2026-10-15'},{...base,id:'paused',code:'P',name:'今天已暂停',status:'paused',statusFrom:'2026-10-14'},{...base,id:'blocked',code:'B',name:'已停用',status:'blocked',statusFrom:'2026-10-13'}];
+  await mount('products');await click('新建');await fill('公司产品编码','P-NEW');await fill('名称','新产品');
+  for(let step=0;step<4&&!host.querySelector('select[aria-label="供应商"]');step++)await click('下一步');
+  const supplier=host.querySelector('select[aria-label="供应商"]') as HTMLSelectElement;expect(supplier).toBeTruthy();
+  expect([...supplier.options].map(option=>option.value)).toEqual(['','future-paused','future-blocked']);expect(bridge.current.run).not.toHaveBeenCalled();
+ });
+ it('preserves an unavailable supplier on an existing product edit with its reason',async()=>{
+  vi.useFakeTimers({toFake:['Date']});vi.setSystemTime(new Date('2026-10-13T16:30:00Z'));
+  const product=bridge.current.state.market.products[0];product.supplierId='blocked';
+  bridge.current.state.market.suppliers=[{id:'blocked',code:'B',name:'原供应商',type:'面料贸易',country:'CN',address:'',capabilities:'面料',capacity:100,capacityUnit:'米',leadDays:7,status:'blocked',statusFrom:'2026-10-14',blockReason:'交付整改',contacts:[],fileIds:[],note:'',createdAt:'',updatedAt:''}];
+  await mount('products',product.id);await click('编辑');
+  for(let step=0;step<4&&!host.querySelector('select[aria-label="供应商"]');step++)await click('下一步');
+  const supplier=host.querySelector('select[aria-label="供应商"]') as HTMLSelectElement;expect(supplier).toBeTruthy();expect(supplier.value).toBe('blocked');
+  expect(supplier.selectedOptions[0].textContent).toContain('已停用');expect(host.textContent).toContain('交付整改');expect(bridge.current.run).not.toHaveBeenCalled();
+ });
  it('exports exactly the six market entry points',()=>expect(Object.keys(MARKET_PAGES).sort()).toEqual(['marketing','products','quotations','relations','seasons','suppliers']));
  it('builds a quotation from an actual product with exact decimal strings and navigates only using its receipt',async()=>{await mount('quotations');await completeQuote();expect(host.textContent).toContain('0.30');await click('保存报价草稿');expect(bridge.current.run).toHaveBeenCalledTimes(1);expect(bridge.current.run).toHaveBeenCalledWith({type:'market.quotation.save',payload:{id:undefined,input:expect.objectContaining({customerId:'c1',lines:[expect.objectContaining({productId:bridge.current.state.market.products[0].id,name:'真实羊毛面料',qty:'3',price:'0.10'})]})}});expect(go).toHaveBeenCalledWith('quotations','saved-quote');});
  it('preserves the complete quotation on save failure and does not navigate or create an order',async()=>{bridge.current.run.mockRejectedValueOnce(new Error('数据库保存失败'));await mount('quotations');await completeQuote();await click('保存报价草稿');expect(host.textContent).toContain('数据库保存失败');expect(host.textContent).toContain('0.30');expect(go).not.toHaveBeenCalled();await click('上一步');expect((host.querySelector('[aria-label="条目1数量"]') as HTMLInputElement).value).toBe('3');expect(bridge.current.run.mock.calls.every(([c]:any[])=>c.type==='market.quotation.save')).toBe(true);});

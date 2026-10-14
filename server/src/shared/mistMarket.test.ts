@@ -51,6 +51,37 @@ describe('supplier certificates, ratings and cooperation status',()=>{
   const row=s.market.suppliers.find(x=>x.id===id)!;expect(row).toMatchObject({status:'active',blockReason:''});expect(row.statusHistory!.map(h=>h.status+h.effectiveDate)).toEqual(['paused2026-10-20','active2026-10-21']);});
 });
 describe('relation holds and dual identity',()=>{
+ it('preserves both hold histories and source event provenance when a released supplier relation is merged',()=>{
+  const {ctx,s}=setup();
+  const sid=run(s,{type:'market.supplier.save',payload:{input:{code:'S-HISTORY',name:'曾冻结供方',type:'面料贸易',country:'中国',address:'绍兴',capabilities:'现货',capacity:1,capacityUnit:'米/月',leadDays:3}}},ctx).id!;
+  const source=s.market.relations.find(r=>r.supplierId===sid)!;
+  const rid=run(s,{type:'market.relation.save',payload:{input:{name:'',category:'Customer',customerId:'c',supplierId:'',country:'',address:'',aliases:[],fileIds:[],note:''}}},ctx).id!;
+  const at=(now:string,actorName:string)=>({...ctx,now,actorName});
+  run(s,{type:'market.relation.hold',payload:{id:source.id,frozen:true,reason:'供方合同待复核'}},at('2026-10-13T09:00:00.000Z','供应商负责人'));
+  expect(()=>run(s,{type:'market.relation.linkSupplier',payload:{id:rid,supplierId:sid}},ctx)).toThrow(/请先解冻/);
+  run(s,{type:'market.relation.hold',payload:{id:rid,frozen:true,reason:'客户账期待复核'}},at('2026-10-13T10:00:00.000Z','客户负责人'));
+  run(s,{type:'market.relation.hold',payload:{id:source.id,frozen:false,reason:'供方合同已确认'}},at('2026-10-13T11:00:00.000Z','供方复核人'));
+  run(s,{type:'market.relation.hold',payload:{id:rid,frozen:false,reason:'客户账期已确认'}},at('2026-10-13T12:00:00.000Z','客户复核人'));
+  source.mergedRelationIds=['older-supplier-relation','older-supplier-relation'];
+  s.market.relations.find(r=>r.id===rid)!.mergedRelationIds=['older-customer-relation','older-supplier-relation'];
+  s.events.push({id:'older-supplier-event',entityType:'relation',entityId:'older-supplier-relation',actor:'原供方经办人',at:'2026-09-01T08:00:00.000Z',text:'合并前供方往来记录',fileIds:[]});
+  const sourceHistory=structuredClone(source.holdHistory!),sourceEvents=structuredClone(s.events.filter(e=>e.entityId===source.id||e.entityId==='older-supplier-relation'));
+  const customerHistory=structuredClone(s.market.relations.find(r=>r.id===rid)!.holdHistory!);
+  run(s,{type:'market.relation.linkSupplier',payload:{id:rid,supplierId:sid}},at('2026-10-13T13:00:00.000Z','业务员'));
+  const merged=s.market.relations.find(r=>r.id===rid)!;
+  expect(s.market.relations.find(r=>r.id===source.id)).toBeUndefined();
+  expect(merged.holdHistory).toEqual([sourceHistory[0],customerHistory[0],sourceHistory[1],customerHistory[1]]);
+  expect(merged.hold).toBeNull();
+  expect(merged.mergedRelationIds).toEqual(['older-customer-relation','older-supplier-relation',source.id]);
+  expect(s.events.filter(e=>e.entityId===source.id||e.entityId==='older-supplier-relation')).toEqual(sourceEvents);
+  run(s,{type:'market.relation.save',payload:{id:rid,input:{name:'',category:'Customer',customerId:'c',supplierId:'',country:'',address:'',aliases:['合并后别名'],fileIds:[],note:'补充档案',mergedRelationIds:['forged-provenance']} as any}},ctx);
+  const edited=s.market.relations.find(r=>r.id===rid)!;
+  expect(edited.mergedRelationIds).toEqual(['older-customer-relation','older-supplier-relation',source.id]);
+  expect(edited.holdHistory).toEqual(merged.holdHistory);
+  expect(s.events.filter(e=>e.entityId===source.id||e.entityId==='older-supplier-relation')).toEqual(sourceEvents);
+  const independent=run(s,{type:'market.relation.save',payload:{input:{name:'独立合作方',category:'Partner',customerId:'',supplierId:'',country:'',address:'',aliases:[],mergedRelationIds:[source.id]} as any}},ctx).id!;
+  expect(s.market.relations.find(r=>r.id===independent)!.mergedRelationIds).toBeUndefined();
+ });
  it('freezes a customer relation: no new quotation, sending or order until released, with history',()=>{const {ctx,s}=setup();const p=run(s,{type:'market.product.save',payload:{input:productInput}},ctx).id!;const draft=run(s,{type:'market.quotation.save',payload:{input:quoteInput(p)}},ctx).id!;
   const relId=run(s,{type:'market.relation.save',payload:{input:{name:'',category:'Customer',customerId:'c',supplierId:'',country:'',address:'',aliases:[],fileIds:[],note:''}}},ctx).id;const rel=s.market.relations.find(r=>r.id===relId)!;
   expect(()=>run(s,{type:'market.relation.hold',payload:{id:rel.id,frozen:true,reason:''}},ctx)).toThrow(/冻结原因/);

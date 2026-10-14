@@ -1,7 +1,11 @@
 /// <reference types="vitest" />
 import path from 'path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import { mistVersionPlugin } from './scripts/mist-version';
+
+const repoRoot = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
@@ -89,13 +93,13 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0',
       proxy
     },
-    plugins: [react()],
+    plugins: [react(), mistVersionPlugin(repoRoot)],
     define: {
       'import.meta.env.VITE_UI_MODE': JSON.stringify(uiMode)
     },
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': repoRoot,
       }
     },
     optimizeDeps: {
