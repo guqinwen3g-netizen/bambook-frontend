@@ -1,13 +1,27 @@
 import {beforeEach,afterEach,describe,it,expect,vi} from 'vitest';
-const mocks=vi.hoisted(()=>({resolve:vi.fn(),users:new Map<string,any>()}));
+const mocks=vi.hoisted(()=>({resolve:vi.fn(),dept:vi.fn(),users:new Map<string,any>()}));
+vi.mock('../approvals/approvalRoutingService',()=>({createApprovalRoutingService:()=>({resolveReviewerByDepartment:mocks.dept,resolveClaimLeader:vi.fn()})}));
 vi.mock('../orders/orderMainApprovalService',()=>({createOrderMainApprovalService:()=>({resolveEligibleReviewerIds:mocks.resolve})}));
 vi.mock('../auth/tokenHelpers',()=>({loadUserWithRoles:async(_db:any,id:string)=>mocks.users.get(id)||null,buildLoadedAuthTokenPayload:async(_db:any,user:any)=>({userId:user.id,roles:[],departmentIds:[],permissions:user.permissions,authorizationLoaded:true})}));
 import {mistApprovalAuthority} from './context';
 const actor={userId:'owner',roles:[],permissions:['orders:write'],departmentIds:[]} as any;
-beforeEach(()=>{mocks.resolve.mockReset();mocks.users.clear();vi.stubEnv('MIST_LOCAL_WORKSPACE','0');vi.stubEnv('NODE_ENV','test');});
+beforeEach(()=>{mocks.resolve.mockReset();mocks.dept.mockReset();mocks.users.clear();vi.stubEnv('MIST_LOCAL_WORKSPACE','0');vi.stubEnv('NODE_ENV','test');});
 afterEach(()=>vi.unstubAllEnvs());
 describe('Mist order reviewer authority',()=>{
  it('uses both built-in local identities for both domains without querying the old account database',async()=>{vi.stubEnv('MIST_LOCAL_WORKSPACE','1');const value=await mistApprovalAuthority({}, {...actor,mistLocal:true},'order.governance.submit');expect(value.orderReviewerIds).toEqual({garment:['local-operator','local-reviewer','local-manager'],fabric:['local-operator','local-reviewer','local-manager']});expect(mocks.resolve).not.toHaveBeenCalled();});
  it('reuses business-domain eligibility and filters revoked or inactive ordinary accounts',async()=>{mocks.resolve.mockImplementation(async(_db,domain)=>domain==='garment'?['garment-reviewer','revoked','inactive']:['fabric-reviewer']);for(const id of ['garment-reviewer','fabric-reviewer'])mocks.users.set(id,{id,status:'active',permissions:['orders:write']});mocks.users.set('revoked',{id:'revoked',status:'active',permissions:[]});mocks.users.set('inactive',{id:'inactive',status:'disabled',permissions:['orders:write']});const value=await mistApprovalAuthority({},actor,'order.governance.decide');expect(value.orderReviewerIds).toEqual({garment:['garment-reviewer'],fabric:['fabric-reviewer']});expect(mocks.resolve.mock.calls.map(call=>call[1])).toEqual(['garment','fabric']);});
  it('leaves an unconfigured domain unavailable rather than inventing a reviewer',async()=>{mocks.resolve.mockRejectedValue(Object.assign(new Error('missing'),{code:'ORDER_APPROVAL_AUTHORITY_MISSING'}));expect((await mistApprovalAuthority({},actor,'order.governance.submit')).orderReviewerIds).toEqual({garment:[],fabric:[]});});
+});
+describe('Mist payment request reviewer authority',()=>{
+ it('local identities use the sales-manager test profile',async()=>{vi.stubEnv('MIST_LOCAL_WORKSPACE','1');expect((await mistApprovalAuthority({},{...actor,mistLocal:true},'payable.request.submit')).paymentReviewerIds).toEqual(['local-manager','local-reviewer']);});
+ it('uses the requester department head only while that account still holds payment-request approval',async()=>{
+  mocks.dept.mockResolvedValue({reviewerId:'head'});mocks.users.set('head',{id:'head',status:'active',permissions:['finance:payment_request:approve']});
+  expect((await mistApprovalAuthority({},actor,'payable.request.submit')).paymentReviewerIds).toEqual(['head']);
+  mocks.users.set('head',{id:'head',status:'active',permissions:['procurement:approve']});
+  expect((await mistApprovalAuthority({},actor,'payable.request.decide')).paymentReviewerIds).toEqual([]);
+  mocks.dept.mockResolvedValue({reviewerId:'owner'});mocks.users.set('owner',{id:'owner',status:'active',permissions:['finance:payment_request:approve']});
+  expect((await mistApprovalAuthority({},actor,'payable.request.submit')).paymentReviewerIds).toEqual([]);
+  mocks.dept.mockRejectedValue(Object.assign(new Error('none'),{code:'NO_REVIEWER_RESOLVED'}));
+  expect((await mistApprovalAuthority({},actor,'payable.request.submit')).paymentReviewerIds).toEqual([]);
+ });
 });

@@ -55,7 +55,7 @@ export class MistRepository {
   constructor(private readonly prisma: any, private readonly contract: MistContract, private readonly files: MistPrivateFiles, private readonly authorize: FreshAuthority = freshMistAuthority, private readonly now = () => new Date(), private readonly creditArchiveBuilder: (snapshot: MistCreditPrintSnapshot, options?: {draft?: boolean}) => Promise<PreparedCreditIssueArchive> = buildIssueArchive) {}
   private context(actor: TokenPayload): MistContext { return { id: randomUUID, now: this.now().toISOString(), actorName: actor.displayName || actor.userId, actorId:actor.userId }; }
   private async authorizeCompoundCommand(db: any, prior: TokenPayload, command?: MistCommand) {
-    if (command?.type === 'payable.payment.register') for (const scope of payablesCommandPermissions(command).slice(1)) await this.authorize(db, prior, scope);
+    if (command?.type.startsWith('payable.')) for (const scope of payablesCommandPermissions(command as any).slice(1)) await this.authorize(db, prior, scope);
   }
   /** 所有者或被所有者明确授权的成员可进入；ownerOnly 的动作（回收站、成员管理）只限所有者。 */
   private async own(db: any, prior: TokenPayload, id: string, permission?: string | null, lock = false, allowArchived = false, ownerOnly = false): Promise<{ actor: TokenPayload; row: MistWorkspaceRow }> {
@@ -310,7 +310,7 @@ export class MistRepository {
         if(!MIST_LOCAL_PROFILES.some(p=>p.id===task.requesterId))fail('REQUESTER_UNAVAILABLE','本地申请身份无效',409);
         const requester=mistLocalPublicUser(task.requesterId);subject={...requester,userId:requester.id,mistLocal:true} as unknown as TokenPayload;
       }else{const requester=await loadUserWithRoles(db,task.requesterId);if(!requester||requester.status!=='active'||requester.deletedAt)fail('REQUESTER_UNAVAILABLE','申请账号当前不可核验，请联系管理员',409);subject=await buildLoadedAuthTokenPayload(db,requester);}
-      const type=task.kind==='procurement'?'fulfillment.procurement.decide':task.kind==='quotation'?'market.quotation.decide':task.kind==='order'?'order.governance.decide':'platform.claim.decide';
+      const type=task.kind==='procurement'?'fulfillment.procurement.decide':task.kind==='quotation'?'market.quotation.decide':task.kind==='order'?'order.governance.decide':task.kind==='payment'?'payable.request.decide':'platform.claim.decide';
       const command={type,payload:{id:task.entityId,decision:input.decision,note:input.note}} as MistCommand;
       const context=this.context(actor);context.authority=await mistApprovalAuthority(db,subject,type);
       const applied=this.contract.applyMistCommand(structuredClone(row.state),command,context);

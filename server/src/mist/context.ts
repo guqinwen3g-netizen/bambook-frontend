@@ -9,7 +9,9 @@ export async function mistApprovalAuthority(db:any,actor:TokenPayload,kind:strin
   if((actor as any).mistLocal===true && process.env.MIST_LOCAL_WORKSPACE==='1' && process.env.NODE_ENV!=='production'){
     for(const contract of ['purchase','processing'])for(const family of ['fabric','garment'])authority.supplier[`supplierCommitment.approvers.${contract}.${family}`]={version:1,userIds:['local-reviewer','local-manager']};
     // 本地测试审批人：原全权限审批员 + 按现有岗位持有 procurement:approve / orders:write 的业务主管测试身份。
-    authority.claimReviewerId='local-reviewer';authority.businessReviewerId='local-reviewer';authority.orderReviewerIds={garment:['local-operator','local-reviewer','local-manager'],fabric:['local-operator','local-reviewer','local-manager']};return authority;
+    authority.claimReviewerId='local-reviewer';authority.businessReviewerId='local-reviewer';authority.orderReviewerIds={garment:['local-operator','local-reviewer','local-manager'],fabric:['local-operator','local-reviewer','local-manager']};
+    // 付款申请：业务主管测试身份按岗位持有 finance:payment_request:approve；原全权限审批员保留兼容。
+    authority.paymentReviewerIds=['local-manager','local-reviewer'];return authority;
   }
   if(kind.startsWith('order.governance.')){
     const {createOrderMainApprovalService}=await import('../orders/orderMainApprovalService');
@@ -35,6 +37,8 @@ export async function mistApprovalAuthority(db:any,actor:TokenPayload,kind:strin
   }
   const routing=createApprovalRoutingService({prisma:db});
   if(kind.startsWith('platform.claim.')){try{authority.claimReviewerId=(await routing.resolveClaimLeader(actor.userId)).reviewerId;}catch(error:any){if(error?.code!=='NO_REVIEWER_RESOLVED')throw error;}}
+  // 付款申请由申请人所在部门主管审批；主管必须当前仍持有付款申请审批权，不能自审。
+  if(kind.startsWith('payable.request.')){authority.paymentReviewerIds=[];try{const reviewerId=(await routing.resolveReviewerByDepartment(actor.userId)).reviewerId;const user=reviewerId&&reviewerId!==actor.userId?await loadUserWithRoles(db,reviewerId):null;if(user&&user.status==='active'&&!user.deletedAt&&hasScope(await buildLoadedAuthTokenPayload(db,user),'finance:payment_request:approve' as any))authority.paymentReviewerIds.push(reviewerId);}catch(error:any){if(error?.code!=='NO_REVIEWER_RESOLVED')throw error;}}
   if(kind.startsWith('market.quotation.')){try{authority.businessReviewerId=(await routing.resolveReviewerByDepartment(actor.userId)).reviewerId;}catch(error:any){if(error?.code!=='NO_REVIEWER_RESOLVED')throw error;}}
   return authority;
 }

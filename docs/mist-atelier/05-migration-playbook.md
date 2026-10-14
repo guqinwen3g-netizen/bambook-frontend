@@ -1,5 +1,10 @@
 # 05 · 在 Mist Atelier 上继续开发
 
+## 2026-10-15 供应商预付款批次
+
+- 基于 main `eaa301d`（PR #16 已合入），分支 `feat/mist-prepayments`。所有付款先申请（`finance:payment_request:create`），由申请人所在部门主管审批（`finance:payment_request:approve`，不能自审），财务按已批准申请登记实付（`vouchers:write`；票据付款附带分配时另需 `invoices:reconcile`）。冲回付款或分配需要 `vouchers:write` + `invoices:reconcile`，必须填写原因，另记反向记录。
+- 预付款计划挂在合同上，不算应付，也不分配到票据；已付预付在供应商汇总中单列为“预付（待抵扣）”。结算确认、按比例抵扣、发票去重和进度款/尾款计划留下一批，口径见决策总账 8.4.1。
+
 ## 2026-10-14 跨账号、跨岗位协作前置批次
 
 - 基于 main `e5aa0ce`，沿 `feat/mist-workspace-members` / 草稿 PR #16 接续；本轮完整源码检查、隔离本地浏览器跨岗位链、失败恢复、撤销和浅深三宽已完成，仍未合入、未部署、不启动预付款。先读 `LIVE-PROGRESS.md` 顶部云端续接检查点，最新提交/CI 以 PR 为准，真实数据库、Electron 和全站边界不冒充已验。所有者经空间/账号面板“工作空间设置与授权”（`workspace-settings`）进入“工作空间 → 授权访问”，只影响当前空间访问，不授予系统管理或新的业务权限。

@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {createMistLocalRuntime} from './local';
 import {createMistServer} from './server';
+import {platformBusinessDate} from '../shared/mistPlatform';
 /**
  * 跨账号、跨岗位办理同一笔采购合同：每个身份都用现有岗位矩阵的权限（不是全权限账号），
  * 所有限制都在服务端接口上断言，不依赖前端按钮。
@@ -75,7 +76,24 @@ describe('工作空间成员与岗位权限（服务端）',()=>{
   r=await command(finance,id,uploaded.body.workspace.revision,'payable.bill.register',{supplierId:po.supplierId,invoiceNo:'VAT-MEMBER-1',invoiceDate:yesterday,currency:po.currency,amount:1000,taxAmount:0,taxRate:'13%',lines:[{purchaseId:po.id,amount:1000}],due:later,dueBasis:'合同付款条件',fileIds:[financialFileId]}).expect(200);
   await finance.get(W+id+'/files/'+financialFileId).expect(200);
   const billId=r.body.receipt.result.id;
-  r=await command(finance,id,r.body.workspace.revision,'payable.payment.register',{supplierId:po.supplierId,date:yesterday,amount:600,currency:po.currency,reference:'BANK-MEMBER-1',allocations:[{billId,amount:600}]}).expect(200);
+  // 所有付款先申请、主管审批，再由财务按已批准申请付款
+  const today=platformBusinessDate(new Date().toISOString());
+  const direct=await command(finance,id,r.body.workspace.revision,'payable.payment.register',{supplierId:po.supplierId,date:today,amount:600,currency:po.currency,reference:'BANK-MEMBER-0',allocations:[{billId,amount:600}]});
+  expect(direct.status).toBeGreaterThanOrEqual(400);expect(direct.body.error.message).toContain('须先提交付款申请');
+  await command(qc,id,r.body.workspace.revision,'payable.request.submit',{purpose:'bill',supplierId:po.supplierId,currency:po.currency,lines:[{billId,amount:600}],reason:'x'}).expect(403);
+  r=await command(sales,id,r.body.workspace.revision,'payable.request.submit',{purpose:'bill',supplierId:po.supplierId,currency:po.currency,lines:[{billId,amount:600}],reason:'票据已到期，按合同付款'}).expect(200);
+  const payReq=r.body.receipt.result.id;
+  await command(finance,id,r.body.workspace.revision,'payable.payment.register',{requestId:payReq,date:today,amount:600,reference:'BANK-MEMBER-1',allocations:[{billId,amount:600}]}).expect(422);
+  // 业务主管不是空间成员：只从审批收件箱读冻结快照并决定，仍不能读取整个空间
+  const inbox=(await manager.get('/api/mist/reviews').expect(200)).body.reviews.find((t:any)=>t.id==='payment:'+payReq);
+  expect(inbox).toMatchObject({kind:'payment',canDecide:true,status:'pending'});expect(inbox.details.find((d:any)=>d.label==='本次申请金额').value).toContain('600.00');
+  expect((await finance.get('/api/mist/reviews').expect(200)).body.reviews.some((t:any)=>t.id==='payment:'+payReq)).toBe(false);
+  await sales.post('/api/mist/reviews/'+id+'/payment:'+payReq).send({requestId:'self-approve',expectedRevision:r.body.workspace.revision,decision:'approved',note:'自批'}).expect(404);
+  await manager.post('/api/mist/reviews/'+id+'/payment:'+payReq).send({requestId:'pay-approve',expectedRevision:r.body.workspace.revision,decision:'approved',note:'核对票据与合同，同意付款'}).expect(200);
+  await manager.get(W+id).expect(404);
+  const approvedRev=(await finance.get(W+id).expect(200)).body.workspace.revision;
+  r=await command(finance,id,approvedRev,'payable.payment.register',{requestId:payReq,date:today,amount:600,reference:'BANK-MEMBER-1',allocations:[{billId,amount:600}]}).expect(200);
+  expect(r.body.workspace.state.payables.requests.find((q:any)=>q.id===payReq)).toMatchObject({state:'paid'});
   expect(r.body.workspace.state.payables.bills.some((b:any)=>b.id===billId)).toBe(true);
   // 无发票/凭证查看权限的成员（质检岗位）进入后看不到财务数据，也不能执行财务动作
   ws=(await member(sales,id,r.body.workspace.revision,'add','local-qc').expect(200)).body.workspace;
