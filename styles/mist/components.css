@@ -70,8 +70,8 @@
 .mist-link:hover { text-decoration: underline; text-underline-offset: 3px; }
 
 /* ── 分段器 / Tabs ── */
-.mist-seg { display: inline-flex; padding: 3px; border-radius: var(--mist-r-md); background: var(--mist-sunken); gap: 2px; }
-.mist-seg > button { height: 32px; padding: 0 13px; border-radius: var(--mist-r-sm); font-size: var(--mist-text-sm); color: var(--mist-ink-2); display: flex; align-items: center; gap: 6px; transition: background var(--mist-dur), color var(--mist-dur); }
+.mist-seg { display: inline-flex; padding: 3px; border-radius: var(--mist-r-md); background: var(--mist-sunken); gap: 2px; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.mist-seg > button { height: 32px; padding: 0 13px; border-radius: var(--mist-r-sm); font-size: var(--mist-text-sm); color: var(--mist-ink-2); display: flex; align-items: center; gap: 6px; white-space: nowrap; flex: none; transition: background var(--mist-dur), color var(--mist-dur); }
 .mist-seg > button:hover { color: var(--mist-ink); }
 .mist-seg > button[aria-pressed="true"] { background: var(--mist-card); color: var(--mist-ink); }
 .mist-root[data-theme="dark"] .mist-seg > button[aria-pressed="true"], :is(.dark,[data-theme="dark"]) .mist-root:not([data-theme="light"]) .mist-seg > button[aria-pressed="true"] { background: var(--mist-card-2); }
