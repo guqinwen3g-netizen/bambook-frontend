@@ -32,18 +32,29 @@ export function renderDemoFile(state: MistState, file: MistFile): Uint8Array {
   } else if ((template === 'commercial-invoice' || template === 'packing-list' || template === 'customs-release') && shipment) {
     const shipped = shipment.lines.map(l => ({ line: state.orderLines.find(x => x.id === l.lineId), qty: l.quantity }));
     const shipOrder = state.orders.find(o => o.id === shipment.lines[0]?.orderId);
-    body.push(`Shipment: ${shipment.code}    Mode: ${shipment.mode.toUpperCase()}    Booking: ${ascii(shipment.booking) || '-'}`, `From: ${ascii(shipment.portOfLoading)}    To: ${ascii(shipment.portOfDischarge)}    Incoterm: ${ascii(shipment.incoterm)}`, `Consignee: ${ascii(shipment.consignee)}`, '');
+    body.push(`Shipment: ${shipment.code}    Mode: ${shipment.mode.toUpperCase()}    Booking: ${ascii(shipment.booking)}`, `From: ${ascii(shipment.portOfLoading)}    To: ${ascii(shipment.portOfDischarge)}    Incoterm: ${ascii(shipment.incoterm)}`, `Consignee: ${ascii(shipment.consignee)}`, '');
     if (template === 'packing-list') { const packs = state.fulfillment.packing.filter(p => p.shipmentId === shipment.id); body.push('Cartons          Qty     N.W. kg   G.W. kg   CBM'); for (const p of packs) body.push(`${pad(ascii(p.carton), 17)}${pad(String(p.quantity), 8)}${pad(String(p.netWeight), 10)}${pad(String(p.grossWeight), 10)}${p.volume}`); }
     else if (template === 'commercial-invoice') { body.push('Style                         Qty        Amount'); for (const s of shipped) body.push(`${pad(ascii(s.line?.style || ''), 30)}${pad(String(s.qty), 11)}${shipOrder?.currency || ''} ${((s.line?.price || 0) * s.qty).toFixed(2)}`); }
     else { const c = state.fulfillment.customs.find(x => x.shipmentId === shipment.id); body.push(`Declaration: ${ascii(c?.declarationNo || '')}`, `HS code: ${ascii(c?.hsCode || '')}    Declared: ${c?.declaredAt || ''}    Released: ${c?.clearedAt || ''}`, `Broker: Shanghai customs broker (on file)`); }
   } else if (template === 'supplier-contract' && purchase) {
-    body.push(`Contract: ${purchase.code}    Order: ${state.orders.find(o => o.id === purchase.orderId)?.code || ''}`, `Quantity: ${purchase.quantity} ${unit(purchase.unit)}    Unit price: ${purchase.currency} ${purchase.price}`, `Due: ${purchase.due}`);
+    body.push(`Supplier: ${ascii(purchase.supplier)}`, `Contract: ${purchase.code}    Order: ${state.orders.find(o => o.id === purchase.orderId)?.code || ''}`, `Quantity: ${purchase.quantity} ${unit(purchase.unit)}    Unit price: ${purchase.currency} ${purchase.price}`, `Due: ${purchase.due}`);
   } else body.push('The referenced record is no longer in this workspace.');
   body.push('', '', 'Sample document generated for the Bambook demo workspace. Not a real commercial document.');
   return pdf(title, body);
 }
 
-function ascii(value: string) { return value.replace(/[^\x20-\x7e]/g, '').replace(/\s+/g, ' ').trim(); }
+/** 演示 PDF 只用标准 ASCII 字体：先把演示数据里出现的中文专有名词换成英文，其余非 ASCII 字符去掉，空值显示为 "-"。 */
+const GLOSSARY: Record<string, string> = {
+  '上海洋山': 'Shanghai Yangshan', '上海外高桥': 'Shanghai Waigaoqiao', '上海': 'Shanghai', '宁波': 'Ningbo', '深圳': 'Shenzhen', '青岛': 'Qingdao',
+  '哥德堡': 'Gothenburg', '汉堡': 'Hamburg', '鹿特丹': 'Rotterdam', '安特卫普': 'Antwerp', '费利克斯托': 'Felixstowe', '洛杉矶': 'Los Angeles', '纽约': 'New York', '东京': 'Tokyo', '横滨': 'Yokohama',
+  '江南成衣': 'Jiangnan Garment Co., Ltd.', '远山服装': 'Yuanshan Apparel Co., Ltd.', '华盛毛纺': 'Huasheng Wool Textile Co., Ltd.', '宝泰辅料': 'Baotai Trims Co., Ltd.',
+};
+const GLOSSARY_KEYS = Object.keys(GLOSSARY).sort((a, b) => b.length - a.length);
+export function ascii(value: string) {
+  let text = value || '';
+  for (const key of GLOSSARY_KEYS) text = text.split(key).join(` ${GLOSSARY[key]} `);
+  return text.replace(/[^\x20-\x7e]/g, ' ').replace(/\s+/g, ' ').trim() || '-';
+}
 function unit(value: string) { return ({ '件': 'pcs', '米': 'm', '码': 'yd', '粒': 'pcs', '套': 'sets', '公斤': 'kg' } as Record<string, string>)[value] || ascii(value) || 'units'; }
 function pad(value: string, width: number) { return value.length >= width ? value.slice(0, width - 1) + ' ' : value + ' '.repeat(width - value.length); }
 

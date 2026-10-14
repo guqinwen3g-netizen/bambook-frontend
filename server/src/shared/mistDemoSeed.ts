@@ -9,7 +9,7 @@ import { applyMistCommand, type MistCommand, type MistContext, type MistState } 
 import { emptyFabricRequirements } from './mistDevelopmentDomain';
 import { demoFileRecord, type DemoFileTemplate } from './mistDemoFiles';
 
-export const DEMO_SEED_VERSION = 2;
+export const DEMO_SEED_VERSION = 3;
 export type DemoSeedFailure = { step: string; message: string };
 
 const DAY = 86400000;

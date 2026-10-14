@@ -37,6 +37,12 @@ describe('演示工作区数据', () => {
       expect(/^[\x09\x0a\x0d\x20-\x7e]*$/.test(text)).toBe(true);
     }
   });
+  it('示例 PDF 的港口、供应商等中文信息换成英文而不是留空', () => {
+    const { state } = demo(), text = (template: string) => Buffer.from(renderDemoFile(state, state.files.find(f => f.storageKey.startsWith(`demo-seed/${template}/`))!)).toString('latin1');
+    expect(text('commercial-invoice')).toContain('From: Shanghai Yangshan');
+    expect(text('commercial-invoice')).toContain('To: Gothenburg');
+    expect(text('supplier-contract')).toMatch(/Supplier: \w/);
+  });
   it('空白工作区不带任何示例数据', () => {
     const state = createMistState(context(), 'empty');
     expect(state.settings.demoSeed).toBeUndefined();
