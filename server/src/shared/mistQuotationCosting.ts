@@ -1,6 +1,12 @@
 /** Auditable manual quote costing. No AI prices, FX assumptions or actual-profit recognition. */
 import type { MarketQuotation, MarketQuoteLine } from "./mistMarket";
 export const QUOTE_COST_MODEL_VERSION = "quote-cost-v1";
+export const QUOTE_COST_ALLOCATION_VERSION = "quote-cost-line-allocation-v2";
+export function quoteCostModelVersion(input: QuoteCostInput) {
+  return input.components.some((r) => r.scope === "per_line")
+    ? QUOTE_COST_ALLOCATION_VERSION
+    : QUOTE_COST_MODEL_VERSION;
+}
 export const QUOTE_COST_KINDS = [
   "yarn",
   "weaving",
@@ -18,6 +24,9 @@ export const QUOTE_COST_KINDS = [
 ] as const;
 export type QuoteCostKind = (typeof QUOTE_COST_KINDS)[number];
 export type QuoteCostComponent = {
+  /** Missing on v1 records means per-unit; never infer a bulk fee from its name. */
+  scope?: "per_unit" | "per_line";
+  lineOnlyConfirmed?: boolean;
   kind: QuoteCostKind;
   description: string;
   quantity: string;
@@ -28,6 +37,8 @@ export type QuoteCostComponent = {
   outsideSupplierPrice: boolean;
 };
 export type QuoteCostInput = {
+  /** Required only for explicit per-line fees, and verified against the exact quote line. */
+  allocationQuantity?: string;
   mode: "supplier" | "breakdown";
   currency: string;
   unit: string;
@@ -53,7 +64,10 @@ export type QuoteCostResult = {
   proposedPrice: string;
   unitDifference: string;
   marginPercent: string | null;
-  components: Array<QuoteCostComponent & { amount: string }>;
+  allocation?: { quantity: string; total: string; unitCost: string };
+  components: Array<
+    QuoteCostComponent & { amount: string; lineAmount?: string }
+  >;
 };
 export type QuoteCostSnapshot = {
   /** Server-resolved immutable manual evidence; absent on older snapshots. */
@@ -178,6 +192,14 @@ export function calculateQuoteCosting(raw: QuoteCostInput): {
     (input.mode === "breakdown" && !raw.components.length)
   )
     throw Error("拆解须有1至100项；供应商路径可不加额外费用");
+  const hasLineFees = raw.components.some((r) => r?.scope === "per_line");
+  const allocationQty = hasLineFees
+    ? quoteCostDecimal(raw.allocationQuantity, "本行费用分摊数量")
+    : BigInt(0);
+  if (hasLineFees && allocationQty <= BigInt(0))
+    throw Error("本行费用分摊数量必须大于0");
+  if (hasLineFees) input.allocationQuantity = show(allocationQty);
+  let lineFees = BigInt(0);
   let total =
     input.mode === "supplier"
       ? quoteCostDecimal(input.supplierPrice, "供应商成品单价")
@@ -201,17 +223,32 @@ export function calculateQuoteCosting(raw: QuoteCostInput): {
       throw Error(
         "供应商路径只可追加明确未包含的费用，不叠加原料 / 面料 / CMT等已包含成本",
       );
+    if (r.scope !== undefined && !["per_unit", "per_line"].includes(r.scope))
+      throw Error(prefix + "计入范围无效");
+    const perLine = r.scope === "per_line";
+    if (perLine && r.lineOnlyConfirmed !== true)
+      throw Error(prefix + "须确认整笔费用仅归属本报价行，未重复计入其他行");
     const quantity = quoteCostDecimal(r.quantity, prefix + "用量"),
       loss = quoteCostDecimal(r.lossPercent, prefix + "损耗"),
       price = quoteCostDecimal(r.unitPrice, prefix + "单价");
     if (quantity <= BigInt(0)) throw Error(prefix + "用量必须大于0");
     if (loss > BigInt(1000000)) throw Error("损耗率不得超过100%");
-    const amount = round(
+    if (perLine && loss !== BigInt(0))
+      throw Error(prefix + "整笔费用不叠加损耗，损耗率须明确填写0");
+    const rawAmount = round(
       quantity * (BigInt(1000000) + loss) * price,
       BigInt(10000000000),
     );
-    total += amount;
+    const amount = perLine
+      ? round(rawAmount * BigInt(10000), allocationQty)
+      : rawAmount;
+    if (perLine) lineFees += rawAmount;
+    else total += amount;
     return {
+      ...(r.scope ? { scope: r.scope } : {}),
+      ...(perLine
+        ? { lineOnlyConfirmed: true, lineAmount: show(rawAmount) }
+        : {}),
       kind: r.kind,
       description: required(r.description, prefix + "名称"),
       quantity: show(quantity),
@@ -223,8 +260,13 @@ export function calculateQuoteCosting(raw: QuoteCostInput): {
       amount: show(amount),
     };
   });
+  // Sum exact four-decimal line fees before dividing, so repeated thirds don't lose a unit.
+  const allocatedUnitCost = hasLineFees
+    ? round(lineFees * BigInt(10000), allocationQty)
+    : BigInt(0);
+  total += allocatedUnitCost;
   if (total <= BigInt(0)) throw Error("单位参考成本必须大于0");
-  input.components = components.map(({ amount, ...r }) => r);
+  input.components = components.map(({ amount, lineAmount, ...r }) => r);
   const rate = quoteCostDecimal(input.targetPercent, "目标百分比");
   if (input.method === "margin" && rate >= BigInt(1000000))
     throw Error("目标销售毛利率须小于100%");
@@ -235,6 +277,15 @@ export function calculateQuoteCosting(raw: QuoteCostInput): {
   const proposed =
     quoteCostDecimal(input.proposedPrice, "人工拟报价", 2) * BigInt(100);
   const result: QuoteCostResult = {
+    ...(hasLineFees
+      ? {
+          allocation: {
+            quantity: show(allocationQty),
+            total: show(lineFees),
+            unitCost: show(allocatedUnitCost),
+          },
+        }
+      : {}),
     cost: show(total),
     approvalCost: show(round(total, BigInt(100)), 2),
     suggestedPrice: show(suggested),
