@@ -4,6 +4,7 @@
  * 一笔付款可以分到同一供应商、同币种的多张票据，没分完的钱留作“未分配”，不自动配。
  * 采购合同金额不是应付余额；应付余额 = 票据金额 − 已分配付款，不能手改。
  */
+import { MIST_FINANCE_SCOPES } from './mistFinancePermissions';
 import { MistCommandError, mistMoneyMinor, type MistState, type MistContext, type MistPayment } from './mistWorkspace';
 import { platformBusinessDate } from './mistPlatform';
 
@@ -46,7 +47,18 @@ const major = (m: number) => m / 100;
 const key = (v: string) => v.trim().toLocaleLowerCase();
 
 export const createPayablesState = (_context?: MistContext, _root?: unknown): PayablesState => ({ bills: [], payments: [], allocations: [] });
-export function payablesCommandPermission(command: PayablesCommand) { if ((PAYABLE_COMMANDS as readonly string[]).includes(command.type)) return 'finance:write'; return fail('未知应付操作'); }
+export function payablesCommandPermission(command: PayablesCommand) {
+  if (command.type === 'payable.bill.register' || command.type === 'payable.bill.void') return MIST_FINANCE_SCOPES.invoice;
+  if (command.type === 'payable.payment.register') return MIST_FINANCE_SCOPES.voucher;
+  if (command.type === 'payable.payment.allocate') return MIST_FINANCE_SCOPES.reconcile;
+  return fail('未知应付操作');
+}
+/** 登记付款和核销是两个已有权限；一次提交同时办理时必须两项都具备。 */
+export function payablesCommandPermissions(command: PayablesCommand): string[] {
+  const permissions: string[] = [payablesCommandPermission(command)];
+  if (command.type === 'payable.payment.register' && Array.isArray(command.payload.allocations) && command.payload.allocations.length) permissions.push(MIST_FINANCE_SCOPES.reconcile);
+  return permissions;
+}
 const ledger = (root: Root): PayablesState => { if (!root.payables) root.payables = createPayablesState(); return root.payables; };
 const read = (root: Root): PayablesState => root.payables || createPayablesState();
 

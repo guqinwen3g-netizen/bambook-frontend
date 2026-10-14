@@ -9,7 +9,7 @@ import type { MistCommand, MistFile, MistRunReceipt, MistState, MistWorkspaceEnv
 const auth = vi.hoisted(() => ({ session: { sessionKey: 'session-a', user: { id: 'actor-a' }, status: 'authenticated' } }));
 vi.mock('./auth', () => ({ useMistSession: () => auth.session }));
 vi.mock('../../../../services/apiService', () => ({ apiService: { getAuthHeaders: () => ({ 'Content-Type': 'application/json', 'X-Test-Actor': auth.session.user.id }) } }));
-import { MistWorkspaceProvider, useMistWorkspace, type MistWorkspaceContext } from './workspace';
+import { MistWorkspaceProvider, useMistWorkspace, workspaceAccessibleBy, type MistWorkspaceContext } from './workspace';
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 const BASE = '/api/mist/workspaces';
@@ -34,6 +34,18 @@ function state(): MistState {
   };
 }
 function workspace(id: string, ownerId = 'actor-a'): MistWorkspaceEnvelope { return { id, ownerId, name: id, revision: 0, state: state() }; }
+function commitMember(request: Request): ResponseData {
+  const id = request.url.slice(BASE.length + 1).split('/')[0], value = clone(stores.get(id)!);
+  const body = JSON.parse(request.init.body as string);
+  if (value.ownerId !== request.actor) return failure(404);
+  if (body.expectedRevision !== value.revision) return failure(409, 'REVISION_CONFLICT');
+  value.revision++;
+  value.state.memberIds = body.action === 'add' ? [...value.state.memberIds ?? [], body.account] : (value.state.memberIds ?? []).filter(id => id !== body.account);
+  stores.set(id, value);
+  const receipt = { requestId: body.requestId, revision: value.revision, result: { workspaceId: id, action: body.action, userId: body.account } };
+  receipts.set(body.requestId, receipt);
+  return response({ workspace: value, receipt });
+}
 function commit(request: Request): ResponseData {
   const id = request.url.slice(BASE.length + 1).split('/')[0], value = clone(stores.get(id)!);
   const body = JSON.parse(request.init.body as string);
@@ -91,18 +103,101 @@ beforeEach(() => {
     calls.push(request);
     const redirected = intercept?.(request); if (redirected) return redirected;
     if (request.method === 'POST' && request.url.endsWith('/commands')) return commit(request);
+    if (request.method === 'POST' && request.url.endsWith('/members')) return commitMember(request);
     if (request.method === 'POST' && request.url.endsWith('/files')) return upload(request);
     if(request.method==='POST'&&(request.url.endsWith('/archive')||request.url.endsWith('/restore')))return lifecycle(request);
     if (request.method === 'POST' && request.url === BASE) return create(request);
     if(request.url===BASE+'/archived')return response({workspaces:[...stores.values()].filter(item=>item.ownerId===request.actor&&item.state.workspaceArchive).map(item=>({id:item.id,name:item.name,revision:item.revision,archivedAt:item.state.workspaceArchive!.at}))});
-    if (request.url === BASE) return response({ workspaces: [...stores.values()].filter(item => item.ownerId === request.actor&&!item.state.workspaceArchive).map(({ id, name }) => ({ id, name })) });
+    if (request.url === BASE) return response({ workspaces: [...stores.values()].filter(item => (item.ownerId === request.actor || item.state.memberIds?.includes(request.actor))&&!item.state.workspaceArchive).map(({ id, name, ownerId, access }) => ({ id, name, ownerId, access })) });
     if (request.url.includes('/receipts/')) { const receipt = receipts.get(decodeURIComponent(request.url.split('/').at(-1)!)); return receipt ? response({ receipt }) : failure(404); }
     const id = request.url === BASE + '/default' ? [...stores.values()].find(item=>item.ownerId===request.actor&&!item.state.workspaceArchive)?.id : request.url.slice(BASE.length + 1);
-    const value = id?stores.get(id):undefined; return value && value.ownerId === request.actor&&!value.state.workspaceArchive ? response({ workspace: value }) : failure(404);
+    const value = id?stores.get(id):undefined; return value && (value.ownerId === request.actor || value.state.memberIds?.includes(request.actor))&&!value.state.workspaceArchive ? response({ workspace: value }) : failure(404);
   }));
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
 });
 afterEach(() => { act(() => root.unmount()); host.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+it('accepts a shared envelope only when the server marks membership and the exact account is listed', () => {
+  const shared = workspace(D, 'actor-b');
+  shared.state.memberIds = ['actor-a'];
+  shared.access = { role: 'member', canManageMembers: false, hidden: [] };
+  expect(workspaceAccessibleBy(shared, 'actor-a')).toBe(true);
+  expect(workspaceAccessibleBy(shared, 'actor-c')).toBe(false);
+  shared.access = undefined; expect(workspaceAccessibleBy(shared, 'actor-a')).toBe(false);
+  expect(workspaceAccessibleBy(shared, 'actor-b')).toBe(true);
+});
+
+it('opens the authorized shared workspace, refuses member management, and clears data when access is revoked', async () => {
+  const shared = stores.get(D)!;
+  shared.state.memberIds = ['actor-a']; shared.access = { role: 'member', canManageMembers: false, hidden: [] };
+  localStorage.setItem('bambook.mist.selected-workspace:actor-a', D);
+  await mount();
+  expect(api.workspace?.id).toBe(D);
+  expect(api.workspaces.find(item => item.id === D)?.shared).toBe(true);
+  await expect(api.changeMember!('add', 'actor-c')).rejects.toThrow('只有工作空间所有者');
+  expect(posts()).toHaveLength(0);
+  shared.state.memberIds = [];
+  await act(async () => api.refresh());
+  expect(api.workspace).toBeNull();
+  expect(api.workspaces.some(item => item.id === D)).toBe(false);
+});
+
+it('adds and revokes a member using exact receipts without changing business permissions', async () => {
+  stores.get(A)!.access = { role: 'owner', canManageMembers: true, hidden: [] };
+  await mount();
+  await act(async () => api.changeMember!('add', ' actor-b '));
+  expect(api.state?.memberIds).toEqual(['actor-b']);
+  expect(api.pending).toBeNull();
+  expect(JSON.parse(posts()[0].init.body as string)).toMatchObject({ expectedRevision: 0, action: 'add', account: 'actor-b' });
+  expect(posts()[0].url).toBe(BASE + '/' + A + '/members');
+  await act(async () => api.changeMember!('remove', 'actor-b'));
+  expect(api.state?.memberIds).toEqual([]);
+  expect(api.workspace?.revision).toBe(2);
+});
+
+it('keeps an uncertain grant for exact receipt recovery instead of sending a new grant', async () => {
+  stores.get(A)!.access = { role: 'owner', canManageMembers: true, hidden: [] };
+  await mount();
+  intercept = request => { if (request.url.endsWith('/members')) { commitMember(request); throw new TypeError('连接中断'); } };
+  let outcome!: Promise<void | Error>;
+  await act(async () => { outcome = capture(api.changeMember!('add', 'actor-b')); });
+  expect(await outcome).toBeInstanceOf(Error);
+  expect(api.pending?.kind).toBe('member');
+  await expect(api.switchWorkspace(B)).rejects.toThrow('请先核对未完成操作');
+  intercept = undefined;
+  await act(async () => api.recover());
+  expect(api.state?.memberIds).toEqual(['actor-b']);
+  expect(api.pending).toBeNull();
+  expect(posts().filter(request => request.url.endsWith('/members'))).toHaveLength(1);
+});
+
+it('does not accept an unrelated member receipt and recovers the original durable receipt', async () => {
+  stores.get(A)!.access = { role: 'owner', canManageMembers: true, hidden: [] };
+  await mount();
+  intercept = async request => {
+    if (!request.url.endsWith('/members')) return undefined;
+    const body = await commitMember(request).json();
+    body.receipt.result.action = 'remove';
+    return response(body);
+  };
+  let outcome!: Promise<void | Error>;
+  await act(async () => { outcome = capture(api.changeMember!('add', 'actor-b')); });
+  expect((await outcome as Error).message).toContain('授权回执与原操作不一致');
+  expect(api.pending?.kind).toBe('member');
+  expect(api.workspace?.revision).toBe(0);
+  intercept = undefined; await act(async () => api.recover());
+  expect(api.workspace?.revision).toBe(1);
+  expect(api.pending).toBeNull();
+});
+
+it('reuses the exact stored member request when its receipt is not yet committed', async () => {
+  stores.get(A)!.access = { role: 'owner', canManageMembers: true, hidden: [] };
+  localStorage.setItem('bambook.mist.pending:actor-a', JSON.stringify({ workspaceId: A, actorId: 'actor-a', requestId: 'exact-member-grant', expectedRevision: 0, kind: 'member', action: 'add', account: 'actor-b' }));
+  await mount(); await act(async () => api.recover());
+  expect(JSON.parse(posts()[0].init.body as string).requestId).toBe('exact-member-grant');
+  expect(api.state?.memberIds).toEqual(['actor-b']);
+  expect(api.pending).toBeNull();
+});
 
 it('remains usable through StrictMode effect replay and applies an acknowledged command', async () => {
   strict = true; await mount();

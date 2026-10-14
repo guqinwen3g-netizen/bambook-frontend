@@ -1,9 +1,10 @@
 /** 应付待办：供应商票据 → 应付余额 → 实际付款与多票分配。只用已登记事实，不用合同金额猜应付。 */
+import { MIST_FINANCE_SCOPES } from '../../../../server/src/shared/mistFinancePermissions';
 import React from 'react';
 import { Banner, Button, Card, CardHeader, Checkbox, DataTable, Dialog, EmptyState, Facts, Field, FormGrid, Mono, ObjectCell, Pill, Segmented, Select, TextArea, TextInput, useToast, type Column, type Tone } from '../../../../components/mist';
-import type { MistState } from '../../../../server/src/shared/mistWorkspace';
+import { type MistState } from '../../../../server/src/shared/mistWorkspace';
 import { platformBusinessDate } from '../../../../server/src/shared/mistPlatform';
-import { payableBills, payableSources, supplierPayableSummary, supplierPayments, type PayableBillView, type PayablesCommand, type SupplierPaymentView } from '../../../../server/src/shared/mistPayables';
+import { payableBills, payableSources, supplierPayableSummary, supplierPayments, payablesCommandPermissions, type PayableBillView, type PayablesCommand, type SupplierPaymentView } from '../../../../server/src/shared/mistPayables';
 import { useMistWorkspace } from '../runtime/workspace';
 import { useMistSession } from '../runtime/auth';
 import { useNav } from '../nav';
@@ -30,7 +31,7 @@ type PayDraft = { paymentId?: string; supplierId: string; currency: string; date
 
 export function FinancePayables() {
   const { state, loading, run, saving, pending } = useMistWorkspace(), session = useMistSession(), { route, go } = useNav(), toast = useToast();
-  const canWrite = session.hasPermission('finance:write'), day = today();
+  const canBill = session.hasPermission(MIST_FINANCE_SCOPES.invoice), canPay = session.hasPermission(MIST_FINANCE_SCOPES.voucher), canAllocate = session.hasPermission(MIST_FINANCE_SCOPES.reconcile), day = today();
   const [view, setView] = React.useState<View>(() => route.id && (state?.payables?.payments || []).some(p => p.id === route.id) ? 'payments' : 'bills');
   const [selected, setSelected] = React.useState(route.id || ''), [drawer, setDrawer] = React.useState(!!route.id);
   const [filter, setFilter] = React.useState<'open' | 'overdue' | 'all'>('open');
@@ -46,7 +47,7 @@ export function FinancePayables() {
   const open = (id: string) => { setSelected(id); setDrawer(true); go('payment-vouchers', id, { section: 'payables' }); };
 
   const execute = async (command: PayablesCommand, done: (result: Record<string, unknown>) => void) => {
-    if (!canWrite) { setFailure('没有财务写权限，不能登记票据或付款。'); return; }
+    if (payablesCommandPermissions(command).some(permission => !session.hasPermission(permission as any))) { setFailure('没有办理此项财务动作的权限。'); return; }
     if (busy) return; setWorking(true); setFailure('');
     try { const receipt = await run(command as any); done(receipt.result as Record<string, unknown>); } catch (problem) { setFailure(problem instanceof Error ? problem.message : '操作失败，请重试'); } finally { setWorking(false); }
   };
@@ -57,7 +58,7 @@ export function FinancePayables() {
   };
   const startPay = (supplierId = '', billId = '') => {
     const b = bills.find(x => x.id === billId); setFailure('');
-    setPayDraft({ supplierId: supplierId || b?.supplierId || '', currency: b?.currency || 'CNY', date: day, amount: b ? String(b.open) : '', reference: '', note: '', allocations: b ? { [b.id]: String(b.open) } : {} });
+    setPayDraft({ supplierId: supplierId || b?.supplierId || '', currency: b?.currency || 'CNY', date: day, amount: b ? String(b.open) : '', reference: '', note: '', allocations: b && canAllocate ? { [b.id]: String(b.open) } : {} });
   };
   const startAllocate = (p: SupplierPaymentView) => { setFailure(''); setPayDraft({ paymentId: p.id, supplierId: p.supplierId, currency: p.currency, date: p.date, amount: String(p.amount), reference: p.reference, note: '', allocations: {} }); };
 
@@ -105,7 +106,7 @@ export function FinancePayables() {
     { key: 'terms', header: '合同付款条件', width: 'minmax(140px,1fr)', hideOnMobile: true, render: r => r.purchase.terms || '未填写' },
     { key: 'contract', header: '合同金额', width: '140px', align: 'right', hideOnMobile: true, render: r => <span className="mist-num">{apMoney(r.contract, r.purchase.currency)}</span> },
     { key: 'uninvoiced', header: '还没收到票', width: '140px', align: 'right', render: r => <span className="mist-num">{apMoney(r.uninvoiced, r.purchase.currency)}</span> },
-    { key: 'act', header: '', width: '112px', render: r => <Button size="sm" disabled={busy || !canWrite || r.uninvoiced <= 0} title={!canWrite ? '需要财务写权限' : undefined} onClick={event => { event.stopPropagation(); startBill(r.purchase.supplierId, r.purchase.id); }}>登记票据</Button> },
+    { key: 'act', header: '', width: '112px', render: r => <Button size="sm" disabled={busy || !canBill || r.uninvoiced <= 0} title={!canBill ? '需要票据登记权限' : undefined} onClick={event => { event.stopPropagation(); startBill(r.purchase.supplierId, r.purchase.id); }}>登记票据</Button> },
   ];
   const paymentColumns: Column<SupplierPaymentView>[] = [
     { key: 'code', header: '付款 / 供应商', width: 'minmax(170px,1.4fr)', render: p => <ObjectCell name={<Mono>{p.code}</Mono>} meta={p.supplier + ' · ' + p.reference} /> },
@@ -124,8 +125,8 @@ export function FinancePayables() {
     ]} />
     {bill.status === 'void' && <Banner title="已作废">{bill.voided?.reason}（{bill.voided?.actor} · {bill.voided?.at.slice(0, 10)}），不再计入应付；原记录保留。</Banner>}
     <ActionBar busy={busy} actions={[
-      { label: '登记付款', onClick: () => startPay(bill.supplierId, bill.id), reason: !canWrite ? '需要财务写权限' : bill.open <= 0 ? '本票已无未付余额' : undefined, hidden: bill.status === 'void' },
-      { label: '作废票据', onClick: () => { setFailure(''); setVoidDraft({ id: bill.id, reason: '' }); }, reason: !canWrite ? '需要财务写权限' : bill.paid > 0 ? '已有付款分配，付款冲回尚未接入，不能直接作废' : undefined, hidden: bill.status === 'void' },
+      { label: '登记付款', onClick: () => startPay(bill.supplierId, bill.id), reason: !canPay ? '需要付款登记权限' : bill.open <= 0 ? '本票已无未付余额' : undefined, hidden: bill.status === 'void' },
+      { label: '作废票据', onClick: () => { setFailure(''); setVoidDraft({ id: bill.id, reason: '' }); }, reason: !canBill ? '需要票据登记权限' : bill.paid > 0 ? '已有付款分配，付款冲回尚未接入，不能直接作废' : undefined, hidden: bill.status === 'void' },
     ]} />
     <DetailBlock title="来源合同">{bill.lines.map(l => <div className="mist-row mist-module-actions" key={l.purchaseId}><Mono>{l.purchaseCode}</Mono><span className="mist-note">{KIND[l.kind]}</span><span className="mist-spacer" /><span className="mist-num">{apMoney(l.amount, bill.currency)}</span><Button size="sm" onClick={() => go('procurement', l.purchaseId)}>查看合同</Button></div>)}
       <span className="mist-note">合同付款条件：{bill.terms.join('；') || '未填写'}</span></DetailBlock>
@@ -134,7 +135,7 @@ export function FinancePayables() {
   </DetailBody> : payment ? <DetailBody data-supplier-payment={payment.id} heading={<h2 className="mist-h2">{payment.code}</h2>}>
     <Facts items={[{ label: '收款供应商', value: payment.supplier }, { label: '付款日期', value: payment.date }, { label: '付款金额', value: apMoney(payment.amount, payment.currency) }, { label: '银行流水号', value: <Mono>{payment.reference}</Mono> }, { label: '已分配 / 未分配', value: apMoney(payment.allocated, payment.currency) + ' / ' + apMoney(payment.unallocated, payment.currency) }, { label: '登记', value: payment.actor + ' · ' + payment.createdAt.slice(0, 10) }, ...(payment.note ? [{ label: '备注', value: payment.note }] : [])]} />
     {payment.unallocated > 0 && <Banner tone="warn" title="还有钱没分到票据上">未分配金额保留在这家供应商名下，不会自动配；收到新票或核对后再分配。</Banner>}
-    <ActionBar busy={busy} actions={[{ label: '分配到应付', onClick: () => startAllocate(payment), reason: !canWrite ? '需要财务写权限' : payment.unallocated <= 0 ? '这笔付款已全部分配' : undefined }, { label: '付款冲回', onClick: () => {}, reason: '冲回命令与原因留痕尚未接入，不能删除或改写原付款事实' }]} />
+    <ActionBar busy={busy} actions={[{ label: '分配到应付', onClick: () => startAllocate(payment), reason: !canAllocate ? '需要核销分配权限' : payment.unallocated <= 0 ? '这笔付款已全部分配' : undefined }, { label: '付款冲回', onClick: () => {}, reason: '冲回命令与原因留痕尚未接入，不能删除或改写原付款事实' }]} />
     <DetailBlock title="分配到的票据">{allocations.filter(a => a.supplierPaymentId === payment.id).map(a => { const b = bills.find(x => x.id === a.billId); return <div className="mist-row mist-module-actions" key={a.id}><Mono>{b?.code || '票据未找到'}</Mono><span className="mist-note">{b ? '发票 ' + b.invoiceNo : ''}</span><span className="mist-spacer" /><span className="mist-num">{apMoney(a.amount, a.currency)}</span>{b && <Button size="sm" onClick={() => { setView('bills'); open(b.id); }}>查看票据</Button>}</div>; })}
       {!allocations.some(a => a.supplierPaymentId === payment.id) && <span className="mist-note">尚未分配。</span>}</DetailBlock>
   </DetailBody> : <EmptyState compact title={route.id ? '未找到应付记录' : '应付详情'} description="选择一张票据或一笔付款，查看来源合同、付款分配和余额。" />;
@@ -148,8 +149,8 @@ export function FinancePayables() {
     {failure && !billDraft && !payDraft && !voidDraft && <Banner tone="bad" title="操作没有完成">{failure}</Banner>}
     <Card>
       <CardHeader title="供应商应付（按原币）" sub="收到供应商发票登记后才形成应付；付款另记并分到票据" tools={<div className="mist-row" style={{ flexWrap: 'wrap' }}>
-        <Button disabled={busy || !canWrite} title={!canWrite ? '需要财务写权限' : undefined} onClick={() => startBill()}>登记供应商票据</Button>
-        <Button disabled={busy || !canWrite} title={!canWrite ? '需要财务写权限' : undefined} onClick={() => startPay()}>登记供应商付款</Button></div>} />
+        <Button disabled={busy || !canBill} title={!canBill ? '需要票据登记权限' : undefined} onClick={() => startBill()}>登记供应商票据</Button>
+        <Button disabled={busy || !canPay} title={!canPay ? '需要付款登记权限' : undefined} onClick={() => startPay()}>登记供应商付款</Button></div>} />
       <div className="mist-card-body mist-col">
       {summary.length ? <DataTable ariaLabel="供应商应付汇总" rows={summary} rowKey={r => r.supplierId + r.currency} columns={[
         { key: 's', header: '供应商', render: r => <ObjectCell name={r.supplier} meta={r.bills ? r.bills + ' 张未付清' + (r.overdue ? ' · ' + r.overdue + ' 张逾期' : '') : '已全部付清'} /> },
@@ -167,7 +168,7 @@ export function FinancePayables() {
     <ListDetail drawerOpen={drawer && !!(bill || payment)} drawerTitle={bill?.code || payment?.code || '应付详情'} onDrawerClose={() => setDrawer(false)} list={<Card>{list}</Card>} detail={detail} />
 
     <Dialog open={!!billDraft} onClose={() => { if (!busy) setBillDraft(null); }} width={760} title="登记供应商票据" description="收到供应商开给我们的增值税发票后登记。登记后形成应付；不改变采购 / 加工的交付状态。"
-      footer={<><Button disabled={busy} onClick={() => setBillDraft(null)}>取消</Button><Button variant="primary" loading={busy} disabled={busy || !canWrite} onClick={submitBill}>登记应付</Button></>}>
+      footer={<><Button disabled={busy} onClick={() => setBillDraft(null)}>取消</Button><Button variant="primary" loading={busy} disabled={busy || !canBill} onClick={submitBill}>登记应付</Button></>}>
       {billDraft && <div className="mist-col">
         {failure && <Banner tone="bad" title="还不能登记">{failure}</Banner>}
         <FormGrid>
@@ -175,7 +176,7 @@ export function FinancePayables() {
           <Field label="供应商发票号" required><TextInput aria-label="供应商发票号" value={billDraft.invoiceNo} onChange={e => setBillDraft({ ...billDraft, invoiceNo: e.target.value })} /></Field>
         </FormGrid>
         <Field label="这张票对应哪些合同" required hint={billCurrency ? '同一张票只能对应同币种合同（' + billCurrency + '）' : '勾选合同并写明本票对应金额，不能只挂供应商总额'}>
-          <div className="mist-col">{billSources.map(s => { const on = s.purchase.id in billDraft.lines, other = !!billCurrency && s.purchase.currency !== billCurrency; return <div className="mist-row" key={s.purchase.id} data-bill-source={s.purchase.id}>
+          <div className="mist-col">{billSources.map(s => { const on = s.purchase.id in billDraft.lines, other = !!billCurrency && s.purchase.currency !== billCurrency; return <div className="mist-row mist-module-actions" key={s.purchase.id} data-bill-source={s.purchase.id}>
             <Checkbox checked={on} disabled={other && !on} onChange={v => { const lines = { ...billDraft.lines }; if (v) lines[s.purchase.id] = String(s.uninvoiced); else delete lines[s.purchase.id]; setBillDraft({ ...billDraft, lines, dueBasis: billDraft.dueBasis || '合同付款条件：' + (s.purchase.terms || '未填写') }); }} label={<span><Mono>{s.purchase.code}</Mono> · {s.purchase.description} · 还没收到票 {apMoney(s.uninvoiced, s.purchase.currency)}</span>} />
             <span className="mist-spacer" />{on && <TextInput aria-label={s.purchase.code + ' 本票金额'} type="number" min="0.01" step="0.01" style={{ width: 140 }} value={billDraft.lines[s.purchase.id]} onChange={e => setBillDraft({ ...billDraft, lines: { ...billDraft.lines, [s.purchase.id]: e.target.value } })} />}
           </div>; })}
@@ -195,7 +196,7 @@ export function FinancePayables() {
     </Dialog>
 
     <Dialog open={!!payDraft} onClose={() => { if (!busy) setPayDraft(null); }} width={760} title={existing ? '分配付款到应付' : '登记供应商付款'} description={existing ? `${existing.code} · 还有 ${apMoney(existing.unallocated, existing.currency)} 未分配` : '登记已经实际付出的款。可以分到同一供应商、同币种的多张票据；没分完的钱会保留，不自动配。'}
-      footer={<><Button disabled={busy} onClick={() => setPayDraft(null)}>取消</Button><Button variant="primary" loading={busy} disabled={busy || !canWrite} onClick={submitPay}>{existing ? '确认分配' : '登记付款'}</Button></>}>
+      footer={<><Button disabled={busy} onClick={() => setPayDraft(null)}>取消</Button><Button variant="primary" loading={busy} disabled={busy || !(existing ? canAllocate : canPay)} onClick={submitPay}>{existing ? '确认分配' : '登记付款'}</Button></>}>
       {payDraft && <div className="mist-col">
         {failure && <Banner tone="bad" title="还不能保存">{failure}</Banner>}
         {!existing && <FormGrid cols={3}>
@@ -207,15 +208,16 @@ export function FinancePayables() {
           <Field label="备注"><TextInput aria-label="付款备注" value={payDraft.note} onChange={e => setPayDraft({ ...payDraft, note: e.target.value })} /></Field>
         </FormGrid>}
         <Field label="分配到票据" hint={`已分配 ${apMoney(allocTotal / 100, payDraft.currency)} · 未分配 ${Number.isFinite(payable) ? apMoney(Math.max(0, payable - allocTotal) / 100, payDraft.currency) : '—'}`}>
-          <div className="mist-col">{payBills.map(b => <div className="mist-row" key={b.id} data-pay-bill={b.id}><Mono>{b.code}</Mono><span className="mist-note">发票 {b.invoiceNo} · 到期 {b.due}{b.overdue ? '（逾期）' : ''} · 未付 {apMoney(b.open, b.currency)}</span><span className="mist-spacer" />
-            <TextInput aria-label={b.code + ' 分配金额'} type="number" min="0.01" step="0.01" style={{ width: 140 }} value={payDraft.allocations[b.id] || ''} onChange={e => setPayDraft({ ...payDraft, allocations: { ...payDraft.allocations, [b.id]: e.target.value } })} /></div>)}
+          {!canAllocate && <span className="mist-note">当前账号没有核销分配权限；付款仅登记为未分配，不会自动核销。</span>}
+          <div className="mist-col">{payBills.map(b => <div className="mist-row mist-module-actions" key={b.id} data-pay-bill={b.id}><Mono>{b.code}</Mono><span className="mist-note">发票 {b.invoiceNo} · 到期 {b.due}{b.overdue ? '（逾期）' : ''} · 未付 {apMoney(b.open, b.currency)}</span><span className="mist-spacer" />
+            <TextInput aria-label={b.code + ' 分配金额'} type="number" min="0.01" step="0.01" disabled={busy || !canAllocate} style={{ width: 140 }} value={payDraft.allocations[b.id] || ''} onChange={e => setPayDraft({ ...payDraft, allocations: { ...payDraft.allocations, [b.id]: e.target.value } })} /></div>)}
           {!payBills.length && <span className="mist-note">{payDraft.supplierId ? '这家供应商没有该币种的未付票据；付款可以先登记，金额保留为未分配。' : '先选择供应商。'}</span>}</div>
         </Field>
       </div>}
     </Dialog>
 
     <Dialog open={!!voidDraft} onClose={() => { if (!busy) setVoidDraft(null); }} title="作废供应商票据" tone="bad" description="作废后不再计入应付，合同可重新登记票据；原记录保留，不删除。"
-      footer={<><Button disabled={busy} onClick={() => setVoidDraft(null)}>取消</Button><Button variant="danger" loading={busy} disabled={busy || !canWrite || !voidDraft?.reason.trim()} onClick={() => voidDraft && void execute({ type: 'payable.bill.void', payload: voidDraft }, () => { setVoidDraft(null); toast('票据已作废'); })}>确认作废</Button></>}>
+      footer={<><Button disabled={busy} onClick={() => setVoidDraft(null)}>取消</Button><Button variant="danger" loading={busy} disabled={busy || !canBill || !voidDraft?.reason.trim()} onClick={() => voidDraft && void execute({ type: 'payable.bill.void', payload: voidDraft }, () => { setVoidDraft(null); toast('票据已作废'); })}>确认作废</Button></>}>
       {voidDraft && <div className="mist-col">{failure && <Banner tone="bad" title="未能作废">{failure}</Banner>}<Field label="作废原因" required><TextArea aria-label="作废原因" rows={3} value={voidDraft.reason} onChange={e => setVoidDraft({ ...voidDraft, reason: e.target.value })} /></Field></div>}
     </Dialog>
   </div>;

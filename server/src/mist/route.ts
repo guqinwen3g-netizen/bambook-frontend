@@ -35,6 +35,7 @@ export function createMistRouter(options: { prisma?: any; filesRoot?: string; re
   router.get('/workspaces/:id', run(async (req, res) => { res.json({ workspace: await repository.get(actor(req), req.params.id) }); }));
   router.post('/workspaces/:id/archive',run(async(req,res)=>{const body=exactBody(req.body,['requestId','expectedRevision']);res.json(await repository.changeArchive(actor(req),req.params.id,body as any,'archive'));}));
   router.post('/workspaces/:id/restore',run(async(req,res)=>{const body=exactBody(req.body,['requestId','expectedRevision']);res.json(await repository.changeArchive(actor(req),req.params.id,body as any,'restore'));}));
+  router.post('/workspaces/:id/members',run(async(req,res)=>{const body=exactBody(req.body,['requestId','expectedRevision','action','account']);res.json(await repository.changeMember(actor(req),req.params.id,body as any));}));
   router.get('/workspaces/:id/assistant/status',run(async(req,res)=>{await repository.getForAssistant(actor(req),req.params.id);res.json(getMistAssistantStatus());}));
   router.post('/workspaces/:id/assistant',run(async(req,res)=>{const context=await repository.getForAssistant(actor(req),req.params.id);const controller=new AbortController();res.once('close',()=>{if(!res.writableEnded)controller.abort();});res.json(await runMistAssistant({...context,body:req.body,signal:controller.signal}));}));
   router.post('/workspaces/:id/commands', run(async (req, res) => {

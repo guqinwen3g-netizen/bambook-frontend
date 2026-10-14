@@ -3,13 +3,13 @@ import { apiService } from '../../../../services/apiService';
 import { useMistSession } from './auth';
 import type { MistCommand, MistFile, MistRunReceipt, MistState, MistWorkspaceEnvelope } from '../../../../server/src/shared/mistWorkspace';
 
-type Pending = { workspaceId: string; requestId: string; expectedRevision: number; kind: 'command' | 'upload' | 'archive' | 'restore'; command?: MistCommand; file?: { name: string; size: number; sha256?: string }; actorId?: string; claimId?: string };
+type Pending = { workspaceId: string; requestId: string; expectedRevision: number; kind: 'command' | 'upload' | 'archive' | 'restore' | 'member'; command?: MistCommand; file?: { name: string; size: number; sha256?: string }; actorId?: string; claimId?: string; action?: 'add' | 'remove'; account?: string };
 export type MistUploadOptions={claimId:string};
 export type ArchivedMistWorkspace={id:string;name:string;revision:number;archivedAt:string};
 export type MistPendingCreate = { actorId: string; slug: string; name: string; seed: 'demo' | 'empty' };
 type Authority = { key: string; userId?: string; status: string };
 export interface MistWorkspaceContext {
-  state: MistState | null; workspace: MistWorkspaceEnvelope | null; workspaces: Array<{ id: string; name: string }>;
+  state: MistState | null; workspace: MistWorkspaceEnvelope | null; workspaces: Array<{ id: string; name: string; shared?: boolean }>;
   loading: boolean; saving: boolean; error: string; pending: Pending | null;
   pendingCreate?: MistPendingCreate | null;
   run: (command: MistCommand) => Promise<MistRunReceipt>;
@@ -26,6 +26,8 @@ export interface MistWorkspaceContext {
   refreshArchived?:()=>Promise<void>;
   archiveWorkspace?:()=>Promise<void>;
   restoreWorkspace?:(id:string)=>Promise<void>;
+  /** 所有者授权/撤销其他账号进入当前空间；对方能看到什么仍由其自身岗位权限决定（服务端裁剪）。 */
+  changeMember?:(action:'add'|'remove',account:string)=>Promise<void>;
 }
 const Context = React.createContext<MistWorkspaceContext | null>(null);
 const BASE = '/api/mist/workspaces';
@@ -51,11 +53,13 @@ function uploadTarget(options:unknown):string|undefined{
   if(!object(options)||Object.keys(options).length!==1||!claimIdentifier(options.claimId))throw new RequestError('请选择当前案件的有效上传目标');
   return options.claimId;
 }
+/** 所有者，或服务端确认的被授权成员，才能使用该工作区快照。 */
+export function workspaceAccessibleBy(value: MistWorkspaceEnvelope, userId?: string | null) { return !!userId && (value.ownerId === userId || value.access?.role === 'member' && Array.isArray(value.state?.memberIds) && value.state.memberIds.includes(userId)); }
 class RequestError extends Error { constructor(message: string, public status = 0, public code?: string) { super(message); } }
 function envelope(value: unknown, actorId: string, workspaceId?: string): MistWorkspaceEnvelope {
   const candidate = value as MistWorkspaceEnvelope;
   const arrays: Array<keyof MistState> = ['devs', 'versions', 'drafts', 'fabrics', 'orders', 'orderLines', 'productions', 'receipts', 'invoices', 'allocations', 'payments', 'customers', 'contacts', 'files', 'events', 'tasks', 'notifications', 'calendar'];
-  if (!candidate || !nonempty(candidate.id) || workspaceId && candidate.id !== workspaceId || candidate.ownerId !== actorId
+  if (!candidate || !nonempty(candidate.id) || workspaceId && candidate.id !== workspaceId || !workspaceAccessibleBy(candidate, actorId)
     || !Number.isSafeInteger(candidate.revision) || candidate.revision < 0 || candidate.state?.schemaVersion !== 1
     || arrays.some(key => !Array.isArray(candidate.state[key])) || !object(candidate.state.settings) || !!candidate.state.workspaceArchive) throw new RequestError('工作区响应不完整或身份、来源不一致');
   return candidate;
@@ -67,6 +71,7 @@ function receipt(value: unknown, intent: Pending): MistRunReceipt {
 }
 function validateReceiptState(value: MistWorkspaceEnvelope, acknowledged: MistRunReceipt, intent: Pending) {
   if (value.revision < acknowledged.revision) throw new RequestError('工作区快照早于操作回执，请核对原请求');
+  if (intent.kind === 'member' && (acknowledged.result.workspaceId !== intent.workspaceId || acknowledged.result.action !== intent.action || !nonempty(acknowledged.result.userId))) throw new RequestError('授权回执与原操作不一致，请核对原请求');
   if (intent.kind === 'upload') {
     const fileId = acknowledged.result.fileId || acknowledged.result.id;
     const file = value.state.files.find(item => item.id === fileId);
@@ -76,7 +81,8 @@ function validateReceiptState(value: MistWorkspaceEnvelope, acknowledged: MistRu
 function readPending(raw: string, actorId: string): Pending {
   const value = JSON.parse(raw) as Pending;
   if (!object(value) || !nonempty(value.workspaceId) || !nonempty(value.requestId) || !Number.isSafeInteger(value.expectedRevision) || value.expectedRevision < 0
-    || value.actorId && value.actorId !== actorId || !['command', 'upload','archive','restore'].includes(value.kind)
+    || value.actorId && value.actorId !== actorId || !['command', 'upload','archive','restore','member'].includes(value.kind)
+    || value.kind === 'member' && (!['add', 'remove'].includes(value.action!) || !nonempty(value.account) || value.account.length > 200)
     || value.claimId!==undefined&&(value.kind!=='upload'||!claimIdentifier(value.claimId))
     || value.kind === 'command' && (!object(value.command) || !nonempty(value.command.type) || !object(value.command.payload))
     || value.kind === 'upload' && (!value.file || !nonempty(value.file.name) || !Number.isSafeInteger(value.file.size) || value.file.size < 1 || value.file.size > 50 * 1024 * 1024
@@ -110,7 +116,7 @@ async function fileDigest(file: File): Promise<string> {
 export function MistWorkspaceProvider({ children }: { children: React.ReactNode }) {
   const session = useMistSession();
   const [current, setCurrent] = React.useState<{ key: string; value: MistWorkspaceEnvelope } | null>(null);
-  const [workspaces, setWorkspaces] = React.useState<Array<{ id: string; name: string }>>([]);
+  const [workspaces, setWorkspaces] = React.useState<Array<{ id: string; name: string; shared?: boolean }>>([]);
   const [archivedWorkspaces,setArchivedWorkspaces]=React.useState<ArchivedMistWorkspace[]>([]);
   const [loading, setLoading] = React.useState(true), [saving, setSaving] = React.useState(false), [error, setError] = React.useState('');
   const [pending, setPending] = React.useState<Pending | null>(null);
@@ -125,7 +131,7 @@ export function MistWorkspaceProvider({ children }: { children: React.ReactNode 
   const latest = React.useRef(new Map<string, MistWorkspaceEnvelope>());
   const authority = { key: session.sessionKey, userId: session.user?.id, status: session.status };
   const scopeIsCurrent = activeScope.current.key === authority.key && activeScope.current.userId === authority.userId && activeScope.current.status === authority.status;
-  const visible = scopeIsCurrent && session.status === 'authenticated' && current?.key === session.sessionKey && current.value.ownerId === session.user?.id ? current.value : null;
+  const visible = scopeIsCurrent && session.status === 'authenticated' && current?.key === session.sessionKey && workspaceAccessibleBy(current.value, session.user?.id) ? current.value : null;
   const boundEpoch = scopeEpoch.current, boundWorkspaceId = visible?.id;
   const assertIdentity = React.useCallback((bound: Authority) => {
     if (!mounted.current || bound.status !== 'authenticated' || !bound.userId || live.current.status !== 'authenticated'
@@ -193,8 +199,14 @@ export function MistWorkspaceProvider({ children }: { children: React.ReactNode 
       if (!isCurrent()) return;
       const value = envelope(data.workspace, userId, targetId); wanted.current = value.id; put(value, bound); rememberSelection(value.id, bound);
       const list = await request(BASE, { signal: controller.signal });
-      if (isCurrent()) setWorkspaces(Array.isArray(list.workspaces) ? list.workspaces.filter((item: unknown) => object(item) && nonempty(item.id) && nonempty(item.name)).map((item: any) => ({ id: item.id, name: item.name })) : []);
-    } catch (failure) { if (isCurrent() && !controller.signal.aborted) setError(failure instanceof Error ? failure.message : '工作区读取失败'); }
+      if (isCurrent()) setWorkspaces(Array.isArray(list.workspaces) ? list.workspaces.filter((item: unknown) => object(item) && nonempty(item.id) && nonempty(item.name)).map((item: any) => ({ id: item.id, name: item.name, shared: item.access?.role === 'member' || nonempty(item.ownerId) && item.ownerId !== userId })) : []);
+    } catch (failure) { if (isCurrent() && !controller.signal.aborted) {
+      if (failure instanceof RequestError && [401,403,404].includes(failure.status)) {
+        snapshot.current = null; setCurrent(null);
+        if (id) { latest.current.delete(id); setWorkspaces(previous => previous.filter(item => item.id !== id)); }
+      }
+      setError(failure instanceof Error ? failure.message : '工作区读取失败');
+    } }
     finally { if (isCurrent()) { navigating.current = false; setLoading(false); const waiting = pendingCreateRef.current; if (waiting) setError(previous => previous || createNotice(waiting)); } }
   }, [assertIdentity, put, rememberSelection, forgetSelection]);
   React.useEffect(() => {
@@ -237,7 +249,7 @@ export function MistWorkspaceProvider({ children }: { children: React.ReactNode 
     const operationEpoch = scopeEpoch.current;
     persist(intent, bound); setError('');
     try {
-      const data = await request(BASE + '/' + encodeURIComponent(intent.workspaceId) + (intent.kind === 'upload' ? '/files' : '/commands'), { method: 'POST', body });
+      const data = await request(BASE + '/' + encodeURIComponent(intent.workspaceId) + (intent.kind === 'upload' ? '/files' : intent.kind === 'member' ? '/members' : '/commands'), { method: 'POST', body });
       assertIdentity(bound);
       const acknowledged = receipt(data.receipt, intent), value = envelope(data.workspace, bound.userId!, intent.workspaceId);
       validateReceiptState(value, acknowledged, intent);
@@ -283,6 +295,15 @@ export function MistWorkspaceProvider({ children }: { children: React.ReactNode 
     catch(failure){if(mounted.current&&live.current.key===bound.key){const known=!restoring&&failure instanceof RequestError&&failure.status>=400&&failure.status<500&&![408,429].includes(failure.status)&&failure.code!=='REQUEST_CONFLICT';if(known)clearPending(bound);setError((failure instanceof Error?failure.message:'工作区操作失败')+(known?'':'；请核对原请求'));}throw failure;}
   },[persist,adoptLifecycle,clearPending]);
   const refreshArchived=React.useCallback(async()=>{try{await readArchived(authority);}catch(failure){if(live.current.key===authority.key)setError(failure instanceof Error?failure.message:'回收站读取失败');throw failure;}},[authority.key,authority.userId,authority.status,readArchived]);
+  const changeMember=React.useCallback(async(action:'add'|'remove',account:string)=>{
+    assertSource(authority,boundEpoch,boundWorkspaceId);if(pendingRef.current||pendingCreateRef.current||navigating.current)throw new RequestError('请先核对未完成操作');
+    const row=snapshot.current;if(!row||row.access?.canManageMembers!==true)throw new RequestError('只有工作空间所有者可以授权其他账号');
+    if(!['add','remove'].includes(action)||!nonempty(account)||account.trim().length>200)throw new RequestError('请选择授权操作和有效账号');
+    const token=lock();
+    try{const intent:Pending={workspaceId:row.id,requestId:crypto.randomUUID(),expectedRevision:row.revision,actorId:authority.userId,kind:'member',action,account:account.trim()};
+      await perform(intent,JSON.stringify({requestId:intent.requestId,expectedRevision:intent.expectedRevision,action:intent.action,account:intent.account}),authority);}
+    finally{unlock(token,authority);}
+  },[authority.key,authority.userId,authority.status,boundEpoch,boundWorkspaceId,assertSource,lock,perform,unlock]);
   const run = React.useCallback(async (command: MistCommand) => {
     assertSource(authority, boundEpoch, boundWorkspaceId);
     if (pendingCreateRef.current) throw new RequestError(createNotice(pendingCreateRef.current));
@@ -368,6 +389,7 @@ export function MistWorkspaceProvider({ children }: { children: React.ReactNode 
       catch (failure) {
         assertSource(authority, boundEpoch, boundWorkspaceId);
         if (failure instanceof RequestError && failure.status === 404 && intent.kind === 'command') return await perform(intent, JSON.stringify({ requestId: intent.requestId, expectedRevision: intent.expectedRevision, command: intent.command }), authority);
+        if (failure instanceof RequestError && failure.status === 404 && intent.kind === 'member') return await perform(intent, JSON.stringify({ requestId: intent.requestId, expectedRevision: intent.expectedRevision, action: intent.action, account: intent.account }), authority);
         throw failure;
       }
       assertSource(authority, boundEpoch, boundWorkspaceId); const acknowledged = receipt(data.receipt, intent);
@@ -420,7 +442,7 @@ export function MistWorkspaceProvider({ children }: { children: React.ReactNode 
     if(kind==='archive')assertSource(authority,boundEpoch,boundWorkspaceId);const row=kind==='archive'?snapshot.current:archivedWorkspaces.find(row=>row.id===id);if(!row)throw new RequestError('工作区不存在，请刷新回收站');
     const token=lock();try{await performLifecycle({workspaceId:row.id,expectedRevision:row.revision,requestId:crypto.randomUUID(),actorId:authority.userId,kind},authority);}finally{unlock(token,authority);}
   },[authority.key,authority.userId,authority.status,boundEpoch,boundWorkspaceId,archivedWorkspaces,assertIdentity,assertSource,lock,performLifecycle,unlock]);
-  return <Context.Provider value={{ state: visible?.state ?? null, workspace: visible, workspaces: scopeIsCurrent ? workspaces : [], archivedWorkspaces:scopeIsCurrent?archivedWorkspaces:[],refreshArchived,archiveWorkspace:()=>changeArchive('archive'),restoreWorkspace:id=>changeArchive('restore',id),loading: scopeIsCurrent ? loading : session.status !== 'anonymous', error: scopeIsCurrent ? error : '', saving: scopeIsCurrent ? saving : false, pending: scopeIsCurrent ? pending : null, pendingCreate: scopeIsCurrent ? pendingCreate : null, run, uploadFile, downloadFile, prepareCreditDocument, issueCreditDocument, downloadCreditDocument, fileUrl, refresh, recover, switchWorkspace, createWorkspace }}>{children}</Context.Provider>;
+  return <Context.Provider value={{ state: visible?.state ?? null, workspace: visible, workspaces: scopeIsCurrent ? workspaces : [], archivedWorkspaces:scopeIsCurrent?archivedWorkspaces:[],refreshArchived,archiveWorkspace:()=>changeArchive('archive'),restoreWorkspace:id=>changeArchive('restore',id),changeMember,loading: scopeIsCurrent ? loading : session.status !== 'anonymous', error: scopeIsCurrent ? error : '', saving: scopeIsCurrent ? saving : false, pending: scopeIsCurrent ? pending : null, pendingCreate: scopeIsCurrent ? pendingCreate : null, run, uploadFile, downloadFile, prepareCreditDocument, issueCreditDocument, downloadCreditDocument, fileUrl, refresh, recover, switchWorkspace, createWorkspace }}>{children}</Context.Provider>;
 }
 export function useMistWorkspace(): MistWorkspaceContext {
   const context = React.useContext(Context); if (!context) throw new Error('useMistWorkspace must be used inside MistWorkspaceProvider'); return context;

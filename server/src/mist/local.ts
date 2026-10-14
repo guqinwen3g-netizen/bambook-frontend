@@ -5,6 +5,8 @@ import type {Request,Response,RequestHandler} from 'express';
 import type {TokenPayload} from '../auth/service';
 import type {FreshAuthority} from './authority';
 import {MistApiError} from './errors';
+import {hasScope} from '../auth/permissionService';
+import {getDefaultScopeListForRole,SYSTEM_ROLE_IDS} from '../_shared/rolePermissionMatrix';
 
 const COOKIE='bambook_mist_local';
 const SESSION_LIFETIME=7*24*60*60*1000;
@@ -60,8 +62,20 @@ export class MistLocalDatabase{
   async $disconnect(){await this.ready;await queues.get(this.directory);}
 }
 
-export const MIST_LOCAL_PROFILES=[{id:'local-operator',name:'本地操作员'},{id:'local-reviewer',name:'本地审批员'}] as const;
-export function mistLocalPublicUser(profileId:string){const profile=MIST_LOCAL_PROFILES.find(p=>p.id===profileId);if(!profile)invalid('本地工作身份不存在',401);return{id:profile.id,displayName:profile.name,email:'',roles:['owner'],roleIds:['role-super-admin'],permissions:['*'],departmentIds:[],department:'本地工作空间',globalBusinessScope:true,authorizationLoaded:true,mistLocal:true};}
+/**
+ * 本地工作身份。前两个是原有的全权限身份（兼容已有本地数据与流程）；
+ * 其余是按现有岗位矩阵取权限的测试身份，用于验证不同岗位各办各的事——不新增或放大任何权限。
+ */
+export const MIST_LOCAL_PROFILES=[
+  {id:'local-operator',name:'本地操作员'},{id:'local-reviewer',name:'本地审批员'},
+  {id:'local-sales',name:'业务员（测试）',roleId:SYSTEM_ROLE_IDS.SALES},
+  {id:'local-manager',name:'业务主管（测试审批人）',roleId:SYSTEM_ROLE_IDS.SALES_MANAGER},
+  {id:'local-finance',name:'财务（测试）',roleId:SYSTEM_ROLE_IDS.FINANCE},
+  {id:'local-qc',name:'质检（测试）',roleId:SYSTEM_ROLE_IDS.QC},
+] as const;
+export function mistLocalPublicUser(profileId:string){const profile=MIST_LOCAL_PROFILES.find(p=>p.id===profileId);if(!profile)invalid('本地工作身份不存在',401);
+  if(!('roleId' in profile))return{id:profile.id,displayName:profile.name,email:'',roles:['owner'],roleIds:['role-super-admin'],permissions:['*'],departmentIds:[],department:'本地工作空间',globalBusinessScope:true,authorizationLoaded:true,mistLocal:true};
+  return{id:profile.id,displayName:profile.name,email:'',roles:[] as string[],roleIds:[profile.roleId],permissions:getDefaultScopeListForRole(profile.roleId),departmentIds:[],department:'本地工作空间',globalBusinessScope:false,authorizationLoaded:true,mistLocal:true};}
 export type MistLocalRuntime=ReturnType<typeof createMistLocalRuntime>;
 export function createMistLocalRuntime(options:{directory?:string;host?:string;env?:NodeJS.ProcessEnv;now?:()=>number}={}){
   assertMistLocalMode(options.host??'127.0.0.1',options.env??process.env);
@@ -71,7 +85,7 @@ export function createMistLocalRuntime(options:{directory?:string;host?:string;e
   const verify=(token:unknown)=>{if(typeof token!=='string'||token.length>4096)invalid('本地会话无效，请重新进入本地工作空间',401);const parts=(token as string).split('.');if(parts.length!==2||!parts.every(p=>/^[A-Za-z0-9_-]+$/.test(p)))invalid('本地会话签名无效',401);const expected=createHmac('sha256',secret).update(parts[0]).digest('base64url');if(parts[1].length!==expected.length||!timingSafeEqual(Buffer.from(parts[1]),Buffer.from(expected)))invalid('本地会话签名无效',401);let data:any;try{data=JSON.parse(Buffer.from(parts[0],'base64url').toString('utf8'));}catch{invalid('本地会话格式无效',401);}if(data.v!==1||!Number.isSafeInteger(data.expiresAt)||data.expiresAt<=clock())invalid('本地会话已失效，请重新进入本地工作空间',401);mistLocalPublicUser(data.profileId);return data.profileId as string;};
   const actor=(profileId:string,token:string):TokenPayload=>{const user=mistLocalPublicUser(profileId);return{...user,userId:user.id,mistLocal:true,mistLocalToken:token} as unknown as TokenPayload;};
   const actorForProfile=async(profileId:string)=>{await ready;return actor(profileId,sign(profileId));};
-  const authorize:FreshAuthority=async(_db,prior,permission)=>{await ready;if(!(prior as any)?.mistLocal)invalid('本地接口不接受普通服务会话',401);const id=verify((prior as any).mistLocalToken);if(prior.userId!==id)invalid('本地身份与会话签名不符',401);if(permission&&prior.permissionCeiling&&!prior.permissionCeiling.includes('*')&&!prior.permissionCeiling.includes(permission))invalid('当前会话没有此权限',403);return actor(id,(prior as any).mistLocalToken);};
+  const authorize:FreshAuthority=async(_db,prior,permission)=>{await ready;if(!(prior as any)?.mistLocal)invalid('本地接口不接受普通服务会话',401);const id=verify((prior as any).mistLocalToken);if(prior.userId!==id)invalid('本地身份与会话签名不符',401);const current=actor(id,(prior as any).mistLocalToken);if(prior.permissionCeiling!==undefined)current.permissionCeiling=[...prior.permissionCeiling];if(permission&&!hasScope(current,permission as any))throw new MistApiError('FORBIDDEN','当前账号没有执行此操作的权限',403);return current;};
   const requestGuard=(req:Request)=>{if(req.headers['sec-fetch-site']==='cross-site')invalid('本地接口拒绝跨站请求',403);if(!isMistLoopbackHost(req.hostname))invalid('本地接口只接受本机地址',403);const remote=req.socket.remoteAddress;if(remote&&!['127.0.0.1','::1','::ffff:127.0.0.1'].includes(remote))invalid('本地接口只接受本机连接',403);if(req.headers.origin){let origin:URL;try{origin=new URL(req.headers.origin);}catch{invalid('本地请求来源无效',403);}if(!['http:','https:'].includes(origin!.protocol)||!isMistLoopbackHost(origin!.hostname))invalid('本地接口拒绝外部网站来源',403);}};
   const failure=(res:Response,error:unknown)=>{const known=error instanceof MistApiError;if(known&&error.status===401)res.clearCookie(COOKIE,{httpOnly:true,sameSite:'strict',path:'/api/mist'});res.status(known?error.status:500).json({ok:false,error:{code:known?error.code:'MIST_LOCAL_UNAVAILABLE',message:known?error.message:'本地工作空间暂不可用，请保留数据文件并重试'}});};
   const setSession=(res:Response,id:string)=>{res.cookie(COOKIE,sign(id),{httpOnly:true,sameSite:'strict',secure:false,path:'/api/mist',maxAge:SESSION_LIFETIME});res.setHeader('Cache-Control','no-store');res.json({mode:'local',user:mistLocalPublicUser(id),profiles:MIST_LOCAL_PROFILES.map(p=>({...p}))});};

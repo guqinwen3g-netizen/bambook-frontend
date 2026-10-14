@@ -1,9 +1,11 @@
 /** T6 收款核销：保留原 Mist 双栏，对账结果由共享工作空间保存。 */
+import { AccessHiddenNotice } from './AccessHiddenNotice';
+import { MIST_FINANCE_SCOPES } from '../../../../server/src/shared/mistFinancePermissions';
 import React from 'react';
 import { ArrowRight, Download, Landmark, Link2, ShieldCheck, Sparkles, Upload } from 'lucide-react';
 import { Banner, Button, Card, CardFooter, CardHeader, DataTable, Dialog, Drawer, EmptyState, Facts, Field, FormGrid, KeyValue, MistPage, Mono, PageHeader, Pill, Select, SummaryBar, Tabs, TextInput, Tile, useToast, type Column } from '../../../../components/mist';
 import type { MistCommand, MistInvoice, MistReceipt, MistAllocation } from '../../../../server/src/shared/mistWorkspace';
-import { isActiveMistInvoice } from '../../../../server/src/shared/mistWorkspace';
+import { isActiveMistInvoice, mistCommandPermission } from '../../../../server/src/shared/mistWorkspace';
 import { fmt } from '../data';
 import { useNav } from '../nav';
 import { useMistWorkspace } from '../runtime/workspace';
@@ -78,7 +80,7 @@ export function FinancePage() {
   const fileInput = React.useRef<HTMLInputElement>(null);
   const [fundingDialog,setFundingDialog]=useRouteDraft<{receiptId:string;id?:string;release?:boolean}|null>(null);
   const [funding,setFunding]=useRouteDraft({customerId:'',orderId:'',amount:'',note:''});
-  const fundingRows=state?.orderFunding?.assignments??[],canFund=session.hasPermission('finance:write');
+  const fundingRows=state?.orderFunding?.assignments??[],canFund=session.hasPermission(MIST_FINANCE_SCOPES.reconcile),canVoucher=session.hasPermission(MIST_FINANCE_SCOPES.voucher);
   const sourceOrderId=route.section?.startsWith('funding:')?route.section.slice('funding:'.length):undefined;
   const sourceOrder=state?.orders.find(order=>order.id===sourceOrderId),deposit=sourceOrder&&state?orderDepositCoverage(state,sourceOrder.id):null;
   const receipts = state?.receipts ?? [], invoices = state?.invoices ?? [], allocations = state?.allocations ?? [], payments = state?.payments ?? [];
@@ -106,7 +108,7 @@ export function FinancePage() {
   const pendingReceipts = receipts.filter(item => item.remaining > 0);
   const suggestions = pendingReceipts.filter(item => item.state === 'suggested' && (item.confidence ?? 0) >= 80 && invoices.some(invoice => isActiveMistInvoice(invoice) && invoice.id === item.suggest && invoice.currency === item.currency && invoice.open > 0&&invoice.customer.trim().toLocaleLowerCase()===item.payer.trim().toLocaleLowerCase()));
   const execute = async (command: MistCommand|OrderFundingCommand, success: (result:Record<string,unknown>) => void) => {
-    if(!canFund){setFailure('没有财务写权限，不能登记或核销资金。');return;}
+    const permission=mistCommandPermission(command);if(permission&&!session.hasPermission(permission as any)){setFailure('没有办理此项财务动作的权限。');return;}
     if (busy||operation.current) return; const bound=scope;operation.current=true;setWorking(true);setFailure('');
     try { const receipt=await run(command);if(alive.current&&activeScope.current===bound&&routeScope.isCurrent())success(receipt.result); } catch (problem) { if(alive.current&&activeScope.current===bound&&routeScope.isCurrent())setFailure(problem instanceof Error ? problem.message : '操作失败，请重试'); } finally { if(alive.current&&activeScope.current===bound){operation.current=false;setWorking(false);} }
   };
@@ -141,10 +143,11 @@ export function FinancePage() {
   };
   return <MistPage>
     <PageHeader eyebrow="财务与成本 · 财务" title="财务管理" description="票据、收付款与资金归属分别记录；不以财务状态替代业务履约。"
-      actions={<>{(area==='receivables'||area==='records')&&<>{area==='records'&&<Button icon={Upload} disabled={busy||!canFund} onClick={()=>fileInput.current?.click()}>导入流水</Button>}<Button icon={Upload} disabled={busy||!canFund} onClick={() => tab === 'pay'||area==='records' ? setPaymentOpen(true) : fileInput.current?.click()}>{tab === 'pay'||area==='records' ? '登记付款' : '导入流水'}</Button>{area==='receivables'&&<Button icon={Download} onClick={exportRows}>导出</Button>}</>}<Button disabled={busy} onClick={()=>void refresh()}>刷新</Button></>} />
-    {!canFund&&<Banner tone="neutral" title="财务只读">没有财务写权限，可查看票据与资金事实，不能导入到账、登记付款、采纳建议、核销或调整资金归属。</Banner>}
+      actions={<>{(area==='receivables'||area==='records')&&<>{area==='records'&&<Button icon={Upload} disabled={busy||!canVoucher} onClick={()=>fileInput.current?.click()}>导入流水</Button>}<Button icon={Upload} disabled={busy||!canVoucher} onClick={() => tab === 'pay'||area==='records' ? setPaymentOpen(true) : fileInput.current?.click()}>{tab === 'pay'||area==='records' ? '登记付款' : '导入流水'}</Button>{area==='receivables'&&<Button icon={Download} onClick={exportRows}>导出</Button>}</>}<Button disabled={busy} onClick={()=>void refresh()}>刷新</Button></>} />
+    <AccessHiddenNotice keys={['receivables','receipts','payments','payables','funding']} />
+    {!canFund&&!canVoucher&&<Banner tone="neutral" title="财务只读">没有财务写权限，可查看票据与资金事实，不能导入到账、登记付款、采纳建议、核销或调整资金归属。</Banner>}
     <FinanceEntrances state={state} area={area} onChange={openArea}/>
-    <input ref={fileInput} hidden type="file" accept=".csv,text/csv" aria-label="银行流水文件" disabled={!canFund||busy} onChange={async event => { const input=event.target,file=input.files?.[0];if(!file||busy||!canFund)return;const bound=scope,sequence=++fileSequence.current;setWorking(true);setFailure('');try{const rows=parseMistReceiptCsv(await fileText(file));if(alive.current&&activeScope.current===bound&&fileSequence.current===sequence&&routeScope.isCurrent()){setImportRows(rows);setFileName(file.name);}}catch(problem){if(alive.current&&activeScope.current===bound&&fileSequence.current===sequence&&routeScope.isCurrent())setFailure(problem instanceof Error?problem.message:'文件读取失败');}finally{input.value='';if(alive.current&&activeScope.current===bound&&fileSequence.current===sequence)setWorking(false);} }} />
+    <input ref={fileInput} hidden type="file" accept=".csv,text/csv" aria-label="银行流水文件" disabled={!canVoucher||busy} onChange={async event => { const input=event.target,file=input.files?.[0];if(!file||busy||!canVoucher)return;const bound=scope,sequence=++fileSequence.current;setWorking(true);setFailure('');try{const rows=parseMistReceiptCsv(await fileText(file));if(alive.current&&activeScope.current===bound&&fileSequence.current===sequence&&routeScope.isCurrent()){setImportRows(rows);setFileName(file.name);}}catch(problem){if(alive.current&&activeScope.current===bound&&fileSequence.current===sequence&&routeScope.isCurrent())setFailure(problem instanceof Error?problem.message:'文件读取失败');}finally{input.value='';if(alive.current&&activeScope.current===bound&&fileSequence.current===sequence)setWorking(false);} }} />
     {(failure || error) && <Banner tone="bad" title="操作尚未完成" actions={error ? <Button onClick={() => void refresh()}>重试</Button> : undefined}>{failure || error}</Banner>}
     {sourceOrder&&deposit&&<Banner title={'来源订单 '+sourceOrder.code} actions={<Button onClick={()=>go('orders/detail',sourceOrder.id)}>返回来源订单</Button>}>{deposit.required===null?'合同付款方式或定金比例尚未明确，不能判定定金已满足。':deposit.status==='not_required'?'当前合同付款方式不适用T/T定金门槛。':`合同定金要求 ${fmt(deposit.required,2)} ${sourceOrder.currency} · 已核实归属 ${fmt(deposit.received,2)} ${sourceOrder.currency}`}</Banner>}
     {unknownTarget&&<Banner tone="warn" title="未找到目标票据或流水" actions={<Button onClick={()=>go('payment-vouchers')}>返回财务台账</Button>}>请从当前工作空间重新选择，未自动切换到其他流水。</Banner>}
@@ -158,7 +161,7 @@ export function FinancePage() {
       { label: '逾期应收', value: fmt(cashTotal(overdueInvoices.filter(item=>item.currency===displayCurrency).map(item=>item.open)),2), unit: displayCurrency, hint: '按发票余额统计', hintTone: 'warn' }]} />
     {suggestions.length > 0 && <div className="mist-section"><Banner tone="ai" icon={Sparkles} title={`小竹匹配了 ${suggestions.length} 笔到账`} actions={<Button size="sm" variant="ai" disabled={busy||!canFund} onClick={() => void execute({ type: 'finance.acceptSuggestions', payload: { receiptIds: suggestions.map(item => item.id) } }, result => toast(`已采纳 ${Number(result.applied??0)} 条核销建议`))}>全部采纳</Button>}>依据：金额、附言和付款方匹配。每笔核销均按当前同币种余额核对。</Banner></div>}
     <Tabs<'recv' | 'pay' | 'inv'> value={tab} onChange={setTab} options={[{ value: 'recv', label: '收款核销', count: pendingReceipts.length }, { value: 'pay', label: '付款凭证', count: payments.length }, { value: 'inv', label: '发票', count: visibleInvoices.length }]} />
-    {tab === 'pay' ? <Card><DataTable density={state?.settings.density} ariaLabel="付款凭证" loading={loading} rows={payments} rowKey={item => item.id} empty={<EmptyState icon={Landmark} title="还没有付款凭证" action={<Button disabled={!canFund||busy} onClick={() => setPaymentOpen(true)}>登记付款</Button>} />} columns={[
+    {tab === 'pay' ? <Card><DataTable density={state?.settings.density} ariaLabel="付款凭证" loading={loading} rows={payments} rowKey={item => item.id} empty={<EmptyState icon={Landmark} title="还没有付款凭证" action={<Button disabled={!canVoucher||busy} onClick={() => setPaymentOpen(true)}>登记付款</Button>} />} columns={[
       { key: 'code', header: '凭证', render: item => <Mono>{item.code}</Mono> }, { key: 'date', header: '日期', render: item => item.date }, { key: 'payee', header: '收款方', render: item => item.payee },
       { key: 'amount', header: '金额', align: 'right', render: item => `${fmt(item.amount, 2)} ${item.currency}` }, { key: 'ref', header: '附言', render: item => item.ref },
     ]} /></Card> : tab === 'inv' ? <Card><DataTable density={state?.settings.density} ariaLabel="发票" loading={loading} rows={visibleInvoices} rowKey={item => item.id} onRowClick={item => setInvoiceId(item.id)} columns={[
@@ -168,7 +171,7 @@ export function FinancePage() {
       { key: 'open', header: '未收余额', width: '120px', align: 'right', sortValue: item => item.open, render: item => `${fmt(item.open, 2)} ${item.currency}` },
       { key: 'due', header: '到期日', width: '110px', render: item => item.due },
     ]} /></Card> : <div className="mist-detail" data-layout="main-rail" style={{ gridTemplateColumns: 'minmax(0,1fr) 380px' }}>
-      <Card><DataTable density={state?.settings.density} ariaLabel="到账流水" loading={loading} rows={receipts} rowKey={item => item.id} columns={columns} selectedKey={receipt?.id} onRowClick={item => setSel(item.id)} empty={<EmptyState title="还没有银行流水" action={<Button disabled={!canFund||busy} onClick={() => fileInput.current?.click()}>导入流水</Button>} />} footer={<span>{receipts.length} 笔流水</span>} /></Card>
+      <Card><DataTable density={state?.settings.density} ariaLabel="到账流水" loading={loading} rows={receipts} rowKey={item => item.id} columns={columns} selectedKey={receipt?.id} onRowClick={item => setSel(item.id)} empty={<EmptyState title="还没有银行流水" action={<Button disabled={!canVoucher||busy} onClick={() => fileInput.current?.click()}>导入流水</Button>} />} footer={<span>{receipts.length} 笔流水</span>} /></Card>
       <Card><CardHeader title="核销到发票" sub={receipt && <Mono>{receipt.code}</Mono>} tools={receiptDisplay && <Pill tone={receiptDisplay.tone}>{receiptDisplay.label}</Pill>} />
         {receipt ? <><div className="mist-card-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <Facts items={[{ label: '未分配金额', value: <span className="mist-num">{fmt(receipt.remaining, 2)} {receipt.currency}</span> }, { label: '付款方', value: receipt.payer }]} />
@@ -198,13 +201,13 @@ export function FinancePage() {
       <FormGrid>{!fundingDialog?.release&&<><Field label="归属客户" required><Select aria-label="归属客户" value={funding.customerId} options={[{value:'',label:'请选择客户'},...(state?.customers??[]).map(c=>({value:c.id,label:c.name}))]} onChange={e=>setFunding({...funding,customerId:e.target.value,orderId:''})}/></Field><Field label="归属订单"><Select aria-label="归属订单" value={funding.orderId} options={[{value:'',label:'暂不归属订单 · 客户余额'},...(state?.orders??[]).filter(o=>o.customerId===funding.customerId&&o.currency===fundingReceipt?.currency).map(o=>({value:o.id,label:o.code}))]} onChange={e=>setFunding({...funding,orderId:e.target.value})}/></Field><Field label="归属金额" required><TextInput aria-label="归属金额" type="number" min="0.01" step="0.01" value={funding.amount} onChange={e=>setFunding({...funding,amount:e.target.value})}/></Field></>}<Field label="资金归属依据" required full><TextInput aria-label="资金归属依据" value={funding.note} onChange={e=>setFunding({...funding,note:e.target.value})}/></Field></FormGrid>
     </Dialog>
     <Dialog open={importRows.length > 0} onClose={() => { if (!busy) setImportRows([]); }} title="导入银行流水" description={fileName} width={860}
-      footer={<><Button onClick={() => setImportRows([])} disabled={busy}>取消</Button><Button variant="primary" loading={busy} disabled={busy||!canFund} onClick={() => void execute({ type: 'finance.importReceipts', payload: { receipts: importRows } }, result => { setImportRows([]); toast(`银行流水已导入 ${Number(result.imported??0)} 笔${Number(result.skipped??0)?`，跳过 ${Number(result.skipped)} 笔已存在流水`:''}`); })}>确认导入 {importRows.length} 笔</Button></>}>
+      footer={<><Button onClick={() => setImportRows([])} disabled={busy}>取消</Button><Button variant="primary" loading={busy} disabled={busy||!canVoucher} onClick={() => void execute({ type: 'finance.importReceipts', payload: { receipts: importRows } }, result => { setImportRows([]); toast(`银行流水已导入 ${Number(result.imported??0)} 笔${Number(result.skipped??0)?`，跳过 ${Number(result.skipped)} 笔已存在流水`:''}`); })}>确认导入 {importRows.length} 笔</Button></>}>
       {failure && <Banner tone="bad" title="导入失败">{failure}</Banner>}{importRows.some(row=>!row.ref)&&<Banner tone="warn" title="部分流水没有银行参考号">无法据此识别跨文件重复；请核实确为独立到账后再确认导入。</Banner>}<DataTable density={state?.settings.density} rows={importRows} rowKey={item => String(importRows.indexOf(item))} columns={[{ key: 'payer', header: '付款方', render: item => item.payer }, { key: 'amount', header: '金额', render: item => `${fmt(item.amount, 2)} ${item.currency}` }, { key: 'date', header: '日期', render: item => item.date }, { key: 'ref', header: '附言', render: item => item.ref }]} />
     </Dialog>
     <Dialog open={!!previewInvoice} onClose={() => {setInvoiceId(null);if(route.id){const {id,view,...target}=route;go(view,undefined,target);}}} title={previewInvoice?.code ?? '发票'} footer={previewInvoice && <Button onClick={() => go('orders/detail', previewInvoice.orderId)}>打开关联订单</Button>}>
       {previewInvoice && <KeyValue items={[{ label: '客户', value: previewInvoice.customer }, { label: '订单', value: previewInvoice.order, mono: true }, { label: '票面金额', value: `${fmt(previewInvoice.amount, 2)} ${previewInvoice.currency}` }, { label: '未收余额', value: `${fmt(previewInvoice.open, 2)} ${previewInvoice.currency}` }, { label: '到期日', value: previewInvoice.due }, ...(previewInvoice.voidedAt?[{label:'状态',value:'已作废'},{label:'作废时间',value:previewInvoice.voidedAt},{label:'作废依据',value:previewInvoice.voidReason||'未记录'}]:[])]} />}
     </Dialog>
-    <Drawer open={paymentOpen} onClose={() => { if (!busy) setPaymentOpen(false); }} title="登记付款凭证" footer={<Button variant="primary" loading={busy} disabled={busy||!canFund} onClick={() => {
+    <Drawer open={paymentOpen} onClose={() => { if (!busy) setPaymentOpen(false); }} title="登记付款凭证" footer={<Button variant="primary" loading={busy} disabled={busy||!canVoucher} onClick={() => {
       if (!payment.date || !payment.payee.trim() || !Number.isFinite(Number(payment.amount)) || Number(payment.amount) <= 0) { setFailure('请填写付款日期、收款方和大于零的金额。'); return; }
       void execute({ type: 'finance.payment.save', payload: { ...payment, amount: Number(payment.amount) } }, () => { setPaymentOpen(false); setPayment(value => ({ ...value, payee: '', amount: '', ref: '' })); toast('付款凭证已保存'); });
     }}>保存付款</Button>}>

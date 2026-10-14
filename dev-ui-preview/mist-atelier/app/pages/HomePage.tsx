@@ -27,6 +27,9 @@ export function HomePage() {
   const [taskDialog, setTaskDialog] = React.useState(false), [selectedTask, setSelectedTask] = React.useState(''), [taskDone, setTaskDone] = React.useState(false);
   const [reportVersion, setReportVersion] = React.useState<string | null>(null), [error, setError] = React.useState('');
   const [statView,setStatView]=React.useState<'development'|'qc'|'shipping'|'invoices'|null>(null);
+  const hidden = new Set(workspace.workspace?.access?.hidden?.map(section => section.key) ?? []);
+  const hiddenStats = { development: hidden.has('products'), qc: hidden.has('products') || hidden.has('qc'), shipping: hidden.has('shipments'), invoices: hidden.has('receivables') };
+  React.useEffect(() => { if (statView && hiddenStats[statView]) setStatView(null); }, [statView, hiddenStats.development, hiddenStats.qc, hiddenStats.shipping, hiddenStats.invoices]);
   const scope = `${session.sessionKey}:${workspace.workspace?.id ?? ''}`, activeScope = React.useRef(scope); activeScope.current = scope;
   const alive=React.useRef(true);React.useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
   const busy = loading || saving || !!pending, operation = React.useRef(false);
@@ -74,16 +77,16 @@ export function HomePage() {
   return (
     <MistPage>
       <PageHeader variant="greeting" eyebrow={`${dateLabel} · ${workspace.workspace?.name ?? '工作空间'}`} title={<>{greeting}，<em>{state?.settings.profileName?.trim() || session.user?.displayName || '同事'}</em></>}
-        description={!state ? (loading ? '正在读取你的工作空间…' : '工作空间尚未读取成功，请重试。') : `当前有 ${allTasks.length} 件事等你推进，其中 ${allTasks.filter(task => task.due === today).length} 件今天到期。`}
+        description={!state ? (loading ? '正在读取你的工作空间…' : '工作空间尚未读取成功，请重试。') : `${hidden.size ? '当前可见' : '当前有'} ${allTasks.length} 件事等你推进，其中 ${allTasks.filter(task => task.due === today).length} 件今天到期。`}
         actions={<><Segmented<'today' | 'week'> ariaLabel="时间范围" value={range} onChange={setRange} options={[{ value: 'today', label: '今天' }, { value: 'week', label: '本周' }]} />
           <Button variant="primary" icon={Plus} disabled={busy || !state || !session.hasPermission('products:write')} onClick={() => go('development/new')}>新建</Button></>} />
       {(error || workspace.error) && <Banner tone="bad" title={error || workspace.error} actions={<Button size="sm" icon={RefreshCw} onClick={() => { setError(''); void workspace.refresh(); }}>重新读取</Button>} />}
       {pending && !saving && <Banner tone="warn" title="上一次操作结果待核对" actions={<Button size="sm" disabled={saving} onClick={() => void workspace.recover().catch(problem=>setError(problem instanceof Error?problem.message:'原请求核对失败'))}>核对原请求</Button>}>核对完成前，暂停提交新的操作。</Banner>}
       <StatGrid>
-        <StatCard icon={Layers} label="在途开发案" value={state ? activeDevs.length : '—'} unit="个" foot="当前工作区的进行中开发" onClick={() => setStatView('development')} />
-        <StatCard icon={BadgeCheck} label="待 QC 评审" value={state ? qcTasks.length+qcVersions.length : '—'} unit="项" foot="待专业评审的任务与返样" onClick={() => setStatView('qc')} />
-        <StatCard icon={Ship} label="本周出运" value={state ? weekShipments.length : '—'} unit="票" foot="按实际出运请求与记录" onClick={() => setStatView('shipping')} />
-        <StatCard icon={Wallet} label="应收待核销" value={state ? money(mainCurrency?.[1] ?? 0) : '—'} unit={mainCurrency?.[0] ?? ''} foot={currencies.length > 1 ? currencies.filter(([currency]) => currency !== mainCurrency?.[0]).map(([currency, value]) => `${currency} ${money(value)}`).join(' · ') : (state ? `${state.invoices.filter(item => item.open > 0).length} 张未结发票` : '等待工作区数据')} onClick={() => setStatView('invoices')} />
+        <StatCard icon={Layers} label="在途开发案" value={hiddenStats.development ? '已隐藏' : state ? activeDevs.length : '—'} unit={hiddenStats.development ? undefined : '个'} foot={hiddenStats.development ? '无查看权限，不代表没有开发案' : '当前工作区的进行中开发'} onClick={hiddenStats.development ? undefined : () => setStatView('development')} />
+        <StatCard icon={BadgeCheck} label="待 QC 评审" value={hiddenStats.qc ? '已隐藏' : state ? qcTasks.length+qcVersions.length : '—'} unit={hiddenStats.qc ? undefined : '项'} foot={hiddenStats.qc ? '部分来源不可见，不能统计完整数量' : '待专业评审的任务与返样'} onClick={hiddenStats.qc ? undefined : () => setStatView('qc')} />
+        <StatCard icon={Ship} label="本周出运" value={hiddenStats.shipping ? '已隐藏' : state ? weekShipments.length : '—'} unit={hiddenStats.shipping ? undefined : '票'} foot={hiddenStats.shipping ? '无查看权限，不代表没有出运' : '按实际出运请求与记录'} onClick={hiddenStats.shipping ? undefined : () => setStatView('shipping')} />
+        <StatCard icon={Wallet} label="应收待核销" value={hiddenStats.invoices ? '已隐藏' : state ? money(mainCurrency?.[1] ?? 0) : '—'} unit={hiddenStats.invoices ? undefined : mainCurrency?.[0] ?? ''} foot={hiddenStats.invoices ? '无查看权限，不代表应收为零' : currencies.length > 1 ? currencies.filter(([currency]) => currency !== mainCurrency?.[0]).map(([currency, value]) => `${currency} ${money(value)}`).join(' · ') : (state ? `${state.invoices.filter(item => item.open > 0).length} 张未结发票` : '等待工作区数据')} onClick={hiddenStats.invoices ? undefined : () => setStatView('invoices')} />
       </StatGrid>
       <section className="mist-grid">
         <HeroFocus className="mist-col-8" meta={focus ? [<span className="mist-mono">{dev?.code ?? focus.target.id}</span>, dev?.customer ?? focus.kind] : []} media={dev ? { src: IMG[dev.img], alt: dev.name } : undefined}
@@ -108,7 +111,7 @@ export function HomePage() {
       <Dialog open={!!reportVersion} onClose={() => setReportVersion(null)} title={report?.qc?.report || 'QC 评审'}>
         {report?.qc ? <KeyValue items={[{ label: '版本', value: report.label }, { label: '评审人', value: report.qc.reviewer }, { label: '结论', value: ({ pass: '通过', conditional: '有保留通过', reject: '不通过' })[report.qc.result] }, { label: '评审时间', value: report.qc.reviewedAt }, { label: '意见', value: report.qc.opinion }]} /> : <EmptyState compact title="此版本没有可读取的评审记录" />}
       </Dialog>
-      <Dialog open={!!statView} onClose={()=>setStatView(null)} title={statView?statTitles[statView]:'统计明细'}>
+      <Dialog open={!!statView && !hiddenStats[statView]} onClose={()=>setStatView(null)} title={statView?statTitles[statView]:'统计明细'}>
         {statRows.length?statRows.map(row=><Button key={row.id} block onClick={()=>{setStatView(null);openTarget(row.target);}}>{row.label} · {row.detail}</Button>):<EmptyState compact title="当前范围没有记录"/>}
       </Dialog>
     </MistPage>

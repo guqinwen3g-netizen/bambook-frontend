@@ -5,7 +5,7 @@ import { fail } from './errors';
 export const MIST_FILE_MAX_BYTES = 50 * 1024 * 1024;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export type MistFileInput = { bytes: Buffer; name: string; mimeType: string };
-export type MistStoredFile = { id: string; name: string; mimeType: string; size: number; storageKey: string; createdAt: string };
+export type MistStoredFile = { id: string; name: string; mimeType: string; size: number; storageKey: string; createdAt: string; uploadedBy?: string };
 export function validateFileInput(input: MistFileInput) {
   if (!Buffer.isBuffer(input.bytes) || input.bytes.length < 1 || input.bytes.length > MIST_FILE_MAX_BYTES) fail('INVALID_FILE', '请上传一个不超过50MiB的实际文件', 400);
   const name = path.basename(input.name.replace(/\\/g, '/')).replace(/[\u0000-\u001f\u007f]/g, '').trim();

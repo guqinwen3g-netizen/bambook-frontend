@@ -5,6 +5,7 @@ import { Banner, Button, Card, ChoiceCards, Dialog, Field, FormGrid, FormSection
 import type { MistSettings } from '../../../../server/src/shared/mistWorkspace';
 import { useMistSession } from '../runtime/auth';
 import { useMistWorkspace } from '../runtime/workspace';
+import { WorkspaceMembers } from './WorkspaceMembers';
 
 type TextKey = 'workspaceName' | 'profileName' | 'profileEmail' | 'locale';
 type TextValues = Pick<MistSettings, TextKey>;
@@ -33,7 +34,10 @@ export function SettingsPage() {
   }, [state?.settings, scope]);
   const settings = state?.settings;
   const values = draft?.scope === scope ? draft.values : settings;
+  const member = workspace.workspace?.access?.role === 'member';
   const busy = loading || saving || !!pending || !!workspace.pendingCreate || lifecycleBusy;
+  /** 空间设置写入整个共享空间，只有所有者可改；服务端同样拒绝成员修改。 */
+  const settingsLocked = busy || member;
   React.useEffect(()=>{if(sec==='security'&&workspace.refreshArchived&&!loading){const bound=scope;void workspace.refreshArchived().catch(failure=>{if(mounted.current&&activeScope.current===bound)setError(failure instanceof Error?failure.message:'回收站读取失败');});}},[sec,scope,workspace.refreshArchived,loading]);
   const confirmLifecycle=async()=>{if(!lifecycle||busy||lifecycleLock.current)return;lifecycleLock.current=true;setLifecycleBusy(true);setError('');const bound=scope;try{if(lifecycle.action==='archive')await workspace.archiveWorkspace!();else await workspace.restoreWorkspace!(lifecycle.id!);if(mounted.current&&activeScope.current===bound)setLifecycle(null);}catch(failure){if(mounted.current&&activeScope.current===bound)setError(failure instanceof Error?failure.message:'工作空间操作未完成');}finally{if(mounted.current&&activeScope.current===bound){lifecycleLock.current=false;setLifecycleBusy(false);}}};
   const edit = (key: TextKey, value: string) => {
@@ -76,25 +80,27 @@ export function SettingsPage() {
           { id: 'workspace', label: '工作空间', icon: Building2 }, { id: 'account', label: '账号', icon: User }, { id: 'security', label: '安全', icon: Shield }]} />
         <Card>
           {!settings || !values ? <FormSection title="正在读取设置"><Skeleton height={120} /></FormSection> : <>
+          {member && sec !== 'workspace' && sec !== 'security' && <Banner tone="neutral" title="空间设置由所有者维护">你是被授权成员，这些设置作用于整个空间，只能查看，不能修改。</Banner>}
           {sec === 'appearance' && <FormSection title="外观" description="浅色 = 雾蓝 Light Mist，深色 = 深夜 Deep Night。">
-            <ChoiceCards<MistSettings['theme']> ariaLabel="主题" disabled={busy} value={settings.theme} onChange={value => void save({ theme: value })} options={[{ value: 'light', title: '浅色', description: '雾蓝渐变', icon: Sun }, { value: 'dark', title: '深色', description: '深夜蓝渐变', icon: Moon }, { value: 'system', title: '跟随系统', description: '自动切换', icon: Laptop }]} />
+            <ChoiceCards<MistSettings['theme']> ariaLabel="主题" disabled={settingsLocked} value={settings.theme} onChange={value => void save({ theme: value })} options={[{ value: 'light', title: '浅色', description: '雾蓝渐变', icon: Sun }, { value: 'dark', title: '深色', description: '深夜蓝渐变', icon: Moon }, { value: 'system', title: '跟随系统', description: '自动切换', icon: Laptop }]} />
             <div style={{ marginTop: 18 }}>
-              <SettingRow title="列表密度" description="影响工作区数据表的行高" control={<Select aria-label="列表密度" disabled={busy} value={settings.density} onChange={event => void save({ density: event.target.value as MistSettings['density'] })} options={[{ value: 'compact', label: '紧凑' }, { value: 'default', label: '标准' }, { value: 'comfy', label: '宽松' }]} />} />
-              <SettingRow title="减少动效" description="保存减少动效偏好" control={<Switch ariaLabel="减少动效" checked={settings.reducedMotion} disabled={busy} onChange={value => void save({ reducedMotion: value })} />} />
+              <SettingRow title="列表密度" description="影响工作区数据表的行高" control={<Select aria-label="列表密度" disabled={settingsLocked} value={settings.density} onChange={event => void save({ density: event.target.value as MistSettings['density'] })} options={[{ value: 'compact', label: '紧凑' }, { value: 'default', label: '标准' }, { value: 'comfy', label: '宽松' }]} />} />
+              <SettingRow title="减少动效" description="保存减少动效偏好" control={<Switch ariaLabel="减少动效" checked={settings.reducedMotion} disabled={settingsLocked} onChange={value => void save({ reducedMotion: value })} />} />
             </div>
           </FormSection>}
           {sec === 'notify' && <FormSection title="通知" description="保存工作区通知偏好。">
-            <SettingRow title="QC 报告回传" description="显示开发案新评审结论的站内提醒" control={<Switch ariaLabel="QC 报告回传" checked={settings.notifications.qc} disabled={busy} onChange={value => notify('qc', value)} />} />
-            <SettingRow title="出运准备提醒" description="显示交期与出运准备事项的站内提醒" control={<Switch ariaLabel="出运准备提醒" checked={settings.notifications.shipping} disabled={busy} onChange={value => notify('shipping', value)} />} />
-            <SettingRow title="小竹主动建议" description="保存主动建议的通知偏好" control={<Switch ariaLabel="小竹主动建议" checked={settings.notifications.suggestions} disabled={busy} onChange={value => notify('suggestions', value)} />} />
-            <SettingRow title="站内每日摘要" description="在工作区显示每日摘要，不发送邮件" control={<Switch ariaLabel="站内每日摘要" checked={settings.notifications.digest} disabled={busy} onChange={value => notify('digest', value)} />} />
+            <SettingRow title="QC 报告回传" description="显示开发案新评审结论的站内提醒" control={<Switch ariaLabel="QC 报告回传" checked={settings.notifications.qc} disabled={settingsLocked} onChange={value => notify('qc', value)} />} />
+            <SettingRow title="出运准备提醒" description="显示交期与出运准备事项的站内提醒" control={<Switch ariaLabel="出运准备提醒" checked={settings.notifications.shipping} disabled={settingsLocked} onChange={value => notify('shipping', value)} />} />
+            <SettingRow title="小竹主动建议" description="保存主动建议的通知偏好" control={<Switch ariaLabel="小竹主动建议" checked={settings.notifications.suggestions} disabled={settingsLocked} onChange={value => notify('suggestions', value)} />} />
+            <SettingRow title="站内每日摘要" description="在工作区显示每日摘要，不发送邮件" control={<Switch ariaLabel="站内每日摘要" checked={settings.notifications.digest} disabled={settingsLocked} onChange={value => notify('digest', value)} />} />
           </FormSection>}
-          {sec === 'workspace' && <FormSection title="工作空间" description={`${workspace.workspace?.name ?? settings.workspaceName} · 当前账号的独立工作区`}>
-            <FormGrid><Field label="名称"><TextInput aria-label="工作空间名称" value={values.workspaceName} disabled={busy} onChange={event => edit('workspaceName', event.target.value)} onBlur={() => saveField('workspaceName')} /></Field><Field label="默认币种" hint="用于新建资料；客户与来源单据的币种优先"><Select aria-label="默认币种" disabled={busy} value={settings.companyProfile?.defaultCurrency||'USD'} options={[...new Set(['USD','EUR','CNY','GBP','HKD',settings.companyProfile?.defaultCurrency||'USD'])]} onChange={event=>saveCurrency(event.target.value)} /></Field>
+          {sec === 'workspace' && <FormSection title="工作空间" description={`${workspace.workspace?.name ?? settings.workspaceName} · ${member ? '你被授权进入的空间，设置由所有者维护' : '当前账号的工作空间'}`}>
+            <FormGrid><Field label="名称"><TextInput aria-label="工作空间名称" value={values.workspaceName} disabled={settingsLocked} onChange={event => edit('workspaceName', event.target.value)} onBlur={() => saveField('workspaceName')} /></Field><Field label="默认币种" hint="用于新建资料；客户与来源单据的币种优先"><Select aria-label="默认币种" disabled={settingsLocked} value={settings.companyProfile?.defaultCurrency||'USD'} options={[...new Set(['USD','EUR','CNY','GBP','HKD',settings.companyProfile?.defaultCurrency||'USD'])]} onChange={event=>saveCurrency(event.target.value)} /></Field>
               <Field label="时区" hint="当前设备时区，只读"><Select disabled options={[Intl.DateTimeFormat().resolvedOptions().timeZone]} /></Field><Field label="单号前缀" hint="由业务命令生成"><TextInput value="自动生成" disabled className="mist-mono" /></Field></FormGrid>
           </FormSection>}
-          {sec === 'account' && <FormSection title="账号" description="工作区显示资料，不改变登录账号、邮箱或密码。"><FormGrid><Field label="姓名"><TextInput aria-label="显示姓名" value={values.profileName} disabled={busy} onChange={event => edit('profileName', event.target.value)} onBlur={() => saveField('profileName')} /></Field><Field label="邮箱"><TextInput aria-label="显示邮箱" type="email" value={values.profileEmail} disabled={busy} onChange={event => edit('profileEmail', event.target.value)} onBlur={() => saveField('profileEmail')} /></Field>
-            <Field label="语言偏好" hint="保存偏好，不改变当前页面文案"><Select aria-label="工作区语言" disabled={busy} value={values.locale} onChange={event => { edit('locale', event.target.value); void save({ locale: event.target.value }); }} options={[{ value: 'zh-CN', label: '简体中文' }, { value: 'en-US', label: 'English' }]} /></Field></FormGrid></FormSection>}
+          {sec === 'workspace' && <WorkspaceMembers busy={busy} />}
+          {sec === 'account' && <FormSection title="账号" description="工作区显示资料，不改变登录账号、邮箱或密码。"><FormGrid><Field label="姓名"><TextInput aria-label="显示姓名" value={values.profileName} disabled={settingsLocked} onChange={event => edit('profileName', event.target.value)} onBlur={() => saveField('profileName')} /></Field><Field label="邮箱"><TextInput aria-label="显示邮箱" type="email" value={values.profileEmail} disabled={settingsLocked} onChange={event => edit('profileEmail', event.target.value)} onBlur={() => saveField('profileEmail')} /></Field>
+            <Field label="语言偏好" hint="保存偏好，不改变当前页面文案"><Select aria-label="工作区语言" disabled={settingsLocked} value={values.locale} onChange={event => { edit('locale', event.target.value); void save({ locale: event.target.value }); }} options={[{ value: 'zh-CN', label: '简体中文' }, { value: 'en-US', label: 'English' }]} /></Field></FormGrid></FormSection>}
           {sec === 'security' && <FormSection title="安全">
             <SettingRow title="两步验证" description={session.localMode?'本地工作身份不使用密码，两步验证不适用':'当前工作区尚未接入认证 MFA 设置'} control={<Switch ariaLabel="两步验证" checked={false} disabled onChange={() => undefined} />} />
             <SettingRow title="退出所有设备" description={session.localMode?'本地身份由本机服务提供，设备会话管理不适用':'暂未提供批量撤销认证会话的接口'} control={<Button size="sm" disabled>{session.localMode?'不适用':'未接入'}</Button>} />
