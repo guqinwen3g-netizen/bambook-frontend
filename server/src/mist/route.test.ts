@@ -26,6 +26,7 @@ describe('Mist workspace HTTP contracts', () => {
     await request(app).post('/api/mist/workspaces/foreign/quotation-cost-advisor').send({}).expect(401);
     const workspace=(await request(app).get('/api/mist/workspaces/default').set('x-test-user','owner').expect(200)).body.workspace;
     await request(app).post(`/api/mist/workspaces/${workspace.id}/quotation-cost-advisor`).set('x-test-user','other').send({}).expect(403);
+    auth.users.get('owner')!.permissions.push('ai:chat','quotations:read');
     await request(app).post(`/api/mist/workspaces/${workspace.id}/quotation-cost-advisor`).set('x-test-user','owner').send({ownerId:'owner',actor:{userId:'owner'}}).expect(400);
     const after=(await request(app).get(`/api/mist/workspaces/${workspace.id}`).set('x-test-user','owner').expect(200)).body.workspace;expect(after).toEqual(workspace);
   });
