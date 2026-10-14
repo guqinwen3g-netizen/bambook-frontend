@@ -38,7 +38,7 @@ describe('关系智库', () => {
     await mount();
     const rows = [...host.querySelectorAll<HTMLElement>('[role="row"][tabindex]')];
     expect(rows[0].textContent).toContain('已冻结');
-    expect(host.textContent).toMatch(/客户\s*4/); expect(host.textContent).toMatch(/供应商\s*6/);
+    expect(host.textContent).toMatch(/客户\s*5/); expect(host.textContent).toMatch(/供应商\s*6/);
   });
   it('冻结的客户：显示原因与影响，只能解冻；有在手业务时不能归档', async () => {
     const lune = state.market.relations.find(r => r.hold)!;

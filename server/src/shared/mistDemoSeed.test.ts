@@ -25,6 +25,7 @@ describe('演示工作区数据', () => {
     expect(new Set(state.orders.map(o => o.state)).size).toBeGreaterThan(2);
     expect(m.quotations.some(q => q.status === 'Accepted') && m.quotations.some(q => q.status === 'Draft')).toBe(true);
     expect(f.shipments[0].state).toBe('departed');
+    expect(m.leads.some(l => l.source === 'show' && l.status === 'Converted' && l.opportunityId) && m.seasons.some(x => x.status === 'Closed' && x.review) && m.trends.length >= 3).toBe(true);
     expect(m.relations.some(r => r.customerId && r.supplierId) && m.relations.some(r => r.hold)).toBe(true);
     expect(m.suppliers.some(x => x.status === 'paused') && m.suppliers.some(x => x.certificates?.some(c => c.validUntil < '2026-10-14')) && m.suppliers.filter(x => x.ratings?.length).length).toBeTruthy();
   });

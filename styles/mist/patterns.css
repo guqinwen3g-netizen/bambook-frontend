@@ -529,3 +529,23 @@
   .mist-product-chain { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 .mist-quote-line:not(:last-child) { border-bottom: 1px solid var(--mist-line); }
+
+/* Season timeline (seasons workbench) */
+.mist-season-timeline { display: flex; flex-direction: column; gap: var(--mist-space-2); }
+.mist-season-axis { position: relative; height: 22px; margin-left: 132px; color: var(--mist-ink-3); font-size: var(--mist-text-2xs); }
+.mist-season-axis > span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
+.mist-season-axis .mist-season-today { top: 14px; bottom: auto; height: 8px; }
+.mist-season-axis .mist-season-today b { position: absolute; top: -14px; left: 4px; font-weight: var(--mist-fw-medium); color: var(--mist-accent); white-space: nowrap; }
+.mist-season-row { display: grid; grid-template-columns: 124px 1fr; gap: 8px; align-items: center; padding: 6px 0; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; border-radius: var(--mist-r-sm); }
+.mist-season-row:not(:last-child) { border-bottom: 1px solid var(--mist-line); }
+.mist-season-row:hover { background: var(--mist-fill); }
+.mist-season-row[aria-pressed="true"] { background: var(--mist-accent-tint); }
+.mist-season-row:focus-visible { outline: 2px solid var(--mist-focus); outline-offset: 1px; }
+.mist-season-label { display: flex; flex-direction: column; gap: 2px; padding-left: 6px; }
+.mist-season-track { position: relative; height: 18px; background: var(--mist-fill); border-radius: var(--mist-r-pill); }
+.mist-season-bar { position: absolute; top: 3px; bottom: 3px; border-radius: var(--mist-r-pill); background: var(--mist-accent); opacity: .75; }
+.mist-season-bar[data-status="Planning"] { background: var(--mist-ink-4); }
+.mist-season-bar[data-status="Closed"] { background: var(--mist-ink-3); opacity: .45; }
+.mist-season-dot { position: absolute; top: 50%; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: var(--mist-card); box-shadow: 0 0 0 2px var(--mist-accent-ink); }
+.mist-season-dot[data-done] { background: var(--mist-accent-ink); }
+.mist-season-today { position: absolute; top: -2px; bottom: -2px; width: 2px; margin-left: -1px; background: var(--mist-warn); border-radius: 1px; }

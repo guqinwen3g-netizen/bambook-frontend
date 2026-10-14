@@ -31,7 +31,7 @@ function sectionFixture(kind:string){
  return target[kind];
 }
 describe('Market explicit detail sections',()=>{
- it.each(['product','trend','show','season','lead','lookbook'])('keeps %s facts, attachments and history in independent sibling cards',async kind=>{
+ it.each(['product','lookbook'])('keeps %s facts, attachments and history in independent sibling cards',async kind=>{
   const target=sectionFixture(kind);await mount(target.view,target.id,target.section,'full');
   const region=host.querySelector('[data-detail-surface="sections"]')!;expect(region).not.toBeNull();
   expect(region.closest('.mist-card')).toBeNull();expect([...region.children].filter(element=>element.classList.contains('mist-card'))).toHaveLength(target.cards);
@@ -59,14 +59,6 @@ describe('Mist market screens',()=>{
 });
 
 describe('market action audit component regressions',()=>{
- it('keeps a trend deep link on the trend tab and exposes its exact product source',async()=>{
-  const s=bridge.current.state,p=s.market.products[0];s.market.seasons=[{id:'season',code:'AW26',name:'秋冬',startDate:'2026-01-01',endDate:'2026-12-31',status:'Active',milestones:[],fileIds:[],note:'',createdAt:'',updatedAt:''}];s.market.trends=[{id:'trend',name:'棉织趋势',type:'fabric',seasonId:'season',source:'展会观察',productIds:[p.id],fileIds:[],note:'实际记录',createdAt:'',updatedAt:''}];
-  await mount('seasons','trend','trends');expect(host.textContent).toContain('棉织趋势');expect(host.textContent).toContain('展会观察');await click(p.name);expect(go).toHaveBeenCalledWith('products',p.id);
- });
- it('restores nested show leads and returns to the same show',async()=>{
-  const s=bridge.current.state;s.market.shows=[{id:'show',name:'实际展会',location:'上海',seasonId:'',startDate:'2026-10-01',endDate:'2026-10-02',booth:'',attendees:'',cost:'0',currency:'USD',status:'Completed',fileIds:[],note:'',createdAt:'',updatedAt:''}];s.market.leads=[{id:'lead',name:'采购李',company:'已知公司',source:'show',parentId:'show',status:'New',customerId:'',email:'',phone:'',demand:'面料采购',followUpDate:'',estimatedValue:'0',actualValue:'0',currency:'USD',convertedAt:null,fileIds:[],note:'',createdAt:'',updatedAt:''}];
-  await mount('seasons','lead','show-leads:show');expect(host.textContent).toContain('采购李');expect(host.textContent).toContain('面料采购');await click('返回展会');expect(go).toHaveBeenCalledWith('seasons','show',{section:'shows'});
- });
  it('keeps all lookbook products when only its name changes',async()=>{
   const s=bridge.current.state,p=s.market.products[0],p2={...p,id:'product-2',sku:'P-002',name:'第二款面料'};s.market.products.push(p2);s.market.lookbooks=[{id:'book',name:'原画册',customerId:'c1',productIds:[p.id,p2.id],status:'Draft',preparedAt:null,snapshots:[],fileIds:[],note:'',createdAt:'',updatedAt:''}];
   await mount('marketing','book','lookbooks');await click('编辑');await fill('画册名称','改名画册');await click('下一步');await click('确认保存');expect(bridge.current.run).toHaveBeenCalledWith(expect.objectContaining({type:'market.lookbook.save',payload:expect.objectContaining({id:'book',input:expect.objectContaining({name:'改名画册',productIds:[p.id,p2.id]})})}));

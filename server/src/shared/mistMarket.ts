@@ -26,7 +26,7 @@ export type MarketSeason = RecordBase & { code:string; name:string; startDate:st
 export type MarketTrend = RecordBase & { name:string; type:'fabric'|'color'|'craft'|'composition'; seasonId:string; source:string; productIds:string[] };
 export type MarketShow = RecordBase & { name:string; location:string; seasonId:string; startDate:string; endDate:string; booth:string; attendees:string; cost:string; currency:string; status:'Planned'|'Ongoing'|'Completed'|'Cancelled' };
 export type MarketCampaign = RecordBase & { code:string; name:string; type:string; seasonId:string; showId:string; startDate:string; endDate:string; target:string; budget:string; actualCost:string; currency:string; status:'Draft'|'Active'|'Paused'|'Completed'|'Cancelled'; owner:string; productIds:string[] };
-export type MarketLead = RecordBase & { name:string; company:string; email:string; phone:string; demand:string; source:'campaign'|'show'; parentId:string; customerId:string; status:'New'|'Contacted'|'Qualified'|'Following'|'Converted'|'Lost'; followUpDate:string; estimatedValue:string; actualValue:string; currency:string; convertedAt:string|null };
+export type MarketLead = RecordBase & { name:string; company:string; email:string; phone:string; demand:string; source:'campaign'|'show'; parentId:string; customerId:string; status:'New'|'Contacted'|'Qualified'|'Following'|'Converted'|'Lost'; followUpDate:string; estimatedValue:string; actualValue:string; currency:string; convertedAt:string|null; opportunityId?:string };
 export type MarketQuoteLine = { id:string; productId:string; sourceDevId:string; sourceVersionId:string; name:string; style:string; specification:string; qty:string; unit:string; price:string; cost:string; amount:string; costBasis?:'product'|'unverified' };
 export type MarketQuoteApproval = { id:string; requesterId:string; reviewerId:string; status:'pending'|'approved'|'rejected'; submittedAt:string; decidedAt?:string; note?:string; details:Array<{label:string;value:string}>; fileIds:string[] };
 export type MarketQuotation = RecordBase & { code:string; customerId:string; currency:string; season:string; validUntil:string; deliveryTerms:string; paymentTerms:string; status:'Draft'|'Sent'|'Accepted'|'Rejected'|'Expired'; lines:MarketQuoteLine[]; total:string; deliveryEvidence:string; responseEvidence:string; approval:MarketQuoteApproval|null; approvalHistory?:MarketQuoteApproval[]; requiresApproval?:boolean; convertedOrderId:string|null; /** 版本链：V1 无 previousId；新版本不覆盖旧版本。 */ revision?:number; rootId?:string; previousId?:string };
@@ -61,6 +61,7 @@ export type MarketCommand =
  | {type:'market.campaign.status';payload:{id:string;status:MarketCampaign['status']}}
  | {type:'market.lead.save';payload:{id?:string;input:Omit<Input<MarketLead>,'convertedAt'>}}
  | {type:'market.lead.transition';payload:{id:string;status:MarketLead['status'];customerId?:string;actualValue?:string;note:string}}
+ | {type:'market.lead.convertToCrm';payload:{id:string;customerId?:string;opportunity?:{title:string;domain:'garment'|'fabric';amount:string;currency:string;expectedDate:string}|null}}
  | {type:'market.quotation.save';payload:{id?:string;input:Omit<Input<MarketQuotation>,'code'|'total'|'deliveryEvidence'|'responseEvidence'|'approval'|'convertedOrderId'|'lines'|'revision'|'rootId'|'previousId'>&{lines:Array<Omit<MarketQuoteLine,'id'|'amount'>>;/** 仅新建时：基于此报价建立新版本（续期或改价）。 */previousId?:string}}}
  | {type:'market.quotation.submit';payload:{id:string}}
  | {type:'market.quotation.decide';payload:{id:string;decision:'approved'|'rejected';note:string}}
@@ -71,7 +72,7 @@ export type MarketCommand =
 
 export function createMarketState(_context:MistContext,_rootState:Partial<MistState>):MarketState { return {products:[],suppliers:[],relations:[],seasons:[],trends:[],shows:[],campaigns:[],leads:[],quotations:[],lookbooks:[]}; }
 export function marketCommandPermission(command:MarketCommand):string|null {
- if(command.type.startsWith('market.customer.')||command.type==='market.contact.delete')return 'relations:write';
+ if(command.type.startsWith('market.customer.')||command.type==='market.contact.delete'||command.type==='market.lead.convertToCrm')return 'relations:write';
  if(command.type==='market.attachment.set'){const scopes:Record<string,string>={product:'products',supplier:'suppliers',relation:'relations',season:'seasons',trend:'seasons',show:'seasons',campaign:'marketing',lead:'marketing',showLead:'seasons',quotation:'quotations',lookbook:'marketing'};const scope=scopes[command.payload.kind];if(!scope)throw new MistCommandError('VALIDATION','附件对象类型无效');return scope+':write';}
  if(command.type==='market.quotation.decide')return 'approvals:write';
  if(command.type==='market.quotation.convert')return 'orders:write';

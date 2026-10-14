@@ -353,6 +353,7 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
   if(command.type.startsWith('order.governance.')){const result=applyOrderGovernanceCommand(state,command as OrderGovernanceCommand,context);recalculate(state);assertOrderFundingIntegrity(state);return {state,result};}
   if(command.type.startsWith('funding.')){const result=applyOrderFundingCommand(state,command as OrderFundingCommand,context);recalculate(state);return {state,result};}
   if(command.type.startsWith('fulfillment.')){const result=applyFulfillmentCommand(state,command as FulfillmentCommand,context);normalizeMistState(state,context);recalculate(state);return {state,result};}
+  if(command.type==='market.lead.convertToCrm'){const result=convertLeadToCrm(state,command.payload as Extract<MarketCommand,{type:'market.lead.convertToCrm'}>['payload'],context);recalculate(state);return {state,result};}
   if(command.type.startsWith('market.')){const result=applyMarketCommand(state,command as MarketCommand,context);for(const order of state.orders)if(!original.orders.some(old=>old.id===order.id)&&!order.governance){order.governance=createOrderGovernance(context);order.state='订单草稿';order.tone='neutral';order.checklist=['拟发范围确认','收货与贸易条款确认','收款条件核对'].map((label,index)=>({id:order.id+'-check-'+index,label,done:false,note:''}));}normalizeMistState(state,context);recalculate(state);return {state,result};}
   if(command.type.startsWith('platform.')){const result=applyPlatformCommand(state,command as PlatformCommand,context);normalizeMistState(state,context);recalculate(state);return {state,result};}
   if(command.type.startsWith('email.')){const result=applyEmailCommand(state,command as EmailCommand,context);normalizeMistState(state,context);recalculate(state);return {state,result};}
@@ -626,3 +627,22 @@ export function normalizeMistState(state:MistState,context:MistContext):void {
 }
 export function getMistReviewTasks(state:MistState):MistReviewTask[]{return [...getOrderGovernanceReviews(state),...getFulfillmentReviews(state),...getMarketReviews(state),...getPlatformReviews(state)];}
 export { renderDemoFile } from './mistDemoFiles';
+
+/** 线索一键转 CRM：选已有客户或按线索公司新建客户（含联系人），可同时建立商机；整个过程在同一次命令内完成，任一步失败都不落库。 */
+function convertLeadToCrm(state:MistState,p:Extract<MarketCommand,{type:'market.lead.convertToCrm'}>['payload'],context:MistContext):MistCommandResult{
+  const lead=state.market.leads.find(l=>l.id===p?.id);if(!lead)throw new MistCommandError('NOT_FOUND','线索不存在',404);
+  if(lead.status==='Converted')throw new MistCommandError('PRECONDITION','线索已转化');if(lead.status==='Lost')throw new MistCommandError('PRECONDITION','已流失的线索请先恢复跟进');
+  let customerId=p.customerId||'';
+  if(customerId){if(!state.customers.some(c=>c.id===customerId))throw new MistCommandError('NOT_FOUND','客户不存在',404);}
+  else{
+    const same=state.customers.find(c=>c.name.trim().toLowerCase()===lead.company.trim().toLowerCase());if(same)throw new MistCommandError('CONFLICT',`已有同名客户 ${same.name}（${same.code}），请选择该客户`,409);
+    const created=applyMarketCommand(state,{type:'market.customer.create',payload:{input:{name:lead.company,country:'',city:'',industry:'',owner:context.actorName,grade:'',currency:lead.currency||'USD',terms:'',incoterm:'',categories:'',creditLimit:0,since:context.now.slice(0,10)}}},context);customerId=String(created.customerId||created.id);
+    applyMarketCommand(state,{type:'market.contact.save',payload:{kind:'customer',parentId:customerId,name:lead.name,role:'',email:lead.email,phone:lead.phone,primary:true}},context);
+  }
+  let opportunityId='';
+  if(p.opportunity){const parent=lead.source==='show'?state.market.shows.find(x=>x.id===lead.parentId)?.name:state.market.campaigns.find(x=>x.id===lead.parentId)?.name;
+    const r=applyCrmCommand(state,{type:'crm.opportunity.save',payload:{input:{customerId,title:p.opportunity.title,domain:p.opportunity.domain,amount:p.opportunity.amount,currency:p.opportunity.currency,expectedDate:p.opportunity.expectedDate,owner:context.actorName,note:`来源线索：${lead.name} · ${lead.company}（${parent||'来源活动'}）\n${lead.demand}`,devIds:[],quotationIds:[],orderIds:[]}}},context);opportunityId=String(r.id);}
+  applyMarketCommand(state,{type:'market.lead.transition',payload:{id:lead.id,status:'Converted',customerId,actualValue:'0',note:opportunityId?'转为 CRM 客户并建立商机':'转为 CRM 客户'}},context);
+  const row=state.market.leads.find(l=>l.id===lead.id)!;if(opportunityId)row.opportunityId=opportunityId;
+  return {id:lead.id,customerId,opportunityId};
+}

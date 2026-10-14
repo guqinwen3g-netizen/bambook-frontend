@@ -9,7 +9,7 @@ import { applyMistCommand, type MistCommand, type MistContext, type MistState } 
 import { emptyFabricRequirements } from './mistDevelopmentDomain';
 import { demoFileRecord, type DemoFileTemplate } from './mistDemoFiles';
 
-export const DEMO_SEED_VERSION = 6;
+export const DEMO_SEED_VERSION = 7;
 export type DemoSeedFailure = { step: string; message: string };
 
 const DAY = 86400000;
@@ -158,8 +158,19 @@ export function seedDemoModules(initial: MistState, context: MistContext): { sta
   }
   if (show) run('show lead', { type: 'market.showLead.save', payload: { input: { name: 'Clara Weiss', company: 'Weiss & Söhne', email: 'clara@weiss-soehne.de', phone: '', demand: '羊毛混纺面料 2,000 米', source: 'show', parentId: show, customerId: '', followUpDate: day(3), estimatedValue: '15000.00', actualValue: '', currency: 'EUR', fileIds: [], note: '展位交换名片' } } });
   if (aw27 && fabricProduct) run('trend', { type: 'market.trend.save', payload: { input: { name: '软糯双面呢回归', type: 'fabric', seasonId: aw27, source: 'Première Vision 面料趋势区', productIds: [fabricProduct], fileIds: [], note: '' } } });
+  if (aw27 && nylon) run('trend nylon', { type: 'market.trend.save', payload: { input: { name: '再生功能面料', type: 'composition', seasonId: aw27, source: 'Première Vision Smart 区 · 客户询盘', productIds: [nylon], fileIds: [], note: '' } } });
+  if (aw27) run('trend color', { type: 'market.trend.save', payload: { input: { name: '燕麦与炭灰中性色', type: 'color', seasonId: aw27, source: 'WGSN AW27 色彩报告', productIds: [fabricProduct].filter(Boolean), fileIds: [], note: '' } } });
+  if (ss27) run('trend craft', { type: 'market.trend.save', payload: { input: { name: '轻量无衬里结构', type: 'craft', seasonId: ss27, source: '客户 Cedar & Crown 春夏简报', productIds: [], fileIds: [], note: '' } } });
+  const aw26 = id(run('season AW26', { type: 'market.season.save', payload: { input: { code: 'AW26', name: '2026 秋冬', startDate: day(-460), endDate: day(-120), status: 'Closed', milestones: [{ label: '订货会', date: day(-380) }, { label: '大货交期', date: day(-200) }], fileIds: [], note: '上一季：大衣为主。' } } }));
+  if (aw26) run('season AW26 review', { type: 'market.season.review', payload: { id: aw26 } });
+  const intertextile = ss27 ? id(run('show SS27', { type: 'market.show.save', payload: { input: { name: 'Intertextile 上海面辅料博览会', location: '上海国家会展中心', seasonId: ss27, startDate: day(32), endDate: day(34), booth: '5.1H · C18', attendees: '顾言、沈禾', cost: '42000.00', currency: 'CNY', status: 'Planned', fileIds: [], note: '面料板块主推再生功能面料' } } })) : '';
+  void intertextile;
+  if (show) {
+    const lukas = id(run('show lead 2', { type: 'market.showLead.save', payload: { input: { name: 'Lukas Berg', company: 'Berg Outerwear GmbH', email: 'lukas@berg-outerwear.de', phone: '+49 89 2041 7781', demand: '防泼水塔丝隆 5,000 码，SS27 外套', source: 'show', parentId: show, customerId: '', followUpDate: day(-2), estimatedValue: '9500.00', actualValue: '', currency: 'USD', fileIds: [], note: '对再生涤纶感兴趣' } } }));
+    if (lukas) run('show lead 2 convert', { type: 'market.lead.convertToCrm', payload: { id: lukas, opportunity: { title: 'Berg 外套塔丝隆 SS27', domain: 'fabric', amount: '9500.00', currency: 'USD', expectedDate: day(45) } } });
+    run('show lead 3', { type: 'market.showLead.save', payload: { input: { name: 'Anna Rossi', company: 'Studio Rossi Milano', email: 'anna@studiorossi.it', phone: '', demand: '精纺西装面料色卡', source: 'show', parentId: show, customerId: '', followUpDate: day(-6), estimatedValue: '4000.00', actualValue: '', currency: 'EUR', fileIds: [], note: '' } } });
+  }
   if (coatProduct) run('lookbook', { type: 'market.lookbook.save', payload: { input: { name: 'Cedar & Crown AW27 大衣画册', customerId: c0.id, productIds: [coatProduct], fileIds: [], note: '' } } });
-  void ss27;
 
   /* ───────── 客户关系：商机与跟进 ───────── */
   const fabricOrder = state.market.quotations.find(q => q.id === fabricQuote)?.convertedOrderId || '';
