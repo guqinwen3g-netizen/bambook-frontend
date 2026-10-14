@@ -6,7 +6,8 @@ import { fail } from './errors';
 import { mistApprovalAuthority } from './context';
 import type { MistReviewTask } from '../shared/mistReview';
 import { hasScope } from '../auth/permissionService';
-import { isMember, isOwner, memberIds, members, MEMBER_PERSONAL_COMMANDS, projectState, canReadFile, type MistWorkspaceAccess, type MistMemberLog } from './access';
+import { isMember, isOwner, memberIds, members, MEMBER_PERSONAL_COMMANDS, projectState, canReadFile, canReadTarget, type MistWorkspaceAccess, type MistMemberLog } from './access';
+import { payablesCommandPermissions } from '../shared/mistPayables';
 import { MIST_LOCAL_PROFILES, mistLocalPublicUser } from './local';
 import { buildLoadedAuthTokenPayload, loadUserWithRoles } from '../auth/tokenHelpers';
 import { MistPrivateFiles, validateFileInput, type MistFileInput, type MistStoredFile } from './files';
@@ -53,6 +54,9 @@ const localMode=(actor:TokenPayload)=>(actor as any).mistLocal===true&&process.e
 export class MistRepository {
   constructor(private readonly prisma: any, private readonly contract: MistContract, private readonly files: MistPrivateFiles, private readonly authorize: FreshAuthority = freshMistAuthority, private readonly now = () => new Date(), private readonly creditArchiveBuilder: (snapshot: MistCreditPrintSnapshot, options?: {draft?: boolean}) => Promise<PreparedCreditIssueArchive> = buildIssueArchive) {}
   private context(actor: TokenPayload): MistContext { return { id: randomUUID, now: this.now().toISOString(), actorName: actor.displayName || actor.userId, actorId:actor.userId }; }
+  private async authorizeCompoundCommand(db: any, prior: TokenPayload, command?: MistCommand) {
+    if (command?.type === 'payable.payment.register') for (const scope of payablesCommandPermissions(command).slice(1)) await this.authorize(db, prior, scope);
+  }
   /** 所有者或被所有者明确授权的成员可进入；ownerOnly 的动作（回收站、成员管理）只限所有者。 */
   private async own(db: any, prior: TokenPayload, id: string, permission?: string | null, lock = false, allowArchived = false, ownerOnly = false): Promise<{ actor: TokenPayload; row: MistWorkspaceRow }> {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) fail('INVALID_INPUT', '工作区编号无效', 400);
@@ -182,6 +186,7 @@ export class MistRepository {
     try { return await this.transact(async db => {
       const permission = upload&&input.claimId!==undefined?'aftersales:write':this.contract.mistCommandPermission(input.command ?? { type: 'files.add', payload: {} });
       const { actor, row } = await this.own(db, prior, workspaceId, permission, true);
+      await this.authorizeCompoundCommand(db, prior, input.command);
       if (!isOwner(row, actor) && permission === null && !MEMBER_PERSONAL_COMMANDS.includes(input.command?.type)) fail('FORBIDDEN', '工作空间设置只能由所有者修改', 403);
       const previous = await db.mistCommandReceipt.findUnique({ where: { workspaceId_requestId: { workspaceId, requestId: input.requestId } } });
       if (previous) {
@@ -191,6 +196,14 @@ export class MistRepository {
       if (row.revision !== input.expectedRevision) fail('REVISION_CONFLICT', '工作区已更新，请刷新后重试', 409);
       if(upload&&input.claimId!==undefined)activeUploadClaim(row.state,input.claimId);
       const context = this.context(actor);
+      if (MEMBER_PERSONAL_COMMANDS.includes(input.command?.type)) {
+        const visible = projectState(row.state, actor, this.emptyState(actor), row.ownerId).state;
+        const { type, payload } = input.command;
+        const collection = type === 'notification.read' ? visible.notifications : type === 'task.complete' ? visible.tasks : type === 'calendar.save' && payload.id ? visible.calendar : undefined;
+        if (collection && !collection.some(item => item.id === payload.id)) fail('NOT_FOUND', '记录不存在或当前账号无权访问', 404);
+        if (type === 'calendar.save' && !canReadTarget(actor, payload.target)) fail('FORBIDDEN', '无权关联该业务来源', 403);
+        if (type === 'notification.readAll') context.visibleNotificationIds = visible.notifications.map(item => item.id);
+      }
       if(input.command) context.authority = await mistApprovalAuthority(db,actor,input.command.type);
       const plan = input.command ? this.contract.getRequiredBusinessNumberPlan?.(row.state, input.command) ?? [] : [];
       const numbers = await prepareMistBusinessNumbers(db, row.state, plan, context.now);
@@ -216,6 +229,7 @@ export class MistRepository {
       const result = { revision: nextRevision, result: applied.result };
       await db.mistCommandReceipt.create({ data: { id: randomUUID(), workspaceId, requestId: input.requestId, actorId: actor.userId, inputHash: hash, expectedRevision: input.expectedRevision, result } });
       await this.authorize(db, prior, permission);
+      await this.authorizeCompoundCommand(db, prior, input.command);
       return { workspace: this.view(saved, actor), receipt: { requestId: input.requestId, ...result }, replayed: false };
     }); } catch (error: any) {
       if (stored) {
@@ -232,6 +246,7 @@ export class MistRepository {
         return this.transact(async db => {
           const permission = upload&&input.claimId!==undefined?'aftersales:write':this.contract.mistCommandPermission(input.command ?? { type: 'files.add', payload: {} });
           const { row, actor } = await this.own(db, prior, workspaceId, permission);
+          await this.authorizeCompoundCommand(db, prior, input.command);
           const receipt = await db.mistCommandReceipt.findUnique({ where: { workspaceId_requestId: { workspaceId, requestId: input.requestId } } });
           if (receipt) {
             if (receipt.actorId !== prior.userId || receipt.inputHash !== hash) fail('REQUEST_CONFLICT', '此请求编号已用于另一项操作', 409);

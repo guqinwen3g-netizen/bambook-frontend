@@ -9,7 +9,7 @@ import { platformBusinessDate } from '../../../../server/src/shared/mistPlatform
 import { Nav } from '../nav';
 const store = vi.hoisted(() => ({ value: null as any }));
 vi.mock('../runtime/workspace', () => ({ useMistWorkspace: () => store.value }));
-vi.mock('../runtime/auth', () => ({ useMistSession: () => ({ hasPermission: () => store.value?.canWrite !== false }) }));
+vi.mock('../runtime/auth', () => ({ useMistSession: () => ({ hasPermission: (scope: string) => store.value?.canWrite !== false && (!store.value?.permissions || store.value.permissions.includes(scope)) }) }));
 import { FinancePayables } from './FinancePayables';
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 let host: HTMLElement, root: Root, route: { view: string; id?: string; section?: string };
@@ -80,4 +80,35 @@ it('没有财务写权限：可以查看，登记按钮禁用', async () => {
   expect((getByRole(host, 'button', { name: '登记供应商付款' }) as HTMLButtonElement).disabled).toBe(true);
   await click(/待登记来源/); expect(getByRole(host, 'table', { name: '待登记来源合同' }).textContent).toContain(po.code);
   expect(store.value.run).not.toHaveBeenCalled();
+});
+
+function permissionBill() {
+  let serial = 0;
+  store.value.state = applyMistCommand(store.value.state, { type: 'payable.bill.register', payload: { supplierId: po.supplierId, invoiceNo: 'PERMISSION-VAT', invoiceDate: day, currency: 'CNY', amount: 100, taxAmount: 0, lines: [{ purchaseId: po.id, amount: 100 }], due: day, dueBasis: '隔离权限回归' } }, { id: () => 'permission-' + (++serial), now: new Date().toISOString(), actorName: '财务' }).state;
+  return store.value.state.payables.bills[0];
+}
+it('只有付款登记权限时不预填或开放核销分配，仍可登记未分配付款', async () => {
+  const bill = permissionBill();
+  store.value.permissions = ['vouchers:write'];
+  route = { view: 'payment-vouchers', section: 'payables', id: bill.id }; render();
+  await click('登记付款');
+  const dialog = getByRole(document.body, 'dialog', { name: '登记供应商付款' });
+  const allocation = getByLabelText(dialog, bill.code + ' 分配金额') as HTMLInputElement;
+  expect(allocation.disabled).toBe(true);
+  expect(allocation.value).toBe('');
+  expect(dialog.textContent).toContain('没有核销分配权限');
+  input('银行流水号', 'PAY-WITHOUT-ALLOCATION');
+  await click('登记付款', dialog);
+  expect(store.value.run).toHaveBeenCalledWith(expect.objectContaining({ type: 'payable.payment.register', payload: expect.objectContaining({ amount: 100, allocations: [] }) }));
+  expect(store.value.state.payables.allocations).toEqual([]);
+  expect(host.textContent).toContain('还有钱没分到票据上');
+});
+it('打开表单后失去核销权限，不能提交已填分配的复合付款', async () => {
+  const bill = permissionBill(); render();
+  await click('登记供应商付款');
+  select('收款供应商', po.supplierId); input('付款金额', '100'); input('银行流水号', 'STALE-SCOPE'); input(bill.code + ' 分配金额', '100');
+  store.value.permissions = ['vouchers:write']; render();
+  await click('登记付款', getByRole(document.body, 'dialog', { name: '登记供应商付款' }));
+  expect(store.value.run).not.toHaveBeenCalled();
+  expect(document.body.textContent).toContain('没有办理此项财务动作的权限');
 });

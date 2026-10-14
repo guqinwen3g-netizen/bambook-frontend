@@ -2,9 +2,9 @@
 import { MIST_FINANCE_SCOPES } from '../../../../server/src/shared/mistFinancePermissions';
 import React from 'react';
 import { Banner, Button, Card, CardHeader, Checkbox, DataTable, Dialog, EmptyState, Facts, Field, FormGrid, Mono, ObjectCell, Pill, Segmented, Select, TextArea, TextInput, useToast, type Column, type Tone } from '../../../../components/mist';
-import { mistCommandPermission, type MistState } from '../../../../server/src/shared/mistWorkspace';
+import { type MistState } from '../../../../server/src/shared/mistWorkspace';
 import { platformBusinessDate } from '../../../../server/src/shared/mistPlatform';
-import { payableBills, payableSources, supplierPayableSummary, supplierPayments, type PayableBillView, type PayablesCommand, type SupplierPaymentView } from '../../../../server/src/shared/mistPayables';
+import { payableBills, payableSources, supplierPayableSummary, supplierPayments, payablesCommandPermissions, type PayableBillView, type PayablesCommand, type SupplierPaymentView } from '../../../../server/src/shared/mistPayables';
 import { useMistWorkspace } from '../runtime/workspace';
 import { useMistSession } from '../runtime/auth';
 import { useNav } from '../nav';
@@ -47,8 +47,7 @@ export function FinancePayables() {
   const open = (id: string) => { setSelected(id); setDrawer(true); go('payment-vouchers', id, { section: 'payables' }); };
 
   const execute = async (command: PayablesCommand, done: (result: Record<string, unknown>) => void) => {
-    const permission = mistCommandPermission(command);
-    if (permission && !session.hasPermission(permission as any)) { setFailure('没有办理此项财务动作的权限。'); return; }
+    if (payablesCommandPermissions(command).some(permission => !session.hasPermission(permission as any))) { setFailure('没有办理此项财务动作的权限。'); return; }
     if (busy) return; setWorking(true); setFailure('');
     try { const receipt = await run(command as any); done(receipt.result as Record<string, unknown>); } catch (problem) { setFailure(problem instanceof Error ? problem.message : '操作失败，请重试'); } finally { setWorking(false); }
   };
@@ -59,7 +58,7 @@ export function FinancePayables() {
   };
   const startPay = (supplierId = '', billId = '') => {
     const b = bills.find(x => x.id === billId); setFailure('');
-    setPayDraft({ supplierId: supplierId || b?.supplierId || '', currency: b?.currency || 'CNY', date: day, amount: b ? String(b.open) : '', reference: '', note: '', allocations: b ? { [b.id]: String(b.open) } : {} });
+    setPayDraft({ supplierId: supplierId || b?.supplierId || '', currency: b?.currency || 'CNY', date: day, amount: b ? String(b.open) : '', reference: '', note: '', allocations: b && canAllocate ? { [b.id]: String(b.open) } : {} });
   };
   const startAllocate = (p: SupplierPaymentView) => { setFailure(''); setPayDraft({ paymentId: p.id, supplierId: p.supplierId, currency: p.currency, date: p.date, amount: String(p.amount), reference: p.reference, note: '', allocations: {} }); };
 
@@ -209,8 +208,9 @@ export function FinancePayables() {
           <Field label="备注"><TextInput aria-label="付款备注" value={payDraft.note} onChange={e => setPayDraft({ ...payDraft, note: e.target.value })} /></Field>
         </FormGrid>}
         <Field label="分配到票据" hint={`已分配 ${apMoney(allocTotal / 100, payDraft.currency)} · 未分配 ${Number.isFinite(payable) ? apMoney(Math.max(0, payable - allocTotal) / 100, payDraft.currency) : '—'}`}>
+          {!canAllocate && <span className="mist-note">当前账号没有核销分配权限；付款仅登记为未分配，不会自动核销。</span>}
           <div className="mist-col">{payBills.map(b => <div className="mist-row" key={b.id} data-pay-bill={b.id}><Mono>{b.code}</Mono><span className="mist-note">发票 {b.invoiceNo} · 到期 {b.due}{b.overdue ? '（逾期）' : ''} · 未付 {apMoney(b.open, b.currency)}</span><span className="mist-spacer" />
-            <TextInput aria-label={b.code + ' 分配金额'} type="number" min="0.01" step="0.01" style={{ width: 140 }} value={payDraft.allocations[b.id] || ''} onChange={e => setPayDraft({ ...payDraft, allocations: { ...payDraft.allocations, [b.id]: e.target.value } })} /></div>)}
+            <TextInput aria-label={b.code + ' 分配金额'} type="number" min="0.01" step="0.01" disabled={busy || !canAllocate} style={{ width: 140 }} value={payDraft.allocations[b.id] || ''} onChange={e => setPayDraft({ ...payDraft, allocations: { ...payDraft.allocations, [b.id]: e.target.value } })} /></div>)}
           {!payBills.length && <span className="mist-note">{payDraft.supplierId ? '这家供应商没有该币种的未付票据；付款可以先登记，金额保留为未分配。' : '先选择供应商。'}</span>}</div>
         </Field>
       </div>}

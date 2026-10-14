@@ -53,6 +53,12 @@ export function payablesCommandPermission(command: PayablesCommand) {
   if (command.type === 'payable.payment.allocate') return MIST_FINANCE_SCOPES.reconcile;
   return fail('未知应付操作');
 }
+/** 登记付款和核销是两个已有权限；一次提交同时办理时必须两项都具备。 */
+export function payablesCommandPermissions(command: PayablesCommand): string[] {
+  const permissions: string[] = [payablesCommandPermission(command)];
+  if (command.type === 'payable.payment.register' && Array.isArray(command.payload.allocations) && command.payload.allocations.length) permissions.push(MIST_FINANCE_SCOPES.reconcile);
+  return permissions;
+}
 const ledger = (root: Root): PayablesState => { if (!root.payables) root.payables = createPayablesState(); return root.payables; };
 const read = (root: Root): PayablesState => root.payables || createPayablesState();
 

@@ -17,7 +17,14 @@ import {createPayablesState,applyPayablesCommand,payablesCommandPermission,type 
 export type MistTone = 'neutral' | 'accent' | 'ok' | 'warn' | 'bad' | 'ai';
 export type MistImage = 'coat' | 'blazer' | 'suit' | 'clay';
 export type MistBusinessNumberPrefix = 'CLM' | 'RT' | 'PV';
-export type MistContext = { id: () => string; now: string; actorName: string; actorId?: string; consumeBusinessNumber?: (prefix: MistBusinessNumberPrefix) => string; creditDocumentIssue?: MistCreditDocumentIssue; authority?: { supplier: Record<string,{version:number;userIds:string[]}>; claimReviewerId?:string; businessReviewerId?:string; orderReviewerIds?:{garment:string[];fabric:string[]} } };
+export type MistContext = {
+  id: () => string; now: string; actorName: string; actorId?: string;
+  /** 服务端从实时读投影生成，不能由命令 payload 扩大；不重构共享通知的数据模型。 */
+  visibleNotificationIds?: string[];
+  consumeBusinessNumber?: (prefix: MistBusinessNumberPrefix) => string;
+  creditDocumentIssue?: MistCreditDocumentIssue;
+  authority?: { supplier: Record<string,{version:number;userIds:string[]}>; claimReviewerId?:string; businessReviewerId?:string; orderReviewerIds?:{garment:string[];fabric:string[]} };
+};
 export type DevelopmentValues = {
   domain?:DevelopmentDomain; sampleForm?:string; sampleUnit?:string; targetCurrency?:string; targetUnit?:string; fabricRequirements?:FabricDevelopmentRequirements;
   name: string; customer: string; style: string; season: string; category: string;
@@ -596,7 +603,11 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
       result={};break;
     }
     case 'notification.read': {find(state.notifications,p.id,'通知').readAt=context.now;result={id:p.id};break;}
-    case 'notification.readAll': {state.notifications.forEach(n=>{n.readAt=context.now;});result={};break;}
+    case 'notification.readAll': {
+      const visible = context.visibleNotificationIds === undefined ? undefined : new Set(context.visibleNotificationIds);
+      state.notifications.forEach(n => { if (!visible || visible.has(n.id)) n.readAt = context.now; });
+      result={};break;
+    }
     case 'task.complete': {find(state.tasks,p.id,'事项').done=!!p.done;result={id:p.id};break;}
     case 'calendar.save': {
       const id=p.id||context.id();if(p.id)find(state.calendar,id,'日程');

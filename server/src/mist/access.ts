@@ -47,6 +47,17 @@ export const isMember = (row: { state: MistState }, actor: TokenPayload) => memb
 export function hiddenSections(actor: TokenPayload) { return MIST_READ_SECTIONS.filter(section => section.permissions.some(scope => !hasScope(actor, scope))); }
 /** 非所有者可执行的"无权限点"命令：仅限个人提醒类，不能改空间设置。 */
 export const MEMBER_PERSONAL_COMMANDS = ['notification.read', 'notification.readAll', 'task.complete', 'calendar.save'];
+/** 读取与提醒动作使用同一来源边界；未知路由不能绕过受限账号的读投影。 */
+function targetVisibility(hidden: Section[]) {
+  if (!hidden.length) return (_target?: { view?: string }) => true;
+  const deniedViews = new Set(hidden.flatMap(section => section.views)), knownViews = new Set(MIST_READ_SECTIONS.flatMap(section => section.views));
+  if (hidden.some(section => ['receivables', 'receipts', 'payments', 'payables', 'funding'].includes(section.key))) deniedViews.add('finance');
+  knownViews.add('finance');
+  return (target?: { view?: string }) => !target?.view || knownViews.has(target.view) && !deniedViews.has(target.view);
+}
+export function canReadTarget(actor: TokenPayload, target?: { view?: string }) {
+  return targetVisibility(hiddenSections(actor))(target);
+}
 /** 按账号自身读权限裁剪状态；被隐藏的数据结构用空工作空间的同名结构替换，保证页面结构完整。 */
 export function projectState(state: MistState, actor: TokenPayload, empty: () => MistState, ownerId?: string): { state: MistState; hidden: Section[] } {
   const hidden = hiddenSections(actor), next: MistState = { ...state };
@@ -58,10 +69,7 @@ export function projectState(state: MistState, actor: TokenPayload, empty: () =>
       else (next as any)[root] = structuredClone((blank as any)[root] ?? []);
     }
     const deniedTypes = new Set(hidden.flatMap(s => s.entityTypes)), allowedTypes = new Set(MIST_READ_SECTIONS.flatMap(s => s.entityTypes));
-    const deniedViews = new Set(hidden.flatMap(s => s.views)), knownViews = new Set(MIST_READ_SECTIONS.flatMap(s => s.views));
-    if (hidden.some(s => ['receivables', 'receipts', 'payments', 'payables', 'funding'].includes(s.key))) deniedViews.add('finance');
-    knownViews.add('finance');
-    const visibleTarget = (target?: { view?: string }) => !target?.view || knownViews.has(target.view) && !deniedViews.has(target.view);
+    const visibleTarget = targetVisibility(hidden);
     next.events = (state.events || []).filter(event => event.entityType === 'workspace' || allowedTypes.has(event.entityType) && !deniedTypes.has(event.entityType));
     next.tasks = (state.tasks || []).filter(task => visibleTarget(task.target));
     next.notifications = (state.notifications || []).filter(item => visibleTarget(item.target));
