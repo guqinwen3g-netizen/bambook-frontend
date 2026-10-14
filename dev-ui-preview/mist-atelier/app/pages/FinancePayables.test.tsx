@@ -168,7 +168,7 @@ it('结算：业务员按收货提交，财务确认预付抵扣（与建议不�
   render();
   // 已付预付后，未确认结算的合同不能直接登记票据。
   await click(/待登记来源/); await click('登记票据', getByRole(host, 'table', { name: '待登记来源合同' }));
-  expect(dialog('登记供应商票据').textContent).toContain('须先确认结算再登记票据');
+  expect([...(getByLabelText(dialog('登记供应商票据'), po.code + ' 关联结算') as HTMLSelectElement).options].map(o => o.textContent)).toEqual(['请选择结算', '待关联结算（发票先到，结算确认后再关联）']);
   await click('取消', dialog('登记供应商票据'));
   ctx.actorId = 'sales'; ctx.actorName = '业务';
   await click('提交结算'); const sd = dialog('提交结算');
@@ -200,4 +200,77 @@ it('结算：业务员按收货提交，财务确认预付抵扣（与建议不�
   expect(host.textContent).toContain('32,500.00');
   await click(/^供应商付款 · /);
   expect(getByRole(host, 'table', { name: '供应商付款' }).textContent).toContain('预付 · 部分已抵扣');
+});
+
+/** 已付预付的样例合同：33,480 预付，收货 1000 米（拒收 50）。 */
+function prepaidWithReceipt() {
+  as('finance', '财务', { type: 'payable.plan.register', payload: { purchaseId: po.id, amount: 33480, trigger: '合同签订后 7 天内', basis: '合同第 5 条' } });
+  const req = as('sales', '业务', { type: 'payable.request.submit', payload: { purpose: 'prepayment', planId: store.value.state.payables.plans[0].id, amount: 33480, reason: '按合同申请预付' } });
+  approve(String(req.id));
+  as('finance', '财务', { type: 'payable.payment.register', payload: { requestId: req.id, date: day, amount: 33480, reference: 'BK-PP' } });
+  store.value.state.fulfillment.receipts.push({ id: 'rcpt-ui', purchaseId: po.id, quantity: 1000, rejected: 50, destination: 'warehouse', location: '嘉兴仓', date: day, evidence: '收货单', fileIds: [], actor: '仓库', createdAt: new Date().toISOString() });
+}
+
+it('发票先到：登记为待关联结算并暂挂，汇总单列；结算确认后在票据详情关联结算，才能申请付款', async () => {
+  prepaidWithReceipt(); render();
+  await click(/待登记来源/); await click('登记票据', getByRole(host, 'table', { name: '待登记来源合同' }));
+  const bd = dialog('登记供应商票据');
+  input(po.code + ' 本票金额', '46500'); select(po.code + ' 关联结算', '__held'); input('供应商发票号', 'VAT-EARLY'); input('到期日', day);
+  await click('登记应付', bd);
+  const bill = store.value.state.payables.bills[0];
+  expect(bill.lines[0]).toMatchObject({ awaitingSettlement: true });
+  expect(getByRole(host, 'table', { name: '供应商应付汇总' }).textContent).toContain('1 张待关联结算（46,500.00 CNY）');
+  expect(host.textContent).toContain('发票先于结算到达');
+  expect((getAllByRole(host, 'button', { name: '申请付款' })[0] as HTMLButtonElement).disabled).toBe(true);
+  const st = as('sales', '业务', { type: 'payable.settlement.submit', payload: { purchaseId: po.id, receiptIds: ['rcpt-ui'] } });
+  as('finance', '财务', { type: 'payable.settlement.confirm', payload: { id: st.id, prepaymentApplied: 13950 } });
+  render();
+  await click('关联结算'); const ld = dialog('关联结算');
+  expect((getByLabelText(ld, po.code + ' 关联结算') as HTMLSelectElement).value).toBe(st.id);
+  await click('确认关联', ld);
+  expect(store.value.state.payables.bills[0].lines[0]).toMatchObject({ settlementId: st.id });
+  expect(host.textContent).not.toContain('发票先于结算到达');
+  expect(host.textContent).toContain('13,950.00');
+  expect((getAllByRole(host, 'button', { name: '申请付款' })[0] as HTMLButtonElement).disabled).toBe(false);
+});
+
+it('索赔扣款：工厂同意从货款中扣的追偿在票据上登记扣款，扣满自动落实；可冲回', async () => {
+  reg('V-CL', 5000);
+  const bill = store.value.state.payables.bills[0];
+  store.value.state.platform = { ...(store.value.state.platform || {}), claims: [{ id: 'claim-ui', code: 'CL-2026-0042', state: 'Open', coordination: { notices: [], verifications: [], recoveries: [{ id: 'rec-ui', supplierId: po.supplierId, supplierName: po.supplier, currency: 'CNY', requested: 800, basis: '色差', state: 'Agreed', agreed: 800, method: 'deduction', agreedNote: '邮件', createdAt: '', createdBy: '业务', createdById: 'sales', events: [] }] } }] } as any;
+  route = { view: 'payment-vouchers', section: 'payables', id: bill.id }; render();
+  await click('登记索赔扣款'); const dd = dialog('登记索赔扣款');
+  expect((getByLabelText(dd, '扣款金额') as HTMLInputElement).value).toBe('800');
+  input('扣款依据', 'DN-2026-01');
+  await click('登记扣款', dd);
+  const rec = store.value.state.platform.claims[0].coordination.recoveries[0];
+  expect(rec).toMatchObject({ state: 'Settled', settled: 800 });
+  expect(host.textContent).toContain('索赔扣款'); expect(host.textContent).toContain('4,200.00 CNY');
+  await click('冲回扣款'); text('冲回原因', '扣款通知作废'); await click('确认冲回', dialog('冲回索赔扣款'));
+  expect(store.value.state.platform.claims[0].coordination.recoveries[0].state).toBe('Agreed');
+  expect(store.value.state.payables.deductions[0].reversed).toMatchObject({ reason: '扣款通知作废' });
+});
+
+it('短交最终结算后剩余预付：在结算详情登记退款，可冲回', async () => {
+  prepaidWithReceipt();
+  const st = as('sales', '业务', { type: 'payable.settlement.submit', payload: { purchaseId: po.id, receiptIds: ['rcpt-ui'], final: true } });
+  as('finance', '财务', { type: 'payable.settlement.confirm', payload: { id: st.id, prepaymentApplied: 33480 } });
+  // 结算 46,500 已抵扣全部预付；再造一笔小额最终结算场景：用新合同数据验证剩余
+  route = { view: 'payment-vouchers', section: 'payables', id: st.id }; render();
+  expect(host.textContent).toContain('合同预付去向');
+  expect(queryAllByRole(host, 'button', { name: '登记退款' })).toHaveLength(0);
+  as('finance', '财务', { type: 'payable.settlement.reverse', payload: { id: st.id, reason: '改为小额结算' } });
+  store.value.state.fulfillment.receipts.push({ id: 'rcpt-small', purchaseId: po.id, quantity: 500, rejected: 0, destination: 'warehouse', location: '嘉兴仓', date: day, evidence: '收货单', fileIds: [], actor: '仓库', createdAt: new Date().toISOString() });
+  const st2 = as('sales', '业务', { type: 'payable.settlement.submit', payload: { purchaseId: po.id, receiptIds: ['rcpt-small'], final: true } });
+  as('finance', '财务', { type: 'payable.settlement.confirm', payload: { id: st2.id, prepaymentApplied: 23250 } });
+  route = { view: 'payment-vouchers', section: 'payables', id: st2.id }; render();
+  expect(host.textContent).toContain('最终结算后仍有剩余预付');
+  await click('登记退款'); const rd = dialog('登记剩余预付退款');
+  expect((getByLabelText(rd, '退款金额') as HTMLInputElement).value).toBe('10230');
+  input('退款流水号', 'TT-BACK'); text('退款说明', '供应商退回短交预付', rd);
+  await click('登记退款', rd);
+  expect(store.value.state.payables.prepaymentMoves[0]).toMatchObject({ kind: 'refund', amount: 10230, reference: 'TT-BACK' });
+  expect((getAllByRole(host, 'button', { name: '冲回结算' })[0] as HTMLButtonElement).disabled).toBe(true);
+  await click('冲回', host.querySelector('[data-prepayment-move]') as HTMLElement); text('冲回原因', '流水录错'); await click('确认冲回', dialog('冲回剩余预付处理'));
+  expect(store.value.state.payables.prepaymentMoves[0].reversed).toMatchObject({ reason: '流水录错' });
 });

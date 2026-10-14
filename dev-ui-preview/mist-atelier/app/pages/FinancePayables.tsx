@@ -5,17 +5,18 @@ import React from 'react';
 import { Banner, Button, Card, CardHeader, Checkbox, DataTable, Dialog, EmptyState, Facts, Field, FormGrid, Mono, ObjectCell, Pill, Segmented, Select, TextArea, TextInput, useToast, type Column, type Tone } from '../../../../components/mist';
 import { type MistState } from '../../../../server/src/shared/mistWorkspace';
 import { platformBusinessDate } from '../../../../server/src/shared/mistPlatform';
-import { payableBills, payableSources, supplierPayableSummary, supplierPayments, payablesCommandPermissions, prepaymentPlans, paymentRequests, billRequestedUnpaidMinor, PAYMENT_REQUEST_SCOPES, SETTLEMENT_SCOPES, supplierSettlements, invoiceableSettlements, purchaseRequiresSettlementLink, paymentPlanStageLabel, type PaymentPlanStage, type PayableBillView, type PayablesCommand, type SupplierPaymentView, type PaymentRequest, type PrepaymentPlanView, purchasePrepaymentReadback } from '../../../../server/src/shared/mistPayables';
+import { payableBills, payableSources, supplierPayableSummary, supplierPayments, payablesCommandPermissions, prepaymentPlans, paymentRequests, billRequestedUnpaidMinor, PAYMENT_REQUEST_SCOPES, SETTLEMENT_SCOPES, supplierSettlements, invoiceableSettlements, purchaseRequiresSettlementLink, paymentPlanStageLabel, type PaymentPlanStage, type PayableBillView, type PayablesCommand, type SupplierPaymentView, type PaymentRequest, type PrepaymentPlanView, purchasePrepaymentReadback, supplierDeductions, deductibleRecoveries, supplierSettlements as settlementsOf, type PrepaymentMove } from '../../../../server/src/shared/mistPayables';
 import { useMistWorkspace } from '../runtime/workspace';
 import { useMistSession } from '../runtime/auth';
 import { useNav } from '../nav';
 import { ActionBar, DetailBlock, DetailBody, ListDetail } from './modules/pageKit';
 import { downloadMistCsv } from './OrderListPage';
 import { SettlementConfirmDialog, SettlementDetail, SettlementSubmitDialog, settlementColumns } from './FinanceSettlements';
+import { BillLinkDialog, DeductionDialog, DeductionList, PrepaymentMoveDialog, PrepaymentResidual } from './FinanceCloseout';
 
 type View = 'bills' | 'requests' | 'settlements' | 'prepay' | 'sources' | 'payments';
 const REQ: Record<PaymentRequest['state'], { tone: Tone; label: string }> = { pending: { tone: 'warn', label: '待主管审批' }, approved: { tone: 'accent', label: '已批准待付' }, rejected: { tone: 'bad', label: '已退回' }, paid: { tone: 'ok', label: '已付款' }, cancelled: { tone: 'neutral', label: '已撤回' } };
-const STATUS: Record<PayableBillView['status'], { tone: Tone; label: string }> = { unpaid: { tone: 'warn', label: '未付款' }, partial: { tone: 'accent', label: '部分付款' }, paid: { tone: 'ok', label: '已付清' }, void: { tone: 'neutral', label: '已作废' } };
+const STATUS: Record<PayableBillView['status'], { tone: Tone; label: string }> = { unpaid: { tone: 'warn', label: '未付款' }, partial: { tone: 'accent', label: '部分付款' }, paid: { tone: 'ok', label: '已付清' }, void: { tone: 'neutral', label: '已作废' }, held: { tone: 'warn', label: '待关联结算' } };
 const KIND = { material: '采购', finished: '成品采购', processing: '委外加工' } as const;
 export const apMoney = (amount: number, currency: string) => `${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
 const cents = (value: string) => { const n = Number(value); return value.trim() && Number.isFinite(n) ? Math.round(n * 100) : NaN; };
@@ -35,7 +36,9 @@ type BillDraft = { supplierId: string; invoiceNo: string; invoiceDate: string; t
 type PayDraft = { mode: 'request' | 'pay' | 'allocate'; paymentId?: string; requestId?: string; planId?: string; supplierId: string; currency: string; date: string; amount: string; reference: string; note: string; allocations: Record<string, string> };
 type PlanDraft = { stage: PaymentPlanStage; purchaseId: string; amount: string; trigger: string; basis: string; due: string; note: string };
 type PreDraft = { planId: string; amount: string; reason: string };
-type ReasonKind = 'void' | 'reverse-payment' | 'reverse-allocation' | 'cancel-request' | 'cancel-plan' | 'return-settlement' | 'cancel-settlement' | 'reverse-settlement';
+type ReasonKind = 'void' | 'reverse-payment' | 'reverse-allocation' | 'cancel-request' | 'cancel-plan' | 'return-settlement' | 'cancel-settlement' | 'reverse-settlement' | 'reverse-deduction' | 'reverse-prepayment';
+/** 票据行关联选项中的“发票先到、结算确认后再关联”。 */
+const HELD = '__held';
 const REASON: Record<ReasonKind, { title: string; label: string; action: string; description: string; done: string }> = {
   void: { title: '作废供应商票据', label: '作废原因', action: '确认作废', description: '作废后不再计入应付，合同可重新登记票据；原记录保留，不删除。', done: '票据已作废' },
   'reverse-payment': { title: '付款冲回', label: '冲回原因', action: '确认冲回', description: '原付款记录保留，另记一笔反向记录；分到票据的金额一并冲回，票据恢复未付。对应付款申请回到“已批准待付”。', done: '付款已冲回' },
@@ -45,6 +48,8 @@ const REASON: Record<ReasonKind, { title: string; label: string; action: string;
   'return-settlement': { title: '退回结算', label: '退回原因', action: '确认退回', description: '退回给提交人修正；所选收货记录释放，可重新提交。', done: '结算已退回' },
   'cancel-settlement': { title: '撤回结算', label: '撤回原因', action: '确认撤回', description: '撤回待复核的结算；所选收货记录释放。', done: '结算已撤回' },
   'reverse-settlement': { title: '冲回结算', label: '冲回原因', action: '确认冲回', description: '原结算保留并标记已冲回；收货记录与预付抵扣释放，可重新结算。已关联票据时须先作废票据。', done: '结算已冲回' },
+  'reverse-deduction': { title: '冲回索赔扣款', label: '冲回原因', action: '确认冲回', description: '原扣款保留并标记已冲回，票据未付恢复；若追偿因扣满而落实，回到“工厂已同意、待落实”。', done: '索赔扣款已冲回' },
+  'reverse-prepayment': { title: '冲回剩余预付处理', label: '冲回原因', action: '确认冲回', description: '原记录保留并标记已冲回，金额回到来源合同的剩余预付；退款冲回另记一笔反向收付款。转入合同已使用转入预付时不能冲回。', done: '剩余预付处理已冲回' },
 };
 
 export function FinancePayables() {
@@ -56,6 +61,7 @@ export function FinancePayables() {
   const [billDraft, setBillDraft] = React.useState<BillDraft | null>(null), [payDraft, setPayDraft] = React.useState<PayDraft | null>(null), [reasonDraft, setReasonDraft] = React.useState<{ kind: ReasonKind; id: string; reason: string } | null>(null);
   const [planDraft, setPlanDraft] = React.useState<PlanDraft | null>(null), [preDraft, setPreDraft] = React.useState<PreDraft | null>(null);
   const [settleOpen, setSettleOpen] = React.useState(false), [confirmId, setConfirmId] = React.useState('');
+  const [linkId, setLinkId] = React.useState(''), [deductId, setDeductId] = React.useState(''), [moveDraft, setMoveDraft] = React.useState<{ kind: 'refund' | 'transfer'; purchaseId: string } | null>(null);
   const [working, setWorking] = React.useState(false), [failure, setFailure] = React.useState('');
   const busy = working || loading || saving || !!pending;
   React.useEffect(() => { setSelected(route.id || ''); setDrawer(!!route.id); }, [route.id]);
@@ -102,15 +108,15 @@ export function FinancePayables() {
     if (!billDraft.supplierId || !billDraft.invoiceNo.trim() || !billDraft.invoiceDate || !billDraft.due || !billDraft.dueBasis.trim()) return setFailure('请填写供应商、发票号、发票日期、到期日和到期日依据。');
     if (!picked.length) return setFailure('请至少勾选一张来源合同，并写明本票对应金额。');
     if (picked.some(id => !(cents(billDraft.lines[id]) > 0))) return setFailure('每张勾选合同的对应金额都要大于零。');
-    if (picked.some(id => needsLink(id) && !billDraft.links[id])) return setFailure('已有已确认结算或已付预付的合同，票据须关联已确认结算。');
+    if (picked.some(id => needsLink(id) && !billDraft.links[id])) return setFailure('已有已确认结算或已付预付的合同，票据须关联已确认结算；结算还没确认时，可选“待关联结算”先登记。');
     const tax = billDraft.taxAmount.trim() ? cents(billDraft.taxAmount) : 0; if (Number.isNaN(tax)) return setFailure('税额格式无效。');
-    void execute({ type: 'payable.bill.register', payload: { supplierId: billDraft.supplierId, invoiceNo: billDraft.invoiceNo, invoiceDate: billDraft.invoiceDate, currency: billCurrency, amount: billTotal / 100, taxAmount: tax / 100, taxRate: billDraft.taxRate, lines: picked.map(id => ({ purchaseId: id, amount: cents(billDraft.lines[id]) / 100, ...(billDraft.links[id] ? { settlementId: billDraft.links[id] } : {}) })), due: billDraft.due, dueBasis: billDraft.dueBasis, note: billDraft.note } }, r => { setBillDraft(null); setView('bills'); open(String(r.id)); toast('供应商票据已登记，应付已形成'); });
+    void execute({ type: 'payable.bill.register', payload: { supplierId: billDraft.supplierId, invoiceNo: billDraft.invoiceNo, invoiceDate: billDraft.invoiceDate, currency: billCurrency, amount: billTotal / 100, taxAmount: tax / 100, taxRate: billDraft.taxRate, lines: picked.map(id => ({ purchaseId: id, amount: cents(billDraft.lines[id]) / 100, ...(billDraft.links[id] === HELD ? { awaitingSettlement: true } : billDraft.links[id] ? { settlementId: billDraft.links[id] } : {}) })), due: billDraft.due, dueBasis: billDraft.dueBasis, note: billDraft.note } }, r => { const held = picked.some(id => billDraft.links[id] === HELD); setBillDraft(null); setView('bills'); open(String(r.id)); toast(held ? '票据已登记为待关联结算，结算确认后再关联' : '供应商票据已登记，应付已形成'); });
   };
 
   // —— 申请 / 付款 / 分配表单
   const existing = payDraft?.mode === 'allocate' ? payments.find(p => p.id === payDraft.paymentId) : undefined;
   const payRequest = payDraft?.mode === 'pay' ? requests.find(r => r.id === payDraft.requestId) : undefined;
-  const payBills = payDraft ? (payRequest ? payRequest.lines.map(l => bills.find(b => b.id === l.billId)!).filter(Boolean) : bills.filter(b => b.supplierId === payDraft.supplierId && b.currency === payDraft.currency && b.open > 0 && (payDraft.mode !== 'request' || availableMinor(b) > 0))) : [];
+  const payBills = payDraft ? (payRequest ? payRequest.lines.map(l => bills.find(b => b.id === l.billId)!).filter(Boolean) : bills.filter(b => b.supplierId === payDraft.supplierId && b.currency === payDraft.currency && b.open > 0 && !b.held && (payDraft.mode !== 'request' || availableMinor(b) > 0))) : [];
   const payCurrencies = payDraft ? [...new Set([...bills.filter(b => b.supplierId === payDraft.supplierId).map(b => b.currency), payDraft.currency])].sort() : [];
   const allocRows = payDraft ? payBills.filter(b => (payDraft.allocations[b.id] || '').trim()).map(b => ({ billId: b.id, amount: cents(payDraft.allocations[b.id]) })) : [];
   const allocTotal = allocRows.reduce((n, r) => n + (r.amount || 0), 0);
@@ -148,11 +154,11 @@ export function FinancePayables() {
   };
   const submitReason = () => {
     if (!reasonDraft) return; const { kind, id, reason } = reasonDraft;
-    const command: PayablesCommand = kind === 'void' ? { type: 'payable.bill.void', payload: { id, reason } } : kind === 'reverse-payment' ? { type: 'payable.payment.reverse', payload: { supplierPaymentId: id, reason } } : kind === 'reverse-allocation' ? { type: 'payable.allocation.reverse', payload: { allocationId: id, reason } } : kind === 'cancel-request' ? { type: 'payable.request.cancel', payload: { id, reason } } : kind === 'return-settlement' ? { type: 'payable.settlement.return', payload: { id, reason } } : kind === 'cancel-settlement' ? { type: 'payable.settlement.cancel', payload: { id, reason } } : kind === 'reverse-settlement' ? { type: 'payable.settlement.reverse', payload: { id, reason } } : { type: 'payable.plan.cancel', payload: { id, reason } };
+    const command: PayablesCommand = kind === 'void' ? { type: 'payable.bill.void', payload: { id, reason } } : kind === 'reverse-payment' ? { type: 'payable.payment.reverse', payload: { supplierPaymentId: id, reason } } : kind === 'reverse-allocation' ? { type: 'payable.allocation.reverse', payload: { allocationId: id, reason } } : kind === 'cancel-request' ? { type: 'payable.request.cancel', payload: { id, reason } } : kind === 'return-settlement' ? { type: 'payable.settlement.return', payload: { id, reason } } : kind === 'cancel-settlement' ? { type: 'payable.settlement.cancel', payload: { id, reason } } : kind === 'reverse-settlement' ? { type: 'payable.settlement.reverse', payload: { id, reason } } : kind === 'reverse-deduction' ? { type: 'payable.deduction.reverse', payload: { id, reason } } : kind === 'reverse-prepayment' ? { type: 'payable.prepayment.reverse', payload: { id, reason } } : { type: 'payable.plan.cancel', payload: { id, reason } };
     void execute(command, () => { setReasonDraft(null); toast(REASON[kind].done); });
   };
   const askReason = (kind: ReasonKind, id: string) => { setFailure(''); setReasonDraft({ kind, id, reason: '' }); };
-  const reasonAllowed = (kind: ReasonKind) => kind === 'void' || kind === 'cancel-plan' ? canBill : kind === 'reverse-payment' ? canPay && canAllocate : kind === 'reverse-allocation' || kind === 'return-settlement' || kind === 'reverse-settlement' ? canConfirm : kind === 'cancel-settlement' ? canSettle : canRequest;
+  const reasonAllowed = (kind: ReasonKind) => kind === 'void' || kind === 'cancel-plan' ? canBill : kind === 'reverse-payment' ? canPay && canAllocate : kind === 'reverse-allocation' || kind === 'return-settlement' || kind === 'reverse-settlement' || kind === 'reverse-deduction' || kind === 'reverse-prepayment' ? canConfirm : kind === 'cancel-settlement' ? canSettle : canRequest;
 
   const billColumns: Column<PayableBillView>[] = [
     { key: 'code', header: '应付 / 供应商', width: 'minmax(170px,1.4fr)', render: b => <ObjectCell name={<Mono>{b.code}</Mono>} meta={b.supplier + ' · 发票 ' + b.invoiceNo} /> },
@@ -198,18 +204,23 @@ export function FinancePayables() {
       { label: '供应商', value: bill.supplier }, { label: '供应商发票号', value: <Mono>{bill.invoiceNo}</Mono> }, { label: '发票日期', value: bill.invoiceDate },
       { label: '价税合计', value: apMoney(bill.amount, bill.currency) }, { label: '税额 / 税率', value: apMoney(bill.taxAmount, bill.currency) + ' · ' + (bill.taxRate || '未填写') },
       ...(bill.prepaymentCredit > 0 ? [{ label: '预付抵扣（来自结算）', value: apMoney(bill.prepaymentCredit, bill.currency) }] : []),
+      ...(bill.deducted > 0 ? [{ label: '索赔扣款', value: apMoney(bill.deducted, bill.currency) }] : []),
       { label: '已付 / 未付', value: apMoney(bill.paid, bill.currency) + ' / ' + apMoney(bill.open, bill.currency) },
       { label: '到期日', value: bill.due + (bill.overdue ? '（已逾期）' : '') }, { label: '到期日依据', value: bill.dueBasis }, { label: '登记', value: bill.registeredBy + ' · ' + fmtDay(bill.registeredAt) },
     ]} />
+    {bill.held && <Banner tone="warn" title="待关联结算">发票先于结算到达，已登记但暂挂：不计入应付和逾期，也不能申请付款。业务员提交结算、财务确认后，在这里关联结算。</Banner>}
     {bill.status === 'void' && <Banner title="已作废">{bill.voided?.reason}（{bill.voided?.actor} · {fmtDay(bill.voided?.at)}），不再计入应付；原记录保留。</Banner>}
     <ActionBar busy={busy} actions={[
-      { label: '申请付款', onClick: () => startRequest(bill.supplierId, bill.id), reason: !canRequest ? '需要付款申请权限' : bill.open <= 0 ? '本票已无未付余额' : availableMinor(bill) <= 0 ? '未付余额已全部在付款申请中' : undefined, hidden: bill.status === 'void' },
-      { label: '作废票据', onClick: () => askReason('void', bill.id), reason: !canBill ? '需要票据登记权限' : bill.paid > 0 ? '已有付款分配，请先冲回分配或付款再作废' : undefined, hidden: bill.status === 'void' },
+      { label: '关联结算', onClick: () => { setFailure(''); setLinkId(bill.id); }, reason: !canBill ? '需要票据登记权限' : undefined, hidden: !bill.held || bill.status === 'void' },
+      { label: '申请付款', onClick: () => startRequest(bill.supplierId, bill.id), reason: !canRequest ? '需要付款申请权限' : bill.held ? '待关联结算后才能申请付款' : bill.open <= 0 ? '本票已无未付余额' : availableMinor(bill) <= 0 ? '未付余额已全部在付款申请中' : undefined, hidden: bill.status === 'void' },
+      { label: '登记索赔扣款', onClick: () => { setFailure(''); setDeductId(bill.id); }, reason: !canAllocate ? '需要核销权限（财务）' : bill.held ? '待关联结算后才能扣款' : !state || !deductibleRecoveries(state, bill.supplierId, bill.currency).length ? '这家供应商没有工厂已同意从货款中扣的追偿' : availableMinor(bill) <= 0 ? '本票没有可扣的未付余额' : undefined, hidden: bill.status === 'void' || (!!state && !deductibleRecoveries(state, bill.supplierId).length) },
+      { label: '作废票据', onClick: () => askReason('void', bill.id), reason: !canBill ? '需要票据登记权限' : bill.paid > 0 ? '已有付款分配，请先冲回分配或付款再作废' : bill.deducted > 0 ? '已有索赔扣款，请先冲回扣款再作废' : undefined, hidden: bill.status === 'void' },
     ]} />
-    <DetailBlock title="来源合同">{bill.lines.map(l => <div className="mist-row mist-module-actions" key={l.purchaseId}><Mono>{l.purchaseCode}</Mono><span className="mist-note">{KIND[l.kind]}{l.settlementCode ? ' · 结算 ' + l.settlementCode : ''}</span><span className="mist-spacer" /><span className="mist-num">{apMoney(l.amount, bill.currency)}</span>{l.settlementId && <Button size="sm" onClick={() => { setView('settlements'); open(l.settlementId!); }}>查看结算</Button>}<Button size="sm" onClick={() => go('procurement', l.purchaseId)}>查看合同</Button></div>)}
+    <DetailBlock title="来源合同">{bill.lines.map(l => <div className="mist-row mist-module-actions" key={l.purchaseId}><Mono>{l.purchaseCode}</Mono><span className="mist-note">{KIND[l.kind]}{l.settlementCode ? ' · 结算 ' + l.settlementCode : ''}</span>{l.awaitingSettlement && !l.settlementId && <Pill tone="warn">待关联结算</Pill>}<span className="mist-spacer" /><span className="mist-num">{apMoney(l.amount, bill.currency)}</span>{l.settlementId && <Button size="sm" onClick={() => { setView('settlements'); open(l.settlementId!); }}>查看结算</Button>}<Button size="sm" onClick={() => go('procurement', l.purchaseId)}>查看合同</Button></div>)}
       <span className="mist-note">合同付款条件：{bill.terms.join('；') || '未填写'}</span></DetailBlock>
     <DetailBlock title="付款分配">{allocations.filter(a => a.billId === bill.id).map(a => { const p = payments.find(x => x.id === a.supplierPaymentId); return <div className="mist-row mist-module-actions" key={a.id}><Mono>{p?.code || '付款记录未找到'}</Mono><span className="mist-note">{p?.date}</span><span className="mist-spacer" /><span className="mist-num">{apMoney(a.amount, a.currency)}</span>{allocationReversal(a.id) && <Pill tone="neutral">已冲回</Pill>}{p && <Button size="sm" onClick={() => { setView('payments'); open(p.id); }}>查看付款</Button>}</div>; })}
       {!allocations.some(a => a.billId === bill.id) && <span className="mist-note">还没有付款分配到这张票。</span>}</DetailBlock>
+    {state && <DeductionList rows={supplierDeductions(state, bill.id)} busy={busy} canReverse={canConfirm} onReverse={d => askReason('reverse-deduction', d.id)} onClaim={id => go('claims', id)} />}
   </DetailBody> : payment ? <DetailBody data-supplier-payment={payment.id} heading={<h2 className="mist-h2">{payment.code}</h2>}>
     <Facts items={[{ label: '收款供应商', value: payment.supplier }, { label: '付款日期', value: payment.date }, { label: '付款金额', value: apMoney(payment.amount, payment.currency) }, { label: '银行流水号', value: <Mono>{payment.reference}</Mono> }, { label: '付款申请', value: payment.requestCode ? <Mono>{payment.requestCode}</Mono> : '旧记录（审批规则前登记）' }, ...(payment.purpose === 'prepayment' ? [{ label: '用途', value: '合同预付款 · ' + (state?.fulfillment.purchases.find(x => x.id === payment.purchaseId)?.code || '') }] : [{ label: '已分配 / 未分配', value: apMoney(payment.allocated, payment.currency) + ' / ' + apMoney(payment.unallocated, payment.currency) }]), { label: '登记', value: payment.actor + ' · ' + fmtDay(payment.createdAt) }, ...(payment.note ? [{ label: '备注', value: payment.note }] : [])]} />
     {payment.reversed && <Banner title="已冲回">{payment.reversed.reason}（{payment.reversed.actor} · {fmtDay(payment.reversed.at)}）。原记录保留，已另记反向记录，不再计入已付。</Banner>}
@@ -241,7 +252,9 @@ export function FinancePayables() {
       { label: '查看合同', onClick: () => go('procurement', plan.purchaseId) },
     ]} />
   </DetailBody> : settlement && state ? <SettlementDetail settlement={settlement} state={state} me={session.user?.id || ''} busy={busy} canSettle={canSettle} canConfirm={canConfirm} canBill={canBill}
-      onConfirm={() => { setFailure(''); setConfirmId(settlement.id); }} onReason={kind => askReason(kind, settlement.id)} onBill={() => startBill(settlement.supplierId, settlement.purchaseId, settlement.id)} onPurchase={() => go('procurement', settlement.purchaseId)} />
+      onConfirm={() => { setFailure(''); setConfirmId(settlement.id); }} onReason={kind => askReason(kind, settlement.id)} onBill={() => startBill(settlement.supplierId, settlement.purchaseId, settlement.id)} onPurchase={() => go('procurement', settlement.purchaseId)}>
+      {settlement.final && settlement.state === 'confirmed' && <PrepaymentResidual state={state} purchaseId={settlement.purchaseId} busy={busy} canRefund={canPay && canConfirm} canMove={canConfirm} onRefund={() => { setFailure(''); setMoveDraft({ kind: 'refund', purchaseId: settlement.purchaseId }); }} onTransfer={() => { setFailure(''); setMoveDraft({ kind: 'transfer', purchaseId: settlement.purchaseId }); }} onReverse={(m: PrepaymentMove) => askReason('reverse-prepayment', m.id)} />}
+    </SettlementDetail>
   : <EmptyState compact title={route.id ? '未找到应付记录' : '应付详情'} description="选择一张票据、付款申请、结算、付款计划或一笔付款，查看来源、审批、分配和余额。" />;
 
   const list = view === 'bills' ? <DataTable ariaLabel="应付票据" rows={shownBills} columns={billColumns} loading={loading} rowKey={b => b.id} selectedKey={selected} onRowClick={b => open(b.id)}
@@ -253,7 +266,7 @@ export function FinancePayables() {
     : <DataTable ariaLabel="供应商付款" rows={payments} columns={paymentColumns} loading={loading} rowKey={p => p.id} selectedKey={selected} onRowClick={p => open(p.id)} empty={<EmptyState title="还没有供应商付款" description="实际付款后在这里登记，并分配到一张或多张票据。" />} />;
 
   return <div className="mist-col" data-finance-payables>
-    {failure && !billDraft && !payDraft && !reasonDraft && !planDraft && !preDraft && !settleOpen && !confirmId && <Banner tone="bad" title="操作没有完成">{failure}</Banner>}
+    {failure && !billDraft && !payDraft && !reasonDraft && !planDraft && !preDraft && !settleOpen && !confirmId && !linkId && !deductId && !moveDraft && <Banner tone="bad" title="操作没有完成">{failure}</Banner>}
     <Card>
       <CardHeader title="供应商应付（按原币）" sub="收到供应商发票登记后形成应付；所有付款先申请、经主管审批后再登记实付" tools={<div className="mist-row" style={{ flexWrap: 'wrap' }}>
         <Button disabled={busy || !canBill} title={!canBill ? '需要票据登记权限' : undefined} onClick={() => startBill()}>登记供应商票据</Button>
@@ -262,11 +275,11 @@ export function FinancePayables() {
         <Button disabled={busy || !canRequest} title={!canRequest ? '需要付款申请权限' : undefined} onClick={() => startRequest()}>申请票据付款</Button></div>} />
       <div className="mist-card-body mist-col">
       {summary.length ? <DataTable ariaLabel="供应商应付汇总" rows={summary} rowKey={r => r.supplierId + r.currency} columns={[
-        { key: 's', header: '供应商', render: r => <ObjectCell name={r.supplier} meta={r.bills ? r.bills + ' 张未付清' + (r.overdue ? ' · ' + r.overdue + ' 张逾期' : '') : '已全部付清'} /> },
-        { key: 'open', header: '未付余额', width: '150px', align: 'right', render: r => <span className="mist-num">{apMoney(r.open, r.currency)}</span> },
+        { key: 's', header: '供应商', render: r => <ObjectCell name={r.supplier} meta={(r.bills ? r.bills + ' 张未付清' + (r.overdue ? ' · ' + r.overdue + ' 张逾期' : '') : r.heldBills ? '无可付应付' : '已全部付清') + (r.heldBills ? ` · ${r.heldBills} 张待关联结算（${apMoney(r.held, r.currency)}）` : '')} /> },
+        { key: 'open', header: '未付余额', width: '150px', align: 'right', render: r => <span className="mist-col"><span className="mist-note mist-cell-sm-label">未付余额</span><span className="mist-num">{apMoney(r.open, r.currency)}</span></span> },
         { key: 'paid', header: '已付', width: '140px', align: 'right', hideOnMobile: true, render: r => <span className="mist-num">{apMoney(r.paid, r.currency)}</span> },
         { key: 'un', header: '未分配付款', width: '140px', align: 'right', hideOnMobile: true, render: r => r.unallocated > 0 ? <span className="mist-num">{apMoney(r.unallocated, r.currency)}</span> : '—' },
-        { key: 'pre', header: '预付（待抵扣）', width: '140px', align: 'right', render: r => r.prepaid > 0 ? <span className="mist-num">{apMoney(r.prepaid, r.currency)}</span> : '—' },
+        { key: 'pre', header: '预付（待抵扣）', width: '140px', align: 'right', hideOnMobile: summary.every(x => x.prepaid <= 0), render: r => <span className="mist-col"><span className="mist-note mist-cell-sm-label">预付待抵扣</span>{r.prepaid > 0 ? <span className="mist-num">{apMoney(r.prepaid, r.currency)}</span> : <span>—</span>}</span> },
       ]} /> : <span className="mist-note">还没有登记供应商票据。合同金额不是应付；收到供应商发票登记后才形成应付余额。</span>}
     </div></Card>
     <div className="mist-row" style={{ flexWrap: 'wrap' }}>
@@ -289,7 +302,7 @@ export function FinancePayables() {
           <div className="mist-col">{billSources.map(s => { const on = s.purchase.id in billDraft.lines, other = !!billCurrency && s.purchase.currency !== billCurrency; return <div className="mist-row mist-module-actions" key={s.purchase.id} data-bill-source={s.purchase.id}>
             <Checkbox checked={on} disabled={other && !on} onChange={v => { const lines = { ...billDraft.lines }, links = { ...billDraft.links }; if (v) { const d = lineDefault(s.purchase.id, s.uninvoiced); lines[s.purchase.id] = d.amount; if (d.link) links[s.purchase.id] = d.link; } else { delete lines[s.purchase.id]; delete links[s.purchase.id]; } setBillDraft({ ...billDraft, lines, links, dueBasis: billDraft.dueBasis || '合同付款条件：' + (s.purchase.terms || '未填写') }); }} label={<span><Mono>{s.purchase.code}</Mono> · {s.purchase.description} · 还没收到票 {apMoney(s.uninvoiced, s.purchase.currency)}</span>} />
             <span className="mist-spacer" />{on && <TextInput aria-label={s.purchase.code + ' 本票金额'} type="number" min="0.01" step="0.01" style={{ width: 140 }} value={billDraft.lines[s.purchase.id]} onChange={e => setBillDraft({ ...billDraft, lines: { ...billDraft.lines, [s.purchase.id]: e.target.value } })} />}
-            {on && state && (() => { const options = invoiceableSettlements(state, s.purchase.id), must = needsLink(s.purchase.id); return options.length ? <Select aria-label={s.purchase.code + ' 关联结算'} value={billDraft.links[s.purchase.id] || ''} options={[...(must ? [] : [{ value: '', label: '不关联结算' }]), ...options.map(o => ({ value: o.settlement.id, label: `${o.settlement.code} · 未开票 ${apMoney(o.left, o.settlement.currency)}${o.settlement.confirmation?.prepaymentApplied ? ' · 含预付抵扣' : ''}` }))]} onChange={e => { const o = options.find(x => x.settlement.id === e.target.value); setBillDraft({ ...billDraft, links: { ...billDraft.links, [s.purchase.id]: e.target.value }, lines: o ? { ...billDraft.lines, [s.purchase.id]: String(Math.min(s.uninvoiced, o.left)) } : billDraft.lines }); }} /> : must ? <span className="mist-note">须先确认结算再登记票据</span> : null; })()}
+            {on && state && (() => { const options = invoiceableSettlements(state, s.purchase.id), must = needsLink(s.purchase.id), finalDone = settlementsOf(state, s.purchase.id).some(x => x.state === 'confirmed' && x.final); const choices = [...(must ? (billDraft.links[s.purchase.id] ? [] : [{ value: '', label: '请选择结算' }]) : [{ value: '', label: '不关联结算' }]), ...options.map(o => ({ value: o.settlement.id, label: `${o.settlement.code} · 未开票 ${apMoney(o.left, o.settlement.currency)}${o.settlement.confirmation?.prepaymentApplied ? ' · 含预付抵扣' : ''}` })), ...(finalDone ? [] : [{ value: HELD, label: '待关联结算（发票先到，结算确认后再关联）' }])]; return options.length || must ? <Select aria-label={s.purchase.code + ' 关联结算'} value={billDraft.links[s.purchase.id] || ''} options={choices} onChange={e => { const o = options.find(x => x.settlement.id === e.target.value); setBillDraft({ ...billDraft, links: { ...billDraft.links, [s.purchase.id]: e.target.value }, lines: o ? { ...billDraft.lines, [s.purchase.id]: String(Math.min(s.uninvoiced, o.left)) } : billDraft.lines }); }} /> : null; })()}
           </div>; })}
           {billDraft.supplierId && !billSources.length && <span className="mist-note">这家供应商没有还能登记票据的已批准合同。</span>}
           {!billDraft.supplierId && <span className="mist-note">先选择供应商。</span>}</div>
@@ -361,6 +374,9 @@ export function FinancePayables() {
 
     <SettlementSubmitDialog open={settleOpen} state={state} busy={busy} canSettle={canSettle} failure={settleOpen ? failure : ''} onClose={() => { setSettleOpen(false); setFailure(''); }} execute={(command, done) => void execute(command, done)} onDone={id => { setSettleOpen(false); setView('settlements'); open(id); toast('结算已提交，等待财务复核'); }} />
     <SettlementConfirmDialog settlement={settlements.find(x => x.id === confirmId)} busy={busy} canConfirm={canConfirm} failure={confirmId ? failure : ''} onClose={() => { setConfirmId(''); setFailure(''); }} execute={(command, done) => void execute(command, done)} onDone={() => { setConfirmId(''); toast('结算已确认'); }} />
+    {linkId && state && bills.find(b => b.id === linkId) && <BillLinkDialog bill={bills.find(b => b.id === linkId)!} state={state} busy={busy} allowed={canBill} failure={failure} onClose={() => { setLinkId(''); setFailure(''); }} execute={(command, done) => void execute(command, done)} onDone={() => { setLinkId(''); toast('已关联结算'); }} />}
+    {deductId && state && bills.find(b => b.id === deductId) && <DeductionDialog bill={bills.find(b => b.id === deductId)!} state={state} busy={busy} allowed={canAllocate} failure={failure} onClose={() => { setDeductId(''); setFailure(''); }} execute={(command, done) => void execute(command, done)} onDone={() => { setDeductId(''); toast('索赔扣款已登记'); }} />}
+    {moveDraft && state && <PrepaymentMoveDialog kind={moveDraft.kind} purchaseId={moveDraft.purchaseId} state={state} busy={busy} allowed={moveDraft.kind === 'refund' ? canPay && canConfirm : canConfirm} failure={failure} onClose={() => { setMoveDraft(null); setFailure(''); }} execute={(command, done) => void execute(command, done)} onDone={() => { const k = moveDraft.kind; setMoveDraft(null); toast(k === 'refund' ? '剩余预付退款已登记' : '剩余预付已转抵'); }} />}
     <Dialog open={!!reasonDraft} onClose={() => { if (!busy) setReasonDraft(null); }} title={reasonDraft ? REASON[reasonDraft.kind].title : ''} tone="bad" description={reasonDraft ? REASON[reasonDraft.kind].description : ''}
       footer={<><Button disabled={busy} onClick={() => setReasonDraft(null)}>取消</Button><Button variant="danger" loading={busy} disabled={busy || !reasonDraft || !reasonAllowed(reasonDraft.kind) || !reasonDraft.reason.trim()} onClick={submitReason}>{reasonDraft ? REASON[reasonDraft.kind].action : ''}</Button></>}>
       {reasonDraft && <div className="mist-col">{failure && <Banner tone="bad" title="未能完成">{failure}</Banner>}<Field label={REASON[reasonDraft.kind].label} required><TextArea aria-label={REASON[reasonDraft.kind].label} rows={3} value={reasonDraft.reason} onChange={e => setReasonDraft({ ...reasonDraft, reason: e.target.value })} /></Field></div>}

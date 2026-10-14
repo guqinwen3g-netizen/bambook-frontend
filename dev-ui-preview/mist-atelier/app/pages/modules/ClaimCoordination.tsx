@@ -4,6 +4,7 @@ import { Banner, Button, Card, CardHeader, Checklist, DataTable, Facts, Pill, ty
 import type { MistState } from '../../../../../server/src/shared/mistWorkspace';
 import { platformCreditRemaining, type PlatformClaim, type PlatformCommand } from '../../../../../server/src/shared/mistPlatform';
 import { CLAIM_LOCATION_LABEL, CLAIM_METHOD_LABEL, CLAIM_RECOVERY_LABEL, CLAIM_RESULT_LABEL, claimLedger, currentClaimVerification, type ClaimGoodsLocation, type ClaimRecovery, type ClaimRecoveryMethod, type ClaimVerifyResult } from '../../../../../server/src/shared/mistClaimCoordination';
+import { recoveryDeductedMinor, supplierDeductions } from '../../../../../server/src/shared/mistPayables';
 import type { ModuleEditorSpec, ModuleField, ModuleValues } from './ModuleWorkbench';
 
 const RECOVERY_TONE: Record<ClaimRecovery['state'], Tone> = { Negotiating: 'warn', Agreed: 'accent', Settled: 'ok', Waived: 'neutral', Withdrawn: 'neutral' };
@@ -18,6 +19,8 @@ type Props = {
   claim: PlatformClaim; state: MistState; actorId?: string; busy: boolean;
   can: { write: boolean; qc: boolean; finance: boolean; approve: boolean };
   command: (command: PlatformCommand) => Promise<unknown>; openEditor: (spec: ModuleEditorSpec) => void;
+  /** 打开应付（“从货款中扣”由财务在应付里按票据登记扣款）。 */
+  onPayables?: () => void;
 };
 
 /** 默认工厂：订单生产分支上登记的工厂，名称在供应商档案中唯一时才预选。 */
@@ -27,7 +30,7 @@ export function claimDefaultSupplierId(state: MistState, claim: PlatformClaim) {
   return matches.length === 1 ? matches[0].id : '';
 }
 
-export function ClaimCoordinationPanel({ claim, state, actorId, busy, can, command, openEditor }: Props) {
+export function ClaimCoordinationPanel({ claim, state, actorId, busy, can, command, openEditor, onPayables }: Props) {
   const open = !['Closed', 'Cancelled'].includes(claim.state);
   const co = claim.coordination, notice = co?.notices.at(-1), check = currentClaimVerification(claim), ledger = claimLedger(state, claim, { creditsOpen: (state.platform?.credits ?? []).some(note => note.claimId === claim.id && platformCreditRemaining(state, note.id) > 0) });
   const recoveries = co?.recoveries ?? [], suppliers = (state.market?.suppliers ?? []).map(row => ({ value: row.id, label: row.name + (row.status === 'active' ? '' : '（' + (row.status === 'paused' ? '已暂停' : '已停用') + '）') }));
@@ -71,9 +74,12 @@ export function ClaimCoordinationPanel({ claim, state, actorId, busy, can, comma
     initialValues: { agreed: '', method: '', note: '' }, submitLabel: '保存',
     submit: v => command({ type: 'platform.claim.recovery.agree', payload: { id: r.id, agreed: n(v, 'agreed'), method: s(v, 'method') as ClaimRecoveryMethod, note: s(v, 'note') } }),
   });
+  /** 已在应付中从货款扣的金额（未冲回）。 */
+  const deducted = (r: ClaimRecovery) => recoveryDeductedMinor(state, r.id) / 100;
   const settle = (r: ClaimRecovery) => openEditor({
-    title: '登记工厂补偿实际落实', fields: [f('amount', '实际落实金额（' + r.currency + '）', 'number', { min: 0.01, step: '0.01' }), f('date', '落实日期', 'date'), f('reference', '实际扣款 / 收款凭据', 'text')],
-    initialValues: { amount: r.agreed ?? '', date: new Date().toISOString().slice(0, 10), reference: '' }, submitLabel: '确认已落实',
+    title: '登记工厂补偿实际落实', description: r.method === 'mixed' && deducted(r) > 0 ? `已在应付中从货款扣 ${money(deducted(r), r.currency)}；这里只登记其他方式（工厂付款、补货等）落实的部分，合计不超过工厂同意金额。` : undefined,
+    fields: [f('amount', (r.method === 'mixed' ? '其他方式落实金额（' : '实际落实金额（') + r.currency + '）', 'number', { min: 0.01, step: '0.01' }), f('date', '落实日期', 'date'), f('reference', '实际扣款 / 收款凭据', 'text')],
+    initialValues: { amount: r.agreed === undefined ? '' : Math.max(0, Math.round((r.agreed - (r.method === 'mixed' ? deducted(r) : 0)) * 100) / 100), date: new Date().toISOString().slice(0, 10), reference: '' }, submitLabel: '确认已落实',
     submit: v => command({ type: 'platform.claim.recovery.settle', payload: { id: r.id, amount: n(v, 'amount'), date: s(v, 'date'), reference: s(v, 'reference') } }),
   });
   const waive = (r: ClaimRecovery) => openEditor({
@@ -119,10 +125,12 @@ export function ClaimCoordinationPanel({ claim, state, actorId, busy, can, comma
           { key: 'requested', header: '提出', align: 'right', render: r => money(r.requested, r.currency) },
           { key: 'agreed', header: '工厂同意', align: 'right', render: r => r.agreed === undefined ? '—' : money(r.agreed, r.currency) + (r.method ? ' · ' + CLAIM_METHOD_LABEL[r.method] : '') },
           { key: 'state', header: '状态', render: r => <Pill tone={RECOVERY_TONE[r.state]}>{CLAIM_RECOVERY_LABEL[r.state]}</Pill> },
-          { key: 'note', header: '依据 / 凭据', render: r => r.settledRef || r.waiveReason || r.agreedNote || r.basis },
+          { key: 'note', header: '依据 / 凭据', render: r => <span className="mist-col"><span>{r.settledRef || r.waiveReason || r.agreedNote || r.basis}</span>{(r.method === 'deduction' || r.method === 'mixed') && r.state === 'Agreed' && <span className="mist-note">已从货款扣 {money(deducted(r), r.currency)} / 同意 {money(r.agreed ?? 0, r.currency)}{supplierDeductions(state).some(d => d.recoveryId === r.id && !d.reversed) ? ' · ' + supplierDeductions(state).filter(d => d.recoveryId === r.id && !d.reversed).map(d => d.code + ' ' + d.billCode).join('、') : ''}</span>}</span> },
           { key: 'actions', header: '操作', render: r => <div className="mist-row">
             {can.write && open && r.state === 'Negotiating' && <Button variant="quiet" disabled={busy} onClick={() => agree(r)}>记录工厂同意</Button>}
-            {can.finance && open && r.state === 'Agreed' && <Button variant="quiet" disabled={busy} onClick={() => settle(r)}>登记实际落实</Button>}
+            {can.finance && open && r.state === 'Agreed' && r.method !== 'deduction' && <Button variant="quiet" disabled={busy} onClick={() => settle(r)}>登记实际落实</Button>}
+            {open && r.state === 'Agreed' && r.method === 'deduction' && <span className="mist-note">由财务在应付里按工厂票据扣款，扣满自动落实</span>}
+            {open && r.state === 'Agreed' && (r.method === 'deduction' || r.method === 'mixed') && onPayables && <Button variant="quiet" disabled={busy} onClick={onPayables}>去应付扣款</Button>}
             {can.approve && open && ['Negotiating', 'Agreed'].includes(r.state) && r.createdById !== actorId && <Button variant="quiet" disabled={busy} onClick={() => waive(r)}>批准放弃</Button>}
           </div> },
         ]} />}
