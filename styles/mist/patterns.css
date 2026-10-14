@@ -528,3 +528,4 @@
 @media (max-width: 720px) {
   .mist-product-chain { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+.mist-quote-line:not(:last-child) { border-bottom: 1px solid var(--mist-line); }

@@ -11,6 +11,8 @@ import { MistPrivateFiles, validateFileInput, type MistFileInput, type MistStore
 import { prepareMistBusinessNumbers } from './businessNumbers';
 import { buildIssueArchive, bindIssueArchive, prepareCreditDocumentSnapshot, assertCreditIssuePayload, assertIssuedCreditArchive, type PreparedCreditIssueArchive } from './creditPrint';
 import { canonicalCreditDocument, creditDocumentFingerprint, creditSourceFingerprint, type MistBusinessNumberNeed, type MistCreditPrintSnapshot } from '../shared/mistCreditDocuments';
+/** 演示工作区里指派给演示成员（demo-*）的审批无人能处理，不阻止移入回收站。 */
+const demoOnlyReview=(task:{reviewerIds:string[]})=>task.reviewerIds.length>0&&task.reviewerIds.every(id=>id.startsWith('demo-'));
 export type MistContract = {
   createMistState: (context: MistContext, seed?: 'demo' | 'empty') => MistState;
   /** 演示工作区的示例附件：按工作区数据生成可下载 PDF，创建时写入私有存储。 */
@@ -68,7 +70,7 @@ export class MistRepository {
       if(previous){if(previous.actorId!==actor.userId||previous.inputHash!==hash)fail('REQUEST_CONFLICT','请求编号已用于另一项操作',409);const active=await this.activeWorkspace(db,actor,previous.result.result.activeWorkspaceId);return{workspace:publicWorkspace(active),receipt:{requestId:previous.requestId,...previous.result},replayed:true};}
       if(row.revision!==input.expectedRevision)fail('REVISION_CONFLICT','工作区已更新，请刷新后重试',409);
       if(action==='archive'&&archived(row)||action==='restore'&&!archived(row))fail('WORKSPACE_STATE_CONFLICT',action==='archive'?'工作区已在回收站':'工作区已恢复',409);
-      if(action==='archive'&&this.reviews(row.state).some(task=>task.status==='pending'))fail('PENDING_REVIEWS','请先处理或撤销工作区中的待审批事项，再移入回收站',409);
+      if(action==='archive'&&this.reviews(row.state).some(task=>task.status==='pending'&&!demoOnlyReview(task)))fail('PENDING_REVIEWS','请先处理或撤销工作区中的待审批事项，再移入回收站',409);
       const state=structuredClone(row.state),context=this.context(actor);if(action==='archive')state.workspaceArchive={at:context.now,actorId:actor.userId};else delete state.workspaceArchive;
       if(Array.isArray(state.events))state.events.unshift({id:context.id(),entityType:'workspace',entityId:row.id,actor:context.actorName,at:context.now,text:action==='archive'?'工作空间移入回收站':'工作空间从回收站恢复',fileIds:[]});
       const saved=await db.mistWorkspace.update({where:{id:row.id},data:{state,revision:row.revision+1}});const active=action==='restore'?saved:await this.activeWorkspace(db,actor);

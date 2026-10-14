@@ -19,6 +19,8 @@ describe('Mist repository with the real shared business commands', () => {
     const download = await repo.download(testActor(), workspace.id, demoFiles[0].id);
     expect(download.bytes.subarray(0, 8).toString('latin1')).toBe('%PDF-1.4');
     expect(download.bytes.length).toBe(demoFiles[0].size);
+    const pendingDemo = workspace.state.market.quotations.find(q => q.approval?.status === 'pending');
+    expect(pendingDemo?.approval?.reviewerId).toBe('demo-reviewer');
     const empty = await repo.create(testActor(), { name: 'Empty', seed: 'empty' });
     expect(empty.state.files).toEqual([]);
   });

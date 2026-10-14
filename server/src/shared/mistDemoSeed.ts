@@ -9,7 +9,7 @@ import { applyMistCommand, type MistCommand, type MistContext, type MistState } 
 import { emptyFabricRequirements } from './mistDevelopmentDomain';
 import { demoFileRecord, type DemoFileTemplate } from './mistDemoFiles';
 
-export const DEMO_SEED_VERSION = 3;
+export const DEMO_SEED_VERSION = 4;
 export type DemoSeedFailure = { step: string; message: string };
 
 const DAY = 86400000;
@@ -104,6 +104,14 @@ export function seedDemoModules(initial: MistState, context: MistContext): { sta
     if (!rows.length) return '';
     return id(run(step, { type: 'market.quotation.save', payload: { input: { customerId, currency, season: 'AW27', validUntil: day(validIn), deliveryTerms: 'FOB 上海', paymentTerms: 'T/T 30% 定金，70% 见提单副本', lines: rows, fileIds: [], note } } }));
   };
+  // 已失效：40 天前发出，10 天前到期，客户未回复。
+  const early = { ...sales, now: at(-40) };
+  const expiredRows = (() => { const p = state.market.products.find(x => x.id === nylon); return p ? [{ productId: p.id, sourceDevId: p.sourceDevId, sourceVersionId: p.sourceVersionId, name: p.name, style: p.sku, specification: p.specification || '', qty: '8000', unit: p.unit, price: '1.85', cost: p.cost }] : []; })();
+  const expiredQuote = expiredRows.length ? id(run('quote expired', { type: 'market.quotation.save', payload: { input: { customerId: c0.id, currency: 'USD', season: 'SS27', validUntil: day(-10), deliveryTerms: 'FOB 上海', paymentTerms: 'T/T 见提单副本', lines: expiredRows, fileIds: [], note: 'SS27 里布询价。' } } }, early)) : '';
+  if (expiredQuote) {
+    run('quote expired sent', { type: 'market.quotation.status', payload: { id: expiredQuote, status: 'Sent', evidence: '邮件发送报价给采购 Emma Clarke' } }, { ...sales, now: at(-38) });
+    run('quote expired mark', { type: 'market.quotation.status', payload: { id: expiredQuote, status: 'Expired', evidence: '有效期内客户未回复，已电话确认本季暂不下单' } });
+  }
   const fabricQuote = quote('quote fabric', c0.id, 'EUR', 30, [{ productId: fabricProduct, qty: '3600', price: '7.80' }], '面料单独报价，按米计价。');
   if (fabricQuote) {
     run('quote fabric sent', { type: 'market.quotation.status', payload: { id: fabricQuote, status: 'Sent', evidence: '邮件发送报价 PDF 给 Emma Clarke' } });
@@ -114,6 +122,15 @@ export function seedDemoModules(initial: MistState, context: MistContext): { sta
   const coatQuote = quote('quote coat', c1.id, 'USD', 21, [{ productId: coatProduct, qty: '800', price: '72.50' }, { productId: vest, qty: '600', price: '29.50' }], '补单报价，含两款。');
   if (coatQuote) run('quote coat sent', { type: 'market.quotation.status', payload: { id: coatQuote, status: 'Sent', evidence: '视频会议后发送报价单' } });
   quote('quote draft', c2.id, 'USD', 40, [{ productId: nylon, qty: '5000', price: '1.90' }], '待确认门幅后发送。');
+  // 版本链：大衣报价 V1 客户还价未接受 → V2 马甲降到成本以下，提交业务审批（待审批）。
+  if (coatQuote) {
+    run('quote coat rejected', { type: 'market.quotation.status', payload: { id: coatQuote, status: 'Rejected', evidence: '客户回复：马甲目标价 USD 27.00，大衣可接受' } });
+    const v2 = run('quote coat v2', { type: 'market.quotation.save', payload: { input: { previousId: coatQuote, customerId: c1.id, currency: 'USD', season: 'AW27', validUntil: day(18), deliveryTerms: 'FOB 上海', paymentTerms: 'T/T 30% 定金，70% 见提单副本', lines: (state.market.quotations.find(q => q.id === coatQuote)?.lines || []).map(l => ({ productId: l.productId, sourceDevId: l.sourceDevId, sourceVersionId: l.sourceVersionId, name: l.name, style: l.style, specification: l.specification, qty: l.qty, unit: l.unit, price: l.productId === vest ? '20.50' : l.price, cost: l.cost })), fileIds: [], note: '按客户还价调整马甲单价，低于成本，需审批。' } } });
+    if (id(v2)) run('quote coat v2 submit', { type: 'market.quotation.submit', payload: { id: id(v2) } });
+  }
+  // 临期：已发送、4 天后到期。
+  const nearQuote = quote('quote near expiry', c2.id, 'USD', 4, [{ productId: vest, qty: '1200', price: '29.80' }], '展会样衣跟进报价。');
+  if (nearQuote) run('quote near sent', { type: 'market.quotation.status', payload: { id: nearQuote, status: 'Sent', evidence: '邮件发送报价 PDF 给 Claire Martin' } });
 
   /* ───────── 展会、营销活动与线索 ───────── */
   const show = aw27 ? id(run('show', { type: 'market.show.save', payload: { input: { name: 'Première Vision Paris', location: '巴黎北郊维勒班展馆', seasonId: aw27, startDate: day(-40), endDate: day(-38), booth: 'Hall 6 · F12', attendees: '顾言、沈禾', cost: '8600.00', currency: 'EUR', status: 'Completed', fileIds: [], note: '' } } })) : '';

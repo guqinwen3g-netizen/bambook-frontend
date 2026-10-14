@@ -73,7 +73,7 @@ describe('market action audit component regressions',()=>{
  });
  it('renders rejected approval as a block on delivery until resubmission',async()=>{
   const s=bridge.current.state,p=s.market.products[0];s.market.quotations=[{id:'q',code:'Q-RETURNED',customerId:'c1',currency:'USD',season:'AW26',validUntil:'2026-12-01',deliveryTerms:'FOB',paymentTerms:'T/T',status:'Draft',requiresApproval:true,lines:[{id:'line',productId:p.id,sourceDevId:'',sourceVersionId:'',name:p.name,style:p.sku,specification:'',qty:'1',unit:'米',price:'1',cost:'0.10',amount:'1.00',costBasis:'product'}],total:'1.00',deliveryEvidence:'',responseEvidence:'',approval:{id:'review',requesterId:'sales',reviewerId:'lead',status:'rejected',submittedAt:'2026-10-13',details:[],fileIds:[],note:'请修改'},convertedOrderId:null,fileIds:[],note:'',createdAt:'',updatedAt:''}];
-  await mount('quotations','q');const delivery=[...host.querySelectorAll('button')].find(b=>b.textContent==='记录线下交付')!;expect(delivery.disabled).toBe(true);expect(host.textContent).toContain('请修改');expect(bridge.current.run).not.toHaveBeenCalled();
+  await mount('quotations','q');const delivery=[...host.querySelectorAll('button')].find(b=>b.textContent==='登记已发送')!;expect(delivery.disabled).toBe(true);expect(host.textContent).toContain('请修改');expect(bridge.current.run).not.toHaveBeenCalled();
  });
 });
 
