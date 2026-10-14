@@ -19,8 +19,11 @@
 
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import webViteConfig from './vite.config';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const BAMBOOK_UI_LAB_ELECTRON_FLAG = 'BAMBOOK_ELECTRON_UI_LAB';
 const BAMBOOK_ELECTRON_RENDERER_PORT = 3000;

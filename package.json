@@ -44,10 +44,11 @@
     "deploy:server": "bash scripts/ops-upload-package.sh",
     "deploy:all": "npm run deploy:server && npm run deploy:web",
     "test": "vitest run dev-ui-preview/mist-atelier/app components/mist",
+    "test:mist:tooling": "vitest run scripts/mist-version.test.ts",
     "test:mist:server": "npm --prefix server run test:mist",
     "typecheck:mist": "tsc -p tsconfig.mist.json",
     "typecheck:mist:server": "npm --prefix server run typecheck:mist",
-    "verify:mist": "npm run typecheck:mist && npm run typecheck:mist:server && npm test && npm run test:mist:server && npm run build && npm run mist:check"
+    "verify:mist": "npm run typecheck:mist && npm run typecheck:mist:server && npm test && npm run test:mist:server && npm run test:mist:tooling && npm run build && npm run mist:check"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.18",
