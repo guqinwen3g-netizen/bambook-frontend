@@ -11,7 +11,7 @@ import type {MistCreditDocumentIssue} from './mistCreditDocuments';
 import type {MistReviewTask} from './mistReview';
 import {createOrderGovernance,applyOrderGovernanceCommand,orderGovernancePermission,getOrderGovernanceReviews,assertOrderApproved,type OrderGovernanceFields,type OrderGovernanceCommand,type OrderGovernanceInput} from './mistOrderGovernance';
 import {createOrderFundingState,applyOrderFundingCommand,orderFundingCommandPermission,assertOrderDepositCovered,assertOrderFundingIntegrity,type OrderFundingState,type OrderFundingCommand} from './mistOrderFunding';
-import {createPayablesState,applyPayablesCommand,payablesCommandPermission,type PayablesState,type PayablesCommand} from './mistPayables';
+import {createPayablesState,applyPayablesCommand,payablesCommandPermission,getPayableReviews,type PayablesState,type PayablesCommand} from './mistPayables';
 
 /** Mist's typed business workspace. Shared by its API and the approved frontend. */
 export type MistTone = 'neutral' | 'accent' | 'ok' | 'warn' | 'bad' | 'ai';
@@ -23,7 +23,7 @@ export type MistContext = {
   visibleNotificationIds?: string[];
   consumeBusinessNumber?: (prefix: MistBusinessNumberPrefix) => string;
   creditDocumentIssue?: MistCreditDocumentIssue;
-  authority?: { supplier: Record<string,{version:number;userIds:string[]}>; claimReviewerId?:string; businessReviewerId?:string; orderReviewerIds?:{garment:string[];fabric:string[]} };
+  authority?: { supplier: Record<string,{version:number;userIds:string[]}>; claimReviewerId?:string; businessReviewerId?:string; orderReviewerIds?:{garment:string[];fabric:string[]}; paymentReviewerIds?:string[] };
 };
 export type DevelopmentValues = {
   domain?:DevelopmentDomain; sampleForm?:string; sampleUnit?:string; targetCurrency?:string; targetUnit?:string; fabricRequirements?:FabricDevelopmentRequirements;
@@ -649,7 +649,7 @@ export function normalizeMistState(state:MistState,context:MistContext):void {
   }
   recalculate(state);
 }
-export function getMistReviewTasks(state:MistState):MistReviewTask[]{return [...getOrderGovernanceReviews(state),...getFulfillmentReviews(state),...getMarketReviews(state),...getPlatformReviews(state)];}
+export function getMistReviewTasks(state:MistState):MistReviewTask[]{return [...getOrderGovernanceReviews(state),...getFulfillmentReviews(state),...getMarketReviews(state),...getPlatformReviews(state),...getPayableReviews(state)];}
 export { renderDemoFile } from './mistDemoFiles';
 
 /** 线索一键转 CRM：选已有客户或按线索公司新建客户（含联系人），可同时建立商机；整个过程在同一次命令内完成，任一步失败都不落库。 */

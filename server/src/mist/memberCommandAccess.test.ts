@@ -88,10 +88,16 @@ function paymentFixture(reconcile = false) {
   const state = db.workspaces.get(workspaceId).state;
   state.fulfillment.purchases.push({ id: 'purchase', supplierId: 'supplier', supplier: '隔离供应商', state: 'approved', kind: 'material', currency: 'CNY', amount: 1000, terms: '合同付款条件', lines: [] });
   state.payables.bills.push({ id: 'bill', code: 'AP-TEST', supplierId: 'supplier', supplier: '隔离供应商', invoiceNo: 'VAT-TEST', invoiceDate: '2026-10-13', currency: 'CNY', amount: 1000, taxAmount: 0, taxRate: '', lines: [], terms: [], due: '2026-11-14', dueBasis: '合同付款条件', fileIds: [], note: '', state: 'open', registeredAt: now, registeredBy: 'owner' });
+  // 所有付款须先有主管已批准的付款申请：票据付款申请带分配，预付款申请不带。
+  const approved = { reviewerIds: ['manager'], requesterId: 'sales', requester: '业务', submittedAt: '2026-10-12T01:00:00.000Z', reason: '按合同付款', fileIds: [], snapshot: [], state: 'approved', paymentHistory: [], decision: { actorId: 'manager', actor: '主管', at: '2026-10-12T02:00:00.000Z', decision: 'approved', note: '同意' } };
+  state.payables.requests = [
+    { id: 'req-bill', code: 'PR-TEST-1', purpose: 'bill', supplierId: 'supplier', supplier: '隔离供应商', currency: 'CNY', amount: 600, lines: [{ billId: 'bill', billCode: 'AP-TEST', invoiceNo: 'VAT-TEST', amount: 600 }], ...approved },
+    { id: 'req-pre', code: 'PR-TEST-2', purpose: 'prepayment', supplierId: 'supplier', supplier: '隔离供应商', currency: 'CNY', amount: 600, planId: 'plan', purchaseId: 'purchase', purchaseCode: 'PO-TEST', lines: [], ...approved },
+  ];
 }
 const payment = (allocations?: Array<{ billId: string; amount: number }>): MistCommand => ({
   type: 'payable.payment.register',
-  payload: { supplierId: 'supplier', date: '2026-10-13', amount: 600, currency: 'CNY', reference: 'BANK-ISOLATED', allocations },
+  payload: { requestId: allocations?.length ? 'req-bill' : 'req-pre', date: '2026-10-13', amount: 600, reference: 'BANK-ISOLATED', allocations },
 });
 describe('供应商付款登记附带分配必须同时具有既有凭证写和核销权限', () => {
   it('只有付款登记权限不能附带分配，拒绝时款项、核销和回执均不改变', async () => {
@@ -101,7 +107,7 @@ describe('供应商付款登记附带分配必须同时具有既有凭证写和�
     expect(db.workspaces.get(workspaceId)).toEqual(before);
     expect(db.receipts.size).toBe(receipts);
   });
-  it.each([undefined, []])('没有核销权限仍可仅登记付款，分配参数为 %j', async allocations => {
+  it.each([undefined, []])('没有核销权限仍可按已批准预付申请登记付款（不分配），分配参数为 %j', async allocations => {
     paymentFixture();
     await execute(payment(allocations));
     const state = db.workspaces.get(workspaceId).state;
@@ -120,6 +126,15 @@ describe('供应商付款登记附带分配必须同时具有既有凭证写和�
     auth.users.get('other')!.permissions = ['invoices:read', 'vouchers:read', 'vouchers:write'];
     await expect(repo.execute(actor(), workspaceId, input)).rejects.toMatchObject({ status: 403 });
     expect(db.workspaces.get(workspaceId).state.payments).toHaveLength(1);
+  });
+  it('冲回付款会连带冲回分配，只有凭证写权限时拒绝且不改变任何记录', async () => {
+    paymentFixture(true);
+    await execute(payment([{ billId: 'bill', amount: 600 }]), 'pay-before-reverse');
+    const paid = db.workspaces.get(workspaceId).state.payables.payments[0].id;
+    auth.users.get('other')!.permissions = ['invoices:read', 'vouchers:read', 'vouchers:write'];
+    const before = structuredClone(db.workspaces.get(workspaceId));
+    await expect(execute({ type: 'payable.payment.reverse', payload: { supplierPaymentId: paid, reason: '流水录错' } } as MistCommand, 'reverse-no-reconcile')).rejects.toMatchObject({ status: 403 });
+    expect(db.workspaces.get(workspaceId)).toEqual(before);
   });
   it('当前岗位有核销权限但会话权限上限不允许时仍拒绝复合动作', async () => {
     paymentFixture(true);

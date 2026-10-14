@@ -5,7 +5,7 @@ import { Banner, Button, Card, Checklist, DataTable, Dropdown, EmptyState, Facts
 import type { MistState } from '../../../../../server/src/shared/mistWorkspace';
 import type { FulfillmentPurchase } from '../../../../../server/src/shared/mistFulfillment';
 import { fulfillmentSourceLabel } from '../../../../../server/src/shared/mistFulfillment';
-import { purchaseContractMinor, purchasePayableReadback } from '../../../../../server/src/shared/mistPayables';
+import { purchaseContractMinor, purchasePayableReadback, purchasePrepaymentReadback } from '../../../../../server/src/shared/mistPayables';
 import { supplierBusinessDay, supplierStatusOn, supplierUnavailableReason } from '../../../../../server/src/shared/mistSupplierStatus';
 import { useMistWorkspace } from '../../runtime/workspace';
 import { useMistSession } from '../../runtime/auth';
@@ -168,6 +168,7 @@ function PurchaseDetail({ purchase: p, state, day, me, can, canApprove, locked, 
 }) {
   const stage = purchaseStage(p), flags = purchaseFlags(p, day), processing = p.kind === 'processing';
   const receipts = state.fulfillment.receipts.filter(receipt => receipt.purchaseId === p.id);
+  const prepay = purchasePrepaymentReadback(state, p.id);
   const billed = purchasePayableReadback(state, p.id, day).filter(r => r.bill.status !== 'void'), invoicedMinor = billed.reduce((n, r) => n + Math.round(r.lineAmount * 100), 0);
   const rejectedQty = round(receipts.reduce((sum, receipt) => sum + receipt.rejected, 0));
   const writeReason = can ? false : '需要采购写权限';
@@ -187,6 +188,7 @@ function PurchaseDetail({ purchase: p, state, day, me, can, canApprove, locked, 
     ...(processing ? [{ label: '原料交接', done: false, note: '发料、损耗与余料归还尚未接入' }] : []),
     { label: processing ? '分批回交' : '分批交付', done: stage === 'done', note: `${p.received} / ${p.quantity} ${p.unit}` },
     { label: '验收', done: false, note: rejectedQty ? `已拒收 ${rejectedQty} ${p.unit} · 退换尚未接入` : '独立验收尚未接入', noteTone: rejectedQty ? 'bad' as const : undefined },
+    ...(prepay.plans.length ? [{ label: '合同预付款', done: prepay.paid >= prepay.planned, note: `计划 ${prepay.planned.toFixed(2)} · 已付 ${prepay.paid.toFixed(2)} ${p.currency}${prepay.paid > 0 ? '（待结算抵扣）' : ''}` }] : []),
     { label: '财务登记供应商票据与付款', done: billed.length > 0 && invoicedMinor >= purchaseContractMinor(p) && billed.every(r => r.bill.open <= 0), note: billed.length ? `已登记票据 ${(invoicedMinor / 100).toFixed(2)} / 合同 ${(purchaseContractMinor(p) / 100).toFixed(2)} ${p.currency} · ${billed.filter(r => r.bill.open > 0).length ? billed.filter(r => r.bill.open > 0).length + ' 张未付清' : '已付清'}` : '财务尚未登记供应商票据' },
   ];
   return <DetailBody data-purchase-detail={p.id} heading={<div>
