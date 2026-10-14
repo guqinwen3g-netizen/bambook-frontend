@@ -32,8 +32,8 @@ describe('售后索赔协同面板', () => {
     await act(async () => button('通知相关人员')!.click());
     const spec = openEditor.mock.calls[0][0];
     expect(spec.description).toContain('不等于认定工厂责任');
-    await spec.submit({ supplierId: supplier().id, factoryChannel: '微信群', factoryNote: '请核实留样', internalNote: '底线 3000' });
-    expect(command).toHaveBeenCalledWith({ type: 'platform.claim.notify', payload: { id: 'c1', supplierId: supplier().id, factoryChannel: '微信群', factoryNote: '请核实留样', internalNote: '底线 3000' } });
+    await spec.submit({ supplierId: supplier().id, factoryChannel: '微信群', note: '底线 3000' });
+    expect(command).toHaveBeenCalledWith({ type: 'platform.claim.notify', payload: { id: 'c1', supplierId: supplier().id, factoryChannel: '微信群', note: '底线 3000' } });
   });
   it('质检核实前已有处置时提醒；安全隐患单独提示；质检可记录核实', async () => {
     const d = { id: 'd1', kind: 'Allowance' as const, amount: 10, quantity: 0, unit: '', returnDisposition: '' as const, basis: 'x', fileIds: [], state: 'Draft' as const };

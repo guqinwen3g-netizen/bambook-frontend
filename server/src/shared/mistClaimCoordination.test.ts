@@ -16,7 +16,7 @@ function fixture(){
  const claimId=run({type:'platform.claim.create',payload:{orderId,invoiceId,problem:'客户反映色差',fileIds:['photo']}}).id;
  return{ctx,qc,leader,finance,run,supplierId,claimId,get state(){return state;},claim(){return state.platform!.claims.find(c=>c.id===claimId)!;}};
 }
-const notify=(f:ReturnType<typeof fixture>)=>f.run({type:'platform.claim.notify',payload:{id:f.claimId,supplierId:f.supplierId,factoryChannel:'微信群',factoryNote:'客户反映色差，请配合核实留样',internalNote:'客户要求赔 10000'}});
+const notify=(f:ReturnType<typeof fixture>)=>f.run({type:'platform.claim.notify',payload:{id:f.claimId,supplierId:f.supplierId,factoryChannel:'微信群',note:'客户要求赔 10000'}});
 const allowance=(f:ReturnType<typeof fixture>,amount:number)=>{const id=f.run({type:'platform.claim.disposition',payload:{claimId:f.claimId,kind:'Allowance',amount,quantity:0,unit:'',returnDisposition:'',basis:'客户书面同意减款',fileIds:[]}}).id;f.run({type:'platform.claim.submit',payload:{id}});f.run({type:'platform.claim.decide',payload:{id,decision:'approved',note:'批准'}},f.leader);f.run({type:'platform.claim.execute',payload:{id}});return id;};
 
 describe('售后索赔协同',()=>{
@@ -27,10 +27,10 @@ describe('售后索赔协同',()=>{
  });
  it('records notification of internal parties and factory without sending anything externally, and creates follow-up work',()=>{
   const f=fixture();notify(f);const n=f.claim().coordination!.notices[0];
-  expect(n).toMatchObject({supplierName:'江南成衣',factoryChannel:'微信群',internalNote:'客户要求赔 10000',byId:'business'});
+  expect(n).toMatchObject({supplierName:'江南成衣',factoryChannel:'微信群',note:'客户要求赔 10000',byId:'business'});
   const tasks=f.state.tasks.filter(t=>t.target.id===f.claimId&&!t.done).map(t=>t.kind);expect(tasks).toEqual(expect.arrayContaining(['claim-verify:'+f.claimId,'claim-factory:'+f.claimId]));
   expect(f.state.notifications[0].detail).toContain('不代表认定责任');
-  expect(()=>f.run({type:'platform.claim.notify',payload:{id:f.claimId,supplierId:'nope',factoryChannel:'电话',factoryNote:'x',internalNote:''}})).toThrow('准确工厂');
+  expect(()=>f.run({type:'platform.claim.notify',payload:{id:f.claimId,supplierId:'nope',factoryChannel:'电话',note:''}})).toThrow('准确工厂');
  });
  it('lets QC record facts, closes the QC task and flags safety issues',()=>{
   const f=fixture();notify(f);
