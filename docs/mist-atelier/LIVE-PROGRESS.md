@@ -1,24 +1,18 @@
 # 实时进度 · Mist Atelier
 
-> 所有协作者 / Agent 每次任务推送同步更新本人记录；开工、检查点、阻塞、review、合入和交接均须记录。最新一条放在最上面。本机预览跟随本分支即可看到同一份代码。
-> 本文件只记录过程；正式交接仍写入 `05-migration-playbook.md`。
-> 2026-10-14 起 GitHub 仓库更名为 `guqinwen3g-netizen/bambook-main`（原 `bambook-frontend`，旧 PR 链接由 GitHub 自动跳转）。
+> 本文件保留接力停点和历史记录；总体进度、当前工作与后续方向集中在 [项目首页](../../README.md)。详细验证与合入回执留在对应 PR，交接时更新停点即可，不重复维护多份相同状态。
+> 2026-10-14 起 GitHub 仓库更名为 `guqinwen3g-netizen/bambook-main`（原 `bambook-frontend`）。
 
-## 当前协作任务（先读这里）
+## 当前接力停点
 
-| 负责人 | 状态 | 基线 / 分支 | 范围与协作触点 | 当前验证 / 阻塞 | 下一步 |
-| --- | --- | --- | --- | --- | --- |
-| Notion AI（售后索赔会话） | 首轮已合入 main `191de08`；仅公司端口径修订开发中 | main `d77e4c3`；`feat/mist-claims-coordination`；PR 见仓库 `bambook-main` | 批次 3 售后索赔协同首轮：`server/src/shared/mistClaimCoordination.ts`（新）、`mistPlatform.ts` 分发 / 关闭与撤销门禁、`ClaimCoordination.tsx`（新）、`PlatformPages.tsx` 索赔详情接入；不改原处置审批 / 贷项 / 退货库存契约，不碰报价核算 / AI 顾问文件 | 首轮 PR #11 CI 通过；修订分支 `feat/mist-claims-internal-only` 去掉对外说明字段 | 修订验证 → PR → merge commit |
-| Notion AI（风险会话） | 已合入 main `d77e4c3` | main `0cdab37`；`feat/mist-risks-workbench`；[PR #10](https://github.com/guqinwen3g-netizen/bambook-frontend/pull/10) | 批次 3 风险管理与合规首轮（见下方 10-14 记录） | 本地 `verify:mist` 与 PR CI `verify` 通过 | 已结束；售后索赔见上一行 |
-| Notion AI（本会话，协作规范独立批次） | 已提交文档；验证 / 合入状态见 PR 回执 | main `369e657`；`docs/realtime-collaboration`；[PR #9](https://github.com/guqinwen3g-netizen/bambook-frontend/pull/9) | AGENTS / README / PR 模板 / 当前任务登记；不含报价 AI 源码 | 文档链接与无私有文件检查通过；本批本地 / 云端验证待执行 | 完成验证 → merge commit 到主线，让协作者立即读取 |
-| Notion AI（本会话） | 开发中，未验收、未合入 | main `369e657`；`feat/quote-cost-ai-advisor`；PR [#8](https://github.com/guqinwen3g-netizen/bambook-frontend/pull/8)，最新开发 `20bb547`（初始检查点 `fa3f23d`） | 准确报价行只读 AI 审阅、人工采纳、操作规范；`server/src/mist/route.ts`、新增 advisor 契约及报价核算页面；同时补 AGENTS / README / 本进度协作入口 | 新沙箱已从云端主线恢复；Node22 锁定依赖安装完成，定向回归及 review 已执行；定向 UI27 / 后端34通过；权限前提修复后全量重验及云端 CI 执行中；隔离浏览器浅深三宽30画面，真实 HTTP 人工保存并刷新回读通过（模拟 provider，不是真实 AI）；没有真实模型凭据，不宣称 GPT / DeepSeek 已实连 | 完成 UI 与安全回归 → review → 完整验证 / 实际浏览器 → PR CI → merge commit |
+以下按本次核对的 GitHub 状态校正；接续前仍须核对最新分支和 PR。
 
-并行协作者只追加 / 更新自己的任务行，不覆盖其他人的状态。此表是最后提交时的声明，**不是自动在线锁或实时监控**；开工仍需 fetch / 查看开放 PR 和未提交改动。需要共同修改同一文件或契约时，先在对应 PR 留评论确认负责人及整合方式。
+- **报价成本 AI 审阅：未合入。** 分支 `feat/quote-cost-ai-advisor`，[草稿 PR](https://github.com/guqinwen3g-netizen/bambook-main/pull/8)，核对时开发提交为 `a47e13c`，该提交 CI 成功。真实模型接入和人工视觉验收仍有缺口，不能视为交付完成。接续时核对主线差异并处理 `05-migration-playbook.md` 的合并冲突；详细检查点保留在下方和 PR。
+- **售后索赔公司端修订：已合入。** [PR](https://github.com/guqinwen3g-netizen/bambook-main/pull/12) 已进入主线，核对时主线为 `46053f9`，对应 CI 成功。范围仅公司端，通知工厂记录方式和内部备注；不代表客户 / 供应商平台或正式部署完成。
+- **协作规范批次：已合入。** [PR](https://github.com/guqinwen3g-netizen/bambook-main/pull/9) 已进入主线，不再等待原批次验证或合入。当前规则以根 `AGENTS.md` 为准。
+- **风险管理首轮：已合入。** [PR](https://github.com/guqinwen3g-netizen/bambook-main/pull/10) 已进入主线；后续缺口按具体任务继续。
 
-### 协作规范独立收口
-
-- 用户要求所有协作者及时记录、review、提交和交接；协作规范是独立文档批次，单独从主线发起 PR，不携带未收口 AI 源码。功能分支 #8 保持 Draft，人工截图复核及真实模型实连仍未完成。
-- 完整本地 / 云端检查与合入回执完成后写在 [PR #9](https://github.com/guqinwen3g-netizen/bambook-frontend/pull/9)；准确 HEAD / merge SHA 以该回执为真源，避免文档自引用提交号；未取得回执前不声称已合入。此登记不是实时在线锁，不代替 fetch 和并行冲突协商。
+下方为原有工作过程和历史验证记录；其中旧提交、待验与“下一步”反映当时停点，不覆盖以上当前摘要及更新的 PR 回执。
 
 ### 本轮思路及交接检查点 · 2026-10-14
 
