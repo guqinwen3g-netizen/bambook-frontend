@@ -33,6 +33,7 @@ describe('演示工作区数据', () => {
     expect(m.lookbooks.some(b => b.status === 'Prepared' && b.snapshots.length > 0)).toBe(true);
     expect(m.leads.some(l => l.source === 'campaign' && l.status === 'Converted' && l.opportunityId)).toBe(true);
     expect(m.relations.some(r => r.customerId && r.supplierId) && m.relations.some(r => r.hold)).toBe(true);
+    expect(['Escalated', 'Open', 'Resolved'].every(st => state.platform.risks.some(r => r.state === st && r.source))).toBe(true);
     expect(m.suppliers.some(x => x.status === 'paused') && m.suppliers.some(x => x.certificates?.some(c => c.validUntil < '2026-10-14')) && m.suppliers.filter(x => x.ratings?.length).length).toBeTruthy();
   });
   it('示例附件生成为可下载的英文 PDF，并标明演示用途', () => {

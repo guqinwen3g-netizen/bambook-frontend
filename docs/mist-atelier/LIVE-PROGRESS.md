@@ -7,6 +7,7 @@
 
 | 负责人 | 状态 | 基线 / 分支 | 范围与协作触点 | 当前验证 / 阻塞 | 下一步 |
 | --- | --- | --- | --- | --- | --- |
+| Notion AI（风险会话） | 已验证，待 CI / 合入 | main `0cdab37`；`feat/mist-risks-workbench`；[PR #10](https://github.com/guqinwen3g-netizen/bambook-frontend/pull/10) | 批次 3 风险管理与合规首轮：`server/src/shared/mistRisk.ts`（新）、`mistPlatform.ts` 分发、`RisksPage.tsx`（新）、`PlatformPages.tsx` 入口、演示种子 v11；不碰报价核算 / AI 顾问文件 | 本地 `verify:mist` 通过：UI 63 文件 / 793 项、服务端 36 / 519、工具链 1 / 4，Mist 147 文件 0 / 0；浏览器浅深 1440 + 390 实渲无报错 / 横溢 | PR CI 通过后 merge commit 合入 main；下一批售后索赔 |
 | Notion AI（本会话，协作规范独立批次） | 已提交文档；验证 / 合入状态见 PR 回执 | main `369e657`；`docs/realtime-collaboration`；[PR #9](https://github.com/guqinwen3g-netizen/bambook-frontend/pull/9) | AGENTS / README / PR 模板 / 当前任务登记；不含报价 AI 源码 | 文档链接与无私有文件检查通过；本批本地 / 云端验证待执行 | 完成验证 → merge commit 到主线，让协作者立即读取 |
 | Notion AI（本会话） | 开发中，未验收、未合入 | main `369e657`；`feat/quote-cost-ai-advisor`；PR [#8](https://github.com/guqinwen3g-netizen/bambook-frontend/pull/8)，最新开发 `20bb547`（初始检查点 `fa3f23d`） | 准确报价行只读 AI 审阅、人工采纳、操作规范；`server/src/mist/route.ts`、新增 advisor 契约及报价核算页面；同时补 AGENTS / README / 本进度协作入口 | 新沙箱已从云端主线恢复；Node22 锁定依赖安装完成，定向回归及 review 已执行；定向 UI27 / 后端34通过；权限前提修复后全量重验及云端 CI 执行中；隔离浏览器浅深三宽30画面，真实 HTTP 人工保存并刷新回读通过（模拟 provider，不是真实 AI）；没有真实模型凭据，不宣称 GPT / DeepSeek 已实连 | 完成 UI 与安全回归 → review → 完整验证 / 实际浏览器 → PR CI → merge commit |
 
@@ -30,6 +31,17 @@
 - 代码：从最新 main 创建短任务分支，验收后通过 PR 合入；当前预览分支和提交以 mist-version.json 为准，不以历史分支名推定已同步。
 - 数据：双方都使用 `seed: "demo"` 生成的“Mist 示例数据”空间。云端测试时新建的数据只存在云端沙箱，结果以本文件里的测试记录和截图为准。
 - 测试：云端每轮在 Node 22 下运行 `npm run verify:mist`，数字写在下面。
+
+---
+
+## 2026-10-14 · 风险管理与合规首轮
+
+- 从 main `0cdab37` 开短分支 `feat/mist-risks-workbench`，[PR #10](https://github.com/guqinwen3g-netizen/bambook-frontend/pull/10)。与 PR #8（报价 AI 顾问）无文件重叠。
+- 预警（只读推导，不写来源）：逾期应收（原币，>30 天严重）、往来冻结、供应商认证过期 / 30 天内到期、暂停 / 停用仍有在途采购、QC 不通过、生产超工厂交期或有风险说明。每条可直达原记录；预警不冻结付款、不删单、不改 QC / 账务 / 审批。汇率未接入数据源，页面明确说明、不估算。
+- 风险台账：从预警登记（绑定准确来源与预警标识，同一预警只允许一条未关闭风险）或手工登记订单风险 → 接手（接手人成为唯一负责人，变更留痕）→ 处置方案与计划完成日（逾期标出）→ 申请升级（生成审批待办，审批中不能关闭）→ 审批（`risk:admin`，申请人不能自审；批准 = 受控授权，驳回 = 继续阻断，通知负责人）→ 关闭依据，只读回看与操作记录。CSV 导出当前筛选。
+- 兼容：旧风险（只有订单、无类型）按订单来源 / “其他”读取；`platform.risk.transition` 保留。演示种子 v11（需新建示例空间）：Maison Lune 冻结风险待周敏审批、江南成衣认证过期新发现、SO-G-2026-018 交期风险已授权并关闭。
+- 验证：新增服务端 6 项（`mistRisk.test.ts`）、UI 4 项（`RisksPage.test.tsx`），旧风险 UI 用例按新流程改写；完整 `verify:mist` UI 63 / 793、服务端 36 / 519、工具链 1 / 4、Mist 147 文件 0 / 0。本地 dev 新示例空间浅深 1440、390 抽屉实渲，无 console 错误 / 横溢。截图不入库。
+- 待决定：业务员当前仅 `risk:read`（CAP-risks-02 候选含业务员接手），未改权限矩阵。未接入：汇率源、信用额度 / 合规豁免执行、信用评级、按人通知。
 
 ---
 

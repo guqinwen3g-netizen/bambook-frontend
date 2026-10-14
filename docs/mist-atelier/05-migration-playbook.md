@@ -1,5 +1,11 @@
 # 05 · 在 Mist Atelier 上继续开发
 
+## 2026-10-14 风险管理与合规首轮
+
+- 从 main `0cdab37` 新建 `feat/mist-risks-workbench`（[PR #10](https://github.com/guqinwen3g-netizen/bambook-frontend/pull/10)）。新增 `server/src/shared/mistRisk.ts`（预警推导 + 风险命令），`mistPlatform.ts` 只做类型与分发接线；新页面 `RisksPage.tsx` 取代 `PlatformPages.tsx` 内旧 RisksPage。演示种子 v11 增加三条风险（待审批升级 / 新发现 / 已关闭）。
+- 契约：`platform.risk.save` 兼容旧 `orderId`，新增 `type` / `source{kind,id}` / `signalKey`；新增 `platform.risk.plan`、`platform.risk.escalate`、`platform.risk.decide`（`risk:admin`）；`platform.risk.transition` 保留（Acknowledged 现在同时把负责人改为接手人；Resolved 要求已接手且无待审批升级）。风险状态不写入 QC / 账务 / 审批 / 订单；升级生成 `risk-escalation:<id>` 待办，答复后完成并通知。
+- 边界：预警只读推导，不持久化、不自动处置；汇率未接入；权限矩阵未改（业务员仍只读，待决定）。详见 07 文档 5.5。
+
 ## 2026-10-14 准确报价行整笔费用分摊首轮
 
 - 从 main `42386ff` 新建 `feat/mist-quote-line-fee-allocation`，仅推进报价前单位参考成本：原按单位耗用计算与仅属于本报价行的整笔费用分开。不是整份报价 / 跨订单 / 跨周期的实际费用归属，不改收入确认或实际利润模块，不部署。
