@@ -15,7 +15,7 @@ describe('演示工作区数据', () => {
   it('每个已完成前端的页面都有内容', () => {
     const { state } = demo(), m = state.market, f = state.fulfillment;
     const slices: Record<string, unknown[]> = {
-      products: m.products, suppliers: m.suppliers, relations: m.relations, seasons: m.seasons, quotations: m.quotations, leads: m.leads,
+      products: m.products, suppliers: m.suppliers, relations: m.relations, seasons: m.seasons, quotations: m.quotations, leads: m.leads, campaigns: m.campaigns, lookbooks: m.lookbooks,
       opportunities: state.crm.opportunities, followUps: state.crm.followUps, samples: f.samples, qcTasks: f.qcTasks, qcReports: f.qcReports,
       purchases: f.purchases, receipts: f.receipts, stock: f.stock, shipments: f.shipments, packing: f.packing, customs: f.customs, documents: f.documents,
       funding: state.orderFunding.assignments, mail: state.email.messages, orders: state.orders,
@@ -26,6 +26,9 @@ describe('演示工作区数据', () => {
     expect(m.quotations.some(q => q.status === 'Accepted') && m.quotations.some(q => q.status === 'Draft')).toBe(true);
     expect(f.shipments[0].state).toBe('departed');
     expect(m.leads.some(l => l.source === 'show' && l.status === 'Converted' && l.opportunityId) && m.seasons.some(x => x.status === 'Closed' && x.review) && m.trends.length >= 3).toBe(true);
+    expect(m.campaigns.some(c => c.status === 'Paused' && Number(c.actualCost) > Number(c.budget))).toBe(true);
+    expect(m.lookbooks.some(b => b.status === 'Prepared' && b.snapshots.length > 0)).toBe(true);
+    expect(m.leads.some(l => l.source === 'campaign' && l.status === 'Converted' && l.opportunityId)).toBe(true);
     expect(m.relations.some(r => r.customerId && r.supplierId) && m.relations.some(r => r.hold)).toBe(true);
     expect(m.suppliers.some(x => x.status === 'paused') && m.suppliers.some(x => x.certificates?.some(c => c.validUntil < '2026-10-14')) && m.suppliers.filter(x => x.ratings?.length).length).toBeTruthy();
   });
