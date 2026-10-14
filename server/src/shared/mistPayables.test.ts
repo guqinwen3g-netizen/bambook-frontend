@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { applyMistCommand, createMistState, mistCommandPermission, type MistContext, type MistState } from './mistWorkspace';
-import { payableBills, payableSources, supplierPayableSummary, supplierPayments, purchasePayableReadback, prepaymentPlans, paymentRequests, purchasePrepaymentReadback, getPayableReviews, payablesCommandPermissions } from './mistPayables';
+import { supplierSettlements, invoiceableSettlements, payablesCommandPermission, payableBills, payableSources, supplierPayableSummary, supplierPayments, purchasePayableReadback, prepaymentPlans, paymentRequests, purchasePrepaymentReadback, getPayableReviews, payablesCommandPermissions } from './mistPayables';
 import { getMistReviewTasks } from './mistWorkspace';
 
 function ctx(actorName = '财务-林', now = '2026-10-14T02:00:00.000Z'): MistContext { let n = 0; return { id: () => `ap-${actorName}-${++n}`, now, actorName, actorId: actorName } as MistContext; }
@@ -130,9 +130,9 @@ describe('合同预付款计划与预付', () => {
     expect(supplierPayments(s)[0]).toMatchObject({ purpose: 'prepayment', prepaid: 33480, unallocated: 0, purchaseId: po1.id });
     expect(purchasePrepaymentReadback(s, po1.id)).toMatchObject({ planned: 33480, paid: 33480 });
     expect(err(() => run(s, { type: 'payable.payment.allocate', payload: { supplierPaymentId: paid.result.id, allocations: [{ billId: 'x', amount: 1 }] } }))).toContain('结算确认后抵扣');
-    s = run(s, bill(po1.supplierId, [{ purchaseId: po1.id, amount: 61310 }], { invoiceNo: 'VAT-9' })).state;
-    expect(payableBills(s, today)[0].open).toBe(61310);
-    expect(supplierPayableSummary(s, today).find(x => x.supplierId === po1.supplierId)).toMatchObject({ open: 61310, prepaid: 33480, unallocated: 0 });
+    expect(err(() => run(s, bill(po1.supplierId, [{ purchaseId: po1.id, amount: 61310 }], { invoiceNo: 'VAT-9' })))).toContain('须关联已确认结算');
+    expect(supplierPayableSummary(s, today)).toMatchObject([{ supplierId: po1.supplierId, open: 0, prepaid: 33480, unallocated: 0 }]);
+    expect(purchasePrepaymentReadback(s, po1.id)).toMatchObject({ paid: 33480, applied: 0, available: 33480 });
   });
 });
 
@@ -178,5 +178,107 @@ describe('财务冲回：保留原记录，另记反向记录', () => {
     expect(err(() => as('业务-王', s, billRequest(po1.supplierId, [{ billId: other.id, amount: 100 }])))).toContain('供应商或币种');
     expect(err(() => as('业务-王', s, { ...billRequest(po1.supplierId, [{ billId: a.id, amount: 100 }]), payload: { ...billRequest(po1.supplierId, [{ billId: a.id, amount: 100 }]).payload, currency: 'USD' } }))).toContain('供应商或币种');
     expect(err(() => as('业务-王', s, billRequest(po1.supplierId, [{ billId: a.id, amount: 1000.5 }])))).toContain('可申请金额');
+  });
+});
+
+describe('结算确认、预付抵扣与票据关联', () => {
+  let rc = 0;
+  const receive = (st: MistState, purchaseId: string, quantity: number, rejected = 0) => { const id = 'rcpt-' + (++rc); st.fulfillment.receipts.push({ id, purchaseId, quantity, rejected, destination: 'warehouse', location: '嘉兴仓', date: '2026-10-13', evidence: '收货单', fileIds: [], actor: '仓库', createdAt: '2026-10-13T02:00:00.000Z' } as any); return id; };
+  function prepaid() {
+    const { state, po1, po2 } = demo();
+    let s = run(state, { type: 'payable.plan.register', payload: { purchaseId: po1.id, amount: 33480, trigger: '合同签订后 7 天内', basis: '合同第 5 条' } }).state;
+    const planId = prepaymentPlans(s)[0].id;
+    const req = as('业务-王', s, { type: 'payable.request.submit', payload: { purpose: 'prepayment', planId, amount: 33480, reason: '按合同申请预付' } }); s = req.state;
+    s = as('主管-周', s, decide(String(req.result.id))).state;
+    const paid = as('财务-林', s, { type: 'payable.payment.register', payload: { requestId: req.result.id, date: '2026-10-14', amount: 33480, reference: 'BANK-PP' } }); s = paid.state;
+    return { s, po1, po2, prepaymentId: String(paid.result.id) };
+  }
+  const submit = (st: MistState, purchaseId: string, receiptIds: string[], extra: Record<string, unknown> = {}, actor = '业务-王') => as(actor, st, { type: 'payable.settlement.submit', payload: { purchaseId, receiptIds, ...extra } });
+  const confirm = (st: MistState, id: string, prepaymentApplied: number, extra: Record<string, unknown> = {}, actor = '财务-林') => as(actor, st, { type: 'payable.settlement.confirm', payload: { id, prepaymentApplied, ...extra } });
+
+  it('权限：业务员按合同经办权限提交，财务按核销权限复核、退回、冲回', () => {
+    expect(payablesCommandPermission({ type: 'payable.settlement.submit', payload: {} } as any)).toBe('procurement:write');
+    expect(payablesCommandPermission({ type: 'payable.settlement.cancel', payload: {} } as any)).toBe('procurement:write');
+    for (const type of ['payable.settlement.confirm', 'payable.settlement.return', 'payable.settlement.reverse']) expect(payablesCommandPermission({ type, payload: {} } as any)).toBe('invoices:reconcile');
+  });
+
+  it('样例 PO-2026-00001：1000 / 1400 米两批按比例抵扣 13,950 / 19,530，票据关联结算后应付扣除预付，不重复形成应付', () => {
+    let { s, po1, prepaymentId } = prepaid();
+    const r1 = receive(s, po1.id, 1000, 50), r2 = receive(s, po1.id, 1400);
+    const st1 = submit(s, po1.id, [r1], { disputes: [{ description: '色差待确认扣款', amount: 500 }] }); s = st1.state;
+    let v = supplierSettlements(s)[0];
+    expect(v).toMatchObject({ code: 'ST-2026-0001', quantity: 1000, rejected: 50, amount: 46500, final: false, state: 'pending', suggested: 13950, available: 33480 });
+    expect(err(() => submit(s, po1.id, [r2]))).toContain('待财务复核');
+    expect(err(() => confirm(s, v.id, 13950, {}, '业务-王'))).toContain('本人提交');
+    expect(err(() => confirm(s, v.id, 14000))).toContain('调整原因');
+    expect(err(() => confirm(s, v.id, 33480.01, { adjustReason: 'x' }))).toContain('剩余可抵扣');
+    s = confirm(s, v.id, 13950, { note: '核对收货单' }).state;
+    v = supplierSettlements(s)[0];
+    expect(v).toMatchObject({ state: 'confirmed', net: 32550, uninvoiced: 46500, disputes: [{ description: '色差待确认扣款', amount: 500 }] });
+    expect(v.confirmation).toMatchObject({ suggestedPrepayment: 13950, prepaymentApplied: 13950, adjustReason: '' });
+    expect(purchasePrepaymentReadback(s, po1.id)).toMatchObject({ paid: 33480, applied: 13950, available: 19530 });
+    expect(err(() => run(s, bill(po1.supplierId, [{ purchaseId: po1.id, amount: 46500 }])))).toContain('须关联已确认结算');
+    expect(err(() => run(s, bill(po1.supplierId, [{ purchaseId: po1.id, amount: 46500.01, settlementId: v.id } as any])))).toContain('不能重复开票');
+    s = run(s, bill(po1.supplierId, [{ purchaseId: po1.id, amount: 30000, settlementId: v.id } as any], { invoiceNo: 'VAT-A' })).state;
+    s = run(s, bill(po1.supplierId, [{ purchaseId: po1.id, amount: 16500, settlementId: v.id } as any], { invoiceNo: 'VAT-B' })).state;
+    const bills = payableBills(s, today);
+    expect(bills.map(b => [b.invoiceNo, b.prepaymentCredit, b.open])).toEqual([['VAT-A', 9000, 21000], ['VAT-B', 4950, 11550]]);
+    expect(bills[0].status).toBe('partial');
+    expect(invoiceableSettlements(s, po1.id)).toEqual([]);
+    expect(err(() => run(s, bill(po1.supplierId, [{ purchaseId: po1.id, amount: 1, settlementId: v.id } as any], { invoiceNo: 'VAT-C' })))).toContain('不能重复开票');
+    expect(supplierPayableSummary(s, today)[0]).toMatchObject({ billed: 46500, open: 32550, prepaid: 19530, paid: 0 });
+    expect(err(() => as('财务-林', s, { type: 'payable.settlement.reverse', payload: { id: v.id, reason: '数量录错' } }))).toContain('先作废关联票据');
+    expect(err(() => submit(s, po1.id, [r1]))).toContain('已在其他结算');
+    // 第二批达到合同数量，自动视为最终结算，抵扣剩余全部预付。
+    const st2 = submit(s, po1.id, [r2]); s = st2.state;
+    const v2 = supplierSettlements(s).find(x => x.id === st2.result.id)!;
+    expect(v2).toMatchObject({ quantity: 1400, amount: 65100, final: true, suggested: 19530 });
+    s = confirm(s, v2.id, 19530).state;
+    expect(purchasePrepaymentReadback(s, po1.id)).toMatchObject({ applied: 33480, available: 0, residualAfterFinal: 0 });
+    expect(err(() => submit(s, po1.id, [receive(s, po1.id, 1)]))).toContain('已完成最终结算');
+    expect(err(() => as('财务-林', s, { type: 'payable.payment.reverse', payload: { supplierPaymentId: prepaymentId, reason: '误付' } }))).toContain('先冲回相关结算');
+    expect(supplierPayableSummary(s, today)[0].prepaid).toBe(0);
+  });
+
+  it('退回、撤回、冲回会释放收货记录；拒收不计结算；短交最终结算后剩余预付单列待处理', () => {
+    let { s, po1 } = prepaid();
+    const rej = receive(s, po1.id, 0, 30), r1 = receive(s, po1.id, 500);
+    expect(err(() => submit(s, po1.id, [rej]))).toContain('拒收数量不计入结算');
+    let id = String(submit(s, po1.id, [r1]).result.id); s = submit(s, po1.id, [r1]).state;
+    id = supplierSettlements(s)[0].id;
+    expect(err(() => as('财务-林', s, { type: 'payable.settlement.cancel', payload: { id, reason: 'x' } }))).toContain('只有提交人');
+    s = as('财务-林', s, { type: 'payable.settlement.return', payload: { id, reason: '收货单数量与仓库不符' } }).state;
+    expect(supplierSettlements(s).find(x => x.id === id)).toMatchObject({ state: 'returned', returned: { reason: '收货单数量与仓库不符' } });
+    const again = submit(s, po1.id, [r1]); s = again.state; id = String(again.result.id);
+    s = as('业务-王', s, { type: 'payable.settlement.cancel', payload: { id, reason: '先补质检结论' } }).state;
+    // 短交：业务员勾选最终结算，抵扣剩余预付但不超过结算金额，余额单列。
+    const fin = submit(s, po1.id, [r1], { final: true }); s = fin.state; id = String(fin.result.id);
+    expect(supplierSettlements(s).find(x => x.id === id)).toMatchObject({ final: true, amount: 23250, suggested: 23250 });
+    s = confirm(s, id, 23250).state;
+    expect(purchasePrepaymentReadback(s, po1.id)).toMatchObject({ applied: 23250, available: 10230, residualAfterFinal: 10230 });
+    s = as('财务-林', s, { type: 'payable.settlement.reverse', payload: { id, reason: '最终结算数量录错' } }).state;
+    expect(supplierSettlements(s).find(x => x.id === id)).toMatchObject({ state: 'reversed', reversed: { reason: '最终结算数量录错' } });
+    expect(purchasePrepaymentReadback(s, po1.id)).toMatchObject({ applied: 0, available: 33480, residualAfterFinal: 0 });
+    expect(submit(s, po1.id, [r1]).result.id).toBeTruthy();
+  });
+
+  it('进度款 / 尾款计划只记录安排：不能按计划直接申请，须随票据申请并占用计划额度', () => {
+    const { state, po1 } = demo();
+    let s = run(state, { type: 'payable.plan.register', payload: { purchaseId: po1.id, stage: 'final', amount: 11160, trigger: '验收合格后 30 天', basis: '合同第 5 条：尾款 10%' } }).state;
+    const plan = prepaymentPlans(s)[0];
+    expect(plan).toMatchObject({ stage: 'final', available: 11160 });
+    expect(err(() => run(s, { type: 'payable.plan.register', payload: { purchaseId: po1.id, stage: 'progress', amount: 100440.01, trigger: 'x', basis: 'y' } }))).toContain('超过合同金额');
+    expect(err(() => run(s, { type: 'payable.plan.register', payload: { purchaseId: po1.id, stage: 'deposit', amount: 1, trigger: 'x', basis: 'y' } }))).toContain('类型无效');
+    expect(err(() => as('业务-王', s, { type: 'payable.request.submit', payload: { purpose: 'prepayment', planId: plan.id, amount: 100, reason: 'x' } }))).toContain('按票据申请付款');
+    s = run(s, bill(po1.supplierId, [{ purchaseId: po1.id, amount: 20000 }], { invoiceNo: 'VAT-F' })).state;
+    const b = payableBills(s, today)[0];
+    expect(err(() => as('业务-王', s, { type: 'payable.request.submit', payload: { purpose: 'bill', supplierId: po1.supplierId, currency: 'CNY', lines: [{ billId: b.id, amount: 11160.01 }], planId: plan.id, reason: '尾款' } }))).toContain('剩余可申请');
+    const req = as('业务-王', s, { type: 'payable.request.submit', payload: { purpose: 'bill', supplierId: po1.supplierId, currency: 'CNY', lines: [{ billId: b.id, amount: 11160 }], planId: plan.id, reason: '验收合格，申请尾款' } }); s = req.state;
+    expect(prepaymentPlans(s)[0]).toMatchObject({ requested: 11160, available: 0 });
+    expect(getPayableReviews(s)[0].details.find(d => d.label === '付款计划')!.value).toContain('验收合格后 30 天');
+    s = as('主管-周', s, decide(String(req.result.id))).state;
+    s = as('财务-林', s, { type: 'payable.payment.register', payload: { requestId: req.result.id, date: '2026-10-14', amount: 11160, reference: 'BANK-F', allocations: [{ billId: b.id, amount: 11160 }] } }).state;
+    expect(prepaymentPlans(s)[0].paid).toBe(11160);
+    expect(supplierPayableSummary(s, today)[0]).toMatchObject({ prepaid: 0, open: 8840 });
   });
 });

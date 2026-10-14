@@ -7,15 +7,22 @@
  * 预付款与付款申请（2026-10-15 用户确认 / 授权专业判断）：
  * - 合同付款计划由财务按合同条款登记（本批只接预付款计划），计划不是应付，也不与结算相加；
  * - 所有付款（含预付）先由业务员或财务提交付款申请，经主管审批后，财务按已批准申请登记实付；
- * - 预付款挂在合同上，等待结算确认后抵扣（结算确认与抵扣下一批接入），不能分配到票据；
+ * - 预付款挂在合同上，等待结算确认后抵扣，不能分配到票据；
  * - 付款或分配登记错误由财务直接冲回并写原因：原记录保留，另记反向记录，不删除不改写。
+ *
+ * 结算与抵扣（决策总账 8.4.1 采用口径）：
+ * - 业务员依据实际收货记录提交结算（拒收数量不计入），财务复核确认后才成为已确认结算；
+ * - 预付抵扣建议额 = 合同已付预付 × 本次结算数量 ÷ 合同数量；最后一次结算抵扣剩余全部预付；
+ *   财务可调整，但须写原因。争议和未确认扣款单列，不自动抵减；
+ * - 发票到后关联已确认结算，结算里的预付抵扣按票额比例计入该票，不形成第二笔应付；
+ * - 进度款 / 尾款计划只记录合同付款安排，不直接付款；付款仍按票据申请。
  */
 import { MIST_FINANCE_SCOPES } from './mistFinancePermissions';
 import type { MistReviewTask } from './mistReview';
 import { MistCommandError, mistMoneyMinor, type MistState, type MistContext, type MistPayment } from './mistWorkspace';
 import { platformBusinessDate } from './mistPlatform';
 
-export type SupplierBillLine = { purchaseId: string; purchaseCode: string; kind: 'material' | 'finished' | 'processing'; amount: number };
+export type SupplierBillLine = { purchaseId: string; purchaseCode: string; kind: 'material' | 'finished' | 'processing'; amount: number; settlementId?: string; settlementCode?: string };
 export type SupplierBill = {
   id: string; code: string; supplierId: string; supplier: string; invoiceNo: string; invoiceDate: string;
   currency: string; amount: number; taxAmount: number; taxRate: string; lines: SupplierBillLine[];
@@ -30,7 +37,10 @@ export type SupplierPayment = {
 };
 export type SupplierPaymentAllocation = { id: string; supplierPaymentId: string; billId: string; amount: number; currency: string; at: string; actor: string };
 /** 合同预付款计划：财务按合同条款登记触发条件，不是应付，也不代表到期。 */
+export type PaymentPlanStage = 'prepayment' | 'progress' | 'final';
 export type PrepaymentPlan = {
+  /** 旧记录没有 stage，视为预付款。 */
+  stage?: PaymentPlanStage;
   id: string; code: string; purchaseId: string; purchaseCode: string; supplierId: string; supplier: string; currency: string;
   amount: number; trigger: string; basis: string; due: string; note: string; state: 'active' | 'cancelled';
   registeredAt: string; registeredBy: string; cancelled?: { at: string; actor: string; reason: string };
@@ -46,23 +56,42 @@ export type PaymentRequest = {
   /** 当前有效实付；冲回后清空，历史保留在 paymentHistory。 */
   supplierPaymentId?: string; paymentHistory: string[];
 };
+/** 结算争议 / 未确认扣款：单列记录，不自动抵减。 */
+export type SettlementDispute = { description: string; amount: number };
+/** 供应商结算：业务员按实际收货提交，财务复核确认；确认时决定预付抵扣。 */
+export type SupplierSettlement = {
+  id: string; code: string; purchaseId: string; purchaseCode: string; supplierId: string; supplier: string; currency: string;
+  unit: string; price: number; receiptIds: string[]; quantity: number; rejected: number; amount: number; final: boolean;
+  disputes: SettlementDispute[]; note: string; fileIds: string[];
+  state: 'pending' | 'confirmed' | 'returned' | 'cancelled' | 'reversed';
+  submitterId: string; submittedBy: string; submittedAt: string;
+  confirmation?: { actorId: string; actor: string; at: string; suggestedPrepayment: number; prepaymentApplied: number; adjustReason: string; note: string };
+  returned?: { at: string; actor: string; reason: string }; cancelled?: { at: string; actor: string; reason: string }; reversed?: { at: string; actor: string; reason: string };
+};
 /** 反向记录：冲回付款或冲回分配，原记录保留。 */
 export type PayableReversal = { id: string; kind: 'payment' | 'allocation'; targetId: string; parentId?: string; amount: number; currency: string; reason: string; at: string; actor: string };
-export type PayablesState = { bills: SupplierBill[]; payments: SupplierPayment[]; allocations: SupplierPaymentAllocation[]; plans?: PrepaymentPlan[]; requests?: PaymentRequest[]; reversals?: PayableReversal[] };
+export type PayablesState = { bills: SupplierBill[]; payments: SupplierPayment[]; allocations: SupplierPaymentAllocation[]; plans?: PrepaymentPlan[]; requests?: PaymentRequest[]; reversals?: PayableReversal[]; settlements?: SupplierSettlement[] };
 type AllocationInput = Array<{ billId: string; amount: number }>;
 export type PayablesCommand =
-  | { type: 'payable.bill.register'; payload: { supplierId: string; invoiceNo: string; invoiceDate: string; currency: string; amount: number; taxAmount: number; taxRate?: string; lines: Array<{ purchaseId: string; amount: number }>; due: string; dueBasis: string; fileIds?: string[]; note?: string } }
+  | { type: 'payable.bill.register'; payload: { supplierId: string; invoiceNo: string; invoiceDate: string; currency: string; amount: number; taxAmount: number; taxRate?: string; lines: Array<{ purchaseId: string; amount: number; settlementId?: string }>; due: string; dueBasis: string; fileIds?: string[]; note?: string } }
   | { type: 'payable.bill.void'; payload: { id: string; reason: string } }
-  | { type: 'payable.plan.register'; payload: { purchaseId: string; amount: number; trigger: string; basis: string; due?: string; note?: string } }
+  | { type: 'payable.plan.register'; payload: { purchaseId: string; stage?: PaymentPlanStage; amount: number; trigger: string; basis: string; due?: string; note?: string } }
   | { type: 'payable.plan.cancel'; payload: { id: string; reason: string } }
-  | { type: 'payable.request.submit'; payload: { purpose: 'prepayment'; planId: string; amount: number; reason: string; fileIds?: string[] } | { purpose: 'bill'; supplierId: string; currency: string; lines: Array<{ billId: string; amount: number }>; reason: string; fileIds?: string[] } }
+  | { type: 'payable.request.submit'; payload: { purpose: 'prepayment'; planId: string; amount: number; reason: string; fileIds?: string[] } | { purpose: 'bill'; supplierId: string; currency: string; lines: Array<{ billId: string; amount: number }>; planId?: string; reason: string; fileIds?: string[] } }
   | { type: 'payable.request.decide'; payload: { id: string; decision: 'approved' | 'rejected'; note: string } }
   | { type: 'payable.request.cancel'; payload: { id: string; reason: string } }
   | { type: 'payable.payment.register'; payload: { requestId?: string; supplierId?: string; date: string; amount: number; currency?: string; reference: string; fileIds?: string[]; note?: string; allocations?: AllocationInput } }
   | { type: 'payable.payment.allocate'; payload: { supplierPaymentId: string; allocations: AllocationInput } }
   | { type: 'payable.payment.reverse'; payload: { supplierPaymentId: string; reason: string } }
-  | { type: 'payable.allocation.reverse'; payload: { allocationId: string; reason: string } };
-export const PAYABLE_COMMANDS = ['payable.bill.register', 'payable.bill.void', 'payable.plan.register', 'payable.plan.cancel', 'payable.request.submit', 'payable.request.decide', 'payable.request.cancel', 'payable.payment.register', 'payable.payment.allocate', 'payable.payment.reverse', 'payable.allocation.reverse'] as const;
+  | { type: 'payable.allocation.reverse'; payload: { allocationId: string; reason: string } }
+  | { type: 'payable.settlement.submit'; payload: { purchaseId: string; receiptIds: string[]; final?: boolean; disputes?: SettlementDispute[]; note?: string; fileIds?: string[] } }
+  | { type: 'payable.settlement.cancel'; payload: { id: string; reason: string } }
+  | { type: 'payable.settlement.confirm'; payload: { id: string; prepaymentApplied: number; adjustReason?: string; note?: string } }
+  | { type: 'payable.settlement.return'; payload: { id: string; reason: string } }
+  | { type: 'payable.settlement.reverse'; payload: { id: string; reason: string } };
+export const PAYABLE_COMMANDS = ['payable.bill.register', 'payable.bill.void', 'payable.plan.register', 'payable.plan.cancel', 'payable.request.submit', 'payable.request.decide', 'payable.request.cancel', 'payable.payment.register', 'payable.payment.allocate', 'payable.payment.reverse', 'payable.allocation.reverse', 'payable.settlement.submit', 'payable.settlement.cancel', 'payable.settlement.confirm', 'payable.settlement.return', 'payable.settlement.reverse'] as const;
+/** 结算提交沿用合同经办权限（业务员）；复核确认、退回与冲回沿用核销权限（财务）。 */
+export const SETTLEMENT_SCOPES = { submit: 'procurement:write', confirm: MIST_FINANCE_SCOPES.reconcile } as const;
 /** 岗位矩阵已有：付款申请创建（业务员、财务）与审批（业务主管）。 */
 export const PAYMENT_REQUEST_SCOPES = { create: 'finance:payment_request:create', approve: 'finance:payment_request:approve' } as const;
 
@@ -83,7 +112,7 @@ const minor = (value: unknown, label: string, allowZero = false) => {
 const major = (m: number) => m / 100;
 const key = (v: string) => v.trim().toLocaleLowerCase();
 
-export const createPayablesState = (_context?: MistContext, _root?: unknown): PayablesState => ({ bills: [], payments: [], allocations: [], plans: [], requests: [], reversals: [] });
+export const createPayablesState = (_context?: MistContext, _root?: unknown): PayablesState => ({ bills: [], payments: [], allocations: [], plans: [], requests: [], reversals: [], settlements: [] });
 export function payablesCommandPermission(command: PayablesCommand) {
   if (command.type === 'payable.bill.register' || command.type === 'payable.bill.void' || command.type === 'payable.plan.register' || command.type === 'payable.plan.cancel') return MIST_FINANCE_SCOPES.invoice;
   if (command.type === 'payable.request.submit' || command.type === 'payable.request.cancel') return PAYMENT_REQUEST_SCOPES.create;
@@ -92,6 +121,8 @@ export function payablesCommandPermission(command: PayablesCommand) {
   if (command.type === 'payable.allocation.reverse') return MIST_FINANCE_SCOPES.reconcile;
   if (command.type === 'payable.payment.register') return MIST_FINANCE_SCOPES.voucher;
   if (command.type === 'payable.payment.allocate') return MIST_FINANCE_SCOPES.reconcile;
+  if (command.type === 'payable.settlement.submit' || command.type === 'payable.settlement.cancel') return SETTLEMENT_SCOPES.submit;
+  if (command.type === 'payable.settlement.confirm' || command.type === 'payable.settlement.return' || command.type === 'payable.settlement.reverse') return SETTLEMENT_SCOPES.confirm;
   return fail('未知应付操作');
 }
 /** 登记付款和核销是两个已有权限；一次提交同时办理时必须两项都具备。 */
@@ -103,9 +134,9 @@ export function payablesCommandPermissions(command: PayablesCommand): string[] {
   return permissions;
 }
 type Full = Required<PayablesState>;
-const fill = (s: PayablesState): Full => { s.plans ||= []; s.requests ||= []; s.reversals ||= []; return s as Full; };
+const fill = (s: PayablesState): Full => { s.plans ||= []; s.requests ||= []; s.reversals ||= []; s.settlements ||= []; return s as Full; };
 const ledger = (root: Root): Full => { if (!root.payables) root.payables = createPayablesState(); return fill(root.payables); };
-const read = (root: Root): Full => { const s = root.payables || createPayablesState(); return { ...s, plans: s.plans || [], requests: s.requests || [], reversals: s.reversals || [] }; };
+const read = (root: Root): Full => { const s = root.payables || createPayablesState(); return { ...s, plans: s.plans || [], requests: s.requests || [], reversals: s.reversals || [], settlements: s.settlements || [] }; };
 export const paymentReversed = (root: Root, paymentId: string) => read(root).reversals.some(r => r.kind === 'payment' && r.targetId === paymentId);
 export const allocationReversed = (root: Root, allocationId: string) => read(root).reversals.some(r => r.kind === 'allocation' && r.targetId === allocationId);
 const activeAllocations = (root: Root) => read(root).allocations.filter(a => !allocationReversed(root, a.id));
@@ -116,7 +147,53 @@ export function purchaseInvoicedMinor(root: Root, purchaseId: string, exceptBill
   return read(root).bills.filter(b => b.state === 'open' && b.id !== exceptBillId).flatMap(b => b.lines).filter(l => l.purchaseId === purchaseId).reduce((n, l) => n + mistMoneyMinor(l.amount), 0);
 }
 export function billPaidMinor(root: Root, billId: string) { return activeAllocations(root).filter(a => a.billId === billId).reduce((n, a) => n + mistMoneyMinor(a.amount), 0); }
-export function billOpenMinor(root: Root, bill: SupplierBill) { return bill.state === 'void' ? 0 : Math.max(0, mistMoneyMinor(bill.amount) - billPaidMinor(root, bill.id)); }
+export function billOpenMinor(root: Root, bill: SupplierBill) { return bill.state === 'void' ? 0 : Math.max(0, mistMoneyMinor(bill.amount) - billPaidMinor(root, bill.id) - billPrepaymentCreditMinor(root, bill)); }
+export const planStage = (plan: PrepaymentPlan): PaymentPlanStage => plan.stage || 'prepayment';
+const PLAN_STAGE_LABEL: Record<PaymentPlanStage, string> = { prepayment: '预付款', progress: '进度款', final: '尾款' };
+export const paymentPlanStageLabel = (stage: PaymentPlanStage) => PLAN_STAGE_LABEL[stage];
+/** 已确认（未冲回）的结算。 */
+const confirmedSettlements = (root: Root, purchaseId?: string) => read(root).settlements.filter(x => x.state === 'confirmed' && (!purchaseId || x.purchaseId === purchaseId));
+/** 合同已付预付（未冲回）与已被结算抵扣的金额。 */
+export function purchasePrepaidMinor(root: Root, purchaseId: string) { return read(root).payments.filter(p => p.purchaseId === purchaseId).reduce((n, p) => n + prepaymentHeldMinor(root, p), 0); }
+export function purchasePrepaymentAppliedMinor(root: Root, purchaseId: string, exceptSettlementId = '') { return confirmedSettlements(root, purchaseId).filter(x => x.id !== exceptSettlementId).reduce((n, x) => n + mistMoneyMinor(x.confirmation?.prepaymentApplied || 0), 0); }
+export function purchasePrepaymentAvailableMinor(root: Root, purchaseId: string) { return Math.max(0, purchasePrepaidMinor(root, purchaseId) - purchasePrepaymentAppliedMinor(root, purchaseId)); }
+/** 结算已关联到有效票据的金额（票据按结算登记，避免同一笔结算重复开票形成第二笔应付）。 */
+export function settlementInvoicedMinor(root: Root, settlementId: string, exceptBillId = '') {
+  return read(root).bills.filter(b => b.state === 'open' && b.id !== exceptBillId).flatMap(b => b.lines).filter(l => l.settlementId === settlementId).reduce((n, l) => n + mistMoneyMinor(l.amount), 0);
+}
+/**
+ * 结算中的预付抵扣按票额比例计入关联票据：每张票 = 抵扣额 × 本票对应额 ÷ 结算金额（四舍五入到分），
+ * 关联票据合计达到结算金额时最后一张承担尾差。作废票据不计。
+ */
+export function settlementCreditsMinor(root: Root, settlementId: string) {
+  const s = read(root), st = s.settlements.find(x => x.id === settlementId), out = new Map<string, number>();
+  if (!st || st.state !== 'confirmed') return out;
+  const applied = mistMoneyMinor(st.confirmation?.prepaymentApplied || 0), total = mistMoneyMinor(st.amount);
+  if (!applied || !total) return out;
+  const lines = s.bills.filter(b => b.state === 'open').sort((a, b) => a.registeredAt.localeCompare(b.registeredAt) || a.code.localeCompare(b.code)).flatMap(b => b.lines.filter(l => l.settlementId === settlementId).map(l => ({ billId: b.id, amount: mistMoneyMinor(l.amount) })));
+  let cumulative = 0, credited = 0;
+  for (const l of lines) { cumulative += l.amount; const credit = cumulative >= total ? applied - credited : Math.round(applied * l.amount / total); credited += credit; out.set(l.billId, (out.get(l.billId) || 0) + credit); }
+  return out;
+}
+export function billPrepaymentCreditMinor(root: Root, bill: SupplierBill) {
+  if (bill.state === 'void') return 0;
+  return [...new Set(bill.lines.map(l => l.settlementId).filter(Boolean) as string[])].reduce((n, id) => n + (settlementCreditsMinor(root, id).get(bill.id) || 0), 0);
+}
+/** 已进入有效结算（待复核或已确认）的收货记录不能再次结算。 */
+const receiptSettled = (root: Root, receiptId: string, exceptSettlementId = '') => read(root).settlements.some(x => x.id !== exceptSettlementId && (x.state === 'pending' || x.state === 'confirmed') && x.receiptIds.includes(receiptId));
+const settledQuantity = (root: Root, purchaseId: string, exceptSettlementId = '') => confirmedSettlements(root, purchaseId).filter(x => x.id !== exceptSettlementId).reduce((n, x) => n + x.quantity, 0);
+/** 预付抵扣建议：最后一次结算（勾选最终结算或累计数量达到合同数量）抵扣剩余全部预付，否则按数量比例；不超过结算金额。 */
+export function settlementSuggestedPrepaymentMinor(root: Root, settlement: Pick<SupplierSettlement, 'id' | 'purchaseId' | 'quantity' | 'amount' | 'final'>) {
+  const po = (root.fulfillment?.purchases || []).find(x => x.id === settlement.purchaseId);
+  const available = purchasePrepaidMinor(root, settlement.purchaseId) - purchasePrepaymentAppliedMinor(root, settlement.purchaseId, settlement.id);
+  if (!po || available <= 0) return 0;
+  const last = settlement.final || settledQuantity(root, po.id, settlement.id) + settlement.quantity >= po.quantity;
+  const proportional = po.quantity > 0 ? Math.round(purchasePrepaidMinor(root, po.id) * settlement.quantity / po.quantity) : 0;
+  return Math.max(0, Math.min(last ? available : proportional, available, mistMoneyMinor(settlement.amount)));
+}
+export function settlementReceipts(root: Root, purchaseId: string, exceptSettlementId = '') {
+  return (root.fulfillment?.receipts || []).filter(r => r.purchaseId === purchaseId).map(r => ({ receipt: r, settled: receiptSettled(root, r.id, exceptSettlementId) }));
+}
 /** 未分配 = 可以再分配到票据的钱；已冲回付款和预付款（等结算抵扣）都不算。 */
 export function supplierPaymentUnallocatedMinor(root: Root, payment: SupplierPayment) {
   if (paymentReversed(root, payment.id) || payment.purpose === 'prepayment') return 0;
@@ -125,12 +202,12 @@ export function supplierPaymentUnallocatedMinor(root: Root, payment: SupplierPay
 /** 已付且未冲回的预付款，等待结算确认后抵扣。 */
 export function prepaymentHeldMinor(root: Root, payment: SupplierPayment) { return payment.purpose === 'prepayment' && !paymentReversed(root, payment.id) ? mistMoneyMinor(payment.amount) : 0; }
 
-export type PayableBillView = SupplierBill & { paid: number; open: number; overdue: boolean; status: 'unpaid' | 'partial' | 'paid' | 'void' };
+export type PayableBillView = SupplierBill & { paid: number; prepaymentCredit: number; open: number; overdue: boolean; status: 'unpaid' | 'partial' | 'paid' | 'void' };
 export function payableBills(root: Root, today: string): PayableBillView[] {
   return read(root).bills.map(b => {
-    const paid = major(billPaidMinor(root, b.id)), open = major(billOpenMinor(root, b));
-    const status = b.state === 'void' ? 'void' : open <= 0 ? 'paid' : paid > 0 ? 'partial' : 'unpaid';
-    return { ...b, paid, open, overdue: status !== 'void' && open > 0 && b.due < today, status } as PayableBillView;
+    const paid = major(billPaidMinor(root, b.id)), credit = major(billPrepaymentCreditMinor(root, b)), open = major(billOpenMinor(root, b));
+    const status = b.state === 'void' ? 'void' : open <= 0 ? 'paid' : paid > 0 || credit > 0 ? 'partial' : 'unpaid';
+    return { ...b, paid, prepaymentCredit: credit, open, overdue: status !== 'void' && open > 0 && b.due < today, status } as PayableBillView;
   }).sort((a, b) => (a.status === 'void' ? 1 : 0) - (b.status === 'void' ? 1 : 0) || a.due.localeCompare(b.due) || a.code.localeCompare(b.code));
 }
 export type SupplierPaymentView = SupplierPayment & { allocated: number; unallocated: number; prepaid: number; reversed?: PayableReversal; requestCode?: string };
@@ -146,7 +223,12 @@ export function supplierPayableSummary(root: Root, today: string) {
   const groups = new Map<string, { supplierId: string; supplier: string; currency: string; billed: number; paid: number; open: number; unallocated: number; prepaid: number; bills: number; overdue: number }>();
   const g = (supplierId: string, supplier: string, currency: string) => { const k = JSON.stringify([supplierId, currency]); if (!groups.has(k)) groups.set(k, { supplierId, supplier, currency, billed: 0, paid: 0, open: 0, unallocated: 0, prepaid: 0, bills: 0, overdue: 0 }); return groups.get(k)!; };
   for (const b of payableBills(root, today)) if (b.status !== 'void') { const r = g(b.supplierId, b.supplier, b.currency); r.billed += mistMoneyMinor(b.amount); r.paid += mistMoneyMinor(b.paid); r.open += mistMoneyMinor(b.open); if (b.open > 0) r.bills++; if (b.overdue) r.overdue++; }
-  for (const p of supplierPayments(root)) { if (p.unallocated > 0) g(p.supplierId, p.supplier, p.currency).unallocated += mistMoneyMinor(p.unallocated); if (p.prepaid > 0) g(p.supplierId, p.supplier, p.currency).prepaid += mistMoneyMinor(p.prepaid); }
+  for (const p of supplierPayments(root)) if (p.unallocated > 0) g(p.supplierId, p.supplier, p.currency).unallocated += mistMoneyMinor(p.unallocated);
+  // 预付（待抵扣）= 已付预付 − 已被确认结算抵扣，按合同累计后归到供应商。
+  for (const purchaseId of new Set(read(root).payments.filter(p => p.purpose === 'prepayment' && p.purchaseId).map(p => p.purchaseId!))) {
+    const left = purchasePrepaymentAvailableMinor(root, purchaseId), pay = read(root).payments.find(p => p.purchaseId === purchaseId)!;
+    if (left > 0) g(pay.supplierId, pay.supplier, pay.currency).prepaid += left;
+  }
   return [...groups.values()].map(r => ({ ...r, billed: major(r.billed), paid: major(r.paid), open: major(r.open), unallocated: major(r.unallocated), prepaid: major(r.prepaid) })).sort((a, b) => a.supplier.localeCompare(b.supplier) || a.currency.localeCompare(b.currency));
 }
 /** 已批准合同里还没登记票据的部分 = 财务待登记来源（不是应付）。 */
@@ -164,25 +246,43 @@ export function purchasePayableReadback(root: Root, purchaseId: string, today: s
 const LIVE_REQUEST: PaymentRequest['state'][] = ['pending', 'approved', 'paid'];
 /** 计划已被付款申请占用的金额（待审批、已批准未付、已付）。 */
 export function planRequestedMinor(root: Root, planId: string, exceptRequestId = '') { return read(root).requests.filter(r => r.planId === planId && r.id !== exceptRequestId && LIVE_REQUEST.includes(r.state)).reduce((n, r) => n + mistMoneyMinor(r.amount), 0); }
-export function planPaidMinor(root: Root, planId: string) { return read(root).payments.filter(p => p.planId === planId).reduce((n, p) => n + prepaymentHeldMinor(root, p), 0); }
+export function planPaidMinor(root: Root, planId: string) { return read(root).payments.filter(p => p.planId === planId && !paymentReversed(root, p.id)).reduce((n, p) => n + mistMoneyMinor(p.amount), 0); }
 /** 票据已进入付款申请但还没付的金额，避免同一张票被重复申请。 */
 export function billRequestedUnpaidMinor(root: Root, billId: string, exceptRequestId = '') { return read(root).requests.filter(r => r.purpose === 'bill' && r.id !== exceptRequestId && (r.state === 'pending' || r.state === 'approved')).flatMap(r => r.lines).filter(l => l.billId === billId).reduce((n, l) => n + mistMoneyMinor(l.amount), 0); }
-export type PrepaymentPlanView = PrepaymentPlan & { requested: number; paid: number; available: number };
+export type PrepaymentPlanView = PrepaymentPlan & { stage: PaymentPlanStage; requested: number; paid: number; available: number };
 export function prepaymentPlans(root: Root, purchaseId?: string): PrepaymentPlanView[] {
   return read(root).plans.filter(p => !purchaseId || p.purchaseId === purchaseId).map(p => {
     const requested = planRequestedMinor(root, p.id);
-    return { ...p, requested: major(requested), paid: major(planPaidMinor(root, p.id)), available: p.state === 'active' ? major(Math.max(0, mistMoneyMinor(p.amount) - requested)) : 0 };
+    return { ...p, stage: planStage(p), requested: major(requested), paid: major(planPaidMinor(root, p.id)), available: p.state === 'active' ? major(Math.max(0, mistMoneyMinor(p.amount) - requested)) : 0 };
   }).sort((a, b) => a.purchaseCode.localeCompare(b.purchaseCode) || a.code.localeCompare(b.code));
 }
 export function paymentRequests(root: Root): PaymentRequest[] {
   const order: Record<PaymentRequest['state'], number> = { pending: 0, approved: 1, rejected: 2, paid: 3, cancelled: 4 };
   return [...read(root).requests].sort((a, b) => order[a.state] - order[b.state] || b.submittedAt.localeCompare(a.submittedAt));
 }
-/** 采购合同回读：预付款计划、已申请与已付（待结算抵扣）。 */
+/** 采购合同回读：预付款计划、已付、已抵扣与剩余待抵扣。 */
 export function purchasePrepaymentReadback(root: Root, purchaseId: string) {
-  const plans = prepaymentPlans(root, purchaseId).filter(p => p.state === 'active');
-  return { plans, planned: plans.reduce((n, p) => n + p.amount, 0), paid: plans.reduce((n, p) => n + p.paid, 0) };
+  const all = prepaymentPlans(root, purchaseId).filter(p => p.state === 'active'), plans = all.filter(p => p.stage === 'prepayment');
+  const applied = major(purchasePrepaymentAppliedMinor(root, purchaseId)), available = major(purchasePrepaymentAvailableMinor(root, purchaseId));
+  const closed = confirmedSettlements(root, purchaseId).some(x => x.final);
+  return { plans, schedule: all.filter(p => p.stage !== 'prepayment'), planned: plans.reduce((n, p) => n + p.amount, 0), paid: major(purchasePrepaidMinor(root, purchaseId)), applied, available, residualAfterFinal: closed ? available : 0 };
 }
+export type SettlementView = SupplierSettlement & { invoiced: number; uninvoiced: number; net: number; suggested: number; available: number };
+export function supplierSettlements(root: Root, purchaseId?: string): SettlementView[] {
+  const order: Record<SupplierSettlement['state'], number> = { pending: 0, confirmed: 1, returned: 2, cancelled: 3, reversed: 4 };
+  return read(root).settlements.filter(x => !purchaseId || x.purchaseId === purchaseId).map(x => {
+    const invoiced = x.state === 'confirmed' ? settlementInvoicedMinor(root, x.id) : 0, applied = mistMoneyMinor(x.confirmation?.prepaymentApplied || 0);
+    return { ...x, invoiced: major(invoiced), uninvoiced: x.state === 'confirmed' ? major(Math.max(0, mistMoneyMinor(x.amount) - invoiced)) : 0, net: major(mistMoneyMinor(x.amount) - applied),
+      suggested: x.state === 'pending' ? major(settlementSuggestedPrepaymentMinor(root, x)) : major(mistMoneyMinor(x.confirmation?.suggestedPrepayment || 0)),
+      available: x.state === 'pending' ? major(purchasePrepaymentAvailableMinor(root, x.purchaseId)) : 0 };
+  }).sort((a, b) => order[a.state] - order[b.state] || b.submittedAt.localeCompare(a.submittedAt));
+}
+/** 可登记票据时关联的结算：已确认且还有未开票金额。 */
+export function invoiceableSettlements(root: Root, purchaseId: string, exceptBillId = '') {
+  return confirmedSettlements(root, purchaseId).map(x => ({ settlement: x, left: major(Math.max(0, mistMoneyMinor(x.amount) - settlementInvoicedMinor(root, x.id, exceptBillId))) })).filter(x => x.left > 0);
+}
+/** 该合同票据是否必须关联结算：已有确认结算或已付预付时，必须关联，避免预付和结算重复形成应付。 */
+export function purchaseRequiresSettlementLink(root: Root, purchaseId: string) { return confirmedSettlements(root, purchaseId).length > 0 || purchasePrepaidMinor(root, purchaseId) > 0; }
 /** 主管审批收件箱：只给提交时冻结的申请快照和附件。撤回且未决定的申请不再出现。 */
 export function getPayableReviews(root: Root): MistReviewTask[] {
   return read(root).requests.filter(r => !(r.state === 'cancelled' && !r.decision)).map(r => ({
@@ -235,7 +335,7 @@ export function applyPayablesCommand(root: Root, command: PayablesCommand, c: Mi
       if (s.bills.some(b => b.state === 'open' && b.supplierId === supplierId && key(b.invoiceNo) === key(invoiceNo))) fail(`该供应商的发票号 ${invoiceNo} 已登记过，请核对是否重复`, 'CONFLICT');
       if (!Array.isArray(p.lines) || !p.lines.length || p.lines.length > 50) fail('请至少选择一张来源合同，并写明本票对应金额');
       const purchases = root.fulfillment?.purchases || [], seen = new Set<string>(); let sum = 0; let supplier = '';
-      const lines: SupplierBillLine[] = (p.lines as Array<{ purchaseId: string; amount: number }>).map(row => {
+      const lines: SupplierBillLine[] = (p.lines as Array<{ purchaseId: string; amount: number; settlementId?: string }>).map(row => {
         const purchaseId = text(row?.purchaseId, '来源合同'); if (seen.has(purchaseId)) fail('同一张合同在本票中重复出现'); seen.add(purchaseId);
         const po = purchases.find(x => x.id === purchaseId) || fail('来源合同不存在', 'NOT_FOUND');
         if (po.state !== 'approved') fail(`${po.code} 尚未批准，不能登记供应商票据`, 'PRECONDITION');
@@ -243,8 +343,17 @@ export function applyPayablesCommand(root: Root, command: PayablesCommand, c: Mi
         if (po.currency !== currency) fail(`${po.code} 币种为 ${po.currency}，与票据币种 ${currency} 不同`);
         const m = minor(row.amount, po.code + ' 对应金额');
         if (m + purchaseInvoicedMinor(root, po.id) > purchaseContractMinor(po)) fail(`${po.code} 累计登记票据金额会超过合同金额，请核对或先走合同变更`);
+        let link: Pick<SupplierBillLine, 'settlementId' | 'settlementCode'> = {};
+        if (row.settlementId) {
+          const st = s.settlements.find(x => x.id === text(row.settlementId, '关联结算')) || fail('关联结算不存在', 'NOT_FOUND');
+          if (st.purchaseId !== po.id) fail(`${st.code} 不属于 ${po.code}`);
+          if (st.state !== 'confirmed') fail(`${st.code} 尚未经财务确认，不能关联票据`, 'PRECONDITION');
+          const left = mistMoneyMinor(st.amount) - settlementInvoicedMinor(root, st.id);
+          if (m > left) fail(`${st.code} 未开票金额 ${major(Math.max(0, left)).toFixed(2)} ${st.currency}，本票对应金额超出；同一笔结算不能重复开票`);
+          link = { settlementId: st.id, settlementCode: st.code };
+        } else if (purchaseRequiresSettlementLink(root, po.id)) fail(`${po.code} 已有已确认结算或已付预付款，票据须关联已确认结算，避免重复形成应付`, 'PRECONDITION');
         sum += m; supplier = po.supplier;
-        return { purchaseId: po.id, purchaseCode: po.code, kind: po.kind, amount: major(m) };
+        return { purchaseId: po.id, purchaseCode: po.code, kind: po.kind, amount: major(m), ...link };
       });
       if (sum !== amount) fail('各合同对应金额合计必须等于价税合计');
       const due = day(p.due, '到期日'), dueBasis = text(p.dueBasis, '到期日依据', true, 500);
@@ -284,7 +393,7 @@ export function applyPayablesCommand(root: Root, command: PayablesCommand, c: Mi
       }
       const id = c.id(), paymentId = c.id(), code = nextCode('PAY', root.payments, c.now);
       root.payments.push({ id: paymentId, code, date, payee: request.supplier, amount: major(amount), currency: request.currency, ref: reference } as MistPayment);
-      const payment: SupplierPayment = { id, paymentId, code, supplierId: request.supplierId, supplier: request.supplier, date, amount: major(amount), currency: request.currency, reference, fileIds: files(root, p.fileIds), note: text(p.note, '备注', false), createdAt: c.now, actor: c.actorName, requestId: request.id, purpose: request.purpose, ...(request.purpose === 'prepayment' ? { purchaseId: request.purchaseId, planId: request.planId } : {}) };
+      const payment: SupplierPayment = { id, paymentId, code, supplierId: request.supplierId, supplier: request.supplier, date, amount: major(amount), currency: request.currency, reference, fileIds: files(root, p.fileIds), note: text(p.note, '备注', false), createdAt: c.now, actor: c.actorName, requestId: request.id, purpose: request.purpose, ...(request.purpose === 'prepayment' ? { purchaseId: request.purchaseId, planId: request.planId } : request.planId ? { planId: request.planId } : {}) };
       s.payments.push(payment);
       const applied = request.purpose === 'bill' ? allocate(root, c, payment, input) : 0;
       request.state = 'paid'; request.supplierPaymentId = id; request.paymentHistory.push(id);
@@ -294,21 +403,22 @@ export function applyPayablesCommand(root: Root, command: PayablesCommand, c: Mi
     case 'payable.plan.register': {
       const po = (root.fulfillment?.purchases || []).find(x => x.id === text(p.purchaseId, '来源合同')) || fail('来源合同不存在', 'NOT_FOUND');
       if (po.state !== 'approved') fail(`${po.code} 尚未批准，不能登记付款计划`, 'PRECONDITION');
-      const amount = minor(p.amount, '预付金额'), trigger = text(p.trigger, '付款触发条件', true, 500), basis = text(p.basis, '合同条款依据', true, 500);
+      const stage: PaymentPlanStage = p.stage === undefined ? 'prepayment' : (['prepayment', 'progress', 'final'] as const).includes(p.stage) ? p.stage : fail('付款计划类型无效');
+      const amount = minor(p.amount, PLAN_STAGE_LABEL[stage] + '金额'), trigger = text(p.trigger, '付款触发条件', true, 500), basis = text(p.basis, '合同条款依据', true, 500);
       const due = p.due ? day(p.due, '计划付款日') : '';
       const planned = s.plans.filter(x => x.purchaseId === po.id && x.state === 'active').reduce((n, x) => n + mistMoneyMinor(x.amount), 0);
-      if (planned + amount > purchaseContractMinor(po)) fail(`${po.code} 预付款计划合计会超过合同金额`);
+      if (planned + amount > purchaseContractMinor(po)) fail(`${po.code} 付款计划合计会超过合同金额`);
       const id = c.id(), code = nextCode('PP', s.plans, c.now);
-      s.plans.push({ id, code, purchaseId: po.id, purchaseCode: po.code, supplierId: po.supplierId, supplier: po.supplier, currency: po.currency, amount: major(amount), trigger, basis, due, note: text(p.note, '备注', false), state: 'active', registeredAt: c.now, registeredBy: c.actorName });
-      event(root, c, id, `登记 ${po.code} 预付款计划 ${code}（${major(amount).toFixed(2)} ${po.currency}）`);
+      s.plans.push({ stage, id, code, purchaseId: po.id, purchaseCode: po.code, supplierId: po.supplierId, supplier: po.supplier, currency: po.currency, amount: major(amount), trigger, basis, due, note: text(p.note, '备注', false), state: 'active', registeredAt: c.now, registeredBy: c.actorName });
+      event(root, c, id, `登记 ${po.code} ${PLAN_STAGE_LABEL[stage]}计划 ${code}（${major(amount).toFixed(2)} ${po.currency}）`);
       return { id };
     }
     case 'payable.plan.cancel': {
-      const plan = s.plans.find(x => x.id === text(p.id, '预付款计划')) || fail('预付款计划不存在', 'NOT_FOUND');
+      const plan = s.plans.find(x => x.id === text(p.id, '付款计划')) || fail('付款计划不存在', 'NOT_FOUND');
       if (plan.state !== 'active') fail('该计划已取消', 'PRECONDITION');
-      if (planRequestedMinor(root, plan.id) > 0) fail('该计划已有付款申请或已付预付款，请先撤回申请或冲回付款', 'PRECONDITION');
+      if (planRequestedMinor(root, plan.id) > 0) fail('该计划已有付款申请或已付款，请先撤回申请或冲回付款', 'PRECONDITION');
       plan.state = 'cancelled'; plan.cancelled = { at: c.now, actor: c.actorName, reason: text(p.reason, '取消原因', true, 500) };
-      event(root, c, plan.id, `取消预付款计划 ${plan.code}`);
+      event(root, c, plan.id, `取消${PLAN_STAGE_LABEL[planStage(plan)]}计划 ${plan.code}`);
       return { id: plan.id };
     }
     case 'payable.request.submit': {
@@ -321,6 +431,7 @@ export function applyPayablesCommand(root: Root, command: PayablesCommand, c: Mi
       if (p.purpose === 'prepayment') {
         const plan = s.plans.find(x => x.id === text(p.planId, '预付款计划')) || fail('预付款计划不存在', 'NOT_FOUND');
         if (plan.state !== 'active') fail(`${plan.code} 已取消，不能申请付款`, 'PRECONDITION');
+        if (planStage(plan) !== 'prepayment') fail(`${plan.code} 是${PLAN_STAGE_LABEL[planStage(plan)]}计划，须在供应商票据到后按票据申请付款`, 'PRECONDITION');
         const po = (root.fulfillment?.purchases || []).find(x => x.id === plan.purchaseId) || fail('来源合同不存在', 'NOT_FOUND');
         if (po.state !== 'approved') fail(`${po.code} 不在已批准状态，不能申请预付款`, 'PRECONDITION');
         const amount = minor(p.amount, '申请金额'), used = planRequestedMinor(root, plan.id);
@@ -349,12 +460,21 @@ export function applyPayablesCommand(root: Root, command: PayablesCommand, c: Mi
           total += m; supplier = bill.supplier;
           return { billId: bill.id, billCode: bill.code, invoiceNo: bill.invoiceNo, amount: major(m) };
         });
+        let plan: PrepaymentPlan | undefined;
+        if (p.planId) {
+          plan = s.plans.find(x => x.id === text(p.planId, '付款计划')) || fail('付款计划不存在', 'NOT_FOUND');
+          if (plan.state !== 'active' || planStage(plan) === 'prepayment') fail(`${plan.code} 不是有效的进度款 / 尾款计划`, 'PRECONDITION');
+          if (!lines.some(l => s.bills.find(b => b.id === l.billId)!.lines.some(x => x.purchaseId === plan!.purchaseId))) fail(`${plan.code} 所属合同 ${plan.purchaseCode} 不在本次申请的票据中`);
+          const used = planRequestedMinor(root, plan.id);
+          if (used + total > mistMoneyMinor(plan.amount)) fail(`${plan.code} 剩余可申请 ${money(mistMoneyMinor(plan.amount) - used, plan.currency)}，本次申请超出`);
+        }
         const snapshot = [
-          { label: '申请类型', value: '供应商票据付款' }, { label: '供应商', value: supplier },
-          ...lines.map(l => { const b = s.bills.find(x => x.id === l.billId)!; return { label: `${l.billCode} · 发票 ${l.invoiceNo}`, value: `未付 ${money(billOpenMinor(root, b), currency)} · 本次 ${money(mistMoneyMinor(l.amount), currency)} · 到期 ${b.due}（${b.dueBasis}）` }; }),
+          { label: '申请类型', value: plan ? `供应商票据付款 · ${PLAN_STAGE_LABEL[planStage(plan)]}` : '供应商票据付款' }, { label: '供应商', value: supplier },
+          ...lines.map(l => { const b = s.bills.find(x => x.id === l.billId)!, credit = billPrepaymentCreditMinor(root, b); return { label: `${l.billCode} · 发票 ${l.invoiceNo}`, value: `票额 ${money(mistMoneyMinor(b.amount), currency)}${credit ? ` · 预付抵扣 ${money(credit, currency)}` : ''} · 未付 ${money(billOpenMinor(root, b), currency)} · 本次 ${money(mistMoneyMinor(l.amount), currency)} · 到期 ${b.due}（${b.dueBasis}）` }; }),
+          ...(plan ? [{ label: '付款计划', value: `${plan.code} · ${money(mistMoneyMinor(plan.amount), plan.currency)} · 触发条件：${plan.trigger}` }] : []),
           { label: '本次申请金额', value: money(total, currency) }, { label: '申请说明', value: reason }, { label: '申请人', value: c.actorName },
         ];
-        request = { id, code, purpose: 'bill', supplierId, supplier, currency, amount: major(total), lines, reason, fileIds, requesterId: c.actorId, requester: c.actorName, submittedAt: c.now, reviewerIds, snapshot, state: 'pending', paymentHistory: [] };
+        request = { id, code, purpose: 'bill', supplierId, supplier, currency, amount: major(total), lines, ...(plan ? { planId: plan.id, purchaseId: plan.purchaseId, purchaseCode: plan.purchaseCode } : {}), reason, fileIds, requesterId: c.actorId, requester: c.actorName, submittedAt: c.now, reviewerIds, snapshot, state: 'pending', paymentHistory: [] };
       } else return fail('付款申请类型无效');
       s.requests.push(request);
       event(root, c, id, `提交付款申请 ${code}（${request.supplier} · ${money(mistMoneyMinor(request.amount), request.currency)}）`);
@@ -380,6 +500,7 @@ export function applyPayablesCommand(root: Root, command: PayablesCommand, c: Mi
     case 'payable.payment.reverse': {
       const payment = s.payments.find(x => x.id === text(p.supplierPaymentId, '供应商付款')) || fail('供应商付款不存在', 'NOT_FOUND');
       if (paymentReversed(root, payment.id)) fail(`${payment.code} 已冲回`, 'PRECONDITION');
+      if (payment.purpose === 'prepayment' && payment.purchaseId && purchasePrepaidMinor(root, payment.purchaseId) - mistMoneyMinor(payment.amount) < purchasePrepaymentAppliedMinor(root, payment.purchaseId)) fail(`${payment.code} 的预付款已被结算抵扣，请先冲回相关结算再冲回付款`, 'PRECONDITION');
       const reason = text(p.reason, '冲回原因', true, 500), rid = c.id();
       for (const a of activeAllocations(root).filter(a => a.supplierPaymentId === payment.id)) s.reversals.push({ id: c.id(), kind: 'allocation', targetId: a.id, parentId: rid, amount: a.amount, currency: a.currency, reason, at: c.now, actor: c.actorName });
       s.reversals.push({ id: rid, kind: 'payment', targetId: payment.id, amount: payment.amount, currency: payment.currency, reason, at: c.now, actor: c.actorName });
@@ -397,6 +518,71 @@ export function applyPayablesCommand(root: Root, command: PayablesCommand, c: Mi
       const payment = s.payments.find(x => x.id === a.supplierPaymentId), bill = s.bills.find(b => b.id === a.billId);
       event(root, c, a.supplierPaymentId, `冲回分配 ${payment?.code || ''} → ${bill?.code || ''}：${reason}；金额回到未分配`);
       return { id: rid };
+    }
+    case 'payable.settlement.submit': {
+      if (!c.actorId) fail('无法识别提交人', 'FORBIDDEN');
+      const po = (root.fulfillment?.purchases || []).find(x => x.id === text(p.purchaseId, '来源合同')) || fail('来源合同不存在', 'NOT_FOUND');
+      if (po.state !== 'approved') fail(`${po.code} 尚未批准，不能结算`, 'PRECONDITION');
+      if (confirmedSettlements(root, po.id).some(x => x.final)) fail(`${po.code} 已完成最终结算；如需更正请由财务冲回最终结算`, 'PRECONDITION');
+      if (s.settlements.some(x => x.purchaseId === po.id && x.state === 'pending')) fail(`${po.code} 有待财务复核的结算，请等复核或撤回后再提交`, 'CONFLICT');
+      if (!Array.isArray(p.receiptIds) || !p.receiptIds.length || p.receiptIds.length > 100) fail('请选择本次结算对应的实际收货记录');
+      const ids = [...new Set((p.receiptIds as unknown[]).map(v => text(v, '收货记录')))];
+      if (ids.length !== p.receiptIds.length) fail('同一条收货记录在本次结算中重复出现');
+      const receipts = ids.map(id => (root.fulfillment?.receipts || []).find(r => r.id === id) || fail('收货记录不存在', 'NOT_FOUND'));
+      for (const r of receipts) { if (r.purchaseId !== po.id) fail('收货记录不属于该合同'); if (receiptSettled(root, r.id)) fail(`${r.date} 的收货记录已在其他结算中`, 'CONFLICT'); }
+      const quantity = receipts.reduce((n, r) => n + r.quantity, 0), rejected = receipts.reduce((n, r) => n + r.rejected, 0);
+      if (quantity <= 0) fail('所选收货记录没有实收合格数量；拒收数量不计入结算');
+      const amount = Math.round(quantity * po.price * 100);
+      const live = s.settlements.filter(x => x.purchaseId === po.id && x.state === 'confirmed').reduce((n, x) => n + mistMoneyMinor(x.amount), 0);
+      if (live + amount > purchaseContractMinor(po)) fail(`${po.code} 累计结算金额会超过合同金额；超收部分须先走合同变更`);
+      if (p.final !== undefined && typeof p.final !== 'boolean') fail('最终结算标记无效');
+      if (p.disputes !== undefined && (!Array.isArray(p.disputes) || p.disputes.length > 20)) fail('争议 / 扣款格式无效');
+      const disputes = ((p.disputes || []) as SettlementDispute[]).map(d => ({ description: text(d?.description, '争议 / 扣款说明', true, 500), amount: major(minor(d?.amount, '争议 / 扣款金额')) }));
+      const id = c.id(), code = nextCode('ST', s.settlements, c.now);
+      s.settlements.push({ id, code, purchaseId: po.id, purchaseCode: po.code, supplierId: po.supplierId, supplier: po.supplier, currency: po.currency, unit: po.unit, price: po.price, receiptIds: ids, quantity, rejected, amount: major(amount), final: !!p.final || settledQuantity(root, po.id) + quantity >= po.quantity, disputes, note: text(p.note, '结算说明', false, 1000), fileIds: files(root, p.fileIds), state: 'pending', submitterId: c.actorId, submittedBy: c.actorName, submittedAt: c.now });
+      event(root, c, id, `提交 ${po.code} 结算 ${code}（实收 ${quantity} ${po.unit} · ${major(amount).toFixed(2)} ${po.currency}），待财务复核`);
+      return { id };
+    }
+    case 'payable.settlement.cancel': {
+      const st = s.settlements.find(x => x.id === text(p.id, '结算')) || fail('结算不存在', 'NOT_FOUND');
+      if (st.state !== 'pending') fail('只有待复核的结算可以撤回', 'PRECONDITION');
+      if (st.submitterId !== c.actorId) fail('只有提交人可以撤回结算', 'FORBIDDEN');
+      st.state = 'cancelled'; st.cancelled = { at: c.now, actor: c.actorName, reason: text(p.reason, '撤回原因', true, 500) };
+      event(root, c, st.id, `撤回结算 ${st.code}`);
+      return { id: st.id };
+    }
+    case 'payable.settlement.return': {
+      const st = s.settlements.find(x => x.id === text(p.id, '结算')) || fail('结算不存在', 'NOT_FOUND');
+      if (st.state !== 'pending') fail('结算已处理或已撤回', 'CONFLICT');
+      if (st.submitterId === c.actorId) fail('不能复核本人提交的结算', 'FORBIDDEN');
+      st.state = 'returned'; st.returned = { at: c.now, actor: c.actorName, reason: text(p.reason, '退回原因', true, 500) };
+      event(root, c, st.id, `退回结算 ${st.code}：${st.returned.reason}`);
+      return { id: st.id };
+    }
+    case 'payable.settlement.confirm': {
+      const st = s.settlements.find(x => x.id === text(p.id, '结算')) || fail('结算不存在', 'NOT_FOUND');
+      if (st.state !== 'pending') fail('结算已处理或已撤回', 'CONFLICT');
+      if (!c.actorId || st.submitterId === c.actorId) fail('不能复核本人提交的结算', 'FORBIDDEN');
+      if (st.final && confirmedSettlements(root, st.purchaseId).some(x => x.final)) fail(`${st.purchaseCode} 已有最终结算`, 'CONFLICT');
+      const po = (root.fulfillment?.purchases || []).find(x => x.id === st.purchaseId) || fail('来源合同不存在', 'NOT_FOUND');
+      const live = confirmedSettlements(root, po.id).reduce((n, x) => n + mistMoneyMinor(x.amount), 0);
+      if (live + mistMoneyMinor(st.amount) > purchaseContractMinor(po)) fail(`${po.code} 累计结算金额会超过合同金额；超收部分须先走合同变更`);
+      const suggested = settlementSuggestedPrepaymentMinor(root, st), applied = minor(p.prepaymentApplied, '本次预付抵扣', true);
+      const available = purchasePrepaymentAvailableMinor(root, st.purchaseId);
+      if (applied > available) fail(`本次预付抵扣超过合同剩余可抵扣预付 ${major(available).toFixed(2)} ${st.currency}`);
+      if (applied > mistMoneyMinor(st.amount)) fail('本次预付抵扣不能超过结算金额');
+      const adjustReason = text(p.adjustReason, '调整原因', applied !== suggested, 500);
+      st.state = 'confirmed'; st.confirmation = { actorId: c.actorId, actor: c.actorName, at: c.now, suggestedPrepayment: major(suggested), prepaymentApplied: major(applied), adjustReason: applied !== suggested ? adjustReason : '', note: text(p.note, '复核意见', false, 1000) };
+      event(root, c, st.id, `确认结算 ${st.code}（${st.amount.toFixed(2)} ${st.currency}${applied ? `，预付抵扣 ${major(applied).toFixed(2)}` : ''}${applied !== suggested ? `，调整原因：${adjustReason}` : ''}）`);
+      return { id: st.id };
+    }
+    case 'payable.settlement.reverse': {
+      const st = s.settlements.find(x => x.id === text(p.id, '结算')) || fail('结算不存在', 'NOT_FOUND');
+      if (st.state !== 'confirmed') fail('只有已确认的结算可以冲回', 'PRECONDITION');
+      if (settlementInvoicedMinor(root, st.id) > 0) fail(`${st.code} 已关联供应商票据，请先作废关联票据再冲回结算`, 'PRECONDITION');
+      st.state = 'reversed'; st.reversed = { at: c.now, actor: c.actorName, reason: text(p.reason, '冲回原因', true, 500) };
+      event(root, c, st.id, `冲回结算 ${st.code}：${st.reversed.reason}；收货记录与预付抵扣释放`);
+      return { id: st.id };
     }
     case 'payable.payment.allocate': {
       const payment = s.payments.find(x => x.id === text(p.supplierPaymentId, '供应商付款')) || fail('供应商付款不存在', 'NOT_FOUND');

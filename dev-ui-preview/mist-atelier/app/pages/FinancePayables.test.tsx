@@ -18,9 +18,9 @@ function render() { act(() => root.render(<MistRoot><ToastProvider><Nav.Provider
 const click = async (name: string | RegExp, scope: HTMLElement = document.body) => { await act(async () => (getAllByRole(scope, 'button', { name })[0] as HTMLButtonElement).click()); };
 function input(label: string, value: string) { const c = getByLabelText(document.body, label) as HTMLInputElement; act(() => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(c, value); c.dispatchEvent(new Event('input', { bubbles: true })); }); }
 function select(label: string, value: string) { const c = getByLabelText(document.body, label) as HTMLSelectElement; act(() => { c.value = value; c.dispatchEvent(new Event('change', { bubbles: true })); }); }
-let po: any;
+let po: any, ctx: any;
 beforeEach(() => {
-  let serial = 0; const context = { id: () => `ui-${++serial}`, actorName: '财务', actorId: 'finance', now: new Date().toISOString(), authority: { supplier: {}, paymentReviewerIds: ['manager'] } };
+  let serial = 0; const context = ctx = { id: () => `ui-${++serial}`, actorName: '财务', actorId: 'finance', now: new Date().toISOString(), authority: { supplier: {}, paymentReviewerIds: ['manager'] } };
   const state = createMistState(context, 'demo'); po = state.fulfillment.purchases.find(p => p.code === 'PO-2026-00001');
   store.value = { state, workspace: { id: 'space' }, loading: false, saving: false, pending: null, run: vi.fn(async (command: any) => { const r = applyMistCommand(store.value.state, command, context); store.value.state = r.state; render(); return { requestId: 'req', revision: 1, result: r.result }; }) };
   go.mockReset(); route = { view: 'payment-vouchers', section: 'payables' };
@@ -102,10 +102,10 @@ it('票据付款：先申请并经主管批准，再按批准登记实付；分�
 
 it('预付款：财务按合同登记计划，申请经主管批准后实付，挂在合同上；登记错误可冲回，申请回到已批准待付', async () => {
   render();
-  await click('登记预付款计划');
-  select('来源合同', po.id); input('预付金额', '33480'); input('付款触发条件', '合同回签后 7 天内');
+  await click('登记付款计划');
+  select('来源合同', po.id); input('计划金额', '33480'); input('付款触发条件', '合同回签后 7 天内');
   expect((getByLabelText(document.body, '合同条款依据') as HTMLInputElement).value).toContain('合同付款条件');
-  await click('登记计划', dialog('登记预付款计划'));
+  await click('登记计划', dialog('登记付款计划'));
   const plan = store.value.state.payables.plans[0];
   expect(plan).toMatchObject({ purchaseId: po.id, amount: 33480, trigger: '合同回签后 7 天内' });
   expect(host.textContent).toContain('计划不是应付');
@@ -130,7 +130,7 @@ it('预付款：财务按合同登记计划，申请经主管批准后实付，�
 
 it('没有财务写权限：可以查看，登记和申请按钮禁用', async () => {
   store.value.canWrite = false; render();
-  for (const name of ['登记供应商票据', '登记预付款计划', '申请票据付款']) expect((getByRole(host, 'button', { name }) as HTMLButtonElement).disabled).toBe(true);
+  for (const name of ['登记供应商票据', '登记付款计划', '提交结算', '申请票据付款']) expect((getByRole(host, 'button', { name }) as HTMLButtonElement).disabled).toBe(true);
   await click(/待登记来源/); expect(getByRole(host, 'table', { name: '待登记来源合同' }).textContent).toContain(po.code);
   expect(store.value.run).not.toHaveBeenCalled();
 });
@@ -155,4 +155,49 @@ it('打开登记实付后失去核销权限，不能提交附带分配的复合�
   await click('登记实付', dialog('按已批准申请登记实付'));
   expect(store.value.run).not.toHaveBeenCalled();
   expect(document.body.textContent).toContain('没有办理此项财务动作的权限');
+});
+
+const as = (actorId: string, actorName: string, command: any) => { let n = 0; const r = applyMistCommand(store.value.state, command, { id: () => `${actorId}-${command.type}-${++n}-${Math.random()}`, now: new Date().toISOString(), actorName, actorId, authority: { supplier: {}, paymentReviewerIds: ['manager'] } } as any); store.value.state = r.state; return r.result; };
+
+it('结算：业务员按收货提交，财务确认预付抵扣（与建议不同须写原因），再按结算登记票据，应付扣除预付', async () => {
+  as('finance', '财务', { type: 'payable.plan.register', payload: { purchaseId: po.id, amount: 33480, trigger: '合同签订后 7 天内', basis: '合同第 5 条' } });
+  const req = as('sales', '业务', { type: 'payable.request.submit', payload: { purpose: 'prepayment', planId: store.value.state.payables.plans[0].id, amount: 33480, reason: '按合同申请预付' } });
+  approve(String(req.id));
+  as('finance', '财务', { type: 'payable.payment.register', payload: { requestId: req.id, date: day, amount: 33480, reference: 'BK-PP' } });
+  store.value.state.fulfillment.receipts.push({ id: 'rcpt-ui', purchaseId: po.id, quantity: 1000, rejected: 50, destination: 'warehouse', location: '嘉兴仓', date: day, evidence: '收货单', fileIds: [], actor: '仓库', createdAt: new Date().toISOString() });
+  render();
+  // 已付预付后，未确认结算的合同不能直接登记票据。
+  await click(/待登记来源/); await click('登记票据', getByRole(host, 'table', { name: '待登记来源合同' }));
+  expect(dialog('登记供应商票据').textContent).toContain('须先确认结算再登记票据');
+  await click('取消', dialog('登记供应商票据'));
+  ctx.actorId = 'sales'; ctx.actorName = '业务';
+  await click('提交结算'); const sd = dialog('提交结算');
+  select('结算合同', po.id);
+  const box = getByRole(sd, 'checkbox', { name: /嘉兴仓 · 实收 1000/ }) as HTMLInputElement;
+  await act(async () => box.click());
+  expect(sd.textContent).toContain('本次建议抵扣 13,950.00');
+  await click('添加争议 / 扣款', sd); input('争议说明 1', '色差待确认扣款'); input('争议金额 1', '500');
+  await click('提交复核', dialog('提交结算'));
+  const st = store.value.state.payables.settlements[0];
+  expect(st).toMatchObject({ state: 'pending', receiptIds: ['rcpt-ui'], submitterId: 'sales', disputes: [{ description: '色差待确认扣款', amount: 500 }] });
+  ctx.actorId = 'finance'; ctx.actorName = '财务';
+  route = { view: 'payment-vouchers', section: 'payables', id: st.id }; render();
+  expect(host.textContent).toContain('等待财务复核');
+  await click('确认结算'); const cd = dialog('确认结算');
+  expect((getByLabelText(cd, '本次预付抵扣') as HTMLInputElement).value).toBe('13950');
+  input('本次预付抵扣', '14000'); input('调整原因', '供应商同意首批多抵 50 元');
+  await click('确认结算', dialog('确认结算'));
+  expect(store.value.state.payables.settlements[0]).toMatchObject({ state: 'confirmed', confirmation: { suggestedPrepayment: 13950, prepaymentApplied: 14000, adjustReason: '供应商同意首批多抵 50 元' } });
+  await click('按结算登记票据'); const bd = dialog('登记供应商票据');
+  expect((getByLabelText(bd, po.code + ' 关联结算') as HTMLSelectElement).value).toBe(st.id);
+  expect((getByLabelText(bd, po.code + ' 本票金额') as HTMLInputElement).value).toBe('46500');
+  input('供应商发票号', 'VAT-ST-1'); input('税额', '0'); input('到期日', day);
+  await click('登记应付', bd);
+  const bill = store.value.state.payables.bills[0];
+  expect(bill.lines[0]).toMatchObject({ purchaseId: po.id, amount: 46500, settlementId: st.id });
+  route = { view: 'payment-vouchers', section: 'payables', id: bill.id }; render();
+  expect(host.textContent).toContain('预付抵扣（来自结算）'); expect(host.textContent).toContain('14,000.00');
+  expect(host.textContent).toContain('32,500.00');
+  await click(/^供应商付款 · /);
+  expect(getByRole(host, 'table', { name: '供应商付款' }).textContent).toContain('预付 · 部分已抵扣');
 });
