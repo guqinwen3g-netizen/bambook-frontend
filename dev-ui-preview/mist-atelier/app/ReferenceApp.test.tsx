@@ -203,6 +203,35 @@ describe('one Mist entry with real authentication and workspace state', () => {
     expect(host!.textContent).toContain('工作空间设置');
     expect(host!.textContent).not.toContain('没有查看权限');
   });
+  it('switches a member appearance locally without writing owner-managed settings', async () => {
+    await signIn(); const ctx = currentContext();
+    ctx.workspace!.ownerId = 'another-owner';
+    ctx.workspace!.access = { role: 'member', canManageMembers: false, hidden: [] };
+    await mount(); await waitFor(() => expect(probes.home).toHaveBeenCalled());
+    await click(getByRole(host!, 'button', { name: '切换深色' }));
+    expect(host!.querySelector('.mist-root')?.getAttribute('data-theme')).toBe('dark');
+    expect(ctx.run).not.toHaveBeenCalled(); expect(ctx.state!.settings.theme).toBe('light');
+    await click(getByRole(host!, 'button', { name: '切换浅色' }));
+    expect(host!.querySelector('.mist-root')?.getAttribute('data-theme')).toBe('light');
+    expect(ctx.run).not.toHaveBeenCalled();
+  });
+  it('keeps the member command-palette theme action local too', async () => {
+    await signIn(); const ctx = currentContext();
+    ctx.workspace!.ownerId = 'another-owner';
+    ctx.workspace!.access = { role: 'member', canManageMembers: false, hidden: [] };
+    await mount(); await waitFor(() => expect(probes.home).toHaveBeenCalled()); await openSearch();
+    input(searchInput(), '切换深浅色');
+    await click(getByRole(getByRole(host!, 'dialog', { name: '搜索' }), 'button', { name: /切换深浅色/ }));
+    expect(host!.querySelector('.mist-root')?.getAttribute('data-theme')).toBe('dark');
+    expect(ctx.run).not.toHaveBeenCalled(); expect(ctx.state!.settings.theme).toBe('light');
+  });
+  it('still persists an owner theme through the existing workspace command', async () => {
+    await signIn(); const ctx = currentContext();
+    ctx.workspace!.access = { role: 'owner', canManageMembers: true, hidden: [] };
+    await mount(); await waitFor(() => expect(probes.home).toHaveBeenCalled());
+    await click(getByRole(host!, 'button', { name: '切换深色' }));
+    expect(ctx.run).toHaveBeenCalledExactlyOnceWith({ type: 'settings.update', payload: { theme: 'dark' } });
+  });
   it.each(['development/detail', 'orders/detail', 'system-settings'])('does not mount an unauthorized direct link to %s', async view => {
     await signIn('limited', []); requests = []; history.replaceState(null, '', `/?intro=0&theme=light&view=${view}&id=dev-a&versionId=version-a`);
     await mount(); await waitFor(() => expect(host!.textContent).toContain('没有查看权限'));

@@ -176,7 +176,7 @@ export function FinancePayables() {
           <Field label="供应商发票号" required><TextInput aria-label="供应商发票号" value={billDraft.invoiceNo} onChange={e => setBillDraft({ ...billDraft, invoiceNo: e.target.value })} /></Field>
         </FormGrid>
         <Field label="这张票对应哪些合同" required hint={billCurrency ? '同一张票只能对应同币种合同（' + billCurrency + '）' : '勾选合同并写明本票对应金额，不能只挂供应商总额'}>
-          <div className="mist-col">{billSources.map(s => { const on = s.purchase.id in billDraft.lines, other = !!billCurrency && s.purchase.currency !== billCurrency; return <div className="mist-row" key={s.purchase.id} data-bill-source={s.purchase.id}>
+          <div className="mist-col">{billSources.map(s => { const on = s.purchase.id in billDraft.lines, other = !!billCurrency && s.purchase.currency !== billCurrency; return <div className="mist-row mist-module-actions" key={s.purchase.id} data-bill-source={s.purchase.id}>
             <Checkbox checked={on} disabled={other && !on} onChange={v => { const lines = { ...billDraft.lines }; if (v) lines[s.purchase.id] = String(s.uninvoiced); else delete lines[s.purchase.id]; setBillDraft({ ...billDraft, lines, dueBasis: billDraft.dueBasis || '合同付款条件：' + (s.purchase.terms || '未填写') }); }} label={<span><Mono>{s.purchase.code}</Mono> · {s.purchase.description} · 还没收到票 {apMoney(s.uninvoiced, s.purchase.currency)}</span>} />
             <span className="mist-spacer" />{on && <TextInput aria-label={s.purchase.code + ' 本票金额'} type="number" min="0.01" step="0.01" style={{ width: 140 }} value={billDraft.lines[s.purchase.id]} onChange={e => setBillDraft({ ...billDraft, lines: { ...billDraft.lines, [s.purchase.id]: e.target.value } })} />}
           </div>; })}
@@ -209,7 +209,7 @@ export function FinancePayables() {
         </FormGrid>}
         <Field label="分配到票据" hint={`已分配 ${apMoney(allocTotal / 100, payDraft.currency)} · 未分配 ${Number.isFinite(payable) ? apMoney(Math.max(0, payable - allocTotal) / 100, payDraft.currency) : '—'}`}>
           {!canAllocate && <span className="mist-note">当前账号没有核销分配权限；付款仅登记为未分配，不会自动核销。</span>}
-          <div className="mist-col">{payBills.map(b => <div className="mist-row" key={b.id} data-pay-bill={b.id}><Mono>{b.code}</Mono><span className="mist-note">发票 {b.invoiceNo} · 到期 {b.due}{b.overdue ? '（逾期）' : ''} · 未付 {apMoney(b.open, b.currency)}</span><span className="mist-spacer" />
+          <div className="mist-col">{payBills.map(b => <div className="mist-row mist-module-actions" key={b.id} data-pay-bill={b.id}><Mono>{b.code}</Mono><span className="mist-note">发票 {b.invoiceNo} · 到期 {b.due}{b.overdue ? '（逾期）' : ''} · 未付 {apMoney(b.open, b.currency)}</span><span className="mist-spacer" />
             <TextInput aria-label={b.code + ' 分配金额'} type="number" min="0.01" step="0.01" disabled={busy || !canAllocate} style={{ width: 140 }} value={payDraft.allocations[b.id] || ''} onChange={e => setPayDraft({ ...payDraft, allocations: { ...payDraft.allocations, [b.id]: e.target.value } })} /></div>)}
           {!payBills.length && <span className="mist-note">{payDraft.supplierId ? '这家供应商没有该币种的未付票据；付款可以先登记，金额保留为未分配。' : '先选择供应商。'}</span>}</div>
         </Field>

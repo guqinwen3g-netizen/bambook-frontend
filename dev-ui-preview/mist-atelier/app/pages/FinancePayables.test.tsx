@@ -35,6 +35,7 @@ it('从待登记来源登记供应商票据：形成应付，合同还没收到�
   await click('登记票据', row);
   const dialog = getByRole(document.body, 'dialog', { name: '登记供应商票据' });
   expect((getByLabelText(dialog, po.code + ' 本票金额') as HTMLInputElement).value).toBe('111600');
+  expect(dialog.querySelector('[data-bill-source]')?.classList.contains('mist-module-actions')).toBe(true);
   input(po.code + ' 本票金额', '33480'); input('供应商发票号', 'VAT-HS-01'); input('税额', '3851.68'); input('到期日', day);
   expect((getByLabelText(dialog, '到期日依据') as HTMLInputElement).value).toContain(po.terms);
   await click('登记应付', dialog);
@@ -50,6 +51,7 @@ it('一笔付款分到两张票，没分完的钱保留并提示，之后可再�
   const [a, b] = store.value.state.payables.bills;
   await click('登记供应商付款');
   select('收款供应商', po.supplierId); input('付款金额', '600'); input('银行流水号', 'BK-1');
+  expect(getByRole(document.body, 'dialog', { name: '登记供应商付款' }).querySelector('[data-pay-bill]')?.classList.contains('mist-module-actions')).toBe(true);
   input(a.code + ' 分配金额', '300'); input(b.code + ' 分配金额', '250');
   await click('登记付款', getByRole(document.body, 'dialog', { name: '登记供应商付款' }));
   expect(store.value.run).not.toHaveBeenCalled(); expect(document.body.textContent).toContain('不能超过票据未付余额');

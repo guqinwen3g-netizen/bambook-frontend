@@ -84,3 +84,28 @@ it('does not navigate on an old notification acknowledgement after switching spa
 it('uses the workspace display name and preferred receivable currency without changing session identity',()=>{seam.value.state.settings.profileName='工作显示名';seam.value.state.settings.companyProfile={defaultCurrency:'EUR'};render();expect(host.querySelector('.mist-page-head')?.textContent).toContain('工作显示名');expect(host.querySelectorAll('.mist-stat')[3].querySelector('.mist-stat-v')?.textContent).toContain('77.00EUR');expect(seam.session.user.displayName).toBe('当前员工');});
 it('stops proactive brief content while keeping manual assistant access',async()=>{seam.value.state.settings.notifications.suggestions=false;render();expect(host.querySelector('.mist-brief')?.textContent).toContain('主动建议已关闭');await click(host.querySelector<HTMLElement>('.mist-brief-ask')!);expect(openAI).toHaveBeenCalledWith('请根据当前工作区记录，整理下一步行动建议。');});
 it('uses shared notification preferences and view access before showing unread facts',()=>{seam.value.state.events=[];seam.value.state.settings.notifications.qc=false;seam.session.canAccessView=(view:string)=>view!=='shipments';seam.value.state.notifications=[{id:'hidden-qc',category:'qc',title:'关闭的QC通知',detail:'不应显示',readAt:null,target:{view:'development/detail',id:'d'}},{id:'hidden-scope',category:'general',title:'无权出运通知',detail:'不应显示',readAt:null,target:{view:'shipments',id:'s'}},{id:'visible',category:'general',title:'可见实际通知',detail:'应显示',readAt:null,target:{view:'orders/detail',id:'o'}}];render();expect(host.querySelector('.mist-brief')?.textContent).toContain('可见实际通知');expect(host.querySelector('.mist-brief')?.textContent).not.toContain('关闭的QC通知');expect(host.querySelector('.mist-brief')?.textContent).not.toContain('无权出运通知');});
+it('does not present projected-away receivables as zero money or zero unpaid invoices',async()=>{
+  seam.value.state.invoices=[];seam.value.workspace.access={role:'member',hidden:[{key:'receivables'}]};render();
+  const card=host.querySelectorAll<HTMLElement>('.mist-stat')[3];
+  expect(card.querySelector('.mist-stat-v')?.textContent).toBe('已隐藏');
+  expect(card.textContent).toContain('不代表应收为零');expect(card.textContent).not.toContain('0 张未结发票');
+  await click(card);expect(host.querySelector('[role=dialog]')).toBeNull();
+  expect(host.querySelector('.mist-page-head')?.textContent).toContain('当前可见');
+});
+it('does not report a partial QC aggregate when development versions are hidden',async()=>{
+  seam.value.state.devs=[];seam.value.state.versions=[];seam.value.workspace.access={role:'member',hidden:[{key:'products'}]};render();
+  const cards=host.querySelectorAll<HTMLElement>('.mist-stat');
+  for(const index of [0,1]){expect(cards[index].querySelector('.mist-stat-v')?.textContent).toBe('已隐藏');await click(cards[index]);expect(host.querySelector('[role=dialog]')).toBeNull();}
+  expect(cards[2].querySelector('.mist-stat-v')?.textContent).not.toBe('已隐藏');
+  expect(cards[3].querySelector('.mist-stat-v')?.textContent).not.toBe('已隐藏');
+});
+it('closes an open statistic detail immediately when its source becomes hidden',async()=>{
+  render();await click(host.querySelectorAll<HTMLElement>('.mist-stat')[3]);expect(host.querySelector('[role=dialog]')).not.toBeNull();
+  seam.value.state.invoices=[];seam.value.workspace.access={role:'member',hidden:[{key:'receivables'}]};await act(async()=>paint());
+  expect(host.querySelector('[role=dialog]')).toBeNull();
+});
+it('keeps a genuinely visible empty ledger distinct from a hidden ledger',()=>{
+  seam.value.state=createMistState(ctx(),'empty');seam.value.workspace.access={role:'member',hidden:[]};render();
+  const card=host.querySelectorAll<HTMLElement>('.mist-stat')[3];
+  expect(card.querySelector('.mist-stat-v')?.textContent).toBe('0.00');expect(card.textContent).toContain('0 张未结发票');expect(card.textContent).not.toContain('已隐藏');
+});

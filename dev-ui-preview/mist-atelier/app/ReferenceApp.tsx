@@ -150,7 +150,7 @@ function AppInner({ theme, setTheme }: { theme: ThemeMode; setTheme: (theme: The
   const report = (failure: unknown) => toast(failure instanceof Error ? failure.message : '操作未完成', 'bad');
   const toggleTheme = () => {
     const next = theme === 'dark' ? 'light' : 'dark';
-    if (state) void workspace.run({type:'settings.update',payload:{theme:next}}).catch(report);
+    if (state && workspace.workspace?.access?.role !== 'member') void workspace.run({type:'settings.update',payload:{theme:next}}).catch(report);
     else setTheme(next);
   };
   const routeBase=route.view.split('/')[0];
