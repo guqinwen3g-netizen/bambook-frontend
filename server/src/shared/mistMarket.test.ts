@@ -50,6 +50,29 @@ describe('supplier certificates, ratings and cooperation status',()=>{
   run(s,{type:'market.supplier.status',payload:{id,status:'active',reason:''}},later);run(s,{type:'market.product.save',payload:{input:{...productInput,sku:'P3',supplierId:id}}},later);
   const row=s.market.suppliers.find(x=>x.id===id)!;expect(row).toMatchObject({status:'active',blockReason:''});expect(row.statusHistory!.map(h=>h.status+h.effectiveDate)).toEqual(['paused2026-10-20','active2026-10-21']);});
 });
+describe('relation holds and dual identity',()=>{
+ it('freezes a customer relation: no new quotation, sending or order until released, with history',()=>{const {ctx,s}=setup();const p=run(s,{type:'market.product.save',payload:{input:productInput}},ctx).id!;const draft=run(s,{type:'market.quotation.save',payload:{input:quoteInput(p)}},ctx).id!;
+  const relId=run(s,{type:'market.relation.save',payload:{input:{name:'',category:'Customer',customerId:'c',supplierId:'',country:'',address:'',aliases:[],fileIds:[],note:''}}},ctx).id;const rel=s.market.relations.find(r=>r.id===relId)!;
+  expect(()=>run(s,{type:'market.relation.hold',payload:{id:rel.id,frozen:true,reason:''}},ctx)).toThrow(/冻结原因/);
+  run(s,{type:'market.relation.hold',payload:{id:rel.id,frozen:true,reason:'逾期未付'}},ctx);
+  expect(()=>run(s,{type:'market.quotation.save',payload:{input:quoteInput(p)}},ctx)).toThrow(/往来已冻结：逾期未付/);
+  expect(()=>run(s,{type:'market.quotation.status',payload:{id:draft,status:'Sent',evidence:'邮件'}},ctx)).toThrow(/往来已冻结/);
+  expect(()=>run(s,{type:'market.relation.hold',payload:{id:rel.id,frozen:true,reason:'再次'}},ctx)).toThrow(/已冻结/);
+  run(s,{type:'market.relation.hold',payload:{id:rel.id,frozen:false,reason:'已回款'}},ctx);run(s,{type:'market.quotation.status',payload:{id:draft,status:'Sent',evidence:'邮件'}},ctx);
+  const after=s.market.relations.find(r=>r.id===rel.id)!;expect(after.hold).toBeNull();expect(after.holdHistory!.map(h=>h.action+h.reason)).toEqual(['freeze逾期未付','release已回款']);});
+ it('links an existing supplier identity into a customer relation, keeping both contact sets separate',()=>{const {ctx,s}=setup();
+  const sid=run(s,{type:'market.supplier.save',payload:{input:{code:'S9',name:'某贸易行',type:'面料贸易',country:'中国',address:'绍兴',capabilities:'现货',capacity:1,capacityUnit:'米/月',leadDays:3,fileIds:[],note:''}}},ctx).id!;
+  run(s,{type:'market.contact.save',payload:{kind:'supplier',parentId:sid,name:'供方联系人',role:'',email:'',phone:'',primary:true}},ctx);
+  const rid=run(s,{type:'market.relation.save',payload:{input:{name:'',category:'Customer',customerId:'c',supplierId:'',country:'',address:'',aliases:[],fileIds:[],note:''}}},ctx).id!;
+  const before=s.market.relations.length;run(s,{type:'market.relation.linkSupplier',payload:{id:rid,supplierId:sid}},ctx);
+  expect(s.market.relations.length).toBe(before-1);const r=s.market.relations.find(x=>x.id===rid)!;expect(r).toMatchObject({customerId:'c',supplierId:sid,category:'Customer'});expect(r.aliases).toContain('某贸易行');
+  expect(()=>run(s,{type:'market.relation.linkSupplier',payload:{id:rid,supplierId:sid}},ctx)).toThrow(/已关联供应商身份/);
+  run(s,{type:'market.supplier.save',payload:{id:sid,input:{code:'S9',name:'某贸易行二',type:'面料贸易',country:'中国',address:'绍兴',capabilities:'现货',capacity:1,capacityUnit:'米/月',leadDays:3,fileIds:[],note:''}}},ctx);
+  run(s,{type:'market.contact.save',payload:{kind:'supplier',parentId:sid,name:'供方二',role:'',email:'',phone:'',primary:false}},ctx);
+  const linked=s.market.relations.find(x=>x.id===rid)!;expect(linked.name).toBe(s.customers.find(c=>c.id==='c')!.name);expect(linked.contacts.map(c=>c.name)).not.toContain('供方二');
+  expect(s.market.suppliers.find(x=>x.id===sid)!.contacts.map(c=>c.name)).toEqual(['供方联系人','供方二']);
+  run(s,{type:'market.relation.save',payload:{id:rid,input:{name:'',category:'Customer',customerId:'c',supplierId:'',country:'',address:'',aliases:['别名'],fileIds:[],note:''}}},ctx);expect(s.market.relations.find(x=>x.id===rid)!.supplierId).toBe(sid);});
+});
 describe('market action audit regressions',()=>{
  it('synchronizes CRM names and the same contact identity in relations',()=>{
   const {ctx,s}=setup();const c=run(s,{type:'market.contact.save',payload:{kind:'customer',parentId:'c',name:'采购主管',role:'采购',email:'buyer@example.com',phone:'123',primary:true}},ctx);const r=s.market.relations.find(r=>r.customerId==='c')!;

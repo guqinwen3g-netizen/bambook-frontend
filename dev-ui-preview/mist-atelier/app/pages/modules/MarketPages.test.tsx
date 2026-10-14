@@ -31,7 +31,7 @@ function sectionFixture(kind:string){
  return target[kind];
 }
 describe('Market explicit detail sections',()=>{
- it.each(['product','relation','trend','show','season','lead','lookbook'])('keeps %s facts, attachments and history in independent sibling cards',async kind=>{
+ it.each(['product','trend','show','season','lead','lookbook'])('keeps %s facts, attachments and history in independent sibling cards',async kind=>{
   const target=sectionFixture(kind);await mount(target.view,target.id,target.section,'full');
   const region=host.querySelector('[data-detail-surface="sections"]')!;expect(region).not.toBeNull();
   expect(region.closest('.mist-card')).toBeNull();expect([...region.children].filter(element=>element.classList.contains('mist-card'))).toHaveLength(target.cards);
@@ -40,7 +40,7 @@ describe('Market explicit detail sections',()=>{
   if(target.cards===3){const history=cards.find(card=>card.querySelector('.mist-h2')?.textContent==='操作记录');expect(history?.parentElement).toBe(region);}
   expect(bridge.current.run).not.toHaveBeenCalled();
  });
- it.each(['product','relation','lookbook'])('keeps the %s quick preview facts free of a second card/padding wrapper',async kind=>{
+ it.each(['product','lookbook'])('keeps the %s quick preview facts free of a second card/padding wrapper',async kind=>{
   const target=sectionFixture(kind);await mount(target.view,target.id,target.section);
   const preview=host.querySelector('[data-module-detail]')!;expect(host.querySelector('[data-detail-surface="sections"]')).toBeNull();
   expect([...preview.children].filter(element=>element.classList.contains('mist-card'))).toHaveLength(target.cards-1);

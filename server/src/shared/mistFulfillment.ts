@@ -4,6 +4,7 @@ import { MistCommandError, lineAmount, mistMoneyMinor, assertMistOrderApproved, 
 import type { MistState, MistContext, MistCommandResult, MistQc, MistTarget, MistProduction } from './mistWorkspace';
 import type { MistReviewTask } from './mistReview';
 import { supplierBusinessDay, supplierUnavailableReason } from './mistSupplierStatus';
+import { relationHoldReason } from './mistRelationHold';
 import {applyClaimInventoryCommand,claimInventoryPermission,type ClaimInventoryCommand,type ClaimInventoryWarehouse,type ClaimReturnReceipt,type ClaimReceivedRecord} from './mistClaimInventory';
 export type FulfillmentSource = {
     kind: 'version';
@@ -1087,6 +1088,9 @@ export function applyFulfillmentCommand(root: MistState, command: FulfillmentCom
             const supplierBlocked = supplierUnavailableReason(supplierRecord, supplierBusinessDay(ctx.now));
             if (supplierBlocked)
                 fail(supplierBlocked);
+            const supplierHeld = existing ? '' : relationHoldReason(root, { supplierId });
+            if (supplierHeld)
+                fail(supplierHeld);
             const supplier = supplierRecord.name;
             const id = existing?.id || ctx.id();
             const currency = text(p.currency, '币种').toUpperCase();

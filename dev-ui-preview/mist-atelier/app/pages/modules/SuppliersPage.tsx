@@ -219,7 +219,7 @@ function SupplierDetail({ s, state, day, can, canContacts, locked, perf, onEdit,
     </DetailBlock>}
     <DetailBlock title={`联系人 · ${s.contacts.length}`} aside={canContacts ? <Button variant="quiet" icon={UserPlus} disabled={locked} onClick={() => onContact()}>添加</Button> : undefined}>
       {s.contacts.length ? <div className="mist-col" style={{ gap: 0 }}>{s.contacts.map(c => <div key={c.id} className="mist-row mist-quote-line" style={{ gap: 8, padding: '8px 0' }}>
-        <span style={{ flex: 1, minWidth: 0 }}>{c.name}{c.role ? ' · ' + c.role : ''}<small className="mist-cell-sub">{[c.phone, c.email].filter(Boolean).join(' · ') || '未填联系方式'}</small></span>{c.primary && <Pill>主联系人</Pill>}{canContacts && <Button variant="quiet" disabled={locked} onClick={() => onContact(c)}>编辑</Button>}
+        <span style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{c.name}{c.role ? ' · ' + c.role : ''}<small className="mist-cell-sub">{[c.phone, c.email].filter(Boolean).join(' · ') || '未填联系方式'}</small></span>{c.primary && <Pill>主联系人</Pill>}{canContacts && <Button variant="quiet" disabled={locked} onClick={() => onContact(c)}>编辑</Button>}
       </div>)}</div> : <span className="mist-muted">未登记联系人。</span>}
     </DetailBlock>
     {!!products.length && <DetailBlock title={`引用档案 · ${products.length}`}>

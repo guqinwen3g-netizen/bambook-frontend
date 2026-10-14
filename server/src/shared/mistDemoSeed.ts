@@ -9,7 +9,7 @@ import { applyMistCommand, type MistCommand, type MistContext, type MistState } 
 import { emptyFabricRequirements } from './mistDevelopmentDomain';
 import { demoFileRecord, type DemoFileTemplate } from './mistDemoFiles';
 
-export const DEMO_SEED_VERSION = 5;
+export const DEMO_SEED_VERSION = 6;
 export type DemoSeedFailure = { step: string; message: string };
 
 const DAY = 86400000;
@@ -279,6 +279,14 @@ export function seedDemoModules(initial: MistState, context: MistContext): { sta
   }
   const order018 = state.orders.find(o => o.code === 'SO-G-2026-018');
   if (order018) run('terms 018', { type: 'fulfillment.shipments.sourceTerms', payload: { orderId: order018.id, consignee: 'Cedar & Crown Ltd, London', partialAllowed: false, mode: 'sea', confirmedAt: day(-25), evidence: '合同第 7 条' } }, sales);
+
+  /* ───────── 关系智库：一家同时是客户和供应商的组织；一个因逾期冻结的往来 ───────── */
+  const boyuanSupplier = supplier('SUP-0006', '博远纺织贸易', '面料贸易', '现货里布 · 衬布 · 小批量面料调货', 50000, '米/月', 7, '浙江绍兴柯桥区中国轻纺城东区 2 号楼', ['何静', '采购与销售', 'hejing@boyuan-textile.cn', '0575-8566 1027']);
+  const boyuan = run('customer boyuan', { type: 'market.customer.create', payload: { input: { name: '博远纺织贸易', country: '中国', city: '绍兴', industry: '面料贸易', owner: '顾言', grade: 'B', currency: 'CNY', terms: '月结 30 天', incoterm: 'EXW', categories: '面料', creditLimit: 200000, since: day(-200) } } });
+  const boyuanRelation = boyuan ? String((boyuan as { relationId?: string }).relationId || '') : '';
+  if (boyuanRelation && boyuanSupplier) run('relation link boyuan', { type: 'market.relation.linkSupplier', payload: { id: boyuanRelation, supplierId: boyuanSupplier } });
+  const luneRelation = state.market.relations.find(r => r.customerId === c2.id);
+  if (luneRelation) run('relation hold lune', { type: 'market.relation.hold', payload: { id: luneRelation.id, frozen: true, reason: '尾款逾期 45 天未付，暂停新报价与新订单，待财务确认回款后解冻' } }, reviewer);
 
   return { state, failures };
 }
