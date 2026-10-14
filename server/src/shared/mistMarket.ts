@@ -1,3 +1,4 @@
+import {freezeQuotationHistoryEvidence,type QuoteHistoryReference} from './mistQuotationHistoryEvidence';
 import {quotationFeedbackTarget,validateQuoteFeedback,type QuoteFeedbackInput,type QuoteFeedbackRecord} from './mistQuotationFeedback';
 import {activeQuoteCostSnapshots,calculateQuoteCosting,quotationCostingTarget,QUOTE_COST_MODEL_VERSION,type QuoteCostInput,type QuoteCostSnapshot} from './mistQuotationCosting';
 import {developmentDomain} from './mistDevelopmentDomain';
@@ -68,7 +69,7 @@ export type MarketCommand =
  | {type:'market.quotation.submit';payload:{id:string}}
  | {type:'market.quotation.decide';payload:{id:string;decision:'approved'|'rejected';note:string}}
  | {type:'market.quotation.feedback.add';payload:{quotationId:string;expectedTarget:string;input:QuoteFeedbackInput}}
- | {type:'market.quotation.costing.save';payload:{quotationId:string;lineId:string;expectedTarget:string;input:QuoteCostInput;applyPrice:boolean}}
+ | {type:'market.quotation.costing.save';payload:{quotationId:string;lineId:string;expectedTarget:string;input:QuoteCostInput;applyPrice:boolean;historyReference?:QuoteHistoryReference}}
  | {type:'market.quotation.status';payload:{id:string;status:MarketQuotation['status'];evidence:string}}
  | {type:'market.quotation.convert';payload:{id:string;type:'garment'|'fabric';due:string;owner:string}}
  | {type:'market.lookbook.save';payload:{id?:string;input:Omit<Input<MarketLookbook>,'preparedAt'|'snapshots'>}}
@@ -246,7 +247,8 @@ function execute(root:MistState,command:MarketCommand,ctx:MistContext):MistComma
   case 'market.quotation.costing.save':{
    const v=command.payload,q=find(m.quotations,v.quotationId,'报价');if(q.status!=='Draft'||q.approval?.status==='pending'||q.convertedOrderId)fail('仅未提交的报价草稿可核算；已发送或审批中的版本不可改写','PRECONDITION');const line=q.lines.find(l=>l.id===v.lineId);if(!line)fail('准确报价条目不存在');if(v.expectedTarget!==quotationCostingTarget(q,line!))fail('报价条目或商业条件已变化，请重新载入后核算','CONFLICT');if(typeof v.applyPrice!=='boolean')fail('请明确是否写入人工拟报价');
    let calculated:ReturnType<typeof calculateQuoteCosting>;try{calculated=calculateQuoteCosting(v.input);}catch(e){fail(e instanceof Error?e.message:'报价核算输入无效');}const {input,result:costResult}=calculated!;
-   if(input.currency!==q.currency||input.unit!==line!.unit)fail('成本来源须与本报价行币种和计价单位一致；不自动换算或猜单位');const supplier=input.mode==='supplier'?find(m.suppliers,input.supplierId,'来源供应商'):null;const fileIds=attachmentIds(root,input.fileIds);const snapshot:QuoteCostSnapshot={id:ctx.id(),quotationId:q.id,lineId:line!.id,modelVersion:QUOTE_COST_MODEL_VERSION,createdAt:ctx.now,actorId:ctx.actorId||'',actor:ctx.actorName,input:{...input,fileIds},result:costResult,appliedPrice:v.applyPrice,target:{customerId:q.customerId,quoteCode:q.code,currency:q.currency,deliveryTerms:q.deliveryTerms,paymentTerms:q.paymentTerms,validUntil:q.validUntil,line:{...line!}},supplier:supplier?{id:supplier.id,name:supplier.name,code:supplier.code}:null,files:fileIds.map(id=>{const f=find(root.files,id,'凭据附件');return{id:f.id,name:f.name,createdAt:f.createdAt,size:f.size};})};
+   let historyEvidence:ReturnType<typeof freezeQuotationHistoryEvidence>;try{historyEvidence=freezeQuotationHistoryEvidence(root,q,line!,v.historyReference);}catch(e){fail(e instanceof Error?e.message:'历史依据无效','CONFLICT');}
+   if(input.currency!==q.currency||input.unit!==line!.unit)fail('成本来源须与本报价行币种和计价单位一致；不自动换算或猜单位');const supplier=input.mode==='supplier'?find(m.suppliers,input.supplierId,'来源供应商'):null;const fileIds=attachmentIds(root,input.fileIds);const snapshot:QuoteCostSnapshot={...(historyEvidence?{historyEvidence}:{}),id:ctx.id(),quotationId:q.id,lineId:line!.id,modelVersion:QUOTE_COST_MODEL_VERSION,createdAt:ctx.now,actorId:ctx.actorId||'',actor:ctx.actorName,input:{...input,fileIds},result:costResult,appliedPrice:v.applyPrice,target:{customerId:q.customerId,quoteCode:q.code,currency:q.currency,deliveryTerms:q.deliveryTerms,paymentTerms:q.paymentTerms,validUntil:q.validUntil,line:{...line!}},supplier:supplier?{id:supplier.id,name:supplier.name,code:supplier.code}:null,files:fileIds.map(id=>{const f=find(root.files,id,'凭据附件');return{id:f.id,name:f.name,createdAt:f.createdAt,size:f.size};})};
    if(v.applyPrice&&decimal(costResult.proposedPrice,'人工拟报价').minor<=BigInt(0))fail('写入报价的人工拟报价必须大于0');archiveApproval(q);q.approval=null;q.requiresApproval=true;line!.cost=costResult.approvalCost;line!.costBasis='unverified';if(v.applyPrice){line!.price=costResult.proposedPrice;line!.amount=marketLineAmount(line!.qty,line!.price);q.total=marketSum(q.lines.map(l=>l.amount));}q.costingSnapshots=[...(q.costingSnapshots||[]),snapshot];q.updatedAt=ctx.now;history(root,ctx,'quotation',q.id,'保存条目专业核算 '+line!.style+' / '+snapshot.id+'（人工依据，成本待审批核实）');result={id:q.id,lineId:line!.id,snapshotId:snapshot.id};break;
   }
   case 'market.quotation.submit': {
@@ -262,6 +264,7 @@ function execute(root:MistState,command:MarketCommand,ctx:MistContext):MistComma
      {label:'金额',value:q.currency+' '+q.total}, {label:'贸易与付款',value:q.deliveryTerms+' / '+q.paymentTerms},
      {label:'有效期',value:q.validUntil},
      ...activeQuoteCostSnapshots(q).map(x=>({label:'核算快照',value:`${x.id} / ${x.modelVersion}; ${x.input.mode}; ${x.input.currency}/${x.input.unit}; 成本 ${x.result.cost}; ${x.input.method} ${x.input.targetPercent}%; 人工拟报价 ${x.result.proposedPrice}; 依据 ${x.input.basis}; 策略 ${x.input.strategyBasis}`})),
+     ...activeQuoteCostSnapshots(q).filter(x=>x.historyEvidence).map(x=>({label:'人工历史依据',value:`${x.id}; ${x.historyEvidence!.version}; ${x.historyEvidence!.source.quoteCode} / ${x.historyEvidence!.source.lineId}; ${x.historyEvidence!.source.status}; ${x.historyEvidence!.source.line.price} ${x.historyEvidence!.source.currency}/${x.historyEvidence!.source.line.unit}; 采用理由与差异处理 ${x.historyEvidence!.reason}`})),
      ...q.lines.map(l=>({label:l.name+' / '+l.style,value:`${l.qty} ${l.unit} × ${l.price} = ${l.amount}; 成本 ${l.cost||'未填写'}; 来源 ${l.productId||l.sourceDevId+'/'+l.sourceVersionId}`})),
     ],
    };

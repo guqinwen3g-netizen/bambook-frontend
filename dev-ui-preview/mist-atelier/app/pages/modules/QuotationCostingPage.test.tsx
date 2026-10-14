@@ -384,3 +384,59 @@ it("retains a read-only history route after ordinary quote editing recreates lin
   expect(q().lines[0].id).not.toBe(old.lineId);
   expect(q().costingSnapshots[0]).toEqual(old);
 });
+
+it("manually confirms historical evidence without importing its price, then exports the frozen source", async () => {
+  render();
+  await fill();
+  const select = getByLabelText(host, "本次历史依据") as HTMLSelectElement;
+  const option = Array.from(select.options).find(
+    (o) => o.value && o.textContent?.includes("QT-2026-0003"),
+  )!;
+  expect(option).toBeDefined();
+  field("本次历史依据", option.value);
+  await click("下一步");
+  expect(host.textContent).toContain("请确认历史条件");
+  field("采用理由与差异处理", "软件验收人工对照：数量规格不同，价格不直接沿用");
+  const check = getByRole(host, "checkbox", {
+    name: "我已人工核对历史条件及未知项，确认仅作为本次依据",
+  });
+  act(() => check.click());
+  await click("下一步");
+  expect(host.textContent).toContain("软件验收人工对照");
+  await click("保存核算快照");
+  const evidence = q().costingSnapshots?.at(-1)?.historyEvidence;
+  expect(evidence?.source.quoteCode).toBe("QT-2026-0003");
+  expect(q().lines[0].price).not.toBe("14.00");
+  expect(host.textContent).toContain("人工确认的历史依据");
+  await click("导出本条目核算");
+  expect(JSON.stringify(bridge.csv.mock.calls)).toContain(
+    "quote-history-evidence-v1",
+  );
+  await click("新建核算");
+  await click("下一步");
+  expect(
+    (getByLabelText(host, "本次历史依据") as HTMLSelectElement).value,
+  ).toBe("");
+});
+it("source changes after selection cannot be frozen silently", async () => {
+  render();
+  await fill();
+  const select = getByLabelText(host, "本次历史依据") as HTMLSelectElement;
+  const option = Array.from(select.options).find((o) => o.value)!;
+  field("本次历史依据", option.value);
+  field("采用理由与差异处理", "软件验收核对");
+  act(() =>
+    getByRole(host, "checkbox", {
+      name: "我已人工核对历史条件及未知项，确认仅作为本次依据",
+    }).click(),
+  );
+  const [qid] = JSON.parse(option.value);
+  bridge.w.state.market.quotations.find(
+    (x: any) => x.id === qid,
+  ).responseEvidence = "new";
+  render();
+  expect(host.textContent).toContain("原历史依据已变化");
+  await click("下一步");
+  expect(host.textContent).toContain("请重新选择并核对历史依据");
+  expect(bridge.w.run).not.toHaveBeenCalled();
+});

@@ -1,3 +1,4 @@
+import { quotationHistorySource } from "./mistQuotationHistoryEvidence";
 import { describe, it, expect } from "vitest";
 import {
   calculateQuoteCosting,
@@ -467,5 +468,132 @@ describe("exact quote-line snapshots and approval handoff", () => {
       ),
     ).toThrow(/大于0/);
     expect(t.q().costingSnapshots).toEqual([]);
+  });
+});
+
+describe("manual historical evidence freeze", () => {
+  function fixture() {
+    const t = setup();
+    const source = structuredClone(t.q());
+    source.id = "historical-quote";
+    source.code = "QT-HISTORY";
+    source.status = "Sent";
+    source.lines[0].id = "historical-line";
+    t.state().market.quotations.push(source);
+    const reference = () => ({
+      quotationId: source.id,
+      lineId: source.lines[0].id,
+      expectedSource: JSON.stringify(
+        quotationHistorySource(t.state(), source, source.lines[0]),
+      ),
+      reason: "软件测试：规格不同，人工核对，不直接沿用价格",
+      confirmed: true,
+    });
+    return { t, source, reference };
+  }
+  it("resolves exact server facts, ignores forged fields, preserves pricing and immutable source", () => {
+    const { t, source, reference } = fixture();
+    const oldPrice = t.q().lines[0].price;
+    t.run(
+      t.command({
+        historyReference: {
+          ...reference(),
+          source: { line: { price: "0.01" } },
+        },
+      }),
+    );
+    const snap = t.q().costingSnapshots![0];
+    expect(snap.historyEvidence).toMatchObject({
+      version: "quote-history-evidence-v1",
+      source: { quoteCode: "QT-HISTORY", line: { price: "20" } },
+    });
+    expect(t.q().lines[0].price).toBe(oldPrice);
+    expect(snap.result.cost).toBe("100.0000");
+    const frozen = JSON.stringify(snap.historyEvidence);
+    const live = t.state().market.quotations.find((q) => q.id === source.id)!;
+    live.lines[0].price = "999";
+    live.status = "Rejected";
+    t.state().customers[0].name = "改名";
+    expect(JSON.stringify(snap.historyEvidence)).toBe(frozen);
+    t.run({ type: "market.quotation.submit", payload: { id: t.id } });
+    expect(
+      t.q().approval!.details.find((d) => d.label === "人工历史依据")?.value,
+    ).toContain("QT-HISTORY");
+  });
+  it.each([
+    "missing",
+    "self",
+    "draft",
+    "pending",
+    "currency",
+    "unit",
+    "zero",
+    "negative",
+    "precision",
+    "reason",
+    "confirmed",
+    "stale",
+  ])("rejects %s with no mutation", (kind) => {
+    const { t, source, reference } = fixture();
+    const r = reference();
+    if (kind === "missing") r.lineId = "missing";
+    if (kind === "self") {
+      r.quotationId = t.id;
+      r.lineId = t.q().lines[0].id;
+    }
+    if (kind === "draft") source.status = "Draft";
+    if (kind === "pending") {
+      source.status = "Draft";
+      source.approval = { id: "a", status: "pending" } as any;
+    }
+    if (kind === "currency") source.currency = "EUR";
+    if (kind === "unit") source.lines[0].unit = "码";
+    if (kind === "zero") source.lines[0].price = "0";
+    if (kind === "negative") source.lines[0].qty = "-1";
+    if (kind === "precision") source.lines[0].price = "2.001";
+    if (kind === "reason") r.reason = "  ";
+    if (kind === "confirmed") r.confirmed = false;
+    if (kind === "stale") source.responseEvidence = "new actual response";
+    const before = JSON.stringify(t.state());
+    expect(() => t.run(t.command({ historyReference: r }))).toThrow();
+    expect(JSON.stringify(t.state())).toBe(before);
+  });
+  it("freezes only current correction leaves and exact-line feedback; later correction cannot rewrite it", () => {
+    const { t, source, reference } = fixture();
+    const feedback = (id: string, correctionOfId: string, lineIds: string[]) =>
+      ({
+        id,
+        input: {
+          correctionOfId,
+          lines: lineIds.map((lineId) => ({ lineId })),
+          evidence: id,
+        },
+      }) as any;
+    source.feedback = [
+      feedback("old", "", []),
+      feedback("corrected", "old", []),
+      feedback("other", "", ["unrelated-line"]),
+    ];
+    const stale = reference();
+    source.feedback.push(feedback("latest", "corrected", []));
+    expect(() => t.run(t.command({ historyReference: stale }))).toThrow(
+      "历史报价条件或反馈已变化",
+    );
+    t.run(t.command({ historyReference: reference() }));
+    const evidence = t.q().costingSnapshots![0].historyEvidence!;
+    expect(evidence.source.feedback.map((f) => f.id)).toEqual(["latest"]);
+    t
+      .state()
+      .market.quotations.find(
+        (q) => q.id === source.id,
+      )!.feedback![3].input.evidence = "new text";
+    expect(evidence.source.feedback[0].input.evidence).toBe("latest");
+  });
+  it("does not silently reuse prior history when making a new costing", () => {
+    const { t, reference } = fixture();
+    t.run(t.command({ historyReference: reference() }));
+    t.run(t.command());
+    expect(t.q().costingSnapshots![0].historyEvidence).toBeDefined();
+    expect(t.q().costingSnapshots![1].historyEvidence).toBeUndefined();
   });
 });
