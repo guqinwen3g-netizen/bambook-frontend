@@ -8,7 +8,7 @@
 
 | 负责人 | 状态 | 基线 / 分支 | 范围与协作触点 | 当前验证 / 阻塞 | 下一步 |
 | --- | --- | --- | --- | --- | --- |
-| Notion AI（售后索赔会话） | 已验证，待 CI / 合入 | main `d77e4c3`；`feat/mist-claims-coordination`；PR 见仓库 `bambook-main` | 批次 3 售后索赔协同首轮：`server/src/shared/mistClaimCoordination.ts`（新）、`mistPlatform.ts` 分发 / 关闭与撤销门禁、`ClaimCoordination.tsx`（新）、`PlatformPages.tsx` 索赔详情接入；不改原处置审批 / 贷项 / 退货库存契约，不碰报价核算 / AI 顾问文件 | 本地 `verify:mist` 通过；本地真实 API 建案 + 浏览器表单通知回读通过，浅深 1440 / 1180 / 390 无报错 / 横溢 | PR CI 通过后 merge commit 合入 main |
+| Notion AI（售后索赔会话） | 首轮已合入 main `191de08`；仅公司端口径修订开发中 | main `d77e4c3`；`feat/mist-claims-coordination`；PR 见仓库 `bambook-main` | 批次 3 售后索赔协同首轮：`server/src/shared/mistClaimCoordination.ts`（新）、`mistPlatform.ts` 分发 / 关闭与撤销门禁、`ClaimCoordination.tsx`（新）、`PlatformPages.tsx` 索赔详情接入；不改原处置审批 / 贷项 / 退货库存契约，不碰报价核算 / AI 顾问文件 | 首轮 PR #11 CI 通过；修订分支 `feat/mist-claims-internal-only` 去掉对外说明字段 | 修订验证 → PR → merge commit |
 | Notion AI（风险会话） | 已合入 main `d77e4c3` | main `0cdab37`；`feat/mist-risks-workbench`；[PR #10](https://github.com/guqinwen3g-netizen/bambook-frontend/pull/10) | 批次 3 风险管理与合规首轮（见下方 10-14 记录） | 本地 `verify:mist` 与 PR CI `verify` 通过 | 已结束；售后索赔见上一行 |
 | Notion AI（本会话，协作规范独立批次） | 已提交文档；验证 / 合入状态见 PR 回执 | main `369e657`；`docs/realtime-collaboration`；[PR #9](https://github.com/guqinwen3g-netizen/bambook-frontend/pull/9) | AGENTS / README / PR 模板 / 当前任务登记；不含报价 AI 源码 | 文档链接与无私有文件检查通过；本批本地 / 云端验证待执行 | 完成验证 → merge commit 到主线，让协作者立即读取 |
 | Notion AI（本会话） | 开发中，未验收、未合入 | main `369e657`；`feat/quote-cost-ai-advisor`；PR [#8](https://github.com/guqinwen3g-netizen/bambook-frontend/pull/8)，最新开发 `20bb547`（初始检查点 `fa3f23d`） | 准确报价行只读 AI 审阅、人工采纳、操作规范；`server/src/mist/route.ts`、新增 advisor 契约及报价核算页面；同时补 AGENTS / README / 本进度协作入口 | 新沙箱已从云端主线恢复；Node22 锁定依赖安装完成，定向回归及 review 已执行；定向 UI27 / 后端34通过；权限前提修复后全量重验及云端 CI 执行中；隔离浏览器浅深三宽30画面，真实 HTTP 人工保存并刷新回读通过（模拟 provider，不是真实 AI）；没有真实模型凭据，不宣称 GPT / DeepSeek 已实连 | 完成 UI 与安全回归 → review → 完整验证 / 实际浏览器 → PR CI → merge commit |
@@ -33,6 +33,13 @@
 - 代码：从最新 main 创建短任务分支，验收后通过 PR 合入；当前预览分支和提交以 mist-version.json 为准，不以历史分支名推定已同步。
 - 数据：双方都使用 `seed: "demo"` 生成的“Mist 示例数据”空间。云端测试时新建的数据只存在云端沙箱，结果以本文件里的测试记录和截图为准。
 - 测试：云端每轮在 Node 22 下运行 `npm run verify:mist`，数字写在下面。
+
+---
+
+## 2026-10-14 · 售后索赔仅公司端口径修订
+
+- 首轮已由 [PR #11](https://github.com/guqinwen3g-netizen/bambook-main/pull/11) 以 merge commit `191de08` 合入 main。
+- 用户确认：现在只做公司端；供应商端、客户端以后是独立平台、数据互通。通知工厂不再区分“给工厂的说明 / 内部说明”，只记工厂、通知方式和内部备注。
 
 ---
 

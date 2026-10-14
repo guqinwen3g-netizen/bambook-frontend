@@ -43,9 +43,9 @@ export function ClaimCoordinationPanel({ claim, state, actorId, busy, can, comma
 
   const notify = () => openEditor({
     title: '通知相关人员', description: '系统会给质检、负责人和跟单生成待办 / 通知；工厂由你通过实际方式联系，这里只记录。通知工厂只是请其配合核实，不等于认定工厂责任，也不等于答应客户金额。',
-    fields: [f('supplierId', '相关工厂', 'select', { options: suppliers }), f('factoryChannel', '你实际通知工厂的方式', 'text', { hint: '例如：微信群、电话、邮件' }), f('factoryNote', '给工厂的说明（可对外）', 'textarea', { hint: '只写问题与需要配合的事项，不写利润、赔偿底线' }), f('internalNote', '内部说明（仅公司内部可见）', 'textarea', { required: false, hint: '客户要求、谈判底线等' })],
-    initialValues: { supplierId: notice?.supplierId ?? defaultSupplier, factoryChannel: '', factoryNote: '', internalNote: '' }, submitLabel: '记录并通知',
-    submit: v => command({ type: 'platform.claim.notify', payload: { id: claim.id, supplierId: s(v, 'supplierId'), factoryChannel: s(v, 'factoryChannel'), factoryNote: s(v, 'factoryNote'), internalNote: s(v, 'internalNote') } }),
+    fields: [f('supplierId', '相关工厂', 'select', { options: suppliers }), f('factoryChannel', '你实际通知工厂的方式', 'text', { hint: '例如：微信群、电话、邮件' }), f('note', '备注', 'textarea', { required: false, hint: '例如：客户要求、需要工厂配合的事项' })],
+    initialValues: { supplierId: notice?.supplierId ?? defaultSupplier, factoryChannel: '', note: '' }, submitLabel: '记录并通知',
+    submit: v => command({ type: 'platform.claim.notify', payload: { id: claim.id, supplierId: s(v, 'supplierId'), factoryChannel: s(v, 'factoryChannel'), note: s(v, 'note') } }),
   });
   const verify = () => openEditor({
     title: '记录质检核实', description: '先把事实弄清楚，再谈责任和金额。',
@@ -96,7 +96,7 @@ export function ClaimCoordinationPanel({ claim, state, actorId, busy, can, comma
       <CardHeader title="通知与核实" />
       <div className="mist-card-body">
         <Facts cols={3} items={[
-          ...(notice ? [{ label: '相关工厂', value: notice.supplierName }, { label: '给工厂的说明', value: notice.factoryNote }, { label: '内部说明（不对外）', value: notice.internalNote || '—' }] : []),
+          ...(notice ? [{ label: '相关工厂', value: notice.supplierName }, { label: '通知方式', value: notice.factoryChannel + ' · ' + notice.by }, { label: '备注', value: notice.note ?? notice.internalNote ?? '—' }] : []),
           ...(!check ? [] : [
           { label: '质检结论', value: <Pill tone={RESULT_TONE[check.result]}>{CLAIM_RESULT_LABEL[check.result]}</Pill> },
           { label: '影响范围', value: check.scope + (check.affectedQuantity ? ' · ' + check.affectedQuantity + ' ' + check.unit : '') },

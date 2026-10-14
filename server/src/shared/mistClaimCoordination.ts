@@ -2,7 +2,8 @@
  * 售后索赔协同（CAP-claims-01..03 · 协同首轮）。
  * 业务口径（2026-10-14 用户确认的实际做法）：
  * - 业务员接到客诉后建案，并通知内部质检、负责人、跟单 / 采购和相关工厂。通知工厂只是请其配合核实，
- *   不等于认定工厂责任，也不等于答应客户金额；系统不对外发送，只记录实际通知方式与时间。
+ *   不等于认定工厂责任，也不等于答应客户金额；系统不对外发送，只记录实际通知方式、时间与内部备注。
+ *   本系统是公司端；供应商端 / 客户端是后续独立平台（数据互通），本轮不做对外说明或对外可见字段。
  * - 内部质检牵头核实事实：是否属实、影响范围、货物位置、可减损措施、工厂回复、是否涉及安全隐患。
  *   先核实再谈责任和金额；紧急情况允许先处置，页面会明确标出“质检尚未核实”。
  * - 两笔账分开：对客户的处置（折让 / 退货退款 / 补发 / 返修，沿用原处置审批）与向工厂追偿分别记录；
@@ -16,7 +17,7 @@ export type ClaimGoodsLocation = 'factory' | 'transit' | 'customer' | 'sold' | '
 export type ClaimVerifyResult = 'confirmed' | 'partial' | 'notConfirmed';
 export type ClaimRecoveryMethod = 'deduction' | 'payment' | 'replacement' | 'mixed';
 export type ClaimRecoveryState = 'Negotiating' | 'Agreed' | 'Settled' | 'Waived' | 'Withdrawn';
-export type ClaimNotice = { id: string; at: string; by: string; byId: string; supplierId: string; supplierName: string; factoryChannel: string; factoryNote: string; internalNote: string };
+export type ClaimNotice = { id: string; at: string; by: string; byId: string; supplierId: string; supplierName: string; factoryChannel: string; note: string; /** 首轮旧字段，只读兼容 */ factoryNote?: string; internalNote?: string };
 export type ClaimVerification = { id: string; at: string; by: string; byId: string; result: ClaimVerifyResult; scope: string; affectedQuantity: number; unit: string; goodsLocation: ClaimGoodsLocation; mitigation: string; factoryResponse: string; safety: boolean; fileIds: string[] };
 export type ClaimRecoveryEvent = { at: string; by: string; action: string; note: string };
 export type ClaimRecovery = {
@@ -27,7 +28,7 @@ export type ClaimCoordination = { notices: ClaimNotice[]; verifications: ClaimVe
 type ClaimLike = { id: string; code: string; orderId: string; invoiceId: string; state: string; coordination?: ClaimCoordination; dispositions: Array<{ kind: string; amount: number; state: string; supersededById?: string }> };
 
 export type ClaimCoordinationCommand =
-  | { type: 'platform.claim.notify'; payload: { id: string; supplierId: string; factoryChannel: string; factoryNote: string; internalNote: string } }
+  | { type: 'platform.claim.notify'; payload: { id: string; supplierId: string; factoryChannel: string; note: string } }
   | { type: 'platform.claim.verify'; payload: { id: string; result: ClaimVerifyResult; scope: string; affectedQuantity: number; unit: string; goodsLocation: ClaimGoodsLocation; mitigation: string; factoryResponse: string; safety: boolean; fileIds: string[] } }
   | { type: 'platform.claim.recovery.open'; payload: { claimId: string; supplierId: string; currency: string; requested: number; basis: string } }
   | { type: 'platform.claim.recovery.agree'; payload: { id: string; agreed: number; method: ClaimRecoveryMethod; note: string } }
@@ -108,7 +109,7 @@ export function applyClaimCoordinationCommand(root: MistState, claims: ClaimLike
   switch (command.type) {
     case 'platform.claim.notify': {
       const v = command.payload, claim = claimOf(claims, v.id); active(claim); const byId = actor(c), s = supplier(root, text(v.supplierId, '相关工厂'));
-      const notice: ClaimNotice = { id: c.id(), at: c.now, by: c.actorName, byId, supplierId: s.id, supplierName: s.name, factoryChannel: text(v.factoryChannel, '通知工厂的实际方式', true, 200), factoryNote: text(v.factoryNote, '给工厂的说明', true), internalNote: text(v.internalNote, '内部说明', false) };
+      const notice: ClaimNotice = { id: c.id(), at: c.now, by: c.actorName, byId, supplierId: s.id, supplierName: s.name, factoryChannel: text(v.factoryChannel, '通知工厂的实际方式', true, 200), note: text(v.note, '备注', false) };
       coordination(claim).notices.push(notice);
       task(root, c, claim.id, 'claim-verify:' + claim.id, '质检核实客诉事实 · ' + claim.code);
       task(root, c, claim.id, 'claim-factory:' + claim.id, '跟进工厂核实回复 · ' + claim.code + ' · ' + s.name);
