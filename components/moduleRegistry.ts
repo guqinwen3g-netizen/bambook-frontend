@@ -432,7 +432,7 @@ export const BAMBOOK_MODULES: readonly BambookModuleDefinition[] = [
   {
     id: 'bom',
     view: View.BOM,
-    productLabel: 'BOM 成本核算',
+    productLabel: '成本与利润核算',
     internalName: 'BOM',
     icon: Calculator,
     nav: { primary: true, order: 74, group: 'finance' },

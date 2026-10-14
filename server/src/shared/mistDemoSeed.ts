@@ -9,7 +9,7 @@ import { applyMistCommand, type MistCommand, type MistContext, type MistState } 
 import { emptyFabricRequirements } from './mistDevelopmentDomain';
 import { demoFileRecord, type DemoFileTemplate } from './mistDemoFiles';
 
-export const DEMO_SEED_VERSION = 9;
+export const DEMO_SEED_VERSION = 10;
 export type DemoSeedFailure = { step: string; message: string };
 
 const DAY = 86400000;
@@ -195,6 +195,9 @@ export function seedDemoModules(initial: MistState, context: MistContext): { sta
 
   /* ───────── 定金到账与归属：导入银行流水后确认归属到订单（开产前置条件） ───────── */
   const finance = actor('林舒', 'demo-finance');
+  const pricingGarment = state.orders.find(o => o.code === 'SO-G-2026-017'), pricingFabric = state.orders.find(o => o.type === 'fabric');
+  if (pricingGarment) run('pricing garment reference', { type: 'platform.pricing.save', payload: { orderId: pricingGarment.id, purchaseCostCny: 280, refundRate: 13, exchangeRate: 7.2, profitMargin: 20, commissionRate: 5, basis: '软件演示试算：羊毛西装套装 CNY/套；280 为演示工厂参考，退税13%、CNY/USD 7.2 仅为演示参数，不是实际成本或生效市场汇率。' } });
+  if (pricingFabric) run('pricing fabric reference', { type: 'platform.pricing.save', payload: { orderId: pricingFabric.id, purchaseCostCny: 48, refundRate: 13, exchangeRate: 7.2, profitMargin: 20, commissionRate: 0, basis: '软件演示试算：毛呢面料 CNY/米；按演示规格与计价单位核对，参数仅供软件演示，不自动改报价或合同。' } });
   run('demo payment CNY', { type: 'finance.payment.save', payload: { date: day(-6), payee: '华盛毛纺', amount: 12600, currency: 'CNY', ref: 'DEMO-PAY-CNY-01 · 软件演示付款记录，未关联应付或银行账户' } }, finance);
   run('demo payment USD', { type: 'finance.payment.save', payload: { date: day(-3), payee: '演示物流服务商', amount: 850, currency: 'USD', ref: 'DEMO-PAY-USD-01 · 软件演示付款记录，未关联应付或银行账户' } }, finance);
   const orderByCode = (code: string) => state.orders.find(o => o.code === code);

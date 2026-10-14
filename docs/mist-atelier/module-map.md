@@ -41,7 +41,7 @@
 | ☐ | 财务管理 | `payment-vouchers` | `dev-ui-preview/mist-atelier/app/pages/FinancePage.tsx` | 133 | T6 匹配核销 | T5 单据详情 | — | 收款核销=参考页；凭证列表=宽表 |
 | ☐ | 发票管理 | `invoices` | `dev-ui-preview/mist-atelier/app/pages/modules/PlatformPages.tsx` | 58 | T3 宽表列表 | T5 单据详情 | T9 |  |
 | ☐ | 定价与利润 | `pricing` | `dev-ui-preview/mist-atelier/app/pages/modules/PlatformPages.tsx` | 58 | T11 分析报表 | — | — | 计算器=表单(FormGrid)+右侧 SummaryBar；利润表/退税率/价格历史/佣金=宽表 Tabs |
-| ☐ | BOM 成本核算 | `bom` | `dev-ui-preview/mist-atelier/app/pages/modules/PlatformPages.tsx` | 58 | T3 宽表列表 | T5 单据详情 | T9 |  |
+| ☐ | 成本与利润核算 | `bom` | `dev-ui-preview/mist-atelier/app/pages/modules/PlatformPages.tsx` | 58 | T3 宽表列表 | T5 单据详情 | T9 |  |
 | ☐ | 风险管理与合规 | `risks` | `dev-ui-preview/mist-atelier/app/pages/modules/PlatformPages.tsx` | 58 | T3 宽表列表 | T4 对象详情 | — | 风险等级用 Pill tone：bad/warn/ok |
 | ☐ | 售后索赔 | `claims` | `dev-ui-preview/mist-atelier/app/pages/modules/PlatformPages.tsx` | 58 | T3 宽表列表 | T4 对象详情 | T9 |  |
 

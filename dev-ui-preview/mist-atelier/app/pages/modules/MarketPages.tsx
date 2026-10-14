@@ -1,3 +1,5 @@
+import {QuotationFeedbackPage} from './QuotationFeedbackPage';
+import {QuotationCostingPage} from './QuotationCostingPage';
 import React from 'react';
 import { useRouteDraft, useRouteScope } from './useRouteDraft';
 import { ArrowRight, CalendarDays, ClipboardList, Download, Factory, FileText, Package, Plus, Send, TrendingUp, Users } from 'lucide-react';
@@ -127,6 +129,8 @@ export function QuotationEditor({existing,previous,onClose}:{existing?:MarketQuo
 }
 type QuoteEditing={mode:'new'}|{mode:'edit'|'revise';id:string};
 function QuotationPage(){const w=useMarket(),[editing,setEditing]=useRouteDraft<QuoteEditing|null>(null);
+ if(w.route.section?.startsWith('feedback'))return <QuotationFeedbackPage key={(w.session.user?.id||'')+':'+(w.workspace?.id||'')+':'+JSON.stringify(w.route)}/>;
+ if(w.route.section==='cost-history'||w.route.section?.startsWith('costing:'))return <QuotationCostingPage key={(w.session.user?.id||'')+':'+(w.workspace?.id||'')+':'+JSON.stringify(w.route)}/>;
  if(!editing&&!w.route.id&&w.route.section?.startsWith('product:'))return <QuotationEditor key={w.route.section} onClose={()=>w.go('quotations')}/>;
  const target=editing&&editing.mode!=='new'?w.market.quotations.find(q=>q.id===editing.id):undefined;
  if(editing&&(editing.mode==='new'||target))return <QuotationEditor key={editing.mode+(target?.id||'')} existing={editing.mode==='edit'?target:undefined} previous={editing.mode==='revise'?target:undefined} onClose={()=>setEditing(null)}/>;
