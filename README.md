@@ -2,7 +2,7 @@
 
 从 2026-10-13 的工程快照继续开发。前端唯一入口是 `dev-ui-preview/mist-atelier/app/main.tsx` → `ReferenceApp.tsx`，Web/Electron共用；包含当前后端、服务、schema/迁移、测试、开发脚本及业务设计文档。旧 App/Manager 界面、BDS/Bencho候选、旧前端副本和历史构建归档不作为运行入口。
 
-`main` 用于已审查的集成版本，`feat/mist-fabric-commercial-units` 用于持续开发。进度以 `docs/mist-atelier/LIVE-PROGRESS.md` 为准，不从仓库名称 `bambook-frontend` 推断这里只有前端。查看具体版本时，打开左下角账号面板核对提交号、分支、未提交改动和数据空间版本。
+`main` 用于已审查的集成版本；每批从最新主线创建短任务分支，经 PR / 验收 / CI 后合入，不使用永久开发分支持续叠加。进度以 `docs/mist-atelier/LIVE-PROGRESS.md` 为准，不从仓库名称 `bambook-frontend` 推断这里只有前端。查看具体版本时，打开左下角账号面板核对提交号、分支、未提交改动和数据空间版本。
 
 ## 本地开发
 
@@ -23,6 +23,8 @@ npm run dev:mist
 参考源码预览：`npm run mist:ref` → `http://127.0.0.1:3131/`，与主应用共用Mist源码。
 
 ## 阅读顺序
+
+新加入的协作者 / Agent 先读 `AGENTS.md` 的共同协作规则，再看实时进度的当前任务表；在本人任务分支及 Draft PR 中及时同步，不把开发中状态视为主线已完成。
 
 - `docs/mist-atelier/README.md`：视觉、组件与开发入口。
 - `docs/mist-atelier/05-migration-playbook.md`：当前实施、已验证分支与未验证范围。
