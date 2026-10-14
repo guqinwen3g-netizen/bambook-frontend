@@ -1,5 +1,12 @@
 # 05 · 在 Mist Atelier 上继续开发
 
+## 2026-10-15 结算确认、预付抵扣与票据去重批次
+
+- 基于 main `bd0c3ba`（PR #17 已合入），分支 `feat/mist-settlements`。仍在 `server/src/shared/mistPayables.ts`：新增 `payables.settlements`（ST-）与命令 `payable.settlement.submit / cancel`（`procurement:write`）、`confirm / return / reverse`（`invoices:reconcile`，不能复核本人提交）。票据行可带 `settlementId`；计划增加 `stage`（prepayment / progress / final，旧记录视为预付），付款申请和付款可带 `planId`。
+- 关键推导：`settlementSuggestedPrepaymentMinor`（比例建议、最终扫尾）、`purchasePrepaymentReadback`（已付 / 已抵扣 / 可抵扣 / 最终后剩余）、`billPrepaymentCreditMinor`（结算抵扣按票额比例计入票据）、`purchaseRequiresSettlementLink`（有确认结算或已付预付后票据必须关联结算）。口径见决策总账 8.4.1 “结算批次实现口径”。
+- 界面：`FinancePayables.tsx` 新增“结算”视图，结算详情 / 提交 / 确认弹窗在 `FinanceSettlements.tsx`；“预付款计划”改为“付款计划”（带类型）；票据登记每行选择关联结算，票据详情显示“预付抵扣（来自结算）”；票据付款申请可选对应进度款 / 尾款计划；采购详情增加“结算确认”进度与抵扣进度。多控件分组不要用 `Field`（它是 `<label>`，会把整段文字当成第一个按钮/复选框的名字），本批用 `role="group"` 的分组。
+- 未接：短交剩余预付退款 / 转抵、发票先于结算到达、按结算不等票付款、无申请历史付款与计划对应；结算附件页面未放上传（命令支持 fileIds）。
+
 ## 2026-10-15 供应商预付款批次
 
 - 基于 main `eaa301d`（PR #16 已合入），分支 `feat/mist-prepayments`。所有付款先申请（`finance:payment_request:create`），由申请人所在部门主管审批（`finance:payment_request:approve`，不能自审），财务按已批准申请登记实付（`vouchers:write`；票据付款附带分配时另需 `invoices:reconcile`）。冲回付款或分配需要 `vouchers:write` + `invoices:reconcile`，必须填写原因，另记反向记录。
