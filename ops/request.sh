@@ -1,6 +1,6 @@
 set -u
 date -u
-echo check-2
+echo check-3
 echo '== current'; readlink -f /srv/bambook-dev/current
 ls -1dt /srv/bambook-dev/releases/*/ | head -3
 echo '== services'; systemctl is-active bambook-dev bambook-dev-mist
