@@ -23,6 +23,10 @@ cd "$release/server"
 npm ci --include=dev --no-audit --no-fund
 npm exec -- prisma generate
 npm run typecheck:mist
+# The service runs with a read-only release tree; runtime logs (server/logs) live in shared/ across releases.
+install -d -m 0750 "$root/shared/logs"
+rm -rf "$release/server/logs"
+ln -sfn "$root/shared/logs" "$release/server/logs"
 # Root-owned application configuration must contain shell-compatible KEY=value lines.
 set -a
 source "$environment"

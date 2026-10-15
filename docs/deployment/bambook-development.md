@@ -20,7 +20,7 @@ SSH key 强制经过接收程序，只接受 `check`、`receive <40位提交>`�
 
 - 2G 交换空间；Node 主版本与 `.nvmrc` 一致（NodeSource）；nginx、PostgreSQL。
 - 专用库 `panda_hub_dev` 与角色 `bambook_dev`（随机密码只写入 `/etc/bambook-dev/backend.env`，root:bambook-deploy 0640）。环境含 `DATABASE_URL`、随机 `JWT_SECRET`、`MIST_HOST=127.0.0.1`、`MIST_PORT=8082`、`MIST_LOCAL_WORKSPACE=0`、`MIST_CORS_ORIGINS`、`MIST_FILES_DIR` / `BAMBOOK_AI_SUBSCRIPTION_DIR`（均在 `/srv/bambook-dev/shared`，跨版本保留）、`AUTH_REQUIRE_EMAIL_VERIFY=0`、`TZ`。禁止把本地全权限模拟身份暴露到公网。
-- 固定的 `bambook-dev.service`：`bambook-deploy` 身份，工作目录 `/srv/bambook-dev/current/server`，Node 执行本地 tsx CLI 与 `src/mist/standalone.ts`；只读系统、仅 `shared/` 可写、内存上限 1.5G。sudo 只允许该账号重启 / 停止此服务。
+- 固定的 `bambook-dev.service`：`bambook-deploy` 身份，工作目录 `/srv/bambook-dev/current/server`，Node 执行本地 tsx CLI 与 `src/mist/standalone.ts`；只读系统、仅 `shared/` 可写（运行日志在 `shared/logs`，发布时链接为 `server/logs`）、内存上限 1.5G。sudo 只允许该账号重启 / 停止此服务。
 - nginx 仅监听 `127.0.0.1:8080`：静态前端取当前版本 `web/`，`/api/` 转发 8082。Cloudflare Tunnel 连到这里，不开放 80 / 443。
 - 每日 `pg_dump` 备份到 `/var/backups/bambook-dev`，保留 7 天。
 

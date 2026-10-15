@@ -13,7 +13,7 @@ node_major=22
 id "$deploy_user" >/dev/null
 
 # Memory headroom for npm ci / type checks on a 4 GB host.
-if ! swapon --show=NAME --noheadings | grep -qx /swapfile; then
+if [[ -z "$(swapon --show --noheadings)" ]]; then
   [[ -f /swapfile ]] || { fallocate -l 2G /swapfile; chmod 600 /swapfile; mkswap /swapfile >/dev/null; }
   swapon /swapfile
   grep -q '^/swapfile ' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
@@ -30,7 +30,7 @@ node --version
 
 # Directories: releases are owned by the delivery account; persistent runtime data lives in shared/.
 install -d -m 0755 -o "$deploy_user" -g "$deploy_user" "$root" "$root/releases" "$root/shared"
-install -d -m 0700 -o "$deploy_user" -g "$deploy_user" "$root/shared/mist-files" "$root/shared/ai-subscriptions"
+install -d -m 0700 -o "$deploy_user" -g "$deploy_user" "$root/shared/mist-files" "$root/shared/ai-subscriptions" "$root/shared/logs"
 install -d -m 0750 -o root -g "$deploy_user" "$etc"
 
 # Dedicated development database and role. The password is generated once and only written to backend.env.
