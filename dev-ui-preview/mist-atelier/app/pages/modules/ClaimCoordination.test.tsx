@@ -55,6 +55,17 @@ describe('售后索赔协同面板', () => {
     expect(button('登记实际落实')).toBeUndefined(); expect(button('批准放弃')).toBeUndefined();
     expect(host.textContent).toContain('由财务在应付里按工厂票据扣款');
   });
+  it('从货款扣的追偿可改为工厂付款：已扣保留，没有可扣票据时提示，提交改方式命令', async () => {
+    const cur = state.invoices[0].currency;
+    const recovery = { id: 'r1', supplierId: 'no-bill-supplier', supplierName: '无票工厂', currency: cur, requested: 100, basis: '工厂责任', state: 'Agreed' as const, agreed: 60, method: 'deduction' as const, agreedNote: '邮件确认', createdAt: '', createdBy: '顾言', createdById: 'me', events: [] };
+    const { openEditor, command } = await mount(claimFor({ coordination: { notices: [], verifications: [], recoveries: [recovery] } }), { write: true, qc: false, finance: true, approve: false });
+    expect(host.textContent).toContain('暂无可扣的未付票据');
+    await act(async () => button('改为工厂付款')!.click());
+    const spec = (openEditor.mock.calls as any[])[0][0];
+    expect(spec.title).toBe('改为工厂付款'); expect(spec.description).toContain('保留不动');
+    await spec.submit({ reason: '工厂邮件同意直接付款' });
+    expect(command).toHaveBeenCalledWith({ type: 'platform.claim.recovery.method', payload: { id: 'r1', method: 'payment', reason: '工厂邮件同意直接付款' } });
+  });
   it('默认工厂仅在生产分支工厂名与供应商档案唯一匹配时预选', () => {
     const claim = claimFor(); const rows = state.productions.filter(p => p.orderId === claim.orderId); expect(rows.length).toBeGreaterThan(0);
     rows.forEach(p => { p.factory = supplier().name; }); expect(claimDefaultSupplierId(state, claim)).toBe(supplier().id);

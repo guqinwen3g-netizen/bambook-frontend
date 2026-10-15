@@ -5,7 +5,7 @@ import { Banner, Button, Checkbox, Dialog, Facts, Field, FormGrid, Mono, ObjectC
 import { type MistState } from '../../../../server/src/shared/mistWorkspace';
 import { platformBusinessDate } from '../../../../server/src/shared/mistPlatform';
 import { receiptReturnedQuantity } from '../../../../server/src/shared/mistFulfillment';
-import { prepaymentMoves, purchaseContractMinor, purchasePrepaymentReadback, settlementReceipts, settlementSuggestedPrepaymentMinor, type PayablesCommand, type SettlementView } from '../../../../server/src/shared/mistPayables';
+import { prepaymentMoves, purchaseContractMinor, purchasePrepaymentReadback, settlementReceipts, settlementSuggestedPrepaymentMinor, type PayablesCommand, type SettlementView, settlementHasLiveAdvance } from '../../../../server/src/shared/mistPayables';
 import { ActionBar, DetailBlock, DetailBody } from './modules/pageKit';
 
 const money = (amount: number, currency: string) => `${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
@@ -50,7 +50,7 @@ export function SettlementDetail({ settlement: st, state, me, busy, canSettle, c
       { label: '退回结算', onClick: () => onReason('return-settlement'), reason: !canConfirm ? '需要核销权限（财务）' : own ? '不能复核本人提交的结算' : undefined, hidden: st.state !== 'pending' },
       { label: '撤回结算', onClick: () => onReason('cancel-settlement'), reason: !canSettle ? '需要采购经办权限' : !own ? '只有提交人可以撤回' : undefined, hidden: st.state !== 'pending' },
       { label: '按结算登记票据', onClick: onBill, reason: !canBill ? '需要票据登记权限' : st.uninvoiced <= 0 ? '本结算已全部开票' : undefined, hidden: st.state !== 'confirmed' },
-      { label: '冲回结算', onClick: () => onReason('reverse-settlement'), reason: !canConfirm ? '需要核销权限（财务）' : st.invoiced > 0 ? '已关联票据，请先作废关联票据' : moved ? '剩余预付已退款或转抵，请先冲回这些记录' : undefined, hidden: st.state !== 'confirmed' },
+      { label: '冲回结算', onClick: () => onReason('reverse-settlement'), reason: !canConfirm ? '需要核销权限（财务）' : st.invoiced > 0 ? '已关联票据，请先作废关联票据' : settlementHasLiveAdvance(state, st.id) ? '有不等票付款申请或付款，请先撤回申请、冲回付款' : moved ? '剩余预付已退款或转抵，请先冲回这些记录' : undefined, hidden: st.state !== 'confirmed' },
       { label: '查看合同', onClick: onPurchase },
     ]} />
     <DetailBlock title="对应收货记录">{receipts.map(r => <div className="mist-row mist-module-actions" key={r.id}><span>{r.date}</span><span className="mist-note">{r.location} · {r.evidence}</span><span className="mist-spacer" /><span className="mist-num">实收 {r.quantity}{r.rejected ? ` · 拒收 ${r.rejected}` : ''} {st.unit}</span></div>)}
