@@ -560,6 +560,8 @@ type BambookNavGroup = 'overview' | 'customer' | 'fulfillment' | 'finance' | 'pl
 
 - [server/src/ai/](file:///Users/qinwengu/WorkBuddy/Claw/apps/Bambook/server/src/ai)（挂载 `/api/ai`，端点：`GET /metrics`、`POST /chat`、`POST /tts/speech`）：
   - `llmProviders.ts`：**自研 LLM Provider 链**（原生 fetch，无 openai/ai-sdk 依赖）。默认 `https://ark.cn-beijing.volces.com/api/coding/v3` + `ark-code-latest`；key 链 `ARK_API_KEY → VOLCENGINE_API_KEY → TENCENT_API_KEY → ZHIPU_API_KEY`；备用 provider 由 `BAMBOOK_LLM_BACKUP_URL/KEY/MODEL`、`BAMBOOK_LLM_BACKUP2_*` 声明式配置；**请求级失败转移**（网络错误/非 2xx/流中断切换到下一 provider；AbortError 不转移）；**流式优先、失败降级非流式**，SSE `data:` 解析 `choices[0].delta.content` 走 `onDelta` 增量；全链失败抛 `LLM_ALL_PROVIDERS_FAILED`；
+  - `codexSubscription.ts`：**ChatGPT 订阅（Codex 后端）**。设备码登录（`auth.openai.com/api/accounts/deviceauth/*` → `/oauth/token`）、令牌提前 5 分钟刷新、`chatgpt.com/backend-api/codex/responses` 流式补全（`ChatGPT-Account-ID` / `originator` 头，`store:false`，不带 temperature）。凭据按主体存于 `server/private/ai-subscriptions`：`platform`（管理员连接，平台 AI 共用）与 `user:<id>`（个人，留给本机工作助手）。开关 `BAMBOOK_CODEX_SUBSCRIPTION=1`，模型 `BAMBOOK_CODEX_MODEL`（默认 gpt-6-luna）。
+  - `platformModel.ts`：平台 AI 功能档位与推理强度（报价审阅 max、业务问答 medium、汇总 medium、对账 high；`BAMBOOK_PLATFORM_REASONING_<PROFILE>` 覆盖）。`createLlmCompleter({platformProfile})` 平台订阅已连接时优先使用，失败再走 provider 链。
   - `runner.ts`：Agent 工具 surface 与调用契约（`AGENT_LOOP_TOOL_DESCRIPTORS` 白名单：memory/products/orders/relations/finance/knowledge.search…）；
   - `runtime.ts`：AI 运行时（Semaphore 并发控制三 lane：model/search/heavy，对应 `BAMBOOK_AI_MODEL_CONCURRENCY` 等 env；按 sessionId 活跃会话/超时/abort；`getMetrics()`）；
   - `tts.ts`：TTS 服务与**进程级熔断器**（失败计数→open→冷却半开重试→成功关闭，避免反复超时等待）；`BAMBOOK_TTS_PROVIDER=melo`（默认，Melo HTTP :8765 `synthesizeMeloWithService` + `prewarmMeloTts`）或 edge_tts / sensevoice；

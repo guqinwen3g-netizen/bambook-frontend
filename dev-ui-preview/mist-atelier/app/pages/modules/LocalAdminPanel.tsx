@@ -1,6 +1,6 @@
 /** T10 local company settings. Saves exclusively through the active Mist workspace. */
 import React from 'react';
-import { Building2, FolderOpen, Landmark, Laptop, RefreshCw } from 'lucide-react';
+import { Building2, FolderOpen, Landmark, Laptop, RefreshCw, Sparkles } from 'lucide-react';
 import {
   Banner, Button, Card, EmptyState, Field, FormGrid, FormSection, KeyValue, MistPage,
   PageHeader, Pill, Skeleton, TextInput, VerticalSteps, useToast,
@@ -8,6 +8,7 @@ import {
 import type { MistSettings } from '../../../../../server/src/shared/mistWorkspace';
 import { useMistSession } from '../../runtime/auth';
 import { useMistWorkspace } from '../../runtime/workspace';
+import { AiSubscriptionPanel } from './AiSubscriptionPanel';
 
 export type LocalCompanyProfile = {
   legalName: string;
@@ -157,6 +158,7 @@ export function LocalAdminPanel() {
         { id: 'export', label: '出口与收款', icon: Landmark },
         { id: 'workspace', label: '当前空间', icon: FolderOpen },
         { id: 'local', label: '本地使用', icon: Laptop },
+        ...(session.hasRole?.('owner') ? [{ id: 'ai', label: '平台 AI 模型', icon: Sparkles }] : []),
       ]} />
       <Card>
         {!workspace.state ? <FormSection title="正在读取本地空间"><Skeleton height={180} /></FormSection> : <>
@@ -183,7 +185,8 @@ export function LocalAdminPanel() {
             ]} />
           </FormSection>}
         </>}
-        <div className="mist-sticky-foot"><span className="mist-note">{busy || workspace.saving ? '正在保存本地资料…' : '保存后应用于当前本地工作空间'}</span><span className="mist-spacer" /><Button variant="primary" loading={busy} disabled={blocked} onClick={() => void save()}>保存资料</Button></div>
+        {section === 'ai' && <AiSubscriptionPanel mode="platform" bare sessionKey={session.sessionKey} />}
+        {section !== 'ai' && <div className="mist-sticky-foot"><span className="mist-note">{busy || workspace.saving ? '正在保存本地资料…' : '保存后应用于当前本地工作空间'}</span><span className="mist-spacer" /><Button variant="primary" loading={busy} disabled={blocked} onClick={() => void save()}>保存资料</Button></div>}
       </Card>
     </div>
   </MistPage>;

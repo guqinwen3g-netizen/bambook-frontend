@@ -39,6 +39,7 @@ import {
   QuotationHistoryEvidencePicker,
   FrozenHistoryEvidence,
 } from "./QuotationCostEvidence";
+import { QuotationCostAdvisor } from "./QuotationCostAdvisor";
 import { useMistWorkspace } from "../../runtime/workspace";
 import { useMistSession } from "../../runtime/auth";
 import { useNav } from "../../nav";
@@ -575,10 +576,11 @@ export function QuotationCostingPage() {
           审批中、已发送或已转单的报价不能改核算；需要改价时从报价主线建立适用新版本。
         </Banner>
       )}
-      <Banner title="专业计算首轮 · 人工依据">
+      <Banner title="专业计算 · 人工依据与可选 AI 审阅">
         当前只支持与报价行相同币种、相同计价单位；不自动取市场原料价或换算米 /
         码 /
-        公斤。供应商成品价与专业拆解二选一，附加费用必须确认未包含。AI、行业基准、历史成交匹配与自动客户策略尚未接入。
+        公斤。供应商成品价与专业拆解二选一，附加费用必须确认未包含。行业基准、历史成交自动匹配与自动客户策略尚未接入；AI
+        仅在第二步显式授权后审阅。
       </Banner>
       {editing && can && !frozen ? (
         <div className="mist-wizard">
@@ -906,6 +908,29 @@ export function QuotationCostingPage() {
                     />
                   </Field>
                 </FormGrid>
+                <QuotationCostAdvisor
+                  workspaceId={w.workspace?.id || ""}
+                  revision={w.workspace?.revision ?? 0}
+                  sessionKey={session.sessionKey}
+                  quotationId={q.id}
+                  lineId={line.id}
+                  expectedTarget={quotationCostingTarget(q, line)}
+                  input={input}
+                  historyReference={historyReference}
+                  permitted={
+                    session.hasPermission("ai:chat") &&
+                    session.hasPermission("quotations:read")
+                  }
+                  disabled={disabled}
+                  onAdopt={(method, targetPercent, strategyBasis) =>
+                    setInput((x) => ({
+                      ...x,
+                      method,
+                      targetPercent,
+                      strategyBasis,
+                    }))
+                  }
+                />
                 <QuotationHistoryEvidencePicker
                   state={w.state!}
                   quote={q}

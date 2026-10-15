@@ -13,10 +13,28 @@
 - **供应商预付款批次：已合入。** [PR #17](https://github.com/guqinwen3g-netizen/bambook-main/pull/17) 以 merge commit 进入 main `bd0c3ba`；范围与验收见下方历史检查点。
 - **跨账号、跨岗位办理同一笔业务：已合入。** [PR #16](https://github.com/guqinwen3g-netizen/bambook-main/pull/16) 以 merge commit 进入 main `eaa301d`；范围与验收见下方历史检查点。
 - **供应商票据与应付首轮：已合入。** [PR #15](https://github.com/guqinwen3g-netizen/bambook-main/pull/15) 已进入 main `e5aa0ce`。范围为公司端票据登记、付款分配、未分配保留和采购回读；不代表预付款闭环、付款申请审批、冲回、银行账户或部署完成。下方历史中的“发票到才算应付、付款不另审批、财务直接作废”不是已确认规则，已由后续方向覆盖。
-- **报价成本 AI 审阅：未合入。** 分支 `feat/quote-cost-ai-advisor`，[草稿 PR](https://github.com/guqinwen3g-netizen/bambook-main/pull/8)，核对时开发提交为 `a47e13c`，该提交 CI 成功。真实模型接入和人工视觉验收仍有缺口，不能视为交付完成。接续时核对主线差异并处理 `05-migration-playbook.md` 的合并冲突；详细检查点保留在下方和 PR。
+- **报价成本 AI 审阅：收尾中。** 原 [草稿 PR #8](https://github.com/guqinwen3g-netizen/bambook-main/pull/8)（`feat/quote-cost-ai-advisor`，基线 `369e657`）与主线只在文档冲突；已在最新 main `93616aa` 上合并成新分支 `feat/quote-cost-ai-advisor-v2` 并补人工视觉复核，最新提交与 CI 以新 PR 为准。仍没有真实 GPT / DeepSeek 实连。
 - **售后索赔公司端修订：已合入。** [PR](https://github.com/guqinwen3g-netizen/bambook-main/pull/12) 已进入主线，核对时主线为 `46053f9`，对应 CI 成功。范围仅公司端，通知工厂记录方式和内部备注；不代表客户 / 供应商平台或正式部署完成。
 - **协作规范批次：已合入。** [PR](https://github.com/guqinwen3g-netizen/bambook-main/pull/9) 已进入主线，不再等待原批次验证或合入。当前规则以根 `AGENTS.md` 为准。
 - **风险管理首轮：已合入。** [PR](https://github.com/guqinwen3g-netizen/bambook-main/pull/10) 已进入主线；后续缺口按具体任务继续。
+
+## 当前交接 · 报价成本 AI 审阅收尾
+
+### 检查点 · 2026-10-16 · AI 分层与 ChatGPT 订阅接入
+
+- 用户要求只接入 ChatGPT plan 模型能力（参考 OpenBitFun 的订阅登录与调用）。新增 `server/src/ai/codexSubscription.ts`（设备码登录、令牌刷新、Responses 流式补全，凭据存服务器私有目录）。
+- 用户随后确定 AI 两层（决策总账第二十三节）：工作助手（本机、个人凭据，待立项）与平台 AI（统一平台连接）。据此改为：平台 AI（小竹问答、报价审阅）只用管理员连接的**平台连接**，与请求用户无关；个人连接接口保留给工作助手。管理后台新增“平台 AI 模型”（本地模式为管理后台第五步，仅 owner）；小竹页只显示平台模型状态。新增 `platformModel.ts` 功能档位：报价审阅 max、问答 medium、汇总 medium、对账 high。
+- 实测 `gpt-5.5` 等旧模型名被订阅后端拒绝，模型清单当前为 GPT-6 / 5.6 系列；按用户建议默认 `gpt-6-luna`。
+- 真实模型验收（local-file 演示空间）：用户本人账号以本地管理员身份连接平台模型（Pro Max）；**业务员账号未连接任何个人订阅**，报价 AI 审阅 QT-2026-0004 / FB-2702 返回结构化风险与待补资料（依据为测试报价，未给策略，符合协议）；小竹单来源问答约 3 秒返回且来源正确。管理后台平台模型分区与小竹页浅 / 深色 × 1440 / 1180 / 390 无横向溢出、无页面或控制台错误。
+- 仍未做：工作助手（Agent 框架、轻量 harness、本机邮箱、OpenBitFun 式提供商配置）待方案确认后立项；生产环境企业 API 接入；平台订阅用量展示。
+
+### 检查点 · 2026-10-16
+
+- 用户授权继续推进。PR #8 代码与主线可自动合并，仅 `AGENTS.md`、PR 模板、README、实时进度与推进手册冲突：协作规范以已合入的 PR #9 为准（采用主线版本），报价 AI 操作协议保留在推进手册顶部。
+- 合并后完整 `npm run verify:mist` 本地通过：UI 844 项、服务端 608 项、工具链 4 项，Mist 检查 159 文件 0 error 0 warning。
+- 隔离本地浏览器（`dev:mist` local-file 演示空间；模型为**本机软件 mock**，经 `BAMBOOK_LLM_BACKUP_*` 指向 127.0.0.1 的 OpenAI 兼容接口，不是 GPT / DeepSeek）：业务员在 QT-2026-0004 / FB-2702 填写供应商成品价 1.85 USD/码依据 → 第二步勾选授权 → 请求 AI 审阅（服务端重算公式单位成本 1.8500、33.3% 加成建议价 2.47）→ 采纳至人工策略草稿，只填目标百分比与带政策版本的人工理由，人工拟报价 1.90 不变。模拟服务只收到本行来源编号。浅 / 深 × 1440 / 1180 / 390 共 6 组无横向溢出、无页面或控制台错误。
+- 人工视觉复核发现并修复：AI 审阅区块在第二步表单内叠加了两层内边距，390 宽度下说明框只剩约一半宽度。去掉区块内多余的卡片内边距，并让嵌套表单分段与外层字段对齐（`.mist-form-section .mist-form-section`），历史依据区块同样受益。
+- 仍未做：真实模型凭据、第三方数据政策与计费需管理员配置后实连验收；AI 审阅不做服务端持久化审计；行业参数、结构化税费 / MOQ / 汇率等仍为后续批次。
 
 ## 当前交接 · 付款收尾批次
 

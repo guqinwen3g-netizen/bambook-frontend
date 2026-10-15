@@ -33,6 +33,9 @@ export type LlmCompletionInput = {
   onDelta?: (chunk: string) => void;
 };
 
+import { codexSubscriptions, PLATFORM_SUBJECT, type CodexSubscriptionService } from './codexSubscription';
+import { platformReasoning, type PlatformAiProfile } from './platformModel';
+
 const DEFAULT_LLM_BASE_URL = 'https://ark.cn-beijing.volces.com/api/coding/v3';
 const DEFAULT_LLM_MODEL = 'ark-code-latest';
 
@@ -88,13 +91,29 @@ export function resolveLlmProviderChain(): LlmProviderConfig[] {
  * 链式 LLM completer：逐 provider 尝试，AbortError 直抛，全链失败抛
  * LLM_ALL_PROVIDERS_FAILED。同一 provider 内保持"流式优先、流式失败降级非流式"。
  */
-export function createLlmCompleter() {
+export type LlmCompleterOptions = {
+  /** 平台 AI 功能档位；平台 ChatGPT 订阅已连接时按档位推理强度优先使用。 */
+  platformProfile?: PlatformAiProfile;
+  subscriptions?: Pick<CodexSubscriptionService, 'isConnected' | 'complete'>;
+};
+
+export function createLlmCompleter(options: LlmCompleterOptions = {}) {
   return async function complete(input: LlmCompletionInput): Promise<string> {
     const providers = resolveLlmProviderChain();
-    if (providers.length === 0) {
+    const failures: Array<{ providerId: string; error: string }> = [];
+    const subscriptions = options.subscriptions ?? codexSubscriptions();
+    if (options.platformProfile && subscriptions.isConnected(PLATFORM_SUBJECT)) {
+      try {
+        return await subscriptions.complete(PLATFORM_SUBJECT, input, { reasoning: platformReasoning(options.platformProfile) });
+      } catch (err: any) {
+        if (err?.name === 'AbortError') throw err;
+        // 平台订阅失败（限额/授权失效）时再尝试企业 API；只记录脱敏后的错误文字
+        failures.push({ providerId: 'chatgpt-subscription', error: `${typeof err?.code === 'string' ? err.code + ': ' : ''}${String(err?.message || err)}` });
+      }
+    }
+    if (providers.length === 0 && failures.length === 0) {
       throw new Error('Model API key is not configured on Mac mini');
     }
-    const failures: Array<{ providerId: string; error: string }> = [];
     for (const provider of providers) {
       try {
         return await completeWithProvider(provider, input);
