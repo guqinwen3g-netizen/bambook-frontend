@@ -9,7 +9,9 @@ import { MistApiError, fail } from './errors';
 import {getMistAssistantStatus,runMistAssistant} from './assistant';
 import {runQuoteCostAdvisor} from './quoteCostAdvisor';
 import { hasScope } from '../auth/permissionService';
-import { codexSubscriptions, CodexSubscriptionError, type CodexSubscriptionService } from '../ai/codexSubscription';
+import { codexSubscriptions, CodexSubscriptionError, PLATFORM_SUBJECT, personalSubject, type CodexSubscriptionService } from '../ai/codexSubscription';
+import { platformProfileList } from '../ai/platformModel';
+import { SYSTEM_ROLE_IDS } from '../_shared/rolePermissionMatrix';
 function exactBody(body: unknown, allowed: string[]) {
   if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !allowed.includes(key))) fail('INVALID_INPUT', '请求字段无效；身份只能来自登录会话', 400);
   return body as Record<string, any>;
@@ -24,9 +26,12 @@ export function createMistRouter(options: { prisma?: any; filesRoot?: string; re
   router.use(options.authenticate ?? requireAuth);
   const actor = (req: Request) => (req as Request & { actor: TokenPayload }).actor;
   const run = (handler: (req: Request, res: Response) => Promise<void>): RequestHandler => (req, res) => { void handler(req, res).catch(error => publicError(res, error)); };
-  // 个人 ChatGPT 订阅连接：凭据只留在服务器，响应只含连接状态与设备验证码。
+  // ChatGPT 订阅连接：凭据只留在服务器，响应只含连接状态与设备验证码。
+  //   - 平台连接（管理员）：平台 AI 固定流程共用；测试期为管理员个人订阅，生产期改企业 API。
+  //   - 个人连接（ai:chat）：仅供后续本机工作助手使用，不参与平台 AI。
   const subscriptions = () => options.subscriptions ?? codexSubscriptions();
   const aiActor = (req: Request) => { const a = actor(req); if (!a?.userId || !hasScope(a, 'ai:chat')) fail('FORBIDDEN', '当前账号无助手使用权限', 403); return a; };
+  const platformAdmin = (req: Request) => { const a = actor(req); if (!a?.userId || !(a.roles ?? []).some(role => role === 'owner' || role === (SYSTEM_ROLE_IDS.SUPER_ADMIN as unknown))) fail('FORBIDDEN', '仅管理员可配置平台模型', 403); return a; };
   const subscriptionCall = (handler: (req: Request, res: Response) => Promise<void> | void) => run(async (req, res) => {
     res.setHeader('Cache-Control', 'private, no-store');
     try { await handler(req, res); } catch (error) {
@@ -34,10 +39,15 @@ export function createMistRouter(options: { prisma?: any; filesRoot?: string; re
       throw error;
     }
   });
-  router.get('/ai/subscriptions', subscriptionCall((req, res) => { res.json({ chatgpt: subscriptions().status(aiActor(req).userId) }); }));
-  router.post('/ai/subscriptions/chatgpt/login', subscriptionCall(async (req, res) => { const a = aiActor(req); exactBody(req.body ?? {}, []); res.status(201).json({ login: await subscriptions().startLogin(a.userId) }); }));
-  router.get('/ai/subscriptions/chatgpt/login/:loginId', subscriptionCall((req, res) => { const a = aiActor(req); res.json({ login: subscriptions().getLogin(a.userId, req.params.loginId), chatgpt: subscriptions().status(a.userId) }); }));
-  router.post('/ai/subscriptions/chatgpt/disconnect', subscriptionCall((req, res) => { const a = aiActor(req); exactBody(req.body ?? {}, []); res.json({ chatgpt: subscriptions().disconnect(a.userId) }); }));
+  const platformView = () => ({ chatgpt: subscriptions().status(PLATFORM_SUBJECT), profiles: platformProfileList() });
+  router.get('/ai/platform-model', subscriptionCall((req, res) => { platformAdmin(req); res.json(platformView()); }));
+  router.post('/ai/platform-model/chatgpt/login', subscriptionCall(async (req, res) => { platformAdmin(req); exactBody(req.body ?? {}, []); res.status(201).json({ login: await subscriptions().startLogin(PLATFORM_SUBJECT) }); }));
+  router.get('/ai/platform-model/chatgpt/login/:loginId', subscriptionCall((req, res) => { platformAdmin(req); res.json({ login: subscriptions().getLogin(PLATFORM_SUBJECT, req.params.loginId), ...platformView() }); }));
+  router.post('/ai/platform-model/chatgpt/disconnect', subscriptionCall((req, res) => { platformAdmin(req); exactBody(req.body ?? {}, []); subscriptions().disconnect(PLATFORM_SUBJECT); res.json(platformView()); }));
+  router.get('/ai/subscriptions', subscriptionCall((req, res) => { res.json({ chatgpt: subscriptions().status(personalSubject(aiActor(req).userId)) }); }));
+  router.post('/ai/subscriptions/chatgpt/login', subscriptionCall(async (req, res) => { const a = aiActor(req); exactBody(req.body ?? {}, []); res.status(201).json({ login: await subscriptions().startLogin(personalSubject(a.userId)) }); }));
+  router.get('/ai/subscriptions/chatgpt/login/:loginId', subscriptionCall((req, res) => { const a = aiActor(req); res.json({ login: subscriptions().getLogin(personalSubject(a.userId), req.params.loginId), chatgpt: subscriptions().status(personalSubject(a.userId)) }); }));
+  router.post('/ai/subscriptions/chatgpt/disconnect', subscriptionCall((req, res) => { const a = aiActor(req); exactBody(req.body ?? {}, []); res.json({ chatgpt: subscriptions().disconnect(personalSubject(a.userId)) }); }));
   router.get('/reviews', run(async (req,res)=>{res.json({reviews:await repository.listReviews(actor(req))});}));
   router.get('/reviews/:workspaceId/receipts/:requestId', run(async (req,res)=>{res.json({receipt:await repository.reviewReceipt(actor(req),req.params.workspaceId,req.params.requestId)});}));
   router.get('/reviews/:workspaceId/:reviewId/files/:fileId',run(async(req,res)=>{const {file,bytes}=await repository.reviewFile(actor(req),req.params.workspaceId,req.params.reviewId,req.params.fileId);res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Content-Disposition',`attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`);res.type('application/octet-stream').send(Buffer.from(bytes));}));
@@ -53,7 +63,7 @@ export function createMistRouter(options: { prisma?: any; filesRoot?: string; re
   router.post('/workspaces/:id/archive',run(async(req,res)=>{const body=exactBody(req.body,['requestId','expectedRevision']);res.json(await repository.changeArchive(actor(req),req.params.id,body as any,'archive'));}));
   router.post('/workspaces/:id/restore',run(async(req,res)=>{const body=exactBody(req.body,['requestId','expectedRevision']);res.json(await repository.changeArchive(actor(req),req.params.id,body as any,'restore'));}));
   router.post('/workspaces/:id/members',run(async(req,res)=>{const body=exactBody(req.body,['requestId','expectedRevision','action','account']);res.json(await repository.changeMember(actor(req),req.params.id,body as any));}));
-  router.get('/workspaces/:id/assistant/status',run(async(req,res)=>{await repository.getForAssistant(actor(req),req.params.id);res.json(getMistAssistantStatus({},actor(req).userId));}));
+  router.get('/workspaces/:id/assistant/status',run(async(req,res)=>{await repository.getForAssistant(actor(req),req.params.id);res.json(getMistAssistantStatus());}));
   router.post('/workspaces/:id/assistant',run(async(req,res)=>{const context=await repository.getForAssistant(actor(req),req.params.id);const controller=new AbortController();res.once('close',()=>{if(!res.writableEnded)controller.abort();});res.json(await runMistAssistant({...context,body:req.body,signal:controller.signal}));}));
   router.post('/workspaces/:id/quotation-cost-advisor',run(async(req,res)=>{const context=await repository.getForAssistant(actor(req),req.params.id);const controller=new AbortController();res.once('close',()=>{if(!res.writableEnded)controller.abort();});res.setHeader('Cache-Control','private, no-store');res.json(await runQuoteCostAdvisor({...context,body:req.body,signal:controller.signal}));}));
   router.post('/workspaces/:id/commands', run(async (req, res) => {

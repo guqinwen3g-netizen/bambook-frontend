@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, rm, readdir, readFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { CodexSubscriptionService, stripJsonFence } from '../ai/codexSubscription';
+import { CodexSubscriptionService, stripJsonFence, PLATFORM_SUBJECT, personalSubject } from '../ai/codexSubscription';
+import { platformReasoning } from '../ai/platformModel';
 import { createLlmCompleter } from '../ai/llmProviders';
 import { createMistRouter } from './route';
 import { getMistAssistantStatus, runMistAssistant } from './assistant';
@@ -136,33 +137,59 @@ describe('ChatGPT subscription completions', () => {
     expect(s.status('owner').connected).toBe(true);
   });
 
-  it('prefers the personal subscription and falls back to the server API chain on failure', async () => {
+  it('platform AI uses only the platform connection with per-feature reasoning, then falls back to the server API chain', async () => {
     vi.stubEnv('BAMBOOK_LLM_BACKUP_URL', 'https://backup.invalid/v1');
     vi.stubEnv('BAMBOOK_LLM_BACKUP_KEY', 'k');
     for (const k of ['ARK_API_KEY', 'VOLCENGINE_API_KEY', 'TENCENT_API_KEY', 'ZHIPU_API_KEY']) vi.stubEnv(k, '');
-    const subscriptions = { isConnected: vi.fn(() => true), complete: vi.fn(async () => '订阅回答') };
-    expect(await createLlmCompleter({ actorId: 'owner', subscriptions })({ systemPrompt: 's', messages: [], signal: new AbortController().signal })).toBe('订阅回答');
+    const subscriptions = { isConnected: vi.fn((subject: string) => subject === PLATFORM_SUBJECT), complete: vi.fn(async (..._args: any[]) => '订阅回答') };
+    const input = { systemPrompt: 's', messages: [], signal: new AbortController().signal };
+    expect(await createLlmCompleter({ platformProfile: 'quote-review', subscriptions })(input)).toBe('订阅回答');
+    expect(subscriptions.complete).toHaveBeenLastCalledWith(PLATFORM_SUBJECT, input, { reasoning: 'max' });
+    await createLlmCompleter({ platformProfile: 'assistant-chat', subscriptions })(input);
+    expect(subscriptions.complete).toHaveBeenLastCalledWith(PLATFORM_SUBJECT, input, { reasoning: 'medium' });
+    vi.stubEnv('BAMBOOK_PLATFORM_REASONING_QUOTE_REVIEW', 'high');
+    expect(platformReasoning('quote-review')).toBe('high');
     subscriptions.complete.mockRejectedValueOnce(Object.assign(new Error('ChatGPT 订阅用量已达上限'), { code: 'AI_SUBSCRIPTION_LIMITED' }));
-    const backup = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(json({ choices: [{ message: { content: '企业回答' } }] }));
-    expect(await createLlmCompleter({ actorId: 'owner', subscriptions })({ systemPrompt: 's', messages: [], signal: new AbortController().signal })).toBe('企业回答');
-    expect(backup).toHaveBeenCalledOnce();
+    const backup = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => json({ choices: [{ message: { content: '企业回答' } }] }));
+    expect(await createLlmCompleter({ platformProfile: 'quote-review', subscriptions })(input)).toBe('企业回答');
+    const calls = subscriptions.complete.mock.calls.length;
+    expect(await createLlmCompleter({ subscriptions })(input)).toBe('企业回答');
+    expect(subscriptions.complete.mock.calls.length).toBe(calls);
     backup.mockRestore();
   });
 });
 
 describe('assistant status and HTTP routes', () => {
   const actorFor = (id: string, scopes = ['ai:chat']) => ({ userId: id, roles: [], permissions: scopes, authorizationLoaded: true, departmentIds: [] }) as unknown as TokenPayload;
-  it('treats a connected personal subscription as a configured model only for that user', async () => {
-    const deps = { providers: () => [], subscription: (id: string) => ({ connected: id === 'owner', model: 'gpt-test' }) };
-    expect(getMistAssistantStatus(deps, 'owner')).toEqual({ configured: true, models: ['ChatGPT 订阅 · gpt-test'], mode: 'read_only', subscription: { provider: 'chatgpt', connected: true } });
-    expect(getMistAssistantStatus(deps, 'other').configured).toBe(false);
+  it('treats the platform subscription as the configured model for every user', async () => {
+    const deps = { providers: () => [], subscription: () => ({ connected: true, model: 'gpt-test' }) };
+    expect(getMistAssistantStatus(deps)).toEqual({ configured: true, models: ['平台 ChatGPT 订阅 · gpt-test'], mode: 'read_only', subscription: { provider: 'chatgpt', connected: true } });
+    expect(getMistAssistantStatus({ providers: () => [], subscription: () => ({ connected: false, model: 'gpt-test' }) }).configured).toBe(false);
     const state = createMistState({ id: () => 'x', now: '2026-10-13T00:00:00Z', actorName: '测试' }, 'empty');
     const workspace: MistWorkspaceEnvelope = { id: 'w', ownerId: 'owner', name: 'W', revision: 1, state };
     const limited = new Error('LLM_ALL_PROVIDERS_FAILED: ' + JSON.stringify([{ providerId: 'chatgpt-subscription', error: 'AI_SUBSCRIPTION_LIMITED: 用量' }]));
     await expect(runMistAssistant({ workspace, actor: actorFor('owner'), body: { message: 'hi' } }, { ...deps, complete: async () => { throw limited; } })).rejects.toMatchObject({ code: 'MIST_ASSISTANT_SUBSCRIPTION_LIMITED', status: 429 });
   });
 
-  it('exposes login, status and disconnect routes only to the signed-in ai:chat user without secrets', async () => {
+  it('lets only administrators connect the shared platform model', async () => {
+    deviceRoutes([200]);
+    const s = service();
+    const app = express(); app.use(express.json());
+    app.use('/api/mist', createMistRouter({ repository: {} as any, subscriptions: s, authenticate: (req, _res, next) => { const id = String(req.headers['x-test-user'] || ''); (req as any).actor = { ...actorFor(id), roles: id === 'admin' ? ['owner'] : [] }; next(); } }));
+    await request(app).get('/api/mist/ai/platform-model').set('x-test-user', 'sales').expect(403);
+    await request(app).post('/api/mist/ai/platform-model/chatgpt/login').set('x-test-user', 'sales').send({}).expect(403);
+    const login = (await request(app).post('/api/mist/ai/platform-model/chatgpt/login').set('x-test-user', 'admin').send({}).expect(201)).body.login;
+    while (scheduled.length) { scheduled.shift()!(); await new Promise(r => setTimeout(r, 5)); }
+    const polled = (await request(app).get(`/api/mist/ai/platform-model/chatgpt/login/${login.loginId}`).set('x-test-user', 'admin').expect(200)).body;
+    expect(polled).toMatchObject({ login: { state: 'connected' }, chatgpt: { connected: true }, profiles: expect.arrayContaining([{ id: 'quote-review', label: '报价 AI 审阅', reasoning: 'max' }]) });
+    expect(JSON.stringify(polled)).not.toMatch(/secret|verifier|acct/);
+    expect(s.isConnected(PLATFORM_SUBJECT)).toBe(true);
+    expect(s.isConnected(personalSubject('admin'))).toBe(false);
+    expect((await request(app).get('/api/mist/ai/subscriptions').set('x-test-user', 'sales').expect(200)).body.chatgpt.connected).toBe(false);
+    expect((await request(app).post('/api/mist/ai/platform-model/chatgpt/disconnect').set('x-test-user', 'admin').send({}).expect(200)).body.chatgpt.connected).toBe(false);
+  });
+
+  it('keeps personal connections (for the future work assistant) per signed-in ai:chat user without secrets', async () => {
     deviceRoutes([200]);
     const s = service();
     const app = express(); app.use(express.json());

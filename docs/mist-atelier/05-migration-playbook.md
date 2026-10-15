@@ -4,9 +4,9 @@
 
 ### 模型连接（2026-10-15）
 
-- 服务器设 `BAMBOOK_CODEX_SUBSCRIPTION=1` 后，有 `ai:chat` 权限的用户可在小竹页“我的 ChatGPT 订阅”连接自己的账号：点击连接 → 打开 `https://auth.openai.com/codex/device` 输入验证码 → 页面自动显示已连接。若 OpenAI 提示未允许设备码登录，需在 ChatGPT 设置的安全选项中开启 Codex 设备码授权。
-- 已连接用户的小竹对话与报价 AI 审阅优先使用其订阅（默认 `gpt-6-luna`、推理 `max`，可用 `BAMBOOK_CODEX_MODEL` / `BAMBOOK_CODEX_REASONING` 调整）；订阅失败时再用服务器企业 API（`ARK_*` / `BAMBOOK_LLM_BACKUP*`）。测试期用本人账号；正式版每人连接自己的订阅或统一企业 API，不共享个人订阅。
-- 订阅的可用模型由 OpenAI 按账号与客户端版本下发，会变化；若返回“不支持该模型”，核对 `chatgpt.com/backend-api/codex/models?client_version=1.0.0` 中 `visibility=list` 的模型后调整配置。
+- AI 分两层：**工作助手**（本机运行、业务员本人 API 或 ChatGPT 账号，待立项）与**平台 AI**（报价审阅、汇总、对账、业务问答等固定流程）。平台 AI 只用平台连接，不用个人连接。
+- 服务器设 `BAMBOOK_CODEX_SUBSCRIPTION=1` 后，管理员在“管理后台 → 平台 AI 模型”连接 ChatGPT 账号：点击连接 → 打开 `https://auth.openai.com/codex/device` 输入验证码 → 自动显示已连接。若提示未允许设备码登录，需在 ChatGPT 安全设置中开启 Codex 设备码授权。测试期所有同事的平台 AI 共用该订阅额度；生产期配置企业 API（`ARK_*` / `BAMBOOK_LLM_BACKUP*`），平台订阅失败时也回落到企业 API。
+- 默认模型 `gpt-6-luna`；推理档位按功能：报价审阅 max、业务问答 medium、汇总 medium、对账 high（`BAMBOOK_PLATFORM_REASONING_<PROFILE>` 覆盖）。可用模型由 OpenAI 按账号与客户端版本下发，会变化；若返回“不支持该模型”，核对 `chatgpt.com/backend-api/codex/models?client_version=1.0.0` 中 `visibility=list` 的模型后调整 `BAMBOOK_CODEX_MODEL`。
 
 ### 边界与工作方法
 

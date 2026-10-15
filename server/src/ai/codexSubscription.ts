@@ -70,7 +70,7 @@ export type CodexLoginView = {
 
 type LoginSession = {
   id: string;
-  userId: string;
+  subject: string;
   deviceAuthId: string;
   userCode: string;
   intervalMs: number;
@@ -178,32 +178,32 @@ export class CodexSubscriptionService {
     return `Bambook/1.0 (${process.platform}; ${process.arch})`;
   }
 
-  private file(userId: string) {
-    return path.join(this.dir, `${createHash('sha256').update(`codex:${userId}`).digest('hex')}.json`);
+  private file(subject: string) {
+    return path.join(this.dir, `${createHash('sha256').update(`codex:${subject}`).digest('hex')}.json`);
   }
 
-  private read(userId: string): CodexCredentials | null {
+  private read(subject: string): CodexCredentials | null {
     try {
-      const data = JSON.parse(fs.readFileSync(this.file(userId), 'utf8'));
+      const data = JSON.parse(fs.readFileSync(this.file(subject), 'utf8'));
       if (data?.version === 1 && data.provider === 'codex' && typeof data.accessToken === 'string' && typeof data.refreshToken === 'string') return data;
     } catch { /* 无凭据或损坏均视为未连接 */ }
     return null;
   }
 
-  private write(userId: string, credentials: CodexCredentials) {
+  private write(subject: string, credentials: CodexCredentials) {
     fs.mkdirSync(this.dir, { recursive: true, mode: 0o700 });
-    const target = this.file(userId);
+    const target = this.file(subject);
     const temp = `${target}.${randomUUID()}.tmp`;
     fs.writeFileSync(temp, JSON.stringify(credentials), { mode: 0o600 });
     fs.renameSync(temp, target);
   }
 
-  isConnected(userId: string | undefined | null): boolean {
-    return Boolean(this.enabled && userId && this.read(userId));
+  isConnected(subject: string | undefined | null): boolean {
+    return Boolean(this.enabled && subject && this.read(subject));
   }
 
-  status(userId: string): CodexConnectionStatus {
-    const credentials = this.enabled ? this.read(userId) : null;
+  status(subject: string): CodexConnectionStatus {
+    const credentials = this.enabled ? this.read(subject) : null;
     return {
       provider: 'chatgpt',
       enabled: this.enabled,
@@ -216,10 +216,10 @@ export class CodexSubscriptionService {
     };
   }
 
-  disconnect(userId: string) {
-    for (const session of this.logins.values()) if (session.userId === userId) this.cancel(session);
-    try { fs.rmSync(this.file(userId), { force: true }); } catch { /* ignore */ }
-    return this.status(userId);
+  disconnect(subject: string) {
+    for (const session of [...this.logins.values()]) if (session.subject === subject) this.cancel(session);
+    try { fs.rmSync(this.file(subject), { force: true }); } catch { /* ignore */ }
+    return this.status(subject);
   }
 
   private cancel(session: LoginSession) {
@@ -249,10 +249,10 @@ export class CodexSubscriptionService {
     if (!this.enabled) throw new CodexSubscriptionError('AI_SUBSCRIPTION_DISABLED', '服务器未启用 ChatGPT 订阅连接，请联系管理员', 409);
   }
 
-  async startLogin(userId: string): Promise<CodexLoginView> {
+  async startLogin(subject: string): Promise<CodexLoginView> {
     this.requireEnabled();
     for (const session of [...this.logins.values()]) {
-      if (session.userId === userId) this.cancel(session);
+      if (session.subject === subject) this.cancel(session);
       else if (this.now() > session.expiresAt + LOGIN_TTL_MS) this.logins.delete(session.id);
     }
     let res: Response;
@@ -273,7 +273,7 @@ export class CodexSubscriptionService {
     }
     const session: LoginSession = {
       id: randomUUID(),
-      userId,
+      subject: subject,
       deviceAuthId: data.device_auth_id,
       userCode: data.user_code,
       intervalMs: pollInterval(data.interval) + POLL_SAFETY_MARGIN_MS,
@@ -287,9 +287,9 @@ export class CodexSubscriptionService {
     return this.view(session);
   }
 
-  getLogin(userId: string, loginId: string): CodexLoginView {
+  getLogin(subject: string, loginId: string): CodexLoginView {
     const session = this.logins.get(loginId);
-    if (!session || session.userId !== userId) throw new CodexSubscriptionError('AI_SUBSCRIPTION_LOGIN_NOT_FOUND', '登录会话不存在或已结束，请重新发起连接', 404);
+    if (!session || session.subject !== subject) throw new CodexSubscriptionError('AI_SUBSCRIPTION_LOGIN_NOT_FOUND', '登录会话不存在或已结束，请重新发起连接', 404);
     return this.view(session);
   }
 
@@ -312,7 +312,7 @@ export class CodexSubscriptionService {
       if (!res.ok || typeof data?.authorization_code !== 'string' || typeof data?.code_verifier !== 'string') throw new Error('device token rejected');
       const credentials = await this.exchange(data.authorization_code, data.code_verifier);
       if (session.state !== 'pending') return;
-      this.write(session.userId, credentials);
+      this.write(session.subject, credentials);
       session.state = 'connected';
       session.message = null;
     } catch {
@@ -365,23 +365,23 @@ export class CodexSubscriptionService {
     return this.toCredentials(tokens);
   }
 
-  private async fresh(userId: string, force = false): Promise<CodexCredentials> {
-    const current = this.read(userId);
+  private async fresh(subject: string, force = false): Promise<CodexCredentials> {
+    const current = this.read(subject);
     if (!current) throw new CodexSubscriptionError('AI_SUBSCRIPTION_NOT_CONNECTED', '尚未连接 ChatGPT 订阅', 409);
     if (!force && current.expiresAt > this.now() + REFRESH_LEEWAY_MS) return current;
-    const pending = this.refreshing.get(userId);
+    const pending = this.refreshing.get(subject);
     if (pending) return pending;
     const job = (async () => {
       const tokens = await this.tokenRequest({ grant_type: 'refresh_token', refresh_token: current.refreshToken, client_id: CODEX_CLIENT_ID });
       const next = this.toCredentials(tokens, current);
-      this.write(userId, next);
+      this.write(subject, next);
       return next;
-    })().finally(() => this.refreshing.delete(userId));
-    this.refreshing.set(userId, job);
+    })().finally(() => this.refreshing.delete(subject));
+    this.refreshing.set(subject, job);
     return job;
   }
 
-  private buildBody(input: LlmCompletionInput) {
+  private buildBody(input: LlmCompletionInput, reasoning: CodexReasoningEffort) {
     const conversation = input.messages.filter(m => m.role !== 'system');
     const extraSystem = input.messages.filter(m => m.role === 'system').map(m => m.content);
     return {
@@ -394,18 +394,19 @@ export class CodexSubscriptionService {
       })),
       stream: true,
       store: false,
-      reasoning: { effort: this.reasoning, summary: 'auto' },
+      reasoning: { effort: reasoning, summary: 'auto' },
       include: [],
     };
   }
 
-  async complete(userId: string, input: LlmCompletionInput): Promise<string> {
+  async complete(subject: string, input: LlmCompletionInput, options: { reasoning?: CodexReasoningEffort } = {}): Promise<string> {
     this.requireEnabled();
-    let credentials = await this.fresh(userId);
-    let res = await this.send(credentials, input);
+    const reasoning = options.reasoning ?? this.reasoning;
+    let credentials = await this.fresh(subject);
+    let res = await this.send(credentials, input, reasoning);
     if (res.status === 401) {
-      credentials = await this.fresh(userId, true);
-      res = await this.send(credentials, input);
+      credentials = await this.fresh(subject, true);
+      res = await this.send(credentials, input, reasoning);
     }
     if (!res.ok) {
       const body = await res.text().catch(() => '');
@@ -419,7 +420,7 @@ export class CodexSubscriptionService {
     return input.jsonMode ? stripJsonFence(text) : text;
   }
 
-  private send(credentials: CodexCredentials, input: LlmCompletionInput) {
+  private send(credentials: CodexCredentials, input: LlmCompletionInput, reasoning: CodexReasoningEffort) {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
@@ -429,7 +430,7 @@ export class CodexSubscriptionService {
       'User-Agent': this.userAgent(),
     };
     if (credentials.residency && credentials.residency !== 'no_constraint') headers['x-openai-internal-codex-residency'] = credentials.residency;
-    return this.fetchImpl(RESPONSES_URL, { method: 'POST', signal: input.signal, headers, body: JSON.stringify(this.buildBody(input)) });
+    return this.fetchImpl(RESPONSES_URL, { method: 'POST', signal: input.signal, headers, body: JSON.stringify(this.buildBody(input, reasoning)) });
   }
 
   private async readStream(res: Response, input: LlmCompletionInput): Promise<string> {
@@ -491,6 +492,15 @@ export class CodexSubscriptionService {
     return text || completedText;
   }
 }
+
+/**
+ * 凭据主体：
+ *   - 平台 AI（报价审阅、汇总、对账、业务问答等固定流程）共用一个平台连接，由管理员连接；
+ *     测试期为管理员个人 ChatGPT 订阅，生产期改为企业 API。
+ *   - 个人连接只供后续"工作助手"（本机 Agent）使用，不被平台 AI 调用。
+ */
+export const PLATFORM_SUBJECT = 'platform';
+export const personalSubject = (userId: string) => `user:${userId}`;
 
 let shared: CodexSubscriptionService | null = null;
 export function codexSubscriptions(): CodexSubscriptionService {
