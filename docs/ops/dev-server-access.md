@@ -23,11 +23,13 @@
 
 ## 运维通道用法
 
-工作流：`.github/workflows/bambook-dev-ops.yml`（在 `ops-channel` 分支上生效）。
+工作流：`.github/workflows/bambook-dev-ops.yml`（在 `ops-channel` 分支上生效；main 上的副本改动后要同步到 `ops-channel` 才起作用）。
 
 1. 在 `ops-channel` 分支上更新 `ops/request.sh`，内容是要在服务器上以 `bambook-ops` 执行的 bash 脚本（需要 root 时用 `sudo`）。用 GitHub MCP `push_files` / `create_or_update_file` 提交即可，记下返回的提交 SHA。
-2. 等约 30–90 秒（排队串行执行，单次最长 15 分钟）。
-3. 读取 `ops-channel` 分支上的 `ops/results/<提交SHA>.md`（或 `ops/last-result.md`），里面有退出码、耗时、Actions 运行链接和脱敏后的输出。文件不存在说明还在运行。
+2. 等约 30–90 秒（排队串行执行，单次最长 15 分钟）。不要固定休眠：先做别的，再按 SHA 查结果。
+3. 读取 `ops-channel` 分支上的 `ops/results/<提交SHA>.md`，里面有请求 SHA、请求脚本 `request-sha256`、退出码、耗时、Actions 运行链接和脱敏后的输出。以 `results/<SHA>.md` 为准；`last-result.md` 可能已是别的请求。
+   - 工作流按触发提交本身读取请求（不读分支最新），读不到或脚本为空直接失败，回执写 `exit: not run`，不会报成功。
+   - GitHub 同一并发组只保留最新一个排队运行：连续快速推送时，中间的请求可能被取消、没有结果文件。没有结果且已有更新请求的结果时，重新提交。
 4. 只接受仓库所有者账号推送触发；分支上不放其他代码，不要合入 main。
 
 常用片段：

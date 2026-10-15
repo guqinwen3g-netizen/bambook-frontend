@@ -36,7 +36,7 @@
 | 开发服务器 `/srv/bambook-dev/current` | 随 main 自动部署，以运维通道 `readlink -f` 为准 | 已验证 `349db8d`、`6a72104` 自动部署成功，服务 active、健康 200 |
 | 正式环境 | 不在范围，未触碰 | — |
 
-**自动部署**（PR #33）：main 推送触发的 `Mist verification` 成功后，`Bambook development delivery` 经 `workflow_run` 部署该次 `head_sha`；要求该提交 `verify` check 成功，且只部署 main 最新提交（落后的运行直接失败，不回滚）。PR 上的验证不部署。服务器端 `npm ci` + `prisma generate` + `tsc` 约 15 分钟；交付作业超时已由 20 分钟提到 45 分钟（PR #36，首次自动部署 run 21 因此被 GitHub 取消但服务器已激活）。receiver 的发布脚本自身有 900 秒上限，构建再变慢需关注。
+**自动部署**（PR #33）：main 推送触发的 `Mist verification` 成功后，`Bambook development delivery` 经 `workflow_run` 部署该次 `head_sha`；要求该提交 `verify` check 成功，且只部署 main 最新提交（落后的运行直接失败，不回滚）。PR 上的验证不部署。服务器端 `npm ci` + `prisma generate` + `tsc` 约 15 分钟；交付作业超时已由 20 分钟提到 45 分钟（PR #36，首次自动部署 run 21 因此被 GitHub 取消但服务器已激活）。内外层超时已统一（发布脚本 2100 秒 < ssh 2280 秒 < 作业 50 分钟），超时会结束子进程并按标记回切，见 [开发环境部署](deployment/bambook-development.md)。
 
 **每次合入后核对**：经运维通道核对 `readlink -f /srv/bambook-dev/current` 指向新 main SHA、两个服务 active、健康接口 200。
 

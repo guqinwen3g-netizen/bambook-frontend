@@ -7,6 +7,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tarfile
@@ -15,6 +16,14 @@ import tempfile
 ROOT = Path('/srv/bambook-dev')
 LIMIT = 64 * 1024 * 1024
 EXPANDED_LIMIT = 512 * 1024 * 1024
+# Time budget (keep in sync with bambook-dev-deploy.yml): release script <= ACTIVATE_TIMEOUT
+# < ssh `timeout` on the runner < delivery job timeout-minutes.
+ACTIVATE_TIMEOUT = 2100
+KILL_GRACE = 30
+# Written by bambook-dev-release.sh right before it switches `current`; removed once the
+# switch is healthy or rolled back. Present after a kill = interrupted switch to undo here.
+MARKER = ROOT / '.activation.json'
+SERVICES = ('bambook-dev.service', 'bambook-dev-mist.service')
 REQUIRED = {'.nvmrc', 'server/package.json', 'server/package-lock.json', 'server/src/index.ts', 'server/src/mist/standalone.ts', 'scripts/deploy/bambook-dev-release.sh', 'web/index.html'}
 
 def validate_members(members):
@@ -79,6 +88,47 @@ def receive(sha):
         unpacked.rename(target)
         print(json.dumps({'received': sha, 'sha256': fingerprint}))
 
+def recover_interrupted(reason):
+    """Undo a half-finished switch: point `current` back to the recorded previous release."""
+    if not MARKER.is_file():
+        return
+    state = json.loads(MARKER.read_text())
+    previous = state.get('previous') or ''
+    current = ROOT / 'current'
+    if previous and re.fullmatch(str(ROOT / 'releases') + r'/[0-9a-f]{40}', previous) and Path(previous).is_dir():
+        staging = ROOT / '.current-recover'
+        if staging.is_symlink() or staging.exists():
+            staging.unlink()
+        staging.symlink_to(previous)
+        os.replace(staging, current)
+        restored = previous
+    else:
+        if current.is_symlink():
+            current.unlink()
+        restored = None
+    for unit in SERVICES:
+        subprocess.run(['sudo', '-n', '/usr/bin/systemctl', 'restart' if restored else 'stop', unit], check=False, timeout=120)
+    MARKER.unlink()
+    print(f'Recovered ({reason}): current -> {restored or "none"}', file=sys.stderr)
+
+def activate(release):
+    # Own process group, so a timeout stops npm / prisma / tsc grandchildren too, not just bash.
+    child = subprocess.Popen(['/bin/bash', str(release / 'scripts/deploy/bambook-dev-release.sh'), str(release)], start_new_session=True)
+    try:
+        code = child.wait(timeout=ACTIVATE_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        os.killpg(child.pid, signal.SIGTERM)
+        try:
+            child.wait(timeout=KILL_GRACE)
+        except subprocess.TimeoutExpired:
+            os.killpg(child.pid, signal.SIGKILL)
+            child.wait()
+        recover_interrupted('activation timed out')
+        raise ValueError(f'activation exceeded {ACTIVATE_TIMEOUT}s and was stopped; the previous release stays active')
+    if code != 0:
+        recover_interrupted('release script failed')
+        raise ValueError(f'release script exited with {code}')
+
 def main():
     command = os.environ.get('SSH_ORIGINAL_COMMAND', '')
     if command == 'check':
@@ -98,7 +148,8 @@ def main():
             release = ROOT / 'releases' / sha
             if not (release / '.delivery.json').is_file():
                 raise ValueError('revision was not received')
-            subprocess.run(['/bin/bash', str(release / 'scripts/deploy/bambook-dev-release.sh'), str(release)], check=True, timeout=900)
+            recover_interrupted('a previous activation was interrupted')
+            activate(release)
 
 if __name__ == '__main__':
     try:

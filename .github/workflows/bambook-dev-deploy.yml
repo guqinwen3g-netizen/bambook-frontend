@@ -45,8 +45,10 @@ jobs:
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
       github.event_name == 'workflow_run'
     runs-on: ubuntu-latest
-    # Server-side install + prisma generate + tsc on the small dev VM takes ~15 min; 20 cancelled run 21 mid-activation.
-    timeout-minutes: 45
+    # Time budget, innermost first: release script <= 2100 s (receiver ACTIVATE_TIMEOUT, then the receiver
+    # stops the whole process group and restores the previous release) < 2280 s ssh `timeout` below
+    # < 50 min job (also covers checkout, frontend build and upload). Server build alone is ~15 min today.
+    timeout-minutes: 50
     env:
       DEPLOY_HOST: 124.222.56.61
       DEPLOY_USER: bambook-deploy
@@ -121,7 +123,7 @@ jobs:
           tar -c -C "$stage" --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner .nvmrc server scripts web | gzip -n > "$RUNNER_TEMP/backend.tar.gz"
           ssh_options=(-i "$RUNNER_TEMP/bambook-ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/bambook-ssh/known_hosts" -o ConnectTimeout=15)
           ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "receive $RELEASE_SHA" < "$RUNNER_TEMP/backend.tar.gz"
-          ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "activate $RELEASE_SHA"
+          timeout 2280 ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "activate $RELEASE_SHA"
       - name: Remove temporary credentials
         if: always()
         run: rm -rf "$RUNNER_TEMP/bambook-ssh"
