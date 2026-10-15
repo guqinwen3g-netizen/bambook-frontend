@@ -139,6 +139,27 @@ def parse_url(line):
         return o
     raise ValueError(f'unsupported scheme: {scheme}')
 
+def from_shadowrocket(it):
+    """Shadowrocket node export: {"type": "Socks5", "host": ..., "port": ..., "user": ..., "password": ...}."""
+    kind = str(it.get('type', '')).lower().replace('-', '')
+    host, port = it['host'], int(it['port'])
+    user, pw = it.get('user') or '', it.get('password') or ''
+    if kind in ('socks5', 'socks'):
+        o = {'type': 'socks', 'server': host, 'server_port': port, 'version': '5'}
+        if user: o.update(username=user, password=pw)
+        return o
+    if kind in ('http', 'https'):
+        o = {'type': 'http', 'server': host, 'server_port': port}
+        if user: o.update(username=user, password=pw)
+        if kind == 'https': o['tls'] = {'enabled': True, 'server_name': it.get('peer') or host}
+        return o
+    if kind in ('shadowsocks', 'ss'):
+        return {'type': 'shadowsocks', 'server': host, 'server_port': port, 'method': it.get('method') or 'aes-256-gcm', 'password': pw}
+    if kind == 'trojan':
+        return {'type': 'trojan', 'server': host, 'server_port': port, 'password': pw,
+                'tls': {'enabled': True, 'server_name': it.get('peer') or host}}
+    raise ValueError(f'Shadowrocket node type {it.get("type")!r} not supported; please export a share URL instead')
+
 def from_json(data):
     if isinstance(data, dict) and isinstance(data.get('outbounds'), list):
         obs = [o for o in data['outbounds'] if o.get('type') not in ('direct', 'block', 'dns', 'selector', 'urltest', None)
@@ -151,6 +172,8 @@ def from_json(data):
     for it in items:
         if isinstance(it, str):
             out.append(parse_url(it)); continue
+        if isinstance(it.get('type'), str) and 'host' in it and 'port' in it:
+            out.append(from_shadowrocket(it)); continue
         for k in ('url', 'uri', 'link', 'shareLink'):
             if isinstance(it.get(k), str) and '://' in it[k]:
                 out.append(parse_url(it[k])); break
