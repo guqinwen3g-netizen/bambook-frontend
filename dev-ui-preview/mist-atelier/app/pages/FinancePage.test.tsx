@@ -5,6 +5,7 @@ import {beforeEach,afterEach,it,expect,vi} from 'vitest';
 import {getByRole,getAllByRole,getByText,getAllByText,getByLabelText} from '@testing-library/dom';
 import {MistRoot,ToastProvider} from '../../../../components/mist';
 import {createMistState,applyMistCommand} from '../../../../server/src/shared/mistWorkspace';
+import {platformBusinessDate} from '../../../../server/src/shared/mistPlatform';
 import {Nav} from '../nav';
 const store=vi.hoisted(()=>({value:null as any}));
 vi.mock('../runtime/workspace',()=>({useMistWorkspace:()=>store.value}));
@@ -12,7 +13,7 @@ vi.mock('../runtime/auth',()=>({useMistSession:()=>({hasPermission:()=>store.val
 import {FinancePage,parseMistReceiptCsv,financeAllocationAmount} from './FinancePage';
 let host:HTMLElement,root:Root,route:{view:string;id?:string;section?:string;customerId?:string};const go=vi.fn();
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;
-const today=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
+const today=()=>platformBusinessDate(new Date());
 function render(){act(()=>root.render(<MistRoot><ToastProvider><Nav.Provider value={{route,go,theme:'light',toggleTheme:vi.fn(),openAI:vi.fn(),openPalette:vi.fn()}}><FinancePage/></Nav.Provider></ToastProvider></MistRoot>));}
 async function click(name:string){await act(async()=>getAllByRole(document.body,'button',{name})[0].click());}
 function input(label:string,value:string){const control=getByLabelText(document.body,new RegExp('^'+label)) as HTMLInputElement;act(()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(control,value);control.dispatchEvent(new Event('input',{bubbles:true}));});}
