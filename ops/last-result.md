@@ -1,47 +1,51 @@
-request: a038d2c0e63d24670c180cb81f91caf4a8b4641f
+request: 643095982618394f989c52a06a9df514c21d06a8
 exit: 0
-seconds: 20
-finished: 2026-10-15T16:47:02Z
-run: https://github.com/guqinwen3g-netizen/bambook-main/actions/runs/38771806146
+seconds: 17
+finished: 2026-10-15T16:50:49Z
+run: https://github.com/guqinwen3g-netizen/bambook-main/actions/runs/38772322854
 ---
-mail-probe-1
-== os
-Ubuntu 26.04 LTS
-7.0.0-30-generic
-4
-               total        used        free      shared  buff/cache   available
-Mem:            3718        1178        1722          61        1166        2539
-/dev/vda3        39G  8.5G   29G  23% /
-== ip
-
-124.222.56.61
-== listen
-Local Peer
-127.0.0.1:5432 
-127.0.0.1:8082 
-127.0.0.1:8080 
-127.0.0.1:8081 
-0.0.0.0:22 
-127.0.0.1:20241 
-127.0.0.53%lo:53 
-127.0.0.1:7890 
-127.0.0.54:53 
-[::]:22 
-[::1]:5432 
-== tools
-docker: no
-podman: no
-nginx: /usr/sbin/nginx
-caddy: no
-postfix: no
-dovecot: no
-certbot: no
-== outbound 25
-gmail-smtp-in.l.google.com:25 blocked
-mx1.qq.com:25 blocked
-== outbound 587
-open
-== firewall
-== whoami
-uid=1003(bambook-ops) gid=1003(bambook-ops) groups=1003(bambook-ops)
-sudo-ok
+mail-probe-2
+== apt
+postfix:
+  Candidate: 3.10.6-4ubuntu2.2
+dovecot-core:
+  Candidate: 1:2.4.2+dfsg1-3ubuntu2.1
+dovecot-imapd:
+  Candidate: 1:2.4.2+dfsg1-3ubuntu2.1
+dovecot-lmtpd:
+  Candidate: 1:2.4.2+dfsg1-3ubuntu2.1
+opendkim:
+  Candidate: 2.11.0~beta2-9.2build1
+== net
+https://github.com 200
+fail
+https://deb.debian.org 200
+https://acme-v02.api.letsencrypt.org/directory 200
+== cloudflared
+active
+config.yml
+edc46df0-8012-44c4-a4e4-ced930c6f5b9.json
+== ingress
+tunnel: edc46df0-8012-44c4-a4e4-ced930c6f5b9
+ingress:
+  - hostname: bambook-dev.sylway.cloud
+    service: http://127.0.0.1:8080
+  - service: http_status:404
+== shared
+total 64
+drwxr-xr-x 10 bambook-deploy bambook-deploy 4096 Oct 15 18:53 .
+drwxr-xr-x  4 bambook-deploy bambook-deploy 4096 Oct 16 00:50 ..
+-rw-r--r--  1 bambook-deploy bambook-deploy  768 Oct 15 16:25 activate.log
+-rw-r--r--  1 bambook-deploy bambook-deploy  917 Oct 15 16:56 activate3.log
+-rw-r--r--  1 bambook-deploy bambook-deploy  677 Oct 15 17:01 activate4.log
+-rw-r--r--  1 bambook-deploy bambook-deploy  677 Oct 15 17:10 activate5.log
+-rw-r--r--  1 bambook-deploy bambook-deploy  690 Oct 15 18:47 activate6.log
+drwx------  2 bambook-deploy bambook-deploy 4096 Oct 15 18:25 ai-subscriptions
+drwxr-x---  2 bambook-deploy bambook-deploy 4096 Oct 15 16:51 data
+drwxr-x---  2 bambook-deploy bambook-deploy 4096 Oct 16 00:11 logs
+drwx------  4 bambook-deploy bambook-deploy 4096 Oct 15 18:57 mist-files
+drwxr-x---  2 bambook-deploy bambook-deploy 4096 Oct 15 16:59 output
+drwx------  3 bambook-deploy bambook-deploy 4096 Oct 15 16:55 private-files
+drwxr-x---  2 bambook-deploy bambook-deploy 4096 Oct 15 16:51 storage
+-rw-------  1 root           root            580 Oct 15 16:39 test-accounts.txt
+drwx------  3 bambook-deploy bambook-deploy 4096 Oct 15 17:01 uploads
