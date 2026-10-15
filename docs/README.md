@@ -35,6 +35,7 @@
 | 如何开工与接力 | [项目首页](../README.md) + [当前工作规则](../AGENTS.md) + [进度停点](mist-atelier/LIVE-PROGRESS.md) | 以接力为主；完成的小批次及时经 PR 合入，详细证据留在 PR |
 | Agent 能力边界 | `docs/design/04-模块设计/07-AI助手/Agent能力分层L0-L6.md` + `写操作工具集.md` + `审批与human-in-the-loop.md` | L0-L6 分层 + ProcessDraft 三阶段幂等闭环 |
 | 部署背景在哪里 | [部署拓扑记录](design/08-集成与边界/OPSPanel与MacMini部署拓扑.md) | 作为背景参考；实际部署方式与当前环境需另行核实，不能据旧说明直接执行 |
+| 开发后端怎样从 GitHub 交付 | [腾讯云开发交付通道](deployment/bambook-development.md) | 专用 SSH 账号、主线手动触发；通道检查与应用上线分开 |
 | 成功指标怎么定 | `docs/design/09-路线图与技术债务/成功指标.md` | B1-B4 / S1-S3 定义与阈值 |
 | 外部集成 / 移动端 | `docs/design/08-集成与边界/`（5 篇全为长期契约） | Webhook / 开放 API / QC PWA 边界 |
 | 工作区纪律 | `docs/WORKSPACE_HYGIENE.md` | 版本化资产边界，长期生效 |

@@ -43,7 +43,8 @@ async function main() {
 
   // 2) 已有任意 active 账号 → 视为非空库，避免误注入重复管理员
   const anyActive = await prisma.userAccount.count({ where: { status: 'active', deletedAt: null } });
-  if (anyActive > 0) {
+  // 开发环境初始化脚本在 seed:base 已建演示账号后调用，可显式放行（仍以 owner 邮箱去重）。
+  if (anyActive > 0 && process.env.SEED_OWNER_ALLOW_NONEMPTY !== '1') {
     console.log(`[seed-empty-owner] 该库已有 ${anyActive} 个 active 账号，跳过注入以保持数据纯净。`);
     await prisma.$disconnect();
     return;

@@ -2105,7 +2105,9 @@ loadAgentApiKeyActors(prisma, SDK_CONFIG.apiKeys)
             logger.error('[workflow] initialization failed; API startup aborted', { error: workflowStartup.error });
             process.exit(1);
         }
-        app.listen({ port: Number(PORT), ...(process.env.BAMBOOK_ACCEPTANCE_SANDBOX ? { host: '127.0.0.1' } : {}) }, () => {
+        // BAMBOOK_HOST 显式指定监听地址（开发服务器只监听回环，由 nginx/隧道转入）；未设置时行为不变。
+        const listenHost = process.env.BAMBOOK_HOST?.trim() || (process.env.BAMBOOK_ACCEPTANCE_SANDBOX ? '127.0.0.1' : undefined);
+        app.listen({ port: Number(PORT), ...(listenHost ? { host: listenHost } : {}) }, () => {
     logger.info(`Sovereign Neural Core Online on port ${PORT}`);
     logger.info('Database Connection: Postgres via Prisma');
     logger.info(`SDK API: ${SDK_CONFIG.requireAuth ? 'Protected (API Key Required)' : 'Open (Local Access)'}`);
