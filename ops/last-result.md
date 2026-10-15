@@ -1,43 +1,22 @@
-request: e1a59305b1e9962fe81354010ac9b2502b5f803a
+request: 656e975e5b029c4383bade0febd95df82356b43a
 exit: 0
-seconds: 44
-finished: 2026-10-15T16:54:50Z
-run: https://github.com/guqinwen3g-netizen/bambook-main/actions/runs/38772804780
+seconds: 18
+finished: 2026-10-15T16:56:50Z
+run: https://github.com/guqinwen3g-netizen/bambook-main/actions/runs/38773144079
 ---
-mail-install-1
-apt-ok
-useradd warning: vmail's uid 5000 is greater than SYS_UID_MAX 999
-accounts: sales@sylway.cloud finance@sylway.cloud customer-demo@sylway.cloud factory-demo@sylway.cloud
-== doveconf
-doveconf-ok
-== postfix check
-updating /etc/localtime => /var/spool/postfix//etc/localtime
-updating /etc/services => /var/spool/postfix//etc/services
-updating /etc/resolv.conf => /var/spool/postfix//etc/resolv.conf
-updating /etc/hosts => /var/spool/postfix//etc/hosts
-updating /etc/host.conf => /var/spool/postfix//etc/host.conf
-updating /etc/nsswitch.conf => /var/spool/postfix//etc/nsswitch.conf
-updating /usr/lib/x86_64-linux-gnu/libnss_systemd.so.2 => /var/spool/postfix//usr/lib/x86_64-linux-gnu/libnss_systemd.so.2
-postfix/postlog: warning: not owned by root: /var/spool/postfix/etc/resolv.conf
-postfix-ok
-active
-active
-127.0.0.1:143
-127.0.0.1:25
-127.0.0.1:993
-127.0.0.1:587
-Oct 16 00:54:33 VM-0-17-ubuntu systemd[1]: Started dovecot.service - Dovecot IMAP/POP3 email server.
-Oct 16 00:54:39 VM-0-17-ubuntu systemd[1]: Stopping dovecot.service - Dovecot IMAP/POP3 email server...
-Oct 16 00:54:39 VM-0-17-ubuntu dovecot[204747]: master: Warning: Killed with signal 15 (by pid=205139 uid=0 code=kill)
-Oct 16 00:54:39 VM-0-17-ubuntu systemd[1]: dovecot.service: Deactivated successfully.
-Oct 16 00:54:39 VM-0-17-ubuntu systemd[1]: Stopped dovecot.service - Dovecot IMAP/POP3 email server.
-Oct 16 00:54:39 VM-0-17-ubuntu systemd[1]: Starting dovecot.service - Dovecot IMAP/POP3 email server...
-Oct 16 00:54:39 VM-0-17-ubuntu dovecot[205144]: master: Dovecot v2.4.2 (0962ed2104) starting up for imap, lmtp (core dumps disabled)
-Oct 16 00:54:39 VM-0-17-ubuntu systemd[1]: Started dovecot.service - Dovecot IMAP/POP3 email server.
-Oct 16 00:54:47 VM-0-17-ubuntu systemd[1]: Stopping dovecot.service - Dovecot IMAP/POP3 email server...
-Oct 16 00:54:47 VM-0-17-ubuntu dovecot[205144]: master: Warning: Killed with signal 15 (by pid=206021 uid=0 code=kill)
-Oct 16 00:54:48 VM-0-17-ubuntu systemd[1]: dovecot.service: Deactivated successfully.
-Oct 16 00:54:48 VM-0-17-ubuntu systemd[1]: Stopped dovecot.service - Dovecot IMAP/POP3 email server.
-Oct 16 00:54:48 VM-0-17-ubuntu systemd[1]: Starting dovecot.service - Dovecot IMAP/POP3 email server...
-Oct 16 00:54:48 VM-0-17-ubuntu dovecot[206027]: master: Dovecot v2.4.2 (0962ed2104) starting up for imap, lmtp (core dumps disabled)
-Oct 16 00:54:48 VM-0-17-ubuntu systemd[1]: Started dovecot.service - Dovecot IMAP/POP3 email server.
+mail-test-1
+sales->customer: sent
+customer->sales: sent
+spoof From/sender mismatch: rejected: {'sales@sylway.cloud': (553, b'5.7.1 <finance@sylway.cloud>: Sender address rejected: not owned by user customer-demo@sylway.cloud')}
+external gmail: rejected: {'someone@gmail.com': (550, b'5.7.1 <someone@gmail.com>: Recipient address rejected: external delivery is not enabled on bambook-dev yet')}
+bad password: rejected
+imap customer-demo@sylway.cloud hits for tag: 1
+  folders: Drafts Sent Trash Junk INBOX
+imap sales@sylway.cloud hits for tag: 1
+  folders: Drafts Sent Trash Junk INBOX
+== queue
+Mail queue is empty
+== log
+Oct 16 00:56:35 VM-0-17-ubuntu postfix/submission/smtpd[206695]: NOQUEUE: reject: RCPT from localhost[127.0.0.1]: 550 5.7.1 <someone@gmail.com>: Recipient address rejected: external delivery is not enabled on bambook-dev
+Oct 16 00:56:35 VM-0-17-ubuntu postfix/lmtp[206702]: 3AA0FA9524: to=<customer-demo@sylway.cloud>, relay=mail.sylway.cloud[private/dovecot-lmtp], delay=0.05, delays=0.01/0.01/0.01/0.02, dsn=2.0.0, status=sent (250 2.0.0 <
+Oct 16 00:56:35 VM-0-17-ubuntu postfix/lmtp[206705]: 3E551A9526: to=<sales@sylway.cloud>, relay=mail.sylway.cloud[private/dovecot-lmtp], delay=0.05, delays=0.01/0.01/0.01/0.02, dsn=2.0.0, status=sent (250 2.0.0 <sales@sy
