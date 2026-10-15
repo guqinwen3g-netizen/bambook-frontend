@@ -300,6 +300,9 @@ it('不等票付款：已确认结算可写明未收票原因申请先付，经�
   expect(getByRole(host, 'table', { name: '供应商应付汇总' }).textContent).toContain('已付未收票');
   await click(/供应商付款 ·/);
   expect(getByRole(host, 'table', { name: '供应商付款' }).textContent).toContain('已付未收票');
+  const bill = actAs('finance', { type: 'payable.bill.register', payload: { supplierId: po.supplierId, invoiceNo: 'VAT-LATE', invoiceDate: '2026-10-15', currency: po.currency, amount, taxAmount: 0, lines: [{ purchaseId: po.id, amount, settlementId: st.id }], due: '2026-11-14', dueBasis: '月结' } });
+  route = { view: 'payment-vouchers', section: 'payables', id: bill.id }; render();
+  expect(host.textContent).toContain('先付抵扣（不等票付款）'); expect(host.textContent).toContain('按结算先付的款已自动抵扣');
 });
 
 it('历史付款补登：计划详情按凭证补登，不走审批，记为历史补登', async () => {
