@@ -12,6 +12,34 @@
 - **开发服务器**：main 验证成功后自动部署（PR #33）；已验证 `349db8d`、`6a72104` 自动部署成功。核对方式见 [开发服务器访问](../ops/dev-server-access.md)。
 - **停止点**：第 3 项财务剩余缺口完成（#32 / #34 / #35，单测、页面测试、本地 `dev:mist` 浏览器检查；未在开发服务器做人工验收）。另修：账户期初 / 锁汇结汇“不能晚于今天”和付款冲回凭证日期原按 UTC 日期，北京时间 0–8 点会误拒，已改按上海业务日（其他模块仍有同类 UTC 截取，待统一）。未做：汇兑损益 / 敞口报表、附件、导入时指定账户、账户停用。下一项：第 4 项智能邮箱真实收发，需用户提供测试邮箱（凭据只进服务器环境变量）；若暂无邮箱，可先做第 5 项平台类模块。
 
+## 当前交接 · 工作助手 P1（云端 Agent 续接）
+
+### 检查点 · 2026-10-15 · 异步修复、测试补齐与本地验收（待 CI 与用户确认）
+
+- **代码入口**：分支 `feat/work-assistant-p1`，[草稿 PR #25](https://github.com/guqinwen3g-netizen/bambook-main/pull/25)；基线 main `9955ee0`。目标、范围与长期约束同上一检查点（方案第 6、7、12 节；不改岗位矩阵；不部署、不动真实资金、不做外部客户动作；最新 head 完整 CI 成功并经用户再次确认后才以 merge commit 合入）。
+- **本次修复（`WorkAssistantPage.tsx`）**：scope（账号 / 会话 / 工作区）切换时同时释放 `sending`，旧 send 迟到结果按 scope 丢弃；初始化在 `host.status` 返回后先检查 cancelled 再 `account.select`，迟到初始化不会选回旧账号；`open()`、删除会话、确认作答的错误回调只在原 scope / 原会话内回写。服务端 `route.ts` 补委托工作区列表的类型标注（server 类型检查原先失败）。
+- **新增 / 更新测试**：
+  - 页面 `WorkAssistantPage.test.tsx` 12 项：补工作区 / 导航 / 委托 API mock 后原 4 项恢复（断言未降低，run.start 现带 accountKey / workspaceId；host 失败后须再收到 running 才可发送）。新增本人会话签发且只把短期令牌交给 host、到期前 10 分钟自动续签、`delegation_needed` 去重与忽略他空间事件、签发失败与重新连接、无 `ai:chat` 不签发、换空间清授权并丢弃旧空间迟到委托、卸载撤下授权、host 重启后重签、发送中切换不卡发送、迟到初始化不选回旧账号、迟到会话读取错误不串入新会话、业务引用白名单 / 伪造 view / 外链 / javascript 不成链接、点击回到原记录。撤掉本次修复复跑时，对应 3 项失败，可证明测试覆盖了已知问题。
+  - host `electron/assistant/__tests__/serviceDelegation.test.ts` 7 项：委托只在内存且不落盘、切账号后旧账号迟到续签被拒且切回不复活；同空间续签不取消运行且后续工具调用使用新令牌、事件不含令牌；换空间取消运行；运行中委托过期发 `delegation_needed` 且不访问服务端；旧空间会话不能在新空间续聊、不能冒用旧空间；凭据异步读取期间切账号不启动旧运行；清授权取消运行。
+  - 服务端 `agentDelegation.test.ts` 11 项补断言：委托读工作区列表只含 `id/name/revision`；委托头访问本地 `GET/POST /api/mist/session` 均 403、不下发 Cookie、`no-store`；普通本人 Cookie 仍读完整工作区列表与本人会话（不回归）。
+- **桌面来源核对**：`bindDelegationOrigin` 取主框架 HTTP(S) origin。`electron-vite dev`（`ELECTRON_RENDERER_URL`）及服务器托管页面可配合；打包产物 `loadFile(file://)` 会被拒绝。Mist 运行时的 `/api/mist/*`（会话、工作区、审批、委托签发）本来就是同源相对请求，`file://` 下同样无法访问服务器，因此不为委托单独放宽来源限制。正式桌面形态需另行确定 Mist 的加载来源（HTTP(S) 托管或受控自定义协议 + 主进程固定 API 来源），属于后续待决定项，本批不改。
+
+#### 实际验证（本检查点）
+
+- 本地完整 `npm run verify:mist`：Mist / assistant / server 类型检查通过；根测试 75 文件 / 898 项、server Mist 测试 44 文件 / 628 项、tooling 4 项通过；`npm run build` 通过。`mist:check` 首次因新测试字符串含 `alert(` 触发 no-alert 守门，已改为 `javascript:void(0)`，复跑 0 error / 0 warning，页面测试复跑 12 项通过。`npx electron-vite build` 通过。
+- 本地 `dev:mist`（3001 + 本地 8082）浏览器检查：真实本地服务签发委托，并由真实 agent query / related 接口取回订单与关联链接；本机 host 用页面内**模拟桥**（不是真实 host 进程，也不是真实模型）。浅 / 深 × 1440 / 1180 / 390 正常态，1440 空态，1440 / 390 授权失败态：无横向溢出、组件不出界，深色卡片取深色 token，白名单引用渲染为 4 个链接，伪造引用保持为文本；点击引用进入 `orders/detail` 原记录，浏览器返回后回到工作助手。截图只保存在本地，未入库；云端图片查看工具故障，本 Agent 未能目视审阅截图，**视觉待用户 / 下一位 Agent 目视确认**。
+- **未验**：真实模型的只读查询 / 详情 / 关联与越权验收（云端没有本人模型凭据，未用 mock 代替）；真实 Electron 窗口中 host 进程重启与授权重连（只做了单测与页面模拟）；最新 head 的 GitHub CI 结果以 PR 为准。
+
+#### 下一步
+
+1. 核对 PR #25 最新 head 的完整 CI `verify` 成功（不能用 mergeable 代替）。
+2. 在本机桌面端用本人模型做真实只读验收：sales / finance / qc 各查询、详情、关联，越权类型被拒，到期续签与 host 重启后重连；目视确认浅 / 深三档截图。
+3. 两项通过后向用户汇报，并询问是否以 merge commit 合入；合入后同步首页与本停点。
+
+### 上一检查点 · 2026-10-15 · 用户要求暂停实施并交接（摘要）
+
+服务端 2 小时 HMAC 用途派生只读委托、16 类对象的 query / get / related 及上限、本机 `bambook_query/get/expand` 与内存委托、来源固定、账户 / 空间隔离、前端授权 / 续签 / 引用的初步接线均在该检查点写入；当时遗留的页面异步问题、原页面测试失败和 host / 服务端测试缺口已由上方检查点处理。
+
 ## 当前交接 · 工作助手 P0（已合入 PR #24）
 
 ### 检查点 · 2026-10-15 · 骨架完成
