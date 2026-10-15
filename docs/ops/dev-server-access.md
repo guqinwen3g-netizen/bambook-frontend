@@ -46,7 +46,12 @@ sudo cat /srv/bambook-dev/shared/test-accounts.txt   # 7 个测试账号（仅�
 
 ## 部署
 
-见 `Bambook development delivery` 工作流（PR #26）：在 Actions 手动运行，`check` 只测通道，`deploy` 要求该提交 `verify` 已通过。
+见 `Bambook development delivery` 工作流（PR #26、#33）：
+
+- **自动**：main 推送触发的 `Mist verification` 成功后，经 `workflow_run` 部署该提交；PR 上的验证或验证失败不部署；只部署 main 最新提交，不回滚到旧提交。
+- **手动**：Actions → Run workflow（branch `main`），`check` 只测通道，`deploy` 部署当前 main。
+
+两种方式都要求该提交 `verify` 已通过，结果写成提交状态 `ci/bambook-dev-delivery`。部署后经运维通道核对 `readlink -f /srv/bambook-dev/current`、服务 active 与健康接口。
 
 ## 撤销 / 轮换
 

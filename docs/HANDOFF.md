@@ -36,9 +36,9 @@
 | 开发服务器 `/srv/bambook-dev/current` | `releases/544f1c9…`（旧） | 服务 `bambook-dev`、`bambook-dev-mist` active，`127.0.0.1:8081/api/health` 200 |
 | 正式环境 | 不在范围，未触碰 | — |
 
-**差异原因**：部署流程只能经 GitHub Actions 页面手动 `workflow_dispatch`（mode=deploy，且要求该 main 提交 `verify` check 成功）。当前 GitHub MCP 无 Actions 触发权限，共享浏览器的 GitHub 登录已失效，收尾时未部署。
+**差异原因（已处理）**：原部署流程只能手动 `workflow_dispatch`。PR #33 起改为自动：main 推送触发的 `Mist verification` 成功后，`Bambook development delivery` 经 `workflow_run` 部署该次运行的 `head_sha`；仍要求该提交 `verify` check 成功，且只部署 main 最新提交（落后的运行直接失败，不回滚）。验证失败或 PR 上的验证不会部署。
 
-**接手后要做**：用户同意后，在 Actions → “Bambook development delivery” → Run workflow（branch `main`，mode `deploy`）；完成后经运维通道核对 `readlink -f /srv/bambook-dev/current` 指向新 main SHA、两个服务 active、健康接口 200。`mode=check` 已于 run 38739662842 验证通道可用。
+**每次合入后核对**：经运维通道核对 `readlink -f /srv/bambook-dev/current` 指向新 main SHA、两个服务 active、健康接口 200。`mode=check` 已于 run 38739662842 验证通道可用。
 
 ## 5. 开放 PR 与分支
 
@@ -87,13 +87,13 @@
 - 本地：Node 22；`npm ci && npm ci --prefix server && (cd server && npm exec -- prisma generate) && npm run dev:mist`（前端 3001，本地文件 API 8082）。
 - 验证：`npm run verify:mist`（类型、前后端测试、构建、Mist 规范）；CI 为 `.github/workflows/mist.yml`，PR 状态名 `ci/mist-verify`。
 - 主要目录：`pages/`（Mist 页面）、`runtime/`（前端派生逻辑，如 `workQueue.ts`）、`components/mist/`（组件与 token）、`server/src/shared/mist*.ts`（工作空间命令与规则）、`electron/assistant/`（工作助手）、`scripts/deploy/`（部署）、`docs/`（[文档导航](README.md)）。
-- 工作流：`mist.yml`（verify）、`bambook-dev-deploy.yml`（开发服务器 check / deploy，仅 main 手动）、`bambook-dev-ops.yml`（`ops-channel` 推送 `ops/request.sh` 执行，结果写回 `ops/results/<SHA>.md`）。
+- 工作流：`mist.yml`（verify）、`bambook-dev-deploy.yml`（开发服务器：main 验证通过后自动 deploy；也可手动 check / deploy）、`bambook-dev-ops.yml`（`ops-channel` 推送 `ops/request.sh` 执行，结果写回 `ops/results/<SHA>.md`）。
 - 开发服务器：腾讯云 `https://bambook-dev.sylway.cloud`，服务 `bambook-dev`（主 API）、`bambook-dev-mist`（Mist API 8081/8082，nginx 8080），库 `panda_hub_dev`；测试账号在服务器 `/srv/bambook-dev/shared/test-accounts.txt`（不入库）。所需 SSH 钥匙已存为仓库 Actions secrets（`BAMBOOK_DEV_OPS_SSH_KEY`、`BAMBOOK_DEV_SSH_KEY`、`BAMBOOK_DEV_KNOWN_HOSTS`），Agent 不需要也不应持有私钥。
 - 工具限制：当前 GitHub token 不能建 issue、不能触发 Actions、不能删分支；需要时请用户在网页操作或授权浏览器登录。
 
 ## 9. 已知风险 / 待用户决定
 
-- 开发服务器版本落后 main（第 4 节），部署需用户同意并在 Actions 手动执行。
+- 开发服务器随 main 自动部署（第 4 节）；部署失败时看 Actions 运行与 `ci/bambook-dev-delivery` 状态。
 - #25 等用户真实模型验收；#2 是否关闭。
 - 业务员是否获得 `risk:write`（页面清单 §5.5）。
 - 已合入分支是否批量删除（第 5 节清单）。
