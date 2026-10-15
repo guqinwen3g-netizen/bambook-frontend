@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {applyMistCommand,createMistState,MistCommandError,mistCommandPermission,mistMoneyMinor,type MistCommand,type MistContext} from './mistWorkspace';
+import {applyMistCommand,createMistState,MistCommandError,mistCommandPermission,mistMoneyMinor,mistBankAccountBalances,type MistCommand,type MistContext} from './mistWorkspace';
 const context=()=>{let id=0;return {now:'2026-10-13T08:00:00.000Z',actorName:'验证员',id:()=>`test-${++id}`} satisfies MistContext;};
 function approvedOrderFixture(amount=100){
  const ctx:MistContext={...context(),actorId:'business',authority:{supplier:{},orderReviewerIds:{garment:['reviewer'],fabric:['reviewer']}}};let state=createMistState(ctx,'empty');
@@ -122,6 +122,34 @@ describe('finance reversals keep the original fact and recompute balances',()=>{
   const ctx=context(),s=createMistState(ctx,'empty');s.payments.push({id:'voucher',code:'PAY-1',date:'2026-10-13',payee:'工厂',amount:5,currency:'CNY',ref:'X'});
   s.payables={...(s.payables||{bills:[],payments:[],allocations:[]}),payments:[{id:'sp',paymentId:'voucher'} as any]};
   expect(()=>applyMistCommand(s,{type:'finance.payment.reverse',payload:{paymentId:'voucher',reason:'错'}},ctx)).toThrow('应付页');
+ });
+ it('keeps bank accounts with opening balances and per-flow attribution; balance = opening + receipts - payments',()=>{
+  const ctx=context();let s=createMistState(ctx,'empty');const run=(c:any)=>{const r=applyMistCommand(s,c,ctx);s=r.state;return r.result;};
+  const today=ctx.now.slice(0,10);
+  expect(mistBankAccountBalances(s)).toEqual({accounts:[],unassigned:{receipts:0,payments:0}});
+  expect(()=>run({type:'finance.account.save',payload:{name:'美元户',bankName:'中行',accountNo:'12 34',currency:'USD',openingDate:today,openingBalance:1}})).not.toThrow();
+  const usd=s.bankAccounts![0];expect(usd).toMatchObject({code:'BA-001',accountNo:'1234',currency:'USD',openingBalance:1});
+  expect(()=>run({type:'finance.account.save',payload:{name:'重复',bankName:'中行',accountNo:'1234',currency:'USD',openingDate:today,openingBalance:0}})).toThrow('已登记');
+  expect(()=>run({type:'finance.account.save',payload:{name:'坏',bankName:'中行',accountNo:'99999',currency:'USD',openingDate:today,openingBalance:1.234}})).toThrow('两位小数');
+  run({type:'finance.account.save',payload:{id:usd.id,name:'美元户',bankName:'中行',accountNo:'1234',currency:'USD',openingDate:'2026-01-01',openingBalance:-100.5}});
+  expect(s.bankAccounts![0]).toMatchObject({openingBalance:-100.5,openingDate:'2026-01-01'});
+  run({type:'finance.account.save',payload:{name:'人民币户',bankName:'工行',accountNo:'5678',currency:'CNY',openingDate:'2026-01-01',openingBalance:0}});
+  run({type:'finance.importReceipts',payload:{receipts:[{date:'2026-02-01',payer:'客户',amount:1000,currency:'USD',ref:'R1'},{date:'2025-12-31',payer:'客户',amount:5,currency:'USD',ref:'R0'}]}});
+  run({type:'finance.payment.save',payload:{date:'2026-02-02',payee:'物流',amount:200.25,currency:'USD',ref:'P1'}});
+  const [r1,r0]=s.receipts,p1=s.payments[0],cny=s.bankAccounts![1];
+  expect(()=>run({type:'finance.account.assign',payload:{kind:'receipt',id:r1.id,accountId:cny.id}})).toThrow('币种');
+  expect(()=>run({type:'finance.account.assign',payload:{kind:'receipt',id:r0.id,accountId:usd.id}})).toThrow('期初');
+  run({type:'finance.account.assign',payload:{kind:'receipt',id:r1.id,accountId:usd.id}});run({type:'finance.account.assign',payload:{kind:'payment',id:p1.id,accountId:usd.id}});
+  let b=mistBankAccountBalances(s);expect(b.accounts[0]).toMatchObject({balance:699.25,receipts:1000,payments:200.25,receiptCount:1,paymentCount:1});expect(b.unassigned).toEqual({receipts:1,payments:0});
+  expect(()=>run({type:'finance.account.save',payload:{id:usd.id,name:'美元户',bankName:'中行',accountNo:'1234',currency:'USD',openingDate:'2026-01-01',openingBalance:0}})).toThrow('期初不能修改');
+  run({type:'finance.account.save',payload:{id:usd.id,name:'美元收款户',bankName:'中国银行',accountNo:'1234',currency:'USD',openingDate:'2026-01-01',openingBalance:-100.5}});expect(s.bankAccounts![0].name).toBe('美元收款户');
+  run({type:'finance.payment.reverse',payload:{paymentId:p1.id,reason:'重复'}});expect(s.payments[1].accountId).toBe(usd.id);
+  b=mistBankAccountBalances(s);expect(b.accounts[0].balance).toBe(899.5);
+  expect(()=>run({type:'finance.account.assign',payload:{kind:'receipt',id:r1.id,accountId:null}})).toThrow('调整原因');
+  run({type:'finance.account.assign',payload:{kind:'receipt',id:r1.id,accountId:null,reason:'归错账户'}});expect(s.receipts[0].accountId).toBeUndefined();expect(s.events[0].text).toContain('归错账户');
+  expect(mistBankAccountBalances(s).accounts[0].balance).toBe(-100.5);
+  expect(mistCommandPermission({type:'finance.account.save',payload:{} as any})).toBe('vouchers:write');
+  expect(mistCommandPermission({type:'finance.account.assign',payload:{} as any})).toBe('vouchers:write');
  });
  it('maps reversal permissions to the existing finance scopes',()=>{
   expect(mistCommandPermission({type:'finance.allocation.reverse',payload:{allocationId:'a',reason:'r'}})).toBe('invoices:reconcile');
