@@ -1,0 +1,64 @@
+name: Bambook development delivery
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Check the channel, or deploy the verified main revision
+        required: true
+        default: check
+        type: choice
+        options: [check, deploy]
+permissions:
+  contents: read
+  checks: read
+concurrency:
+  group: bambook-development-delivery
+  cancel-in-progress: false
+jobs:
+  delivery:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DEPLOY_HOST: 124.222.56.61
+      DEPLOY_USER: bambook-deploy
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Require successful application verification for deployment
+        if: inputs.mode == 'deploy'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs" \
+            --jq '.check_runs | any(.name == "verify" and .status == "completed" and .conclusion == "success")' | grep -qx true
+      - name: Configure dedicated SSH identity and pinned host key
+        env:
+          DEPLOY_KEY: ${{ secrets.BAMBOOK_DEV_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.BAMBOOK_DEV_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          mkdir -p "$RUNNER_TEMP/bambook-ssh"
+          printf '%s\n' "$DEPLOY_KEY" > "$RUNNER_TEMP/bambook-ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/bambook-ssh/known_hosts"
+      - name: Check delivery channel
+        run: |
+          ssh -i "$RUNNER_TEMP/bambook-ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/bambook-ssh/known_hosts" \
+            -o ConnectTimeout=15 "$DEPLOY_USER@$DEPLOY_HOST" check
+      - name: Send verified backend and activate release
+        if: inputs.mode == 'deploy'
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git archive --format=tar.gz HEAD server scripts/deploy/bambook-dev-release.sh > "$RUNNER_TEMP/backend.tar.gz"
+          ssh_options=(-i "$RUNNER_TEMP/bambook-ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/bambook-ssh/known_hosts" -o ConnectTimeout=15)
+          ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "receive $GITHUB_SHA" < "$RUNNER_TEMP/backend.tar.gz"
+          ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "activate $GITHUB_SHA"
+      - name: Remove temporary credentials
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/bambook-ssh"
