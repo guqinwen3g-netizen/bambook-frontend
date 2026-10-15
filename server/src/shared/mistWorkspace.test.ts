@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {applyMistCommand,createMistState,MistCommandError,mistMoneyMinor,type MistCommand,type MistContext} from './mistWorkspace';
+import {applyMistCommand,createMistState,MistCommandError,mistCommandPermission,mistMoneyMinor,type MistCommand,type MistContext} from './mistWorkspace';
 const context=()=>{let id=0;return {now:'2026-10-13T08:00:00.000Z',actorName:'验证员',id:()=>`test-${++id}`} satisfies MistContext;};
 function approvedOrderFixture(amount=100){
  const ctx:MistContext={...context(),actorId:'business',authority:{supplier:{},orderReviewerIds:{garment:['reviewer'],fabric:['reviewer']}}};let state=createMistState(ctx,'empty');
@@ -91,3 +91,40 @@ it('requires explicit payer relationship evidence for a different customer name'
  f.run({type:'finance.reconcile',payload:{receiptId,invoiceId,payerBasis:'客户书面确认由母公司代付'}});expect(f.state.allocations[0].payerBasis).toBe('客户书面确认由母公司代付');
 });
 it('does not silently discard identical amounts when no bank reference exists',()=>{const ctx=context(),state=createMistState(ctx,'empty'),row={date:'2026-10-13',payer:'客户',amount:10,currency:'USD',ref:''};const result=applyMistCommand(state,{type:'finance.importReceipts',payload:{receipts:[row,row]}},ctx);expect(result.result).toEqual({imported:2,skipped:0});expect(result.state.receipts).toHaveLength(2);});
+describe('finance reversals keep the original fact and recompute balances',()=>{
+ const setup=()=>{const f=approvedOrderFixture(10),draft=f.run({type:'platform.invoice.save',payload:{orderId:f.orderId,due:'2026-10-13',amount:10,note:'实际合同票据'}}).id!;
+  const invoiceId=f.run({type:'platform.invoice.issue',payload:{id:draft}}).invoiceId as string;
+  f.run({type:'finance.importReceipts',payload:{receipts:[{date:'2026-10-13',payer:'客户公司',amount:10,currency:'USD',ref:'R-1'}]}});const receiptId=f.state.receipts[0].id;
+  f.run({type:'finance.reconcile',payload:{receiptId,invoiceId,amount:10}});return{ctx:f.ctx,s:f.state,receiptId,invoiceId};};
+ it('reverses an allocation with a reason, preserves the original record and restores both balances',()=>{
+  const {ctx,s,receiptId,invoiceId}=setup(),allocation=s.allocations[0];expect(s.receipts[0].state).toBe('matched');
+  expect(()=>applyMistCommand(s,{type:'finance.allocation.reverse',payload:{allocationId:allocation.id,reason:'  '}},ctx)).toThrow('冲回原因');
+  const next=applyMistCommand(s,{type:'finance.allocation.reverse',payload:{allocationId:allocation.id,reason:'核错发票'}},ctx).state;
+  expect(next.allocations).toHaveLength(0);expect(next.financeReversals).toHaveLength(1);
+  expect(next.financeReversals![0]).toMatchObject({kind:'allocation',targetId:allocation.id,reason:'核错发票',allocation});
+  expect(next.receipts.find(r=>r.id===receiptId)).toMatchObject({remaining:10,state:'unmatched'});expect(next.invoices.find(i=>i.id===invoiceId)!.open).toBe(10);
+  expect(next.events[0].text).toContain('核错发票');expect(s.allocations).toHaveLength(1);
+  expect(()=>applyMistCommand(next,{type:'finance.allocation.reverse',payload:{allocationId:allocation.id,reason:'再次'}},ctx)).toThrow('不存在');
+  const again=applyMistCommand(next,{type:'finance.reconcile',payload:{receiptId,invoiceId,amount:4}},ctx).state;
+  expect(again.receipts.find(r=>r.id===receiptId)!.remaining).toBe(6);expect(again.invoices.find(i=>i.id===invoiceId)!.open).toBe(6);expect(again.financeReversals).toHaveLength(1);
+ });
+ it('reverses a finance voucher once with a negative counter voucher and leaves the original untouched',()=>{
+  const ctx=context();let s=createMistState(ctx,'empty');s=applyMistCommand(s,{type:'finance.payment.save',payload:{date:'2026-10-13',payee:'物流商',amount:88.5,currency:'USD',ref:'P-1'}},ctx).state;const original=s.payments[0];
+  expect(original.origin).toBe('finance');
+  const result=applyMistCommand(s,{type:'finance.payment.reverse',payload:{paymentId:original.id,reason:'重复登记'}},ctx);const next=result.state;
+  expect(next.payments).toHaveLength(2);expect(next.payments[0]).toEqual(original);
+  expect(next.payments[1]).toMatchObject({amount:-88.5,currency:'USD',payee:'物流商',reversalOf:original.id});expect(next.payments[1].ref).toContain('重复登记');
+  expect(next.financeReversals![0]).toMatchObject({kind:'payment',targetId:original.id,voucherId:next.payments[1].id});
+  expect(()=>applyMistCommand(next,{type:'finance.payment.reverse',payload:{paymentId:original.id,reason:'再冲'}},ctx)).toThrow('已冲回');
+  expect(()=>applyMistCommand(next,{type:'finance.payment.reverse',payload:{paymentId:next.payments[1].id,reason:'再冲'}},ctx)).toThrow('反向');
+ });
+ it('leaves supplier payment vouchers to the payables reversal flow',()=>{
+  const ctx=context(),s=createMistState(ctx,'empty');s.payments.push({id:'voucher',code:'PAY-1',date:'2026-10-13',payee:'工厂',amount:5,currency:'CNY',ref:'X'});
+  s.payables={...(s.payables||{bills:[],payments:[],allocations:[]}),payments:[{id:'sp',paymentId:'voucher'} as any]};
+  expect(()=>applyMistCommand(s,{type:'finance.payment.reverse',payload:{paymentId:'voucher',reason:'错'}},ctx)).toThrow('应付页');
+ });
+ it('maps reversal permissions to the existing finance scopes',()=>{
+  expect(mistCommandPermission({type:'finance.allocation.reverse',payload:{allocationId:'a',reason:'r'}})).toBe('invoices:reconcile');
+  expect(mistCommandPermission({type:'finance.payment.reverse',payload:{paymentId:'p',reason:'r'}})).toBe('vouchers:write');
+ });
+});

@@ -66,12 +66,20 @@ export type MistOrder = {
   checklist: MistChecklistItem[]; handoffAt: string | null; createdAt: string; updatedAt: string;
 };
 export type MistProduction = { sourcePurchaseId?:string; id: string; code: string; orderId: string; lineId: string; order: string; name: string; factory: string; qty: number; due: string; pct: number; img: MistImage; col: 'cut' | 'sew' | 'finish' | 'qc' | 'done'; risk?: string; startDate?: string };
-export type MistPayment = { id: string; code: string; date: string; payee: string; amount: number; currency: string; ref: string };
+export type MistPayment = { id: string; code: string; date: string; payee: string; amount: number; currency: string; ref: string;
+  /** finance：财务在付款凭证页登记；旧凭证无此字段。reversalOf：本凭证是对该凭证的反向冲回记录（金额为负）。 */
+  origin?: 'finance'; reversalOf?: string };
 export type MistReceipt = { id: string; code: string; date: string; payer: string; amount: number; remaining: number; currency: string; ref: string; state: 'unmatched' | 'suggested' | 'matched'; suggest?: string; confidence?: number };
 export type MistInvoice = { id: string; code: string; orderId: string; order: string; customer: string; due: string; amount: number; open: number; currency: string; voidedAt?: string; voidReason?: string; voidedBy?: string; voidedById?: string; voidSourceDocumentId?: string };
 /** Void preserves the original face value while removing the invoice from current receivables. */
 export function isActiveMistInvoice(invoice: Pick<MistInvoice, 'voidedAt'>): boolean { return !invoice.voidedAt; }
 export type MistAllocation = { id: string; receiptId: string; invoiceId: string; amount: number; currency: string; createdAt: string; actor: string; payerBasis?:string };
+/**
+ * 核销 / 付款冲回记录。原记录不删除不改写：核销冲回后原核销整条快照保存在 allocation 中、
+ * 退出当前核销集合（流水余额与发票未收按剩余有效核销回算）；付款冲回另记一张负额反向凭证（voucherId）。
+ */
+export type MistFinanceReversal = { id: string; kind: 'allocation' | 'payment'; targetId: string; amount: number; currency: string; reason: string; at: string; actor: string; actorId?: string;
+  allocation?: MistAllocation; receiptId?: string; invoiceId?: string; voucherId?: string };
 export type MistCustomer = { id: string; name: string; code: string; country: string; city: string; industry: string; owner: string; grade: string; currency: string; terms: string; incoterm: string; categories: string; creditLimit: number; since: string };
 export type MistContact = { id: string; customerId: string; name: string; role: string; email: string; phone: string; tone: MistTone };
 export type MistEvent = { id: string; entityType: string; entityId: string; actor: string; at: string; text: string; fileIds: string[] };
@@ -88,6 +96,7 @@ export type MistState = {
   schemaVersion: 1; devs: MistDev[]; versions: MistVersion[]; drafts: MistDraft[]; fabrics: MistFabric[];
   orders: MistOrder[]; orderLines: MistOrderLine[]; productions: MistProduction[];
   receipts: MistReceipt[]; invoices: MistInvoice[]; allocations: MistAllocation[]; payments: MistPayment[];
+  financeReversals?: MistFinanceReversal[];
   customers: MistCustomer[]; contacts: MistContact[]; files: MistFile[];
   events: MistEvent[]; tasks: MistTask[]; notifications: MistNotification[]; calendar: MistCalendarEvent[];
   settings: MistSettings; fulfillment:FulfillmentState; market:MarketState; platform:PlatformState; email:EmailState; crm:CrmState; reviewerIds?:string[];
@@ -119,6 +128,8 @@ export type MistCommand = FulfillmentCommand | MarketCommand | PlatformCommand |
   | { type: 'finance.reconcile'; payload: { receiptId: string; invoiceId: string; amount?: number; payerBasis?:string } }
   | { type: 'finance.acceptSuggestions'; payload: { receiptIds: string[] } }
   | { type: 'finance.payment.save'; payload: { date: string; payee: string; amount: number; currency: string; ref: string } }
+  | { type: 'finance.allocation.reverse'; payload: { allocationId: string; reason: string } }
+  | { type: 'finance.payment.reverse'; payload: { paymentId: string; reason: string } }
   | { type: 'customer.update'; payload: { id: string; patch: Partial<Omit<MistCustomer, 'id'>> } }
   | { type: 'contact.save'; payload: { id?: string; customerId: string; name: string; role: string; email: string; phone: string } }
   | { type: 'contact.delete'; payload: { id: string } }
@@ -129,6 +140,13 @@ export type MistCommand = FulfillmentCommand | MarketCommand | PlatformCommand |
   | { type: 'calendar.save'; payload: { id?: string; title: string; date: string; time: string; note: string; target?: MistTarget } }
   | { type: 'files.add'; payload: { file: MistFile } };
 
+/** 付款凭证能否在付款凭证页冲回：返回不能冲回的原因，可冲回时返回 null。供应商付款生成的凭证走应付冲回。 */
+export function mistPaymentReverseBlock(state: Pick<MistState,'payments'|'payables'>, v: MistPayment): string | null {
+  if((state.payables?.payments||[]).some(x=>x.paymentId===v.id)||(state.payables?.prepaymentMoves||[]).some(x=>x.paymentId===v.id))return '供应商付款生成的凭证请在应付页冲回供应商付款';
+  if(v.reversalOf||!(v.amount>0)||(!v.origin&&v.ref.startsWith('冲回')))return '反向冲回凭证不能再次冲回';
+  if(state.payments.some(x=>x.reversalOf===v.id))return v.code+' 已冲回';
+  return null;
+}
 export class MistCommandError extends Error {
   constructor(public code: string, message: string, public status = 422) { super(message); this.name = 'MistCommandError'; }
 }
@@ -356,8 +374,8 @@ export function mistCommandPermission(command: MistCommand): string | null {
   if(command.type==='development.recordQc')return command.payload.domain==='fabric'?'qc:fabric_chain:write':'qc:garment_chain:write';
   if(command.type.startsWith('development.')||command.type.startsWith('fabric.')||command.type==='files.add')return 'products:write';
   if(command.type.startsWith('order.')||command.type.startsWith('production.'))return 'orders:write';
-  if(command.type==='finance.importReceipts'||command.type==='finance.payment.save')return MIST_FINANCE_SCOPES.voucher;
-  if(command.type==='finance.reconcile'||command.type==='finance.acceptSuggestions')return MIST_FINANCE_SCOPES.reconcile;
+  if(command.type==='finance.importReceipts'||command.type==='finance.payment.save'||command.type==='finance.payment.reverse')return MIST_FINANCE_SCOPES.voucher;
+  if(command.type==='finance.reconcile'||command.type==='finance.acceptSuggestions'||command.type==='finance.allocation.reverse')return MIST_FINANCE_SCOPES.reconcile;
   if(command.type.startsWith('finance.'))throw new MistCommandError('VALIDATION','未知财务操作');
   if(command.type.startsWith('customer.')||command.type.startsWith('contact.'))return 'relations:write';
   if(['settings.update','notification.read','notification.readAll','task.complete','calendar.save'].includes(command.type))return null;
@@ -566,8 +584,27 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
     case 'finance.payment.save': {
       const amount=positive(p.amount,'付款金额');mistMoneyMinor(amount);const id=context.id();
       const currency=text(p.currency,'币种',true,3).toUpperCase();if(!/^[A-Z]{3}$/.test(currency))throw new MistCommandError('VALIDATION','币种无效');
-      state.payments.push({id,code:'PAY-'+context.now.slice(0,4)+'-'+String(state.payments.length+1).padStart(4,'0'),date:date(p.date),payee:text(p.payee,'收款方'),amount,currency,ref:text(p.ref,'备注',false)});
+      state.payments.push({id,code:'PAY-'+context.now.slice(0,4)+'-'+String(state.payments.length+1).padStart(4,'0'),date:date(p.date),payee:text(p.payee,'收款方'),amount,currency,ref:text(p.ref,'备注',false),origin:'finance'});
       event(state,context,'payment',id,'登记付款凭证');result={id};break;
+    }
+    case 'finance.allocation.reverse': {
+      const a=find(state.allocations,text(p.allocationId,'核销记录'),'核销记录'),reason=text(p.reason,'冲回原因',true,500);
+      const r=state.receipts.find(x=>x.id===a.receiptId),i=state.invoices.find(x=>x.id===a.invoiceId);
+      const id=context.id();state.financeReversals=[...(state.financeReversals||[]),{id,kind:'allocation',targetId:a.id,amount:a.amount,currency:a.currency,reason,at:context.now,actor:context.actorName,...(context.actorId?{actorId:context.actorId}:{}),allocation:{...a},receiptId:a.receiptId,invoiceId:a.invoiceId}];
+      state.allocations=state.allocations.filter(x=>x.id!==a.id);recalculate(state);
+      if(r&&r.remaining>0&&r.state==='matched')r.state=r.suggest&&(r.confidence||0)>0?'suggested':'unmatched';
+      assertOrderFundingIntegrity(state);
+      event(state,context,'invoice',a.invoiceId,'冲回核销 '+(r?.code||a.receiptId)+' → '+(i?.code||a.invoiceId)+'（'+a.amount+' '+a.currency+'）：'+reason+'；原核销记录保留',{view:'payment-vouchers',id:a.invoiceId});
+      result={id,receiptId:a.receiptId,invoiceId:a.invoiceId};break;
+    }
+    case 'finance.payment.reverse': {
+      const v=find(state.payments,text(p.paymentId,'付款凭证'),'付款凭证'),reason=text(p.reason,'冲回原因',true,500);
+      const blocked=mistPaymentReverseBlock(state,v);if(blocked)throw new MistCommandError('PRECONDITION',blocked);
+      const id=context.id(),voucherId=context.id();
+      state.payments.push({id:voucherId,code:'PAY-'+context.now.slice(0,4)+'-'+String(state.payments.length+1).padStart(4,'0'),date:context.now.slice(0,10),payee:v.payee,amount:-v.amount,currency:v.currency,ref:'冲回 '+v.code+' · '+reason,origin:'finance',reversalOf:v.id});
+      state.financeReversals=[...(state.financeReversals||[]),{id,kind:'payment',targetId:v.id,amount:v.amount,currency:v.currency,reason,at:context.now,actor:context.actorName,...(context.actorId?{actorId:context.actorId}:{}),voucherId}];
+      event(state,context,'payment',v.id,'冲回付款凭证 '+v.code+'：'+reason+'；原凭证保留，另记反向凭证');
+      result={id,voucherId};break;
     }
     case 'customer.update': {
       const c=find(state.customers,p.id,'客户');
