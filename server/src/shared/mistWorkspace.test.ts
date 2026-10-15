@@ -123,6 +123,15 @@ describe('finance reversals keep the original fact and recompute balances',()=>{
   s.payables={...(s.payables||{bills:[],payments:[],allocations:[]}),payments:[{id:'sp',paymentId:'voucher'} as any]};
   expect(()=>applyMistCommand(s,{type:'finance.payment.reverse',payload:{paymentId:'voucher',reason:'错'}},ctx)).toThrow('应付页');
  });
+ it('judges "not later than today" by the Shanghai business date, not the UTC date',()=>{
+  const ctx={...context(),now:'2026-10-15T17:00:00.000Z'};let s=createMistState(ctx,'empty');const run=(c:any)=>{const r=applyMistCommand(s,c,ctx);s=r.state;return r.result;};
+  expect(()=>run({type:'finance.account.save',payload:{name:'美元户',bankName:'中行',accountNo:'1234',currency:'USD',openingDate:'2026-10-17',openingBalance:0}})).toThrow('不能晚于今天');
+  run({type:'finance.account.save',payload:{name:'美元户',bankName:'中行',accountNo:'1234',currency:'USD',openingDate:'2026-10-16',openingBalance:0}});
+  run({type:'finance.fx.lock',payload:{date:'2026-10-16',bankName:'中行',currency:'USD',amount:10,rate:'7',localCurrency:'CNY',settleBy:'2026-10-16',ref:'FW'}});
+  expect(s.bankAccounts).toHaveLength(1);expect(s.fxRecords).toHaveLength(1);
+  s.payments.push({id:'m',code:'PAY-M',date:'2026-10-16',payee:'物流',amount:5,currency:'CNY',ref:'x',origin:'finance'} as any);
+  run({type:'finance.payment.reverse',payload:{paymentId:'m',reason:'错'}});expect(s.payments.find(p=>p.amount===-5)?.date).toBe('2026-10-16');
+ });
  it('keeps bank accounts with opening balances and per-flow attribution; balance = opening + receipts - payments',()=>{
   const ctx=context();let s=createMistState(ctx,'empty');const run=(c:any)=>{const r=applyMistCommand(s,c,ctx);s=r.state;return r.result;};
   const today=ctx.now.slice(0,10);

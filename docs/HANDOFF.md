@@ -28,24 +28,24 @@
 
 更早已合入：#1、#4–#7、#9–#13、#15–#24（详见各 PR 与 [LIVE-PROGRESS](mist-atelier/LIVE-PROGRESS.md) 历史段落）。
 
-## 4. 版本一致性核对（2026-10-15）
+## 4. 版本一致性核对（2026-10-15 更新）
 
 | 位置 | 版本 | 状态 |
 |---|---|---|
-| GitHub `main` | `ea41cbe`（本交接 PR 合入后会前进一个文档提交） | PR #29 head `f212d27` 的 `ci/mist-verify` 成功 |
-| 开发服务器 `/srv/bambook-dev/current` | `releases/544f1c9…`（旧） | 服务 `bambook-dev`、`bambook-dev-mist` active，`127.0.0.1:8081/api/health` 200 |
+| GitHub `main` | `aede4e4`（#35 合入；本文档同步 PR 合入后再前进一个提交） | `ci/mist-verify` 成功 |
+| 开发服务器 `/srv/bambook-dev/current` | 随 main 自动部署，以运维通道 `readlink -f` 为准 | 已验证 `349db8d`、`6a72104` 自动部署成功，服务 active、健康 200 |
 | 正式环境 | 不在范围，未触碰 | — |
 
-**差异原因（已处理）**：原部署流程只能手动 `workflow_dispatch`。PR #33 起改为自动：main 推送触发的 `Mist verification` 成功后，`Bambook development delivery` 经 `workflow_run` 部署该次运行的 `head_sha`；仍要求该提交 `verify` check 成功，且只部署 main 最新提交（落后的运行直接失败，不回滚）。验证失败或 PR 上的验证不会部署。
+**自动部署**（PR #33）：main 推送触发的 `Mist verification` 成功后，`Bambook development delivery` 经 `workflow_run` 部署该次 `head_sha`；要求该提交 `verify` check 成功，且只部署 main 最新提交（落后的运行直接失败，不回滚）。PR 上的验证不部署。服务器端 `npm ci` + `prisma generate` + `tsc` 约 15 分钟；交付作业超时已由 20 分钟提到 45 分钟（PR #36，首次自动部署 run 21 因此被 GitHub 取消但服务器已激活）。receiver 的发布脚本自身有 900 秒上限，构建再变慢需关注。
 
-**每次合入后核对**：经运维通道核对 `readlink -f /srv/bambook-dev/current` 指向新 main SHA、两个服务 active、健康接口 200。`mode=check` 已于 run 38739662842 验证通道可用。
+**每次合入后核对**：经运维通道核对 `readlink -f /srv/bambook-dev/current` 指向新 main SHA、两个服务 active、健康接口 200。
 
 ## 5. 开放 PR 与分支
 
 ### 开放 PR
 
 - **#25 草稿** `feat/work-assistant-p1`（head `2c947ee`，基线旧 main `9955ee0`）：工作助手 P1 只读委托 + `bambook_query/get/expand`。本地 verify 全过；**待**：rebase/合并最新 main、GitHub CI、用户本人在桌面端用真实模型验收（含越权与 host 重启后重连）。验收前不合入。
-- **#2** `feat/mist-fabric-development`（head `5d254d8`，base `feat/mist-dual-domain-foundation`，2026-10-13）：面料开发入口、返样与独立 QC。核对发现其代码（如 `components/mist/patterns.tsx` 的 `VerticalSteps` 自动滚动）已随后续集成进入 main，**疑似已被取代**。建议向用户确认后关闭；未经同意不要关闭或删分支。
+- **#2** `feat/mist-fabric-development`（head `5d254d8`，base `feat/mist-dual-domain-foundation`，2026-10-13）：面料开发入口、返样与独立 QC。GitHub compare `main...5d254d8` 确认其两个提交 `d8961b4`、`5d254d8` **均已在 main 历史中**，可关闭；待用户同意后再关闭，未经同意不要关闭或删分支。
 
 ### 常驻分支
 
@@ -62,12 +62,12 @@
 
 1. ~~审批与放行 + 付款申请审批~~：已合入 #27。缺口：生产与出运放行、受控例外、报价偏差 / 索赔方案等类型尚无服务端规则，页面明示“未接入”；转交未做。
 2. ~~我的工作待办 + 通知中心~~：已合入 #29。缺口：主管按团队视角（缺团队组织数据）；“出运资料回业务”以“已出运未寄单”近似。
-3. **财务剩余缺口（进行中：(a) 已合入 #32；(b) 已合入 #34；(c) 分支 `feat/mist-fx-records`）**。拆 3 个 PR：
+3. ~~财务剩余缺口~~：已合入 #32（核销 / 付款冲回）、#34（银行账户 / 期初 / 归属）、#35（锁汇 / 结汇）。缺口：汇兑损益与敞口报表、附件、导入时指定账户、账户停用。原拆分记录：
    - (a) 核销冲回 / 付款冲回：新增 `finance.allocation.reverse`、`finance.payment.reverse`，必须写原因、保留原记录与冲回记录（参考应付侧已有的 `PayableReversal`），并受 `server/src/shared/mistOrderFunding.ts` 的 `assertOrderFundingIntegrity`（按 allocations 归属订单到款）约束，冲回后订单到款回算。
    - (b) 银行账户 / 期初余额 / 逐笔流水账户归属；账户余额 = 期初 + 归属流水，不再显示“未接入”。
    - (c) 锁汇 / 结汇记录（原币、汇率、本币、银行、日期），不做汇率估算。
    - 代码锚点：`server/src/shared/mistWorkspace.ts` 约 538–570 行（`importReceipts` / `reconcile` / `acceptSuggestions` / `payment.save`），类型 `MistReceipt` / `MistAllocation` / `MistPayment` 约 69–74 行；需求见 [页面清单 §5.1](mist-atelier/07-frontend-page-inventory.md)。
-4. 智能邮箱真实收发（IMAP/SMTP）：需用户提供测试邮箱，凭据只进服务器环境变量。
+4. **下一项** 智能邮箱真实收发（IMAP/SMTP）：需用户提供测试邮箱，凭据只进服务器环境变量。
 5. 平台类模块：管理后台、设置、人事、报表、数据中心、业务工具、统一搜索。
 6. 工作助手 P2–P4（先完成 #25 的真实验收）。
 
