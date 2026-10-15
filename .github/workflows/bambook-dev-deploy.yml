@@ -26,7 +26,7 @@ jobs:
         with:
           persist-credentials: false
       - run: python3 scripts/deploy/test_bambook_dev_receiver.py
-      - run: bash -n scripts/deploy/bambook-dev-release.sh
+      - run: bash -n scripts/deploy/bambook-dev-release.sh && bash -n scripts/deploy/bootstrap-dev-server.sh
   delivery:
     needs: validate
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
@@ -63,12 +63,37 @@ jobs:
           ssh -i "$RUNNER_TEMP/bambook-ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/bambook-ssh/known_hosts" \
             -o ConnectTimeout=15 "$DEPLOY_USER@$DEPLOY_HOST" check
-      - name: Send verified backend and activate release
+      - name: Use repository Node version
+        if: inputs.mode == 'deploy'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Build same-origin web frontend
+        if: inputs.mode == 'deploy'
+        env:
+          BAMBOOK_WEB_SUBDOMAIN: '1'
+          VITE_API_BASE_URL: /api
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          npm run build
+          # Same revision must produce the same bundle bytes (receiver replay check): pin the build start time.
+          node -e 'const f="dist/mist-version.json",fs=require("fs"),v=JSON.parse(fs.readFileSync(f));v.startedAt=v.committedAt;fs.writeFileSync(f,JSON.stringify(v))'
+      - name: Send verified release and activate
         if: inputs.mode == 'deploy'
         run: |
           set -euo pipefail
           [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
-          git archive --format=tar.gz HEAD .nvmrc server scripts/deploy/bambook-dev-release.sh > "$RUNNER_TEMP/backend.tar.gz"
+          stage="$RUNNER_TEMP/bundle"
+          rm -rf "$stage" && mkdir -p "$stage/web"
+          git archive --format=tar HEAD .nvmrc server scripts/deploy/bambook-dev-release.sh | tar -x -C "$stage"
+          # Legacy map datasets in public/ are not used by the Mist renderer; keep the bundle small.
+          tar -c -C dist --exclude=./data --exclude=./geo --exclude=./glyphs --exclude='./*.geojson' --exclude='./earth_*' . | tar -x -C "$stage/web"
+          test -f "$stage/web/index.html"
+          test -z "$(find "$stage" -type l -print -quit)"
+          tar -c -C "$stage" --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner .nvmrc server scripts web | gzip -n > "$RUNNER_TEMP/backend.tar.gz"
           ssh_options=(-i "$RUNNER_TEMP/bambook-ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/bambook-ssh/known_hosts" -o ConnectTimeout=15)
           ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "receive $GITHUB_SHA" < "$RUNNER_TEMP/backend.tar.gz"
           ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "activate $GITHUB_SHA"

@@ -6,7 +6,7 @@
 
 1. 在任务分支完成代码并通过现有验证，经 PR 合入主线。
 2. 在 Actions 中手动运行 `Bambook development delivery`。第一次选择 `check`，只验证连接，不发送应用。
-3. 应用部署准备完成后选择 `deploy`；流程要求准确主线提交已有成功的 `verify` 检查，将该提交的后端发送到独立版本目录，再启动和核对本机健康接口。不会因普通 push 自动部署。
+3. 应用部署准备完成后选择 `deploy`；流程要求准确主线提交已有成功的 `verify` 检查，将该提交的后端与前端发送到独立版本目录，再启动和核对本机健康接口。不会因普通 push 自动部署。
 
 服务器地址和账号在 workflow 中。私钥只存为仓库 Actions secret `BAMBOOK_DEV_SSH_KEY`，受信任主机公钥存为 `BAMBOOK_DEV_KNOWN_HOSTS`。不在聊天、代码或日志中输出私钥。
 
@@ -14,17 +14,31 @@ SSH key 强制经过接收程序，只接受 `check`、`receive <40位提交>`�
 
 服务器上运行的是 root 所有的副本 `/usr/local/libexec/bambook-dev-receiver.py`，仓库改动不会自动生效。本仓库版本要求压缩包包含 `.nvmrc`：接收程序更新后，须由管理员把服务器副本替换为合入主线的版本（root 所有、0755），否则 `receive` 会以 `unsupported archive entry` 拒绝新包。
 
-## 应用启动前置条件
+## 服务器初始化（管理员，一次性，可重复执行）
 
-由应用负责人配置开发数据库及结构、`/etc/bambook-dev/backend.env`、固定的 `bambook-dev.service`。变量至少包括 `DATABASE_URL`、足够强的 `JWT_SECRET`、`MIST_HOST=127.0.0.1`、`MIST_PORT=8082`、`MIST_LOCAL_WORKSPACE=0`。禁止把本地全权限模拟身份暴露到公网。
+以 root 运行仓库中的 `scripts/deploy/bootstrap-dev-server.sh`（腾讯云 OrcaTerm 或管理员 SSH）。脚本幂等、不打印生成的密钥，已有配置与数据库保留：
 
-服务应使用独立的 `bambook-deploy` 身份，工作目录为 `/srv/bambook-dev/current/server`，由 Node 执行本地 tsx CLI 和 `src/mist/standalone.ts`。仅授予此账号重启、停止该开发服务的权限，不授予通用 sudo。
+- 2G 交换空间；Node 主版本与 `.nvmrc` 一致（NodeSource）；nginx、PostgreSQL。
+- 专用库 `panda_hub_dev` 与角色 `bambook_dev`（随机密码只写入 `/etc/bambook-dev/backend.env`，root:bambook-deploy 0640）。环境含 `DATABASE_URL`、随机 `JWT_SECRET`、`MIST_HOST=127.0.0.1`、`MIST_PORT=8082`、`MIST_LOCAL_WORKSPACE=0`、`MIST_CORS_ORIGINS`、`MIST_FILES_DIR` / `BAMBOOK_AI_SUBSCRIPTION_DIR`（均在 `/srv/bambook-dev/shared`，跨版本保留）、`AUTH_REQUIRE_EMAIL_VERIFY=0`、`TZ`。禁止把本地全权限模拟身份暴露到公网。
+- 固定的 `bambook-dev.service`：`bambook-deploy` 身份，工作目录 `/srv/bambook-dev/current/server`，Node 执行本地 tsx CLI 与 `src/mist/standalone.ts`；只读系统、仅 `shared/` 可写、内存上限 1.5G。sudo 只允许该账号重启 / 停止此服务。
+- nginx 仅监听 `127.0.0.1:8080`：静态前端取当前版本 `web/`，`/api/` 转发 8082。Cloudflare Tunnel 连到这里，不开放 80 / 443。
+- 每日 `pg_dump` 备份到 `/var/backups/bambook-dev`，保留 7 天。
 
-交付脚本先核对服务器 Node 主版本与 `.nvmrc` 一致，再安装锁定依赖、生成 Prisma client、检查 Mist 类型；这些步骤完成后才读入 `backend.env`，依赖安装脚本看不到数据库密码和签名密钥。随后切换版本并验证健康接口，失败时恢复旧版本。激活成功后只保留当前、上一版及最近版本共 4 个，其余版本目录（各自带依赖）自动删除，避免占满系统盘。它不会自动执行 schema push、重置数据库或迁移真实数据。数据库 schema 的初始化与迁移由应用负责人单独确认并执行。
+服务器上运行的接收程序是 root 所有的副本 `/usr/local/libexec/bambook-dev-receiver.py`，仓库改动不会自动生效。本版本要求压缩包包含 `.nvmrc` 与 `web/index.html`：接收程序更新后，须由管理员把服务器副本替换为合入主线的版本（root 所有、0755），否则 `receive` 会以 `unsupported archive entry` 拒绝新包。
 
-开发后端域名为 `bambook-dev-api.sylway.cloud`，DNS 已指向服务器。HTTPS / 反向代理、认证、CORS 及最终公网连通需要单独验证；SSH 交付成功不代表 API 已上线。
+## 交付内容与激活
 
-开发前端与接口应放在**同一个开发域名**（建议 `bambook-dev.sylway.cloud`），`/api` 由 Cloudflare 转发到本机 8082。Mist 登录依赖 Cookie，前后端分属 `sylway.cloud` 与 `jiangsupanda.com` 两个站点时浏览器会拦截跨站 Cookie，还需额外 CORS；`jiangsupanda.com` 属于正式环境，开发环境不使用。
+`deploy` 在 GitHub 构建同域前端（`BAMBOOK_WEB_SUBDOMAIN=1`、`VITE_API_BASE_URL=/api`；不含 Mist 不使用的旧地图数据），与该提交的 `server`、`.nvmrc`、发布脚本一起打成确定性压缩包（固定时间戳与排序，同一提交重复交付字节一致）。
+
+交付脚本先核对服务器 Node 主版本与 `.nvmrc` 一致，再安装锁定依赖、生成 Prisma client、检查 Mist 类型；这些步骤完成后才读入 `backend.env`，依赖安装脚本看不到数据库密码和签名密钥。随后切换版本并验证健康接口，失败时恢复旧版本。激活成功后只保留当前、上一版及最近版本共 4 个，其余版本目录（各自带依赖）自动删除。它不会自动执行 schema 迁移、重置数据库或迁移真实数据。
+
+## 数据库结构与测试账号（管理员单独确认后执行）
+
+首次部署成功后，以 `bambook-deploy` 身份、在 `/srv/bambook-dev/current/server` 读入 `backend.env` 后执行：`npx prisma migrate deploy` → `npm run seed:base` → `npx tsx scripts/seed-empty-owner.ts` → `npm run seed:dev-roles` → `BAMBOOK_DEV_ENVIRONMENT=1 npx tsx scripts/set-dev-environment-passwords.ts /srv/bambook-dev/shared/test-accounts.txt`。最后一步给管理员与各岗位测试账号设置各自随机密码，只写入该 0600 文件，不打印、不入库；`seed-empty-owner` 的默认密码随之失效。后续 schema 变更仍逐次确认后执行 `migrate deploy`。
+
+## 域名
+
+开发环境前端与接口在**同一个域名** `bambook-dev.sylway.cloud`，由 Cloudflare Tunnel 转到本机 nginx，并以 Cloudflare Access（邮箱验证码）限制访问。Mist 登录依赖 Cookie，前后端分属不同站点时浏览器会拦截跨站 Cookie；`jiangsupanda.com` 属于正式环境，开发环境不使用。`bambook-dev-api.sylway.cloud` 的直连 A 记录不再需要。
 
 ## 手动触发（不需要用户本地电脑）
 
@@ -39,7 +53,7 @@ SSH key 强制经过接收程序，只接受 `check`、`receive <40位提交>`�
 
 使用已授权的腾讯云 OrcaTerm 管理会话，或另行授权的管理员 SSH 登录；受限的 `bambook-deploy` 密钥不能打开通用 shell/SFTP。
 
-1. 在有仓库权限的构建环境选定已验证的完整 40 位提交号，以 `git archive` 打包该提交的 `server` 和 `scripts/deploy/bambook-dev-release.sh`。包中不包含数据库、附件、`.env`、`node_modules`。
+1. 在有仓库权限的构建环境选定已验证的完整 40 位提交号，按 workflow「Send verified release and activate」同样的步骤生成压缩包（`.nvmrc`、`server`、发布脚本与构建后的 `web/`）。包中不包含数据库、附件、`.env`、`node_modules`。
 2. 用腾讯云控制台文件上传将包放到管理员可读的临时位置，校验 SHA-256。若文件管理器不支持当前免密会话，需使用已授权的 SSH/SFTP 方式，不临时开放匿名上传接口。
 3. 管理员以接收账号调用同一接收程序，而不是直接覆盖运行目录。将下面占位值替换成实际完整提交号和上传包路径：
 
