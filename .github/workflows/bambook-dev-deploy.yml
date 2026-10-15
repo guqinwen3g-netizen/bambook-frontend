@@ -1,5 +1,9 @@
 name: Bambook development delivery
 on:
+  pull_request:
+    paths:
+      - .github/workflows/bambook-dev-deploy.yml
+      - scripts/deploy/**
   workflow_dispatch:
     inputs:
       mode:
@@ -15,8 +19,17 @@ concurrency:
   group: bambook-development-delivery
   cancel-in-progress: false
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - run: python3 scripts/deploy/test_bambook_dev_receiver.py
+      - run: bash -n scripts/deploy/bambook-dev-release.sh
   delivery:
-    if: github.ref == 'refs/heads/main'
+    needs: validate
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
