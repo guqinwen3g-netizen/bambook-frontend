@@ -79,14 +79,45 @@ export type MistReceipt = { id: string; code: string; date: string; payer: strin
  * 账户余额 = 期初 + 已归属到账 − 已归属付款（付款冲回的负额凭证自然加回）。不按汇率折算，不用收款减付款猜余额。
  */
 export type MistBankAccount = { id: string; code: string; name: string; bankName: string; accountNo: string; currency: string; openingDate: string; openingBalance: number; createdAt: string; actor: string; actorId?: string; updatedAt?: string };
-export type MistBankAccountBalance = { account: MistBankAccount; receipts: number; payments: number; receiptCount: number; paymentCount: number; balance: number };
+export type MistBankAccountBalance = { account: MistBankAccount; receipts: number; payments: number; receiptCount: number; paymentCount: number; fxIn: number; fxOut: number; balance: number };
+/**
+ * 锁汇 / 结汇记录。锁汇：与银行约定的远期汇率合同（原币金额 × 锁定汇率 = 合同本币金额），不动账户余额。
+ * 结汇：按银行水单登记实际卖出的原币与入账本币，原币账户减少、本币账户增加；汇率由两笔实际金额得出，不估算。
+ * 登记错误另记冲回（reversed），原记录保留。
+ */
+export type MistFxRecord = { id: string; code: string; kind: 'lock' | 'settlement'; date: string; bankName: string; currency: string; amount: number; localCurrency: string; localAmount: number; rate: string; ref: string; note: string;
+  settleBy?: string; fromAccountId?: string; toAccountId?: string; lockId?: string;
+  createdAt: string; actor: string; actorId?: string; reversed?: { at: string; actor: string; reason: string } };
+/** 按 6 位小数的汇率字符串换算本币（分），四舍五入；只用于锁汇合同金额，不用于估算余额。 */
+export function mistFxLocalMinor(amountMinor: number, rate: string): number {
+  if (!/^\d{1,6}(\.\d{1,6})?$/.test(rate) || !(Number(rate) > 0)) throw new MistCommandError('VALIDATION', '汇率须为正数，最多 6 位小数');
+  const [w, f = ''] = rate.split('.'), scaled = BigInt(w) * BigInt(1000000) + BigInt(f.padEnd(6, '0'));
+  const out = (BigInt(amountMinor) * scaled + BigInt(500000)) / BigInt(1000000);
+  if (out > BigInt(Number.MAX_SAFE_INTEGER)) throw new MistCommandError('VALIDATION', '金额超出支持范围');
+  return Number(out);
+}
+/** 实际成交汇率：本币 ÷ 原币，6 位小数（由两笔实际金额得出）。 */
+export function mistFxRate(amount: number, localAmount: number): string {
+  const a = BigInt(Math.round(amount * 100)), l = BigInt(Math.round(localAmount * 100));
+  if (a <= BigInt(0)) return '0';
+  const scaled = (l * BigInt(1000000) * BigInt(2) + a) / (a * BigInt(2)), text = scaled.toString().padStart(7, '0');
+  return text.slice(0, -6) + '.' + text.slice(-6);
+}
+/** 锁汇合同的已结与剩余（原币，按分）。 */
+export function mistFxLockUsage(state: Pick<MistState,'fxRecords'>, lockId: string): { settled: number; remaining: number } {
+  const lock = (state.fxRecords || []).find(r => r.id === lockId && r.kind === 'lock');
+  const settled = (state.fxRecords || []).filter(r => r.kind === 'settlement' && r.lockId === lockId && !r.reversed).reduce((t, r) => t + Math.round(r.amount * 100), 0);
+  return { settled: settled / 100, remaining: lock ? (Math.round(lock.amount * 100) - settled) / 100 : 0 };
+}
 /** 各账户余额（原币，按分计算）与未归属账户的流水笔数。 */
-export function mistBankAccountBalances(state: Pick<MistState,'receipts'|'payments'|'bankAccounts'>): { accounts: MistBankAccountBalance[]; unassigned: { receipts: number; payments: number } } {
+export function mistBankAccountBalances(state: Pick<MistState,'receipts'|'payments'|'bankAccounts'|'fxRecords'>): { accounts: MistBankAccountBalance[]; unassigned: { receipts: number; payments: number } } {
   const minor = (v: number) => Math.round(v * 100);
   const accounts = (state.bankAccounts || []).map(account => {
     const rs = state.receipts.filter(r => r.accountId === account.id), ps = state.payments.filter(x => x.accountId === account.id);
     const receipts = rs.reduce((t, r) => t + minor(r.amount), 0), payments = ps.reduce((t, x) => t + minor(x.amount), 0);
-    return { account, receipts: receipts / 100, payments: payments / 100, receiptCount: rs.length, paymentCount: ps.length, balance: (minor(account.openingBalance) + receipts - payments) / 100 };
+    const fx = (state.fxRecords || []).filter(r => r.kind === 'settlement' && !r.reversed);
+    const fxIn = fx.filter(r => r.toAccountId === account.id).reduce((t, r) => t + minor(r.localAmount), 0), fxOut = fx.filter(r => r.fromAccountId === account.id).reduce((t, r) => t + minor(r.amount), 0);
+    return { account, receipts: receipts / 100, payments: payments / 100, receiptCount: rs.length, paymentCount: ps.length, fxIn: fxIn / 100, fxOut: fxOut / 100, balance: (minor(account.openingBalance) + receipts - payments + fxIn - fxOut) / 100 };
   });
   const known = new Set((state.bankAccounts || []).map(a => a.id));
   return { accounts, unassigned: { receipts: state.receipts.filter(r => !r.accountId || !known.has(r.accountId)).length, payments: state.payments.filter(x => !x.accountId || !known.has(x.accountId)).length } };
@@ -119,6 +150,7 @@ export type MistState = {
   receipts: MistReceipt[]; invoices: MistInvoice[]; allocations: MistAllocation[]; payments: MistPayment[];
   financeReversals?: MistFinanceReversal[];
   bankAccounts?: MistBankAccount[];
+  fxRecords?: MistFxRecord[];
   customers: MistCustomer[]; contacts: MistContact[]; files: MistFile[];
   events: MistEvent[]; tasks: MistTask[]; notifications: MistNotification[]; calendar: MistCalendarEvent[];
   settings: MistSettings; fulfillment:FulfillmentState; market:MarketState; platform:PlatformState; email:EmailState; crm:CrmState; reviewerIds?:string[];
@@ -154,6 +186,9 @@ export type MistCommand = FulfillmentCommand | MarketCommand | PlatformCommand |
   | { type: 'finance.payment.reverse'; payload: { paymentId: string; reason: string } }
   | { type: 'finance.account.save'; payload: { id?: string; name: string; bankName: string; accountNo: string; currency: string; openingDate: string; openingBalance: number } }
   | { type: 'finance.account.assign'; payload: { kind: 'receipt' | 'payment'; id: string; accountId: string | null; reason?: string } }
+  | { type: 'finance.fx.lock'; payload: { date: string; bankName: string; currency: string; amount: number; rate: string; localCurrency: string; settleBy: string; ref: string; note?: string } }
+  | { type: 'finance.fx.settle'; payload: { date: string; fromAccountId: string; toAccountId: string; amount: number; localAmount: number; ref: string; note?: string; lockId?: string } }
+  | { type: 'finance.fx.reverse'; payload: { id: string; reason: string } }
   | { type: 'customer.update'; payload: { id: string; patch: Partial<Omit<MistCustomer, 'id'>> } }
   | { type: 'contact.save'; payload: { id?: string; customerId: string; name: string; role: string; email: string; phone: string } }
   | { type: 'contact.delete'; payload: { id: string } }
@@ -398,7 +433,7 @@ export function mistCommandPermission(command: MistCommand): string | null {
   if(command.type==='development.recordQc')return command.payload.domain==='fabric'?'qc:fabric_chain:write':'qc:garment_chain:write';
   if(command.type.startsWith('development.')||command.type.startsWith('fabric.')||command.type==='files.add')return 'products:write';
   if(command.type.startsWith('order.')||command.type.startsWith('production.'))return 'orders:write';
-  if(command.type==='finance.importReceipts'||command.type==='finance.payment.save'||command.type==='finance.payment.reverse'||command.type==='finance.account.save'||command.type==='finance.account.assign')return MIST_FINANCE_SCOPES.voucher;
+  if(command.type==='finance.importReceipts'||command.type==='finance.payment.save'||command.type==='finance.payment.reverse'||command.type==='finance.account.save'||command.type==='finance.account.assign'||command.type.startsWith('finance.fx.'))return MIST_FINANCE_SCOPES.voucher;
   if(command.type==='finance.reconcile'||command.type==='finance.acceptSuggestions'||command.type==='finance.allocation.reverse')return MIST_FINANCE_SCOPES.reconcile;
   if(command.type.startsWith('finance.'))throw new MistCommandError('VALIDATION','未知财务操作');
   if(command.type.startsWith('customer.')||command.type.startsWith('contact.'))return 'relations:write';
@@ -640,8 +675,8 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
       const openingBalance=(p.openingBalance<0?-1:1)*major(mistMoneyMinor(Math.abs(p.openingBalance)));
       if(accounts.some(a=>a.id!==old?.id&&a.accountNo===accountNo&&a.currency===currency))throw new MistCommandError('CONFLICT','该账号同币种账户已登记');
       if(old){
-        const used=state.receipts.some(r=>r.accountId===old.id)||state.payments.some(x=>x.accountId===old.id);
-        if(used&&(old.currency!==currency||old.openingDate!==openingDate||old.openingBalance!==openingBalance))throw new MistCommandError('PRECONDITION','已有流水归属此账户，币种和期初不能修改；请先解除归属');
+        const used=state.receipts.some(r=>r.accountId===old.id)||state.payments.some(x=>x.accountId===old.id)||(state.fxRecords||[]).some(r=>!r.reversed&&(r.fromAccountId===old.id||r.toAccountId===old.id));
+        if(used&&(old.currency!==currency||old.openingDate!==openingDate||old.openingBalance!==openingBalance))throw new MistCommandError('PRECONDITION','已有流水或结汇记入此账户，币种和期初不能修改；请先解除归属或冲回结汇');
         const before=old.openingBalance+' '+old.currency+' @'+old.openingDate;
         Object.assign(old,{name,bankName,accountNo,currency,openingDate,openingBalance,updatedAt:context.now});
         event(state,context,'finance',old.id,'修改银行账户 '+old.code+(before!==openingBalance+' '+currency+' @'+openingDate?'（期初 '+before+' → '+openingBalance+' '+currency+' @'+openingDate+'）':''));result={id:old.id};break;
@@ -664,6 +699,43 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
       if(account)row.accountId=account.id;else delete row.accountId;
       event(state,context,kind==='receipt'?'finance':'payment',row.id,(account?(before?'调整 '+row.code+' 归属账户 '+before.code+' → '+account.code:row.code+' 归属账户 '+account.code):'解除 '+row.code+' 的账户归属 '+(before?.code||''))+(reason?'：'+reason:''));
       result={id:row.id,accountId};break;
+    }
+    case 'finance.fx.lock':
+    case 'finance.fx.settle': {
+      const records=state.fxRecords||(state.fxRecords=[]),settle=command.type==='finance.fx.settle',day=date(p.date,settle?'结汇日期':'锁汇日期');
+      if(day>context.now.slice(0,10))throw new MistCommandError('VALIDATION','日期不能晚于今天');
+      const amount=positive(p.amount,'原币金额'),amountMinor=mistMoneyMinor(amount),ref=text(p.ref,settle?'银行水单号':'锁汇合同号',true,120),note=p.note===undefined?'':text(p.note,'备注',false,1000);
+      const id=context.id(),code='FX-'+String(records.length+1).padStart(3,'0'),base={id,code,date:day,amount,ref,note,createdAt:context.now,actor:context.actorName,...(context.actorId?{actorId:context.actorId}:{})};
+      if(!settle){
+        const currency=text(p.currency,'原币币种',true,3).toUpperCase(),localCurrency=text(p.localCurrency,'本币币种',true,3).toUpperCase();
+        if(!/^[A-Z]{3}$/.test(currency)||!/^[A-Z]{3}$/.test(localCurrency)||currency===localCurrency)throw new MistCommandError('VALIDATION','原币与本币须为不同的三位币种代码');
+        const rate=text(p.rate,'锁定汇率',true,20),localAmount=major(mistFxLocalMinor(amountMinor,rate)),settleBy=date(p.settleBy,'交割截止日');
+        if(settleBy<day)throw new MistCommandError('VALIDATION','交割截止日不能早于锁汇日期');
+        records.push({...base,kind:'lock',bankName:text(p.bankName,'银行',true,120),currency,localCurrency,localAmount,rate,settleBy});
+        event(state,context,'finance',id,'登记锁汇 '+code+'：'+amount+' '+currency+' @ '+rate+' = '+localAmount+' '+localCurrency+'，交割截止 '+settleBy);
+      }else{
+        const accounts=state.bankAccounts||[],from=find(accounts,text(p.fromAccountId,'卖出账户'),'卖出账户'),to=find(accounts,text(p.toAccountId,'入账账户'),'入账账户');
+        if(from.id===to.id||from.currency===to.currency)throw new MistCommandError('VALIDATION','卖出账户与入账账户须为不同币种');
+        if(from.openingDate>day||to.openingDate>day)throw new MistCommandError('PRECONDITION','结汇日期早于账户期初日期');
+        const localAmount=positive(p.localAmount,'入账本币金额');mistMoneyMinor(localAmount);
+        let lockId:string|undefined;
+        if(p.lockId){const lock=find(records,text(p.lockId,'锁汇合同'),'锁汇合同');
+          if(lock.kind!=='lock'||lock.reversed)throw new MistCommandError('PRECONDITION','锁汇合同无效或已冲回');
+          if(lock.currency!==from.currency||lock.localCurrency!==to.currency)throw new MistCommandError('VALIDATION','币种与锁汇合同不一致');
+          if(day<lock.date)throw new MistCommandError('VALIDATION','结汇日期早于锁汇日期');
+          if(amountMinor>Math.round(mistFxLockUsage(state,lock.id).remaining*100))throw new MistCommandError('PRECONDITION','超过锁汇合同剩余可交割金额');
+          lockId=lock.id;}
+        records.push({...base,kind:'settlement',bankName:from.bankName,currency:from.currency,localCurrency:to.currency,localAmount,rate:mistFxRate(amount,localAmount),fromAccountId:from.id,toAccountId:to.id,...(lockId?{lockId}:{})});
+        event(state,context,'finance',id,'登记结汇 '+code+'：'+from.code+' 卖出 '+amount+' '+from.currency+' → '+to.code+' 入账 '+localAmount+' '+to.currency+(lockId?'（交割锁汇 '+records.find(r=>r.id===lockId)!.code+'）':''));
+      }
+      result={id};break;
+    }
+    case 'finance.fx.reverse': {
+      const r=find(state.fxRecords||[],text(p.id,'锁汇 / 结汇记录'),'锁汇 / 结汇记录'),reason=text(p.reason,'冲回原因',true,500);
+      if(r.reversed)throw new MistCommandError('PRECONDITION',r.code+' 已冲回');
+      if(r.kind==='lock'&&(state.fxRecords||[]).some(x=>x.lockId===r.id&&!x.reversed))throw new MistCommandError('PRECONDITION','该锁汇已有结汇交割，请先冲回相关结汇');
+      r.reversed={at:context.now,actor:context.actorName,reason};
+      event(state,context,'finance',r.id,'冲回'+(r.kind==='lock'?'锁汇 ':'结汇 ')+r.code+'：'+reason+'；原记录保留');result={id:r.id};break;
     }
     case 'customer.update': {
       const c=find(state.customers,p.id,'客户');

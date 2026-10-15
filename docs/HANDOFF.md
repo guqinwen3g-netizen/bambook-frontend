@@ -62,7 +62,7 @@
 
 1. ~~审批与放行 + 付款申请审批~~：已合入 #27。缺口：生产与出运放行、受控例外、报价偏差 / 索赔方案等类型尚无服务端规则，页面明示“未接入”；转交未做。
 2. ~~我的工作待办 + 通知中心~~：已合入 #29。缺口：主管按团队视角（缺团队组织数据）；“出运资料回业务”以“已出运未寄单”近似。
-3. **财务剩余缺口（进行中：(a) 已合入 #32；(b) 分支 `feat/mist-bank-accounts`）**。拆 3 个 PR：
+3. **财务剩余缺口（进行中：(a) 已合入 #32；(b) 已合入 #34；(c) 分支 `feat/mist-fx-records`）**。拆 3 个 PR：
    - (a) 核销冲回 / 付款冲回：新增 `finance.allocation.reverse`、`finance.payment.reverse`，必须写原因、保留原记录与冲回记录（参考应付侧已有的 `PayableReversal`），并受 `server/src/shared/mistOrderFunding.ts` 的 `assertOrderFundingIntegrity`（按 allocations 归属订单到款）约束，冲回后订单到款回算。
    - (b) 银行账户 / 期初余额 / 逐笔流水账户归属；账户余额 = 期初 + 归属流水，不再显示“未接入”。
    - (c) 锁汇 / 结汇记录（原币、汇率、本币、银行、日期），不做汇率估算。

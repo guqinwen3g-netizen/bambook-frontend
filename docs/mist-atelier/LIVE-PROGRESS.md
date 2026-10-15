@@ -10,7 +10,7 @@
 - **本轮已合入（merge commit）**：#26 部署流程 `44458c9`、#27 审批与放行 `fbf1ab6`、#28 运维通道文档 `e5cafcd`、#30 部署 report 修复 `f642b3f`、#29 我的工作待办 + 通知中心 `ea41cbe`。此前 #19–#24（应付收尾、付款收尾、付款 QA、报价 AI 审阅 v2、工作助手方案、工作助手 P0）均已合入。
 - **开放**：#25 工作助手 P1 草稿（待最新 main 同步、CI、用户真实模型验收）；#2 面料开发旧 PR（代码已随后续集成进入 main，疑似已取代，待用户确认是否关闭）。
 - **开发服务器**：仍运行旧版 `544f1c9`，服务与健康接口正常；最新 main 尚未 deploy（需用户同意并在 Actions 手动触发）。
-- **停止点**：财务剩余缺口 (a) 核销 / 付款冲回已合入 PR #32（`baabaa4`）：服务端 `finance.allocation.reverse` / `finance.payment.reverse` + 收款核销侧栏与付款凭证表入口、单测与页面测试，本地 `dev:mist` 演示空间浏览器检查过。开发服务器改为 main 验证通过后自动部署（PR #33）。(b) 银行账户 / 期初 / 逐笔归属在分支 `feat/mist-bank-accounts`：`finance.account.save` / `finance.account.assign` + 账户与余额页、收付款记录归属入口，单测与页面测试已完成，待 CI 合入。下一步 (c) 锁汇结汇。
+- **停止点**：财务剩余缺口 (a) 核销 / 付款冲回已合入 PR #32（`baabaa4`）：服务端 `finance.allocation.reverse` / `finance.payment.reverse` + 收款核销侧栏与付款凭证表入口、单测与页面测试，本地 `dev:mist` 演示空间浏览器检查过。开发服务器改为 main 验证通过后自动部署（PR #33）。(b) 银行账户 / 期初 / 逐笔归属已合入 PR #34（`finance.account.save` / `finance.account.assign`）。(c) 锁汇 / 结汇记录在分支 `feat/mist-fx-records`：`finance.fx.lock` / `.settle` / `.reverse`，结汇计入账户余额，单测与页面测试已完成，待 CI 合入。财务第 3 项完成后转第 4 项智能邮箱真实收发（需用户提供测试邮箱）。
 
 ## 当前交接 · 工作助手 P0（已合入 PR #24）
 
