@@ -16,7 +16,7 @@ Bambook 是公司内部业务系统，覆盖开发与寻样、报价、订单、
 
 1. 审批与放行页面 `approvals` + 付款申请审批：已合入（[PR #27](https://github.com/guqinwen3g-netizen/bambook-main/pull/27)）。生产与出运放行、受控例外尚无服务端规则，页面明示未接入。
 2. 我的工作待办来源补齐 + 通知中心 `notifications`：已合入（[PR #29](https://github.com/guqinwen3g-netizen/bambook-main/pull/29)）。主管按团队视角未做（缺团队组织数据）。
-3. **进行中**：财务剩余缺口。(a) 核销冲回 / 付款冲回已合入（[PR #32](https://github.com/guqinwen3g-netizen/bambook-main/pull/32)，`baabaa4`）；(b) 银行账户 / 期初、(c) 锁汇结汇尚未开始，拆分方案与代码锚点见交接文档第 6 节。
+3. **进行中**：财务剩余缺口。(a) 核销冲回 / 付款冲回已合入（[PR #32](https://github.com/guqinwen3g-netizen/bambook-main/pull/32)，`baabaa4`）；(b) 银行账户 / 期初 / 逐笔归属：分支 `feat/mist-bank-accounts`（PR 待合入）；(c) 锁汇结汇尚未开始，拆分方案与代码锚点见交接文档第 6 节。
 4. 智能邮箱真实收发（需用户提供测试邮箱）。
 5. 平台类模块（管理后台、设置、人事、报表、数据中心、业务工具、统一搜索）。
 6. 工作助手 P2–P4（P1 草稿 [PR #25](https://github.com/guqinwen3g-netizen/bambook-main/pull/25) 待用户本机真实模型验收）。

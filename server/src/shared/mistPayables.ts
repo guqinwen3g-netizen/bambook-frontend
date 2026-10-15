@@ -678,7 +678,8 @@ export function applyPayablesCommand(root: Root, command: PayablesCommand, c: Mi
       const reason = text(p.reason, '冲回原因', true, 500), rid = c.id();
       for (const a of activeAllocations(root).filter(a => a.supplierPaymentId === payment.id)) s.reversals.push({ id: c.id(), kind: 'allocation', targetId: a.id, parentId: rid, amount: a.amount, currency: a.currency, reason, at: c.now, actor: c.actorName });
       s.reversals.push({ id: rid, kind: 'payment', targetId: payment.id, amount: payment.amount, currency: payment.currency, reason, at: c.now, actor: c.actorName });
-      root.payments.push({ id: c.id(), code: nextCode('PAY', root.payments, c.now), date: today, payee: payment.supplier, amount: -payment.amount, currency: payment.currency, ref: `冲回 ${payment.code} · ${reason}` } as MistPayment);
+      const voucherAccount = root.payments.find(v => v.id === payment.paymentId)?.accountId;
+      root.payments.push({ id: c.id(), code: nextCode('PAY', root.payments, c.now), date: today, payee: payment.supplier, amount: -payment.amount, currency: payment.currency, ref: `冲回 ${payment.code} · ${reason}`, ...(voucherAccount ? { accountId: voucherAccount } : {}) } as MistPayment);
       const request = s.requests.find(r => r.id === payment.requestId && r.supplierPaymentId === payment.id);
       if (request) { request.state = 'approved'; delete request.supplierPaymentId; }
       event(root, c, payment.id, `冲回付款 ${payment.code}：${reason}${request ? `；申请 ${request.code} 回到已批准待付` : ''}`);
@@ -854,7 +855,8 @@ export function applyPayablesCommand(root: Root, command: PayablesCommand, c: Mi
       if (m.kind === 'transfer' && m.targetPurchaseId && purchasePrepaymentAvailableMinor(root, m.targetPurchaseId) < mistMoneyMinor(m.amount)) fail(`${m.targetPurchaseCode} 已使用转入的预付（结算抵扣、退款或再转出），请先冲回这些记录`, 'PRECONDITION');
       const reason = text(p.reason, '冲回原因', true, 500);
       m.reversed = { at: c.now, actor: c.actorName, reason };
-      if (m.kind === 'refund') root.payments.push({ id: c.id(), code: nextCode('PAY', root.payments, c.now), date: today, payee: m.supplier, amount: m.amount, currency: m.currency, ref: `冲回退款登记 ${m.code} · ${reason}` } as MistPayment);
+      const refundAccount = root.payments.find(v => v.id === m.paymentId)?.accountId;
+      if (m.kind === 'refund') root.payments.push({ id: c.id(), code: nextCode('PAY', root.payments, c.now), date: today, payee: m.supplier, amount: m.amount, currency: m.currency, ref: `冲回退款登记 ${m.code} · ${reason}`, ...(refundAccount ? { accountId: refundAccount } : {}) } as MistPayment);
       event(root, c, m.id, `冲回剩余预付${m.kind === 'refund' ? '退款' : '转抵'} ${m.code}：${reason}`);
       return { id: m.id };
     }
