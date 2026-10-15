@@ -1,90 +1,105 @@
-# Bambook 开发环境交付通道
+# Bambook 开发环境（腾讯云）设计与交付
 
-适用：腾讯云 KOOGO 开发服务器，独立账号 `bambook-deploy`，交付目录 `/srv/bambook-dev`。这不是正式生产环境，也不使用旧 Mac mini 的数据库。
+适用：腾讯云轻量服务器 KOOGO（上海，124.222.56.61，Ubuntu 26.04），公网入口 `https://bambook-dev.sylway.cloud`。这不是正式环境：不使用旧 Mac mini 与 `jiangsupanda.com`，不连接正式数据库、正式 PDML，不涉及真实资金。
 
-## 云端 Agent 怎样交付
+## 当前状态（2026-10-15）
 
-1. 在任务分支完成代码并通过现有验证，经 PR 合入主线。
-2. 在 Actions 中手动运行 `Bambook development delivery`。第一次选择 `check`，只验证连接，不发送应用。
-3. 应用部署准备完成后选择 `deploy`；流程要求准确主线提交已有成功的 `verify` 检查，将该提交的后端与前端发送到独立版本目录，再启动和核对本机健康接口。不会因普通 push 自动部署。
+- 已上线：两个后端服务、同域前端、Cloudflare Tunnel、专用开发库（结构 + 基础数据 + 模拟岗位账号）、平台 AI（ChatGPT 订阅，经海外出口）。
+- 公网已验证：7 个岗位测试账号登录；非管理员访问 `/api/admin/*` 与平台 AI 配置为 403、匿名 401；主 API（客户 / 产品 / 订单）与 Mist（工作区 / 平台 AI）可用；Mist 助手经平台 ChatGPT 真实回答。
+- 未做：Cloudflare Access（用户决定暂不启用，目前任何人可见登录页，需账号密码才能进入）；正式数据迁移（不做）。
+- 已知未解：连接 ChatGPT 后第一次助手调用曾返回“模型服务暂时不可用”，之后无法复现；该路径未记录底层错误，再出现时先补日志。
 
-服务器地址和账号在 workflow 中。私钥只存为仓库 Actions secret `BAMBOOK_DEV_SSH_KEY`，受信任主机公钥存为 `BAMBOOK_DEV_KNOWN_HOSTS`。不在聊天、代码或日志中输出私钥。
+## 架构
 
-SSH key 强制经过接收程序，只接受 `check`、`receive <40位提交>`、`activate <40位提交>`，不能当通用终端或 SFTP 使用。接收程序拒绝路径越界、符号链接、设备文件、重复路径和超过限制的压缩包；相同提交重复传送必须字节一致。项目 agent 无需在用户本机。
-
-服务器上运行的是 root 所有的副本 `/usr/local/libexec/bambook-dev-receiver.py`，仓库改动不会自动生效。本仓库版本要求压缩包包含 `.nvmrc`：接收程序更新后，须由管理员把服务器副本替换为合入主线的版本（root 所有、0755），否则 `receive` 会以 `unsupported archive entry` 拒绝新包。
-
-## 服务器初始化（管理员，一次性，可重复执行）
-
-以 root 运行仓库中的 `scripts/deploy/bootstrap-dev-server.sh`（腾讯云 OrcaTerm 或管理员 SSH）。脚本幂等、不打印生成的密钥，已有配置与数据库保留：
-
-- 2G 交换空间；Node 主版本与 `.nvmrc` 一致（NodeSource）；nginx、PostgreSQL。
-- 专用库 `panda_hub_dev` 与角色 `bambook_dev`（随机密码只写入 `/etc/bambook-dev/backend.env`，root:bambook-deploy 0640）。环境含 `DATABASE_URL`、随机 `JWT_SECRET` / `SYSTEM_CONFIG_ENCRYPTION_KEY`（平台 AI 等系统配置加密）/ `BAMBOOK_COOKIE_SECRET`、`NODE_ENV=production`（强制鉴权）、`PORT=8081`、`BAMBOOK_HOST=127.0.0.1`（只监听回环）、`BAMBOOK_UPLOAD_DIR` / `BAMBOOK_PRIVATE_FILES_DIR` / `BAMBOOK_AI_SUBSCRIPTION_DIR`（均在 `/srv/bambook-dev/shared`，跨版本保留）、`BAMBOOK_CODEX_SUBSCRIPTION=1`（管理员可连接 ChatGPT 订阅作为平台 AI）、`PDML_SYNC_DISABLED=true`（开发机永不同步正式 PDML）、`AUTH_REQUIRE_EMAIL_VERIFY=0`、`TZ`。重复执行 bootstrap 只补缺失项，不覆盖已有值。
-- 两个固定服务，均以 `bambook-deploy` 身份、工作目录 `/srv/bambook-dev/current/server`、Node 执行本地 tsx CLI：`bambook-dev.service` 跑完整主 API `src/index.ts`（与正式环境同一入口；业务、管理后台、产品、报价、财务、知识库等），监听 127.0.0.1:8081；`bambook-dev-mist.service` 跑 Mist 工作区 API `src/mist/standalone.ts`（工作区、评审、平台 AI 模型 / ChatGPT 订阅），监听 127.0.0.1:8082。前端 Mist Atelier 两者都要用；两者共用同一库与 `JWT_SECRET`，登录态互通。只读系统、仅 `shared/` 可写（`server/logs`、`server/storage`、`server/data` 与版本根的 `output` 在发布时链接到 `shared/`），内存上限分别 1.5G / 768M。sudo 只允许该账号重启 / 停止这两个服务；发布时两个都通过健康检查才算激活，否则回滚。
-- nginx 仅监听 `127.0.0.1:8080`：静态前端取当前版本 `web/`，`/api/mist/` 转发 8082，其余 `/api/` 转发 8081（公共代理参数在 `/etc/nginx/snippets/bambook-dev-proxy.conf`，含较大的响应头缓冲，避免管理员登录 Cookie 导致 502）。Cloudflare Tunnel 连到这里，不开放 80 / 443。
-- 每日 `pg_dump` 备份到 `/var/backups/bambook-dev`，保留 7 天。
-
-服务器上运行的接收程序是 root 所有的副本 `/usr/local/libexec/bambook-dev-receiver.py`，仓库改动不会自动生效。本版本要求压缩包包含 `.nvmrc` 与 `web/index.html`：接收程序更新后，须由管理员把服务器副本替换为合入主线的版本（root 所有、0755），否则 `receive` 会以 `unsupported archive entry` 拒绝新包。
-
-## 交付内容与激活
-
-`deploy` 在 GitHub 构建同域前端（`BAMBOOK_WEB_SUBDOMAIN=1`、`VITE_API_BASE_URL=/api`；不含 Mist 不使用的旧地图数据），与该提交的 `server`、`.nvmrc`、发布脚本一起打成确定性压缩包（固定时间戳与排序，同一提交重复交付字节一致）。
-
-交付脚本先核对服务器 Node 主版本与 `.nvmrc` 一致，再安装锁定依赖、生成 Prisma client、检查 Mist 类型；这些步骤完成后才读入 `backend.env`，依赖安装脚本看不到数据库密码和签名密钥。随后切换版本并验证健康接口，失败时恢复旧版本。激活成功后只保留当前、上一版及最近版本共 4 个，其余版本目录（各自带依赖）自动删除。它不会自动执行 schema 迁移、重置数据库或迁移真实数据。
-
-## 数据库结构与测试账号（管理员单独确认后执行）
-
-首次部署成功后，以 root 执行 `sudo bash /srv/bambook-dev/current/server/scripts/init-dev-database.sh`。它只接受本机 `panda_hub_dev`：空库时按 `schema.prisma` 建表（`db push`），并把全部迁移标记为已应用作为基线——迁移历史无法从空库重放（早期迁移依赖库外已有表）；随后 `migrate deploy`、`seed:base`、补建 `owner@bambook.local`、`seed:dev-roles`，最后给管理员与各岗位测试账号设置各自随机密码，只写入 root 可读的 0600 `/srv/bambook-dev/shared/test-accounts.txt`，不打印、不入库。脚本幂等，可重复执行（重复执行会重新生成测试密码）。后续 schema 变更照常逐次确认后执行 `migrate deploy`；正式库禁止 `db push` 的原则不变。
-
-## 域名
-
-开发环境前端与接口在**同一个域名** `bambook-dev.sylway.cloud`，由 Cloudflare Tunnel 转到本机 nginx，并以 Cloudflare Access（邮箱验证码）限制访问。Mist 登录依赖 Cookie，前后端分属不同站点时浏览器会拦截跨站 Cookie；`jiangsupanda.com` 属于正式环境，开发环境不使用。`bambook-dev-api.sylway.cloud` 的直连 A 记录不再需要。
-
-## 手动触发（不需要用户本地电脑）
-
-云端 coding agent 或仓库维护者打开 GitHub → Actions → `Bambook development delivery` → Run workflow，选择 `main`：
-
-- `check`：只检查专用 SSH 通道，不上传、不启动应用。输出 `channel: ready` 才表示通道连接成功。
-- `deploy`：交付当次选中的主线提交并激活。必须先通过同一提交的 `verify`；应用环境、数据库 schema 和服务单元未配置时会明确失败，不把连接成功当成应用上线。
-
-这是人工决定何时发布、由流程执行上传；普通 push 不会自动发布。不要把私钥放进任务提示词或导出仓库 Secrets。代码必须由仓库版本生成，不上传个人工作区、密钥或运行数据。
-
-## GitHub Actions 不可用时的控制台备用方式
-
-使用已授权的腾讯云 OrcaTerm 管理会话，或另行授权的管理员 SSH 登录；受限的 `bambook-deploy` 密钥不能打开通用 shell/SFTP。
-
-1. 在有仓库权限的构建环境选定已验证的完整 40 位提交号，按 workflow「Send verified release and activate」同样的步骤生成压缩包（`.nvmrc`、`server`、发布脚本与构建后的 `web/`）。包中不包含数据库、附件、`.env`、`node_modules`。
-2. 用腾讯云控制台文件上传将包放到管理员可读的临时位置，校验 SHA-256。若文件管理器不支持当前免密会话，需使用已授权的 SSH/SFTP 方式，不临时开放匿名上传接口。
-3. 管理员以接收账号调用同一接收程序，而不是直接覆盖运行目录。将下面占位值替换成实际完整提交号和上传包路径：
-
-```sh
-revision=REPLACE_WITH_VERIFIED_40_CHARACTER_COMMIT
-bundle=/home/ubuntu/REPLACE_WITH_UPLOADED_BUNDLE.tar.gz
-sudo -u bambook-deploy env SSH_ORIGINAL_COMMAND="receive $revision" \
-  /usr/bin/python3 /usr/local/libexec/bambook-dev-receiver.py < "$bundle"
-sudo -u bambook-deploy env SSH_ORIGINAL_COMMAND="activate $revision" \
-  /usr/bin/python3 /usr/local/libexec/bambook-dev-receiver.py
+```
+浏览器 ──HTTPS── Cloudflare（sylway.cloud）── Tunnel bambook-dev ── 服务器 cloudflared
+                                                                    │
+                                              nginx 127.0.0.1:8080 ─┤ /            → current/web（Mist Atelier 静态前端）
+                                                                    │ /api/mist/   → 127.0.0.1:8082 bambook-dev-mist.service
+                                                                    │ /api/*       → 127.0.0.1:8081 bambook-dev.service
+                                              PostgreSQL 18 localhost panda_hub_dev
+                                              sing-box 127.0.0.1:7890（仅 OpenAI 域名走海外节点）
 ```
 
-只有第一步返回接收成功，才执行第二步激活。两条命令都不应打印环境文件或密码。服务启动前置条件与自动流程相同。
+- 前端是 Mist Atelier（根 `vite build`，`BAMBOOK_WEB_SUBDOMAIN=1`、`VITE_API_BASE_URL=/api`），同时依赖两套后端：`/api/mist/*`（工作区、评审、平台 AI 模型 / ChatGPT 订阅）和主 API（`/api/auth`、`/api/v1/*`、`/api/products`、`/api/knowledge` 等）。
+- `bambook-dev.service`：完整主 API `server/src/index.ts`（与正式同一入口），`PORT=8081`、`BAMBOOK_HOST=127.0.0.1`。
+- `bambook-dev-mist.service`：Mist 工作区 API `server/src/mist/standalone.ts`，`MIST_PORT=8082`、`MIST_HOST=127.0.0.1`、`MIST_LOCAL_WORKSPACE=0`。非本地模式下 `/api/mist/session` 在鉴权前直接 404——前端据此判断“服务器账号模式”并显示登录页（返回 401 会被误判为本地工作区故障）。
+- 两个服务共用同一库与 `JWT_SECRET`，登录态互通；均以 `bambook-deploy` 运行，`ProtectSystem=strict`，仅 `/srv/bambook-dev/shared` 可写，内存上限 1.5G / 768M。
+- 对外只有 22 端口（SSH）；80/443 不开放，所有 Web 流量经 Tunnel。
 
-## 状态与故障判断
+## 目录与配置
 
-- DNS 存在：只代表域名解析已配置。
-- `check` 成功：只代表 GitHub/SSH 交付通道可用。
-- `receive` 成功：只代表准确提交的文件收到，尚未启动。
-- `activate` 成功：本机健康检查通过，仍需验证外部 HTTPS、认证和前端请求。
-- CI 未通过：修复代码或验证环境后重跑，不直接跳过门禁。
-- 接收失败：保留原服务，核对包路径、大小、提交号及文件范围。
-- 激活失败：脚本在存在旧版本时回切旧版本；不会回滚数据库。迁移必须单独具备恢复方案。
-- 域名不可访问：分别排查 Cloudflare 规则、源站证书、反向代理、防火墙与应用健康，不把 DNS 成功误判为服务上线。
+| 路径 | 内容 |
+| --- | --- |
+| `/srv/bambook-dev/releases/<40位提交>` | 各版本（自带 `node_modules`），保留 4 个 |
+| `/srv/bambook-dev/current` | 指向当前版本 |
+| `/srv/bambook-dev/shared/` | 跨版本数据：`logs` `storage` `data` `output`（发布时链接进版本）、`uploads` `private-files` `mist-files` `ai-subscriptions`（ChatGPT 凭据）、`test-accounts.txt`（root 0600） |
+| `/etc/bambook-dev/backend.env` | root:bambook-deploy 0640；数据库、密钥、端口、目录、开关；bootstrap 只补缺失项 |
+| `/etc/bambook-dev/proxy/nodes.txt` | root 0600；海外节点（不入库） |
+| `/etc/cloudflared/config.yml` + `<隧道ID>.json` | 隧道 `bambook-dev` → `http://127.0.0.1:8080`，systemd `cloudflared` |
+| `/etc/nginx/sites-available/bambook-dev`、`/etc/nginx/snippets/bambook-dev-proxy.conf` | 分流与代理参数（较大的响应头缓冲：管理员登录 Cookie 约 7KB，默认缓冲会 502） |
+| `/var/backups/bambook-dev` | 每日 `pg_dump`，保留 7 天 |
 
-目前已验证：Node/npm、PostgreSQL 本机运行、专用账号外部 SSH check、非允许命令拒绝、DNS 记录。尚未验证：应用首次部署、数据库结构、服务单元、HTTPS、公网业务接口。
+`backend.env` 关键项：`DATABASE_URL`（localhost）、随机 `JWT_SECRET` / `SYSTEM_CONFIG_ENCRYPTION_KEY` / `BAMBOOK_COOKIE_SECRET`、`NODE_ENV=production`（强制鉴权，Mist 禁用本地全权限身份）、`BAMBOOK_CODEX_SUBSCRIPTION=1`、`PDML_SYNC_DISABLED=true`、`AUTH_REQUIRE_EMAIL_VERIFY=0`、各目录、`MIST_CORS_ORIGINS`、`TZ`，以及代理启用后追加的 `HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY` / `NODE_USE_ENV_PROXY=1`。
 
-## OpenAI 出口（ChatGPT 订阅）
+## 服务器初始化（root，一次性，可重复执行）
 
-腾讯云大陆地域的出口 IP 被 OpenAI 按地区拒绝（`unsupported_country_region_territory`），平台 AI 的设备码登录和调用都需要海外出口。开发机用 sing-box 做本机分流代理：
+`scripts/deploy/bootstrap-dev-server.sh`：交换空间（已有则跳过）、Node（与 `.nvmrc` 主版本一致）、nginx、PostgreSQL、库与角色（随机密码只写入 `backend.env`）、两个 systemd 单元、sudoers（`bambook-deploy` 只能 restart / stop 这两个服务）、nginx 站点、备份 cron、代理命令与空节点文件。不打印密钥，已有配置与数据保留。
 
-- 安装：sing-box 来自 apt 源 `deb.sagernet.org`（公钥 `2C317FBD5D886B4E89BAE8DA6D9152172A2B2F0C`；大陆服务器直连 `sing-box.app` 取公钥会超时，需从别处取得后放入 `/etc/apt/keyrings/sagernet.asc`）。
-- 节点：管理员把 Shadowrocket 导出的分享 URL（ss / vmess / vless / trojan / hysteria2 / tuic）、订阅链接、订阅内容或 sing-box JSON 粘进 `/etc/bambook-dev/proxy/nodes.txt`（root 0600，不入库），然后执行 `sudo bambook-dev-proxy apply`。节点须位于 OpenAI 支持的地区（香港不行）。
-- 行为：生成 `/etc/sing-box/config.json`，只在 `127.0.0.1:7890` 监听；仅 OpenAI 相关域名走节点，其余直连；多个节点时自动测速选优。成功后给 `backend.env` 补 `HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY` / `NODE_USE_ENV_PROXY=1` 并重启两个后端服务。`sudo bambook-dev-proxy test` 显示出口地区和 OpenAI 登录接口状态（403 表示仍被地区拒绝）。
+接收程序 `/usr/local/libexec/bambook-dev-receiver.py` 是 root 所有的副本，仓库改动不会自动生效；改动后由管理员替换（0755）。cloudflared（pkg.cloudflare.com apt 源）与 sing-box（见下文）单独安装。
+
+## 交付与激活
+
+正常路径：PR 合入 main → GitHub Actions `Bambook development delivery` 手动运行。`check` 只测通道；`deploy` 要求同一提交 `verify` 已通过，在 CI 构建前端，打包 `.nvmrc`、`server`、`scripts/deploy/bambook-dev-release.sh`、`web/`（确定性：固定排序与时间戳），经受限 SSH 发送。普通 push 不部署。私钥只在仓库 secret `BAMBOOK_DEV_SSH_KEY`，主机公钥在 `BAMBOOK_DEV_KNOWN_HOSTS`。
+
+受限 SSH 强制经过接收程序，只接受 `check`、`receive <提交>`、`activate <提交>`；拒绝越界路径、链接、设备文件、重复路径、超限包，`scripts/` 下只允许发布脚本本身（其他运维脚本放 `server/scripts/` 才会随包交付）。
+
+发布脚本 `bambook-dev-release.sh`：核对 Node 主版本 → `npm ci` → `prisma generate` → 全量 `tsc --noEmit`（约 1.9GB 内存）→ 链接 shared 目录 → 读入 `backend.env` 并校验（回环监听、PDML 关闭、密钥齐全）→ 切换 `current` → 重启两个服务 → 两个健康检查都通过才算激活，否则回切旧版本。不自动迁移或重置数据库。
+
+### 备用：管理员手工交付
+
+GitHub Actions 不可用、或分支未合入时使用（本次上线即用此方式）。在服务器组装与 CI 相同范围的包，再走同一接收程序：
+
+```sh
+revision=<已推送的完整 40 位提交>
+# 组装目录只含 .nvmrc、server（无 node_modules / logs / storage / data）、scripts/deploy/bambook-dev-release.sh、web/
+tar -c --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner .nvmrc server scripts web | gzip -n > /tmp/release.tgz
+sudo -u bambook-deploy env SSH_ORIGINAL_COMMAND="receive $revision" /usr/bin/python3 /usr/local/libexec/bambook-dev-receiver.py < /tmp/release.tgz
+sudo -u bambook-deploy env SSH_ORIGINAL_COMMAND="activate $revision" /usr/bin/python3 /usr/local/libexec/bambook-dev-receiver.py
+```
+
+激活约 4–5 分钟（依赖安装 + 类型检查）。
+
+## 数据库与测试账号
+
+首次部署后以 root 执行 `sudo bash /srv/bambook-dev/current/server/scripts/init-dev-database.sh`（仅接受本机 `panda_hub_dev`，幂等）：
+
+1. 空库按 `schema.prisma` 建表（`db push`），并把全部迁移标记为已应用作为基线——迁移历史无法从空库重放（早期迁移依赖库外已有表）。之后 schema 变更照常 `migrate deploy`。正式库禁止 `db push` 的原则不变。
+2. `seed:base` → 补建 `owner@bambook.local`（`SEED_OWNER_ALLOW_NONEMPTY=1`，因 `seed:base` 已建演示账号）→ `seed:dev-roles`（17 个模拟员工、5 个业务组、5 个模拟客户，不造订单 / 报价 / 财务数据）。
+3. 给 owner 与面料主管、面料一组组长 / 组员、财务、面料 QC、物流设置随机密码，只写入 root 0600 `/srv/bambook-dev/shared/test-accounts.txt`。重复执行会重新生成这些密码。
+
+另有用户指定的简单管理员 `admin@bambook.local`（超级管理员，密码由用户指定，不入库），为手工创建，重建开发库后需重建。登录框为邮箱类型，须输入完整邮箱。
+
+## 平台 AI 与 OpenAI 出口
+
+大陆出口 IP 被 OpenAI 按地区拒绝（`unsupported_country_region_territory`；代码会误报为“账号未启用设备码”）。开发机用 sing-box 分流：
+
+- 安装：apt 源 `deb.sagernet.org`，公钥指纹 `2C317FBD5D886B4E89BAE8DA6D9152172A2B2F0C`（服务器直连 `sing-box.app` 取公钥会超时，需从别处取得放入 `/etc/apt/keyrings/sagernet.asc`）。
+- 节点：Shadowrocket 分享 URL（ss / vmess / vless / trojan / hysteria2 / tuic）、Shadowrocket 节点 JSON（Socks5 / HTTP / Shadowsocks / Trojan）、订阅链接或内容、sing-box JSON，写入 `/etc/bambook-dev/proxy/nodes.txt`，执行 `sudo bambook-dev-proxy apply`；`sudo bambook-dev-proxy test` 查看出口地区与 OpenAI 登录接口状态（403 = 仍被拒）。节点须在 OpenAI 支持地区（香港不行）。当前为美国节点。
+- 只有 OpenAI 相关域名走节点，其余直连；`apply` 成功后才给后端加代理变量并重启，节点不可用时不会切断后端。
+- 连接 ChatGPT：管理员在平台 AI 模型页发起设备码登录（`POST /api/mist/ai/platform-model/chatgpt/login`），在 `https://auth.openai.com/codex/device` 输入代码。凭据存 `shared/ai-subscriptions`。
+
+## 管理访问
+
+- 腾讯云控制台 OrcaTerm（`ubuntu`，免密 sudo）。
+- 临时管理员 SSH 公钥（注释 `notion-agent-bambook-dev-admin`，在 `ubuntu` 的 `authorized_keys`）：供云端 Agent 运维，按用户要求暂时保留；不再需要时删除该行即可。
+- `bambook-deploy` 的受限密钥只能交付，不能开 shell。
+
+## 故障判断
+
+- `check` 成功只代表通道可用；`receive` 成功只代表文件收到；`activate` 成功代表本机两个健康检查通过，仍需验证公网、登录与前端。
+- 激活失败：已回切旧版本，查 `journalctl -u bambook-dev -u bambook-dev-mist`。常见原因是代码往只读版本目录写文件——把该路径加入发布脚本的 shared 链接。
+- 前端显示“工作区连接待核对 / 本地工作身份”：`/api/mist/session` 没有返回 404。
+- 管理员登录 502：nginx 响应头缓冲不足。
+- 平台 AI 失败：`sudo bambook-dev-proxy test`；`systemctl status sing-box`。
+- 域名不可访问：`systemctl status cloudflared`、nginx、两个服务健康，逐层排查。
