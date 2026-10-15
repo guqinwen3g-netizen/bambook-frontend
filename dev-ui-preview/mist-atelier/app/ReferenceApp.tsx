@@ -1,5 +1,5 @@
 import React from 'react';
-import { ClipboardList, Component, KeyRound, Layers, LogOut, Moon, Settings2, ShieldCheck, Sparkles, SquareDashed } from 'lucide-react';
+import { Bell, ClipboardList, Component, KeyRound, Layers, LogOut, Moon, Settings2, ShieldCheck, Sparkles, SquareDashed } from 'lucide-react';
 import {
   AssistantDrawer, Banner, Button, Card, CardHeader, CommandPalette, Drawer, EmptyState, Field, KeyValue, TextInput, MistAppShell, MistPage, MistRoot, MistSidebarPresentation, MistTopbar, ToastProvider, MistDensityContext, useHotkey, useToast,
   type ChatMessage, type CommandItem, type Crumb, type NavSection, type ThemeMode,
@@ -35,6 +35,7 @@ import { LocalMesPage } from './pages/modules/LocalMesPage';
 import { EmailsPage } from './pages/modules/EmailsPage';
 import { MistReviewButton, MistReviewProvider } from './runtime/reviews';
 import { ApprovalsPage } from './pages/ApprovalsPage';
+import { NotificationsPage } from './pages/NotificationsPage';
 import { moduleSearchRecords } from './runtime/search';
 import { apiService } from '../../../services/apiService';
 import { platformBusinessDate } from '../../../server/src/shared/mistPlatform';
@@ -44,11 +45,11 @@ const PAGES: Record<string, React.FC> = {
   ...FULFILLMENT_PAGES,...MARKET_PAGES,...PLATFORM_PAGES,
   emails: EmailsPage, cockpit: HomePage, development: DevListPage, 'development/detail': DevDetailPage, 'development/new': DevCreatePage,
   orders: OrderListPage, 'orders/detail': OrderDetailPage, 'orders/new': OrderCreatePage, calendar: CalendarPage, 'payment-vouchers': FinancePage, crm: CustomerPage,
-  'production-board': ProductionPage, 'system-settings': SettingsPage, settings: SettingsPage, 'workspace-settings': SettingsPage, approvals: ApprovalsPage, states: StatesPage, 'design-system': DesignSystemPage,
+  'production-board': ProductionPage, 'system-settings': SettingsPage, settings: SettingsPage, 'workspace-settings': SettingsPage, approvals: ApprovalsPage, notifications: NotificationsPage, states: StatesPage, 'design-system': DesignSystemPage,
 };
-const LIVE_VIEWS = new Set(['emails','cockpit','development','development/detail','development/new','orders','orders/detail','orders/new','payment-vouchers','crm','production-board','calendar','system-settings','settings','workspace-settings','approvals']);
+const LIVE_VIEWS = new Set(['emails','cockpit','development','development/detail','development/new','orders','orders/detail','orders/new','payment-vouchers','crm','production-board','calendar','system-settings','settings','workspace-settings','approvals','notifications']);
 const ROUTE_KEYS = ['view','id','versionId','batchId','section','customerId','orderLineId','productionId','detail'] as const;
-const LABELS: Record<string, string> = { 'design-system': '设计系统', states: '空 / 加载 / 错误', 'system-settings': '系统设置', settings: '系统设置', 'workspace-settings': '工作空间设置', approvals: '审批与放行' };
+const LABELS: Record<string, string> = { 'design-system': '设计系统', states: '空 / 加载 / 错误', 'system-settings': '系统设置', settings: '系统设置', 'workspace-settings': '工作空间设置', approvals: '审批与放行', notifications: '通知中心' };
 const GROUPS: Record<string, string> = { overview: '我的事务', customer: '客户与市场', fulfillment: '订单履约', finance: '财务与成本', platform: '平台' };
 
 export function readMistRoute(): Route {
@@ -86,7 +87,7 @@ function useSections(): NavSection[] {
 function crumbsFor(route: Route, go: (view: string, id?: string) => void, objectLabel?: string, versionLabel?: string): Crumb[] {
   const base = route.view.split('/')[0], mod = getModuleByView(base as View);
   const label = mod?.productLabel ?? LABELS[base] ?? base;
-  const crumbs: Crumb[] = [{ label: mod ? GROUPS[mod.nav.group] : base === 'workspace-settings' || base === 'approvals' ? '我的事务' : '设计系统', hideOnMobile: true }];
+  const crumbs: Crumb[] = [{ label: mod ? GROUPS[mod.nav.group] : base === 'workspace-settings' || base === 'approvals' || base === 'notifications' ? '我的事务' : '设计系统', hideOnMobile: true }];
   if (route.view.includes('/')) {
     crumbs.push({ label, onClick: () => go(base) });
     crumbs.push(route.view.endsWith('/new') ? { label: base === 'orders' ? '新建订单' : '新建开发案' } : { label: objectLabel || route.id || '未指定对象', mono: true });
@@ -205,6 +206,7 @@ function AppInner({ theme, setTheme }: { theme: ThemeMode; setTheme: (theme: The
     ...sections.flatMap(section => section.items.map(item => ({ id: 'go-' + item.id, group: '跳转', label: item.label, hint: section.label, icon: item.icon, run: () => go(item.id) }))),
     ...(canDevelopment?[{id:'new-dev',group:'操作',label:'新建开发案',run:()=>go('development/new')}]:[]),
     { id: 'approvals', group: '操作', label: '审批与放行', keywords: '审批 待我审批 放行 付款申请', icon: ClipboardList, run: () => go('approvals') },
+    { id: 'notifications', group: '操作', label: '通知中心', keywords: '通知 提醒 未读 消息', icon: Bell, run: () => go('notifications') },
     { id: 'theme', group: '操作', label: '切换深浅色', icon: Moon, run: toggleTheme },
     { id: 'ai', group: '操作', label: '问小竹', hint: '⌘ J', icon: Sparkles, run: ()=>openAI() },
   ];
@@ -250,7 +252,7 @@ function AppInner({ theme, setTheme }: { theme: ThemeMode; setTheme: (theme: The
       <CommandPalette open={palette} onClose={() => setPalette(false)} query={query} onQueryChange={setQuery} items={commands} />
       <AssistantDrawer key={aiScope} open={ai} onClose={() => setAI(false)} messages={[overview(),...msgs,...(aiBusy?[{role:'typing'} as ChatMessage]:[])]} onSend={question=>void send(question)} sub={aiBusy?'正在生成只读建议':'基于选定来源回答 · 不执行业务操作'} suggestions={aiBusy?[]:['根据当前事实建议下一步','哪些信息还需要核实']} />
       <Drawer open={notifications} onClose={()=>setNotifications(false)} title="通知" sub="来自当前工作空间的操作记录"
-        footer={<Button disabled={!visibleNotifications.some(n=>!n.readAt)} loading={workspace.saving} onClick={()=>void workspace.run({type:'notification.readAll',payload:{}}).catch(report)}>全部标为已读</Button>}>
+        footer={<><Button variant="quiet" onClick={()=>{setNotifications(false);go('notifications');}}>查看全部通知</Button><Button disabled={!visibleNotifications.some(n=>!n.readAt)} loading={workspace.saving} onClick={()=>void workspace.run({type:'notification.readAll',payload:{}}).catch(report)}>全部标为已读</Button></>}>
         {state?.settings.notifications.digest&&<Card><CardHeader title="今日工作摘要" sub="按当前记录生成 · 不发送邮件"/><div className="mist-card-body">{dailyDigest.length?dailyDigest.map(item=><p key={item.id}><Button variant="quiet" onClick={()=>go(item.target.view,item.target.id,item.target)}>{item.label} · {item.detail}</Button></p>):<p>今天没有待处理事项。</p>}</div></Card>}
         {visibleNotifications.length?visibleNotifications.slice().reverse().map(n=><Card key={n.id}><CardHeader title={n.title} sub={new Date(n.at).toLocaleString()} tools={<Button variant="quiet" onClick={()=>{void (n.readAt?Promise.resolve():workspace.run({type:'notification.read',payload:{id:n.id}})).then(()=>{if(n.target)go(n.target.view,n.target.id,n.target);}).catch(report);}}>{n.readAt?'查看':'阅读'}</Button>} /><p className="mist-card-body">{n.detail}</p></Card>):<EmptyState title="暂无通知" />}
       </Drawer>
