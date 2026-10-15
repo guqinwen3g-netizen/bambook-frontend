@@ -54,7 +54,7 @@
 
 受限 SSH 强制经过接收程序，只接受 `check`、`receive <提交>`、`activate <提交>`；拒绝越界路径、链接、设备文件、重复路径、超限包，`scripts/` 下只允许发布脚本本身（其他运维脚本放 `server/scripts/` 才会随包交付）。
 
-发布脚本 `bambook-dev-release.sh`：核对 Node 主版本 → `npm ci` → `prisma generate` → 全量 `tsc --noEmit`（约 1.9GB 内存）→ 链接 shared 目录 → 读入 `backend.env` 并校验（回环监听、PDML 关闭、密钥齐全）→ 切换 `current` → 重启两个服务 → 两个健康检查都通过才算激活，否则回切旧版本。不自动迁移或重置数据库。日志里每步带 `[release +N s]` 耗时。
+发布脚本 `bambook-dev-release.sh`：核对 Node 主版本 → 依赖（`server/package-lock.json` 与 Node 版本都与当前版本相同时，从当前版本整份复制 `node_modules`，否则 `npm ci`；复制失败也退回 `npm ci`）→ `prisma generate` → 全量 `tsc --noEmit`（约 1.9GB 内存）→ 链接 shared 目录 → 读入 `backend.env` 并校验（回环监听、PDML 关闭、密钥齐全）→ 切换 `current` → 重启两个服务 → 两个健康检查都通过才算激活，否则回切旧版本。不自动迁移或重置数据库。日志里每步带 `[release +N s]` 耗时。
 
 时间预算（由内到外，改动时一起改）：发布脚本 ≤ 2100 秒（接收程序 `ACTIVATE_TIMEOUT`）< 交付作业里 ssh 的 `timeout 2280` < 交付作业 `timeout-minutes: 50`。超时后接收程序结束整个进程组（含 npm / prisma / tsc 子进程）；发布脚本在切换 `current` 前写 `/srv/bambook-dev/.activation.json`，若在切换后、健康检查完成前被中断，接收程序据此切回旧版本并重启服务，下次激活前也会先处理遗留标记。回切的只是应用版本，数据库不随之回滚（发布本身不改库结构）。
 

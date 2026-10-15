@@ -22,9 +22,23 @@ export NODE_ENV=production
 started=$SECONDS
 step() { echo "[release +$((SECONDS - started))s] $*"; }
 cd "$release/server"
-step 'npm ci'
 # Install and build before loading application secrets, so dependency install scripts never see them.
-npm ci --include=dev --no-audit --no-fund
+# Reuse the active release's dependencies (real copy, never shared/hard-linked) when its lockfile and Node
+# runtime are identical; otherwise, or if the copy fails, do a clean install.
+deps_stamp="$(node --version) $(sha256sum package-lock.json | cut -d' ' -f1)"
+active=$(readlink -f "$root/current" || true)
+reused=0
+if [[ -n "$active" && "$active" != "$release" && -d "$active/server/node_modules" \
+      && -f "$active/server/.deps-stamp" && "$(cat "$active/server/.deps-stamp")" == "$deps_stamp" ]]; then
+  step "copy node_modules from $(basename "$active")"
+  rm -rf node_modules
+  if cp -a "$active/server/node_modules" node_modules; then reused=1; else rm -rf node_modules; fi
+fi
+if [[ $reused == 0 ]]; then
+  step 'npm ci'
+  npm ci --include=dev --no-audit --no-fund
+fi
+printf '%s\n' "$deps_stamp" > .deps-stamp
 step 'prisma generate'
 npm exec -- prisma generate
 # Full server type check: CI only checks the Mist entry graph, so this is the only whole-API check.
