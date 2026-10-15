@@ -336,6 +336,8 @@
 .mist-vsteps > button[aria-current="step"] .mist-step-k { background: var(--mist-accent); color: var(--mist-on-accent); }
 .mist-form-section { padding: 22px 24px; }
 .mist-form-section + .mist-form-section { border-top: 1px solid var(--mist-line); }
+/* 嵌套的表单分段（如报价核算第二步里的 AI 审阅、历史依据）与外层字段左右对齐，不再叠加内边距。 */
+.mist-form-section .mist-form-section { padding: 20px 0 0; }
 .mist-form-section-h { margin-bottom: 16px; }
 .mist-form-section-h p { color: var(--mist-ink-3); font-size: var(--mist-text-sm); margin-top: 4px; }
 .mist-sticky-foot { position: sticky; bottom: 0; display: flex; align-items: center; gap: 10px; padding: 14px 24px; background: color-mix(in srgb, var(--mist-card) 88%, transparent); backdrop-filter: blur(16px); border-radius: 0 0 var(--mist-r-card) var(--mist-r-card); border-top: 1px solid var(--mist-line); }
