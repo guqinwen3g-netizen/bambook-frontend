@@ -27,9 +27,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      # Check out exactly the pushed request commit. The branch keeps moving (result commits, newer
+      # requests), so reading "latest ops-channel" could miss or swap the request.
       - uses: actions/checkout@v4
         with:
-          ref: ops-channel
+          ref: ${{ github.sha }}
           fetch-depth: 1
       - name: Configure SSH identity and pinned host key
         env:
@@ -41,13 +43,20 @@ jobs:
           umask 077
           printf '%s\n' "$OPS_KEY" > "$RUNNER_TEMP/ops_key"
           printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/known_hosts"
-      - name: Run request on development server
-        id: run
+      - name: Load request script of the triggering commit
+        id: request
         env:
           REQUEST_SHA: ${{ github.sha }}
         run: |
-          set -uo pipefail
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$REQUEST_SHA"
           git show "$REQUEST_SHA:ops/request.sh" > "$RUNNER_TEMP/request.sh"
+          test -s "$RUNNER_TEMP/request.sh" || { echo '::error::ops/request.sh is empty'; exit 1; }
+          echo "sha256=$(sha256sum "$RUNNER_TEMP/request.sh" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - name: Run request on development server
+        id: run
+        run: |
+          set -uo pipefail
           start=$(date +%s)
           timeout 900 ssh -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts" -i "$RUNNER_TEMP/ops_key" \
@@ -60,6 +69,7 @@ jobs:
         if: always()
         env:
           REQUEST_SHA: ${{ github.sha }}
+          REQUEST_SHA256: ${{ steps.request.outputs.sha256 }}
           CODE: ${{ steps.run.outputs.code }}
           SECONDS_USED: ${{ steps.run.outputs.seconds }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -80,7 +90,8 @@ jobs:
           limit = 200000
           if len(out) > limit: out = '…(truncated, showing last %d chars)…\n' % limit + out[-limit:]
           now = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-          body = (f"request: {os.environ['REQUEST_SHA']}\nexit: {os.environ.get('CODE') or 'not run'}\n"
+          body = (f"request: {os.environ['REQUEST_SHA']}\nrequest-sha256: {os.environ.get('REQUEST_SHA256') or 'not loaded'}\n"
+                  f"exit: {os.environ.get('CODE') or 'not run'}\n"
                   f"seconds: {os.environ.get('SECONDS_USED') or '?'}\nfinished: {now}\nrun: {os.environ['RUN_URL']}\n"
                   f"---\n{out}")
           open(os.path.join(t, 'result.md'), 'w').write(body)

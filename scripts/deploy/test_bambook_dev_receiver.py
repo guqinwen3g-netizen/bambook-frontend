@@ -46,5 +46,56 @@ class ArchiveBoundaryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             receiver.validate_members([entry('server/package.json')])
 
+
+import os, tempfile, time
+from unittest import mock
+
+class ActivationBudgetTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.patches = [mock.patch.object(receiver, 'ROOT', self.tmp), mock.patch.object(receiver, 'MARKER', self.tmp / '.activation.json'), mock.patch.object(receiver, 'ACTIVATE_TIMEOUT', 2), mock.patch.object(receiver, 'KILL_GRACE', 1)]
+        for p in self.patches: p.start()
+        self.run = mock.patch.object(receiver.subprocess, 'run').start()
+        self.old = self.tmp / 'releases' / ('a' * 40); self.new = self.tmp / 'releases' / ('b' * 40)
+        for r in (self.old, self.new): (r / 'scripts/deploy').mkdir(parents=True)
+        (self.tmp / 'current').symlink_to(self.old)
+    def tearDown(self):
+        mock.patch.stopall()
+    def script(self, body):
+        (self.new / 'scripts/deploy/bambook-dev-release.sh').write_text(body)
+
+    def test_timeout_kills_grandchildren_and_restores_previous_after_switch(self):
+        late = self.tmp / 'late'
+        self.script(f"""trap '' TERM
+printf '{{"previous": "{self.old}", "release": "{self.new}"}}' > {self.tmp}/.activation.json
+ln -sfn {self.new} {self.tmp}/current
+(sleep 4; touch {late}) &
+sleep 30
+""")
+        with self.assertRaisesRegex(ValueError, 'exceeded'):
+            receiver.activate(self.new)
+        self.assertEqual(os.readlink(self.tmp / 'current'), str(self.old))
+        self.assertFalse((self.tmp / '.activation.json').exists())
+        self.assertTrue(any('restart' in c.args[0] for c in self.run.call_args_list))
+        time.sleep(4.5)
+        self.assertFalse(late.exists(), 'grandchild survived the timeout')
+
+    def test_timeout_before_switch_keeps_current_untouched(self):
+        self.script('sleep 30\n')
+        with self.assertRaises(ValueError):
+            receiver.activate(self.new)
+        self.assertEqual(os.readlink(self.tmp / 'current'), str(self.old))
+        self.run.assert_not_called()
+
+    def test_successful_script_needs_no_recovery(self):
+        self.script('exit 0\n')
+        receiver.activate(self.new)
+        self.run.assert_not_called()
+
+    def test_failed_script_reports_exit_code(self):
+        self.script('exit 3\n')
+        with self.assertRaisesRegex(ValueError, 'exited with 3'):
+            receiver.activate(self.new)
+
 if __name__ == '__main__':
     unittest.main()

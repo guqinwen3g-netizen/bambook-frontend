@@ -18,11 +18,19 @@ if [[ ! "$expected_node" =~ ^[0-9]+$ || "$actual_node" != "$expected_node" ]]; t
   exit 1
 fi
 export NODE_ENV=production
+# Per-step timing in the delivery log, to see where the activation budget goes.
+started=$SECONDS
+step() { echo "[release +$((SECONDS - started))s] $*"; }
 cd "$release/server"
+step 'npm ci'
 # Install and build before loading application secrets, so dependency install scripts never see them.
 npm ci --include=dev --no-audit --no-fund
+step 'prisma generate'
 npm exec -- prisma generate
+# Full server type check: CI only checks the Mist entry graph, so this is the only whole-API check.
+step 'tsc --noEmit'
 npm exec -- tsc --noEmit -p tsconfig.json
+step 'build done'
 # The service runs with a read-only release tree; paths the API writes relative to server/ live in shared/ across releases.
 for dir in logs storage data; do
   install -d -m 0750 "$root/shared/$dir"
@@ -46,6 +54,9 @@ set +a
 [[ "${PDML_SYNC_DISABLED:-}" == true ]]
 # Schema changes remain an explicit application-owner action; delivery never pushes or resets a database.
 previous=$(readlink "$root/current" || true)
+# Marker lets the receiver undo the switch if this script is killed (timeout) before it finishes.
+printf '{"previous": "%s", "release": "%s"}\n' "$previous" "$release" > "$root/.activation.json"
+step 'switch current'
 ln -sfn "$release" "$root/.current-next"
 mv -Tf "$root/.current-next" "$root/current"
 rollback() {
@@ -59,7 +70,9 @@ rollback() {
     sudo -n /usr/bin/systemctl stop bambook-dev.service || true
     sudo -n /usr/bin/systemctl stop bambook-dev-mist.service || true
   fi
+  rm -f "$root/.activation.json"
 }
+trap 'rollback; echo "Activation interrupted; previous release restored when available." >&2; exit 1' TERM INT
 # Keep the active and previous releases plus the newest few; each release carries its own node_modules.
 prune() {
   local kept=0 candidate
@@ -81,7 +94,9 @@ healthy() {
 }
 for attempt in $(seq 1 45); do
   if healthy "${PORT:-8081}" && healthy "${MIST_PORT:-8082}"; then
-    echo "Activated $(basename "$release")"
+    trap - TERM INT
+    rm -f "$root/.activation.json"
+    step "activated $(basename "$release")"
     prune || echo 'Old release cleanup failed; activation is unaffected.' >&2
     exit 0
   fi
