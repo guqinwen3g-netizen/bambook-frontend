@@ -75,7 +75,7 @@ export function DeductionDialog({ bill, state, busy, allowed, failure, onClose, 
 /** 剩余预付处理：退款（供应商退回到账）或转抵到同一供应商的其他合同。 */
 export function PrepaymentMoveDialog({ kind, purchaseId, state, busy, allowed, failure, onClose, execute, onDone }: Common & { kind: 'refund' | 'transfer'; purchaseId: string }) {
   const po = state.fulfillment.purchases.find(p => p.id === purchaseId), r = purchasePrepaymentReadback(state, purchaseId), targets = prepaymentTransferTargets(state, purchaseId), day = platformBusinessDate(new Date());
-  const [amount, setAmount] = React.useState(String(r.available)), [date, setDate] = React.useState(day), [reference, setReference] = React.useState(''), [target, setTarget] = React.useState(targets[0]?.id || ''), [reason, setReason] = React.useState(''), [local, setLocal] = React.useState('');
+  const [amount, setAmount] = React.useState(String(r.available)), [date, setDate] = React.useState(day), [reference, setReference] = React.useState(''), [target, setTarget] = React.useState((targets.find(t => t.id === po?.cancellation?.targetPurchaseId) || targets[0])?.id || ''), [reason, setReason] = React.useState(''), [local, setLocal] = React.useState('');
   if (!po) return null;
   const submit = () => {
     const value = cents(amount);
@@ -113,7 +113,8 @@ export function PrepaymentResidual({ state, purchaseId, busy, canRefund, canMove
   const closed = r.residualAfterFinal > 0 || r.moves.some(m => m.purchaseId === purchaseId);
   return <DetailBlock title="合同预付去向">
     <Facts items={[{ label: '已付预付', value: money(r.paid, cur) }, ...(r.transferredIn ? [{ label: '其他合同转入', value: money(r.transferredIn, cur) }] : []), { label: '结算已抵扣', value: money(r.applied, cur) }, ...(r.refunded ? [{ label: '供应商已退回', value: money(r.refunded, cur) }] : []), ...(r.transferredOut ? [{ label: '已转抵到其他合同', value: money(r.transferredOut, cur) }] : []), { label: '剩余预付', value: money(r.available, cur) }]} />
-    {r.residualAfterFinal > 0 && <Banner tone="warn" title="最终结算后仍有剩余预付">短交或结算金额小于预付时出现。请与供应商确认：退回到账后登记退款，或转抵到这家供应商的其他合同。</Banner>}
+    {r.cancelled && <Banner tone={r.available > 0 ? 'warn' : 'neutral'} title="合同已取消">{r.cancelled.actor} · {fmtDay(r.cancelled.at)} · {r.cancelled.reason}。{r.cancelled.prepayment === 'refund' ? `业务员选择让工厂退款：${r.available > 0 ? `待退回 ${money(r.available, cur)}，到账后登记退款。` : '已全部退回。'}` : r.cancelled.prepayment === 'transfer' ? `业务员选择转抵到 ${r.cancelled.targetPurchaseCode}${r.available > 0 ? `，请财务办理转抵 ${money(r.available, cur)}。` : '，已处理完毕。'}` : '取消时没有已付预付。'}</Banner>}
+    {r.residualAfterFinal > 0 && !r.cancelled && <Banner tone="warn" title="最终结算后仍有剩余预付">短交或结算金额小于预付时出现。请与供应商确认：退回到账后登记退款，或转抵到这家供应商的其他合同。</Banner>}
     {r.moves.map(m => { const out = m.purchaseId === purchaseId; return <div className="mist-row mist-module-actions" key={m.id} data-prepayment-move={m.id}><Mono>{m.code}</Mono>
       <span className="mist-note">{m.kind === 'refund' ? `退款 · ${m.date} · ${m.reference}` : out ? `转抵到 ${m.targetPurchaseCode}` : `由 ${m.purchaseCode} 转入`} · {m.actor} · {fmtDay(m.at)}</span><span className="mist-spacer" />
       <span className="mist-num">{out ? '−' : '+'}{money(m.amount, m.currency)}</span>

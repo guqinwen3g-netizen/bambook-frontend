@@ -134,3 +134,26 @@ it('records rejected goods returned to the supplier per receipt and shows replac
   await click(getByRole(dialog,'button',{name:'登记退换'}));
   expect(store.run).toHaveBeenCalledWith(expect.objectContaining({type:'fulfillment.procurement.return',payload:expect.objectContaining({receiptId:'r1',quantity:6,disposition:'replace',evidence:'退货单 RT-9'})}));
 });
+
+it('cancels an approved contract without receipts, blocks it once goods arrived, and shows the cancelled banner',async()=>{
+  store.state!.fulfillment.purchases.push(purchase('open',approved()),purchase('got',approved({received:20})),purchase('gone',{state:'cancelled',cancellation:{at:'2026-10-12T02:00:00Z',actor:'经办人',actorId:'buyer',reason:'客户取消订单',prepaid:0}} as any));
+  store.state!.fulfillment.receipts.push({id:'rg',purchaseId:'got',quantity:20,rejected:0,destination:'warehouse',location:'上海仓',date:'2026-10-12',evidence:'收货单',fileIds:[],actor:'仓库',createdAt:'2026-10-12T02:00:00Z'} as any);
+  render('open');
+  let detail=host.querySelector('[data-purchase-detail="open"]') as HTMLElement;
+  await click(getByRole(detail,'button',{name:'取消合同'}));
+  const dialog=getByRole(document.body,'dialog');
+  expect(dialog.textContent).toContain('取消后不恢复');
+  typeInto(getByRole(dialog,'textbox',{name:'取消原因与工厂确认依据'}) as HTMLTextAreaElement,'客户取消，工厂邮件确认');
+  await click(getByRole(dialog,'button',{name:'确认取消'}));
+  expect(store.run).toHaveBeenCalledWith(expect.objectContaining({type:'payable.purchase.cancel',payload:expect.objectContaining({purchaseId:'open',reason:'客户取消，工厂邮件确认'})}));
+  act(()=>root.unmount());host.remove();host=document.createElement('div');document.body.append(host);root=createRoot(host);
+  render('got');
+  detail=host.querySelector('[data-purchase-detail="got"]') as HTMLElement;
+  expect((getByRole(detail,'button',{name:'取消合同'}) as HTMLButtonElement).disabled).toBe(true);
+  expect(detail.textContent).toContain('已有收货记录，不能直接取消');
+  act(()=>root.unmount());host.remove();host=document.createElement('div');document.body.append(host);root=createRoot(host);
+  render('gone');
+  detail=host.querySelector('[data-purchase-detail="gone"]') as HTMLElement;
+  expect(detail.textContent).toContain('合同已取消');expect(detail.textContent).toContain('客户取消订单');
+  expect(queryByRole(detail,'button',{name:'取消合同'})).toBeNull();
+});

@@ -135,7 +135,7 @@ export function Timeline({ events }: { events: TimelineEvent[] }) {
     <div className="mist-timeline">{events.map((e, i) => (
       <div key={i} className="mist-tl">
         <Avatar name={e.avatar ?? e.who} tone={e.tone} size="sm" />
-        <div><b>{e.who}</b> <small>· {e.when}</small><p>{e.text}</p>{e.attachment && <div className="mist-tl-att"><Icon icon={e.attachment.icon} size="sm" />{e.attachment.name}</div>}</div>
+        <div><b>{e.who}</b> <small>· {e.when}</small><div className="mist-tl-text">{e.text}</div>{e.attachment && <div className="mist-tl-att"><Icon icon={e.attachment.icon} size="sm" />{e.attachment.name}</div>}</div>
       </div>
     ))}</div>
   );

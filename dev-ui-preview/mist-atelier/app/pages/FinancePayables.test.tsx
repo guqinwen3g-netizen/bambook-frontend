@@ -274,3 +274,44 @@ it('短交最终结算后剩余预付：在结算详情登记退款，可冲回'
   await click('冲回', host.querySelector('[data-prepayment-move]') as HTMLElement); text('冲回原因', '流水录错'); await click('确认冲回', dialog('冲回剩余预付处理'));
   expect(store.value.state.payables.prepaymentMoves[0].reversed).toMatchObject({ reason: '流水录错' });
 });
+
+const actAs = (actorId: string, command: any) => { let n = 0; const r = applyMistCommand(store.value.state, command, { id: () => `${actorId}-${Date.now()}-${++n}`, now: new Date().toISOString(), actorName: actorId, actorId, authority: { supplier: {}, paymentReviewerIds: ['manager'] } } as any); store.value.state = r.state; return r.result as any; };
+
+it('不等票付款：已确认结算可写明未收票原因申请先付，经批准登记后显示已付未收票', async () => {
+  const receipt = store.value.state.fulfillment.receipts.find((r: any) => r.purchaseId === po.id);
+  const st = actAs('sales', { type: 'payable.settlement.submit', payload: { purchaseId: po.id, receiptIds: [receipt.id] } });
+  actAs('finance', { type: 'payable.settlement.confirm', payload: { id: st.id, prepaymentApplied: 0 } });
+  const amount = store.value.state.payables.settlements[0].amount;
+  route = { view: 'payment-vouchers', section: 'payables', id: st.id }; render();
+  expect(host.textContent).toContain('不等票可申请');
+  await click('不等票申请付款');
+  const d = dialog('不等票申请付款');
+  expect((getByLabelText(d, '不等票申请金额') as HTMLInputElement).value).toBe(String(amount));
+  await click('提交审批', d);
+  expect(store.value.run).not.toHaveBeenCalled(); expect(d.textContent).toContain('未收票');
+  input('不等票申请金额', '1000'); text('未收票原因', '工厂开票慢，货已验收', d);
+  await click('提交审批', d);
+  expect(store.value.run).toHaveBeenCalledWith(expect.objectContaining({ type: 'payable.request.submit', payload: expect.objectContaining({ purpose: 'settlement', settlementId: st.id, amount: 1000 }) }));
+  const req = store.value.state.payables.requests[0]; approve(req.id);
+  route = { view: 'payment-vouchers', section: 'payables', id: req.id }; render();
+  expect(host.textContent).toContain('按结算付款（发票未到）');
+  await click('登记实付'); expect(dialog('按已批准申请登记实付').textContent).toContain('自动抵到票据'); input('银行流水号', 'BANK-ADV'); await click('登记实付', dialog('按已批准申请登记实付'));
+  expect(store.value.state.payables.payments[0]).toMatchObject({ purpose: 'settlement', settlementId: st.id, amount: 1000 });
+  expect(getByRole(host, 'table', { name: '供应商应付汇总' }).textContent).toContain('已付未收票');
+  await click(/供应商付款 ·/);
+  expect(getByRole(host, 'table', { name: '供应商付款' }).textContent).toContain('已付未收票');
+});
+
+it('历史付款补登：计划详情按凭证补登，不走审批，记为历史补登', async () => {
+  actAs('finance', { type: 'payable.plan.register', payload: { purchaseId: po.id, amount: 5000, trigger: '签约后', basis: '合同第 5 条' } });
+  const plan = store.value.state.payables.plans[0];
+  route = { view: 'payment-vouchers', section: 'payables', id: plan.id }; render();
+  await click('历史付款补登'); const d = dialog('历史付款补登');
+  await click('确认补登', d); expect(d.textContent).toContain('凭证号');
+  input('实际付款日期', '2026-09-01'); input('付款凭证号', 'V-089'); input('补登金额', '3000');
+  await click('确认补登', d);
+  expect(store.value.run).toHaveBeenCalledWith(expect.objectContaining({ type: 'payable.payment.backfill', payload: expect.objectContaining({ planId: plan.id, amount: 3000, reference: 'V-089', date: '2026-09-01' }) }));
+  expect(store.value.state.payables.payments[0]).toMatchObject({ backfill: true, purpose: 'prepayment', planId: plan.id });
+  expect(store.value.state.payables.requests).toHaveLength(0);
+  expect(host.textContent).toContain('历史补登（系统上线前已付，未走申请）');
+});
