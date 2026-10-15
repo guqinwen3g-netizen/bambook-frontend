@@ -80,3 +80,11 @@ sudo -u bambook-deploy env SSH_ORIGINAL_COMMAND="activate $revision" \
 - 域名不可访问：分别排查 Cloudflare 规则、源站证书、反向代理、防火墙与应用健康，不把 DNS 成功误判为服务上线。
 
 目前已验证：Node/npm、PostgreSQL 本机运行、专用账号外部 SSH check、非允许命令拒绝、DNS 记录。尚未验证：应用首次部署、数据库结构、服务单元、HTTPS、公网业务接口。
+
+## OpenAI 出口（ChatGPT 订阅）
+
+腾讯云大陆地域的出口 IP 被 OpenAI 按地区拒绝（`unsupported_country_region_territory`），平台 AI 的设备码登录和调用都需要海外出口。开发机用 sing-box 做本机分流代理：
+
+- 安装：sing-box 来自 apt 源 `deb.sagernet.org`（公钥 `2C317FBD5D886B4E89BAE8DA6D9152172A2B2F0C`；大陆服务器直连 `sing-box.app` 取公钥会超时，需从别处取得后放入 `/etc/apt/keyrings/sagernet.asc`）。
+- 节点：管理员把 Shadowrocket 导出的分享 URL（ss / vmess / vless / trojan / hysteria2 / tuic）、订阅链接、订阅内容或 sing-box JSON 粘进 `/etc/bambook-dev/proxy/nodes.txt`（root 0600，不入库），然后执行 `sudo bambook-dev-proxy apply`。节点须位于 OpenAI 支持的地区（香港不行）。
+- 行为：生成 `/etc/sing-box/config.json`，只在 `127.0.0.1:7890` 监听；仅 OpenAI 相关域名走节点，其余直连；多个节点时自动测速选优。成功后给 `backend.env` 补 `HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY` / `NODE_USE_ENV_PROXY=1` 并重启两个后端服务。`sudo bambook-dev-proxy test` 显示出口地区和 OpenAI 登录接口状态（403 表示仍被地区拒绝）。

@@ -179,6 +179,15 @@ nginx -t -q
 systemctl enable nginx >/dev/null
 systemctl reload-or-restart nginx
 
+# Optional OpenAI egress: mainland hosts are region-blocked by OpenAI. sing-box (apt repo deb.sagernet.org) is
+# installed separately; the administrator pastes a share URL / subscription / JSON into nodes.txt and runs
+# `sudo bambook-dev-proxy apply`. Only OpenAI domains use the node; everything else stays direct.
+if [[ -f "$(dirname "$0")/bambook-dev-proxy.py" ]]; then
+  install -m 0755 "$(dirname "$0")/bambook-dev-proxy.py" /usr/local/sbin/bambook-dev-proxy
+fi
+install -d -m 0700 "$etc/proxy"
+[[ -f "$etc/proxy/nodes.txt" ]] || install -m 0600 /dev/null "$etc/proxy/nodes.txt"
+
 # Daily compressed database backup, 7 days retained.
 install -d -m 0700 -o postgres -g postgres /var/backups/bambook-dev
 cat > /etc/cron.daily/bambook-dev-backup <<'CRON'
