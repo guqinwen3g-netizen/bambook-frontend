@@ -31,7 +31,7 @@ node --version
 # Directories: releases are owned by the delivery account; persistent runtime data lives in shared/.
 install -d -m 0755 -o "$deploy_user" -g "$deploy_user" "$root" "$root/releases" "$root/shared"
 install -d -m 0700 -o "$deploy_user" -g "$deploy_user" "$root/shared/mist-files" "$root/shared/ai-subscriptions" "$root/shared/logs" \
-  "$root/shared/uploads" "$root/shared/private-files" "$root/shared/storage" "$root/shared/data"
+  "$root/shared/uploads" "$root/shared/private-files" "$root/shared/storage" "$root/shared/data" "$root/shared/output"
 install -d -m 0750 -o root -g "$deploy_user" "$etc"
 
 # Dedicated development database and role. The password is generated once and only written to backend.env.

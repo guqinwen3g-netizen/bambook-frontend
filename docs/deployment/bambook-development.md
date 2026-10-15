@@ -20,7 +20,7 @@ SSH key 强制经过接收程序，只接受 `check`、`receive <40位提交>`�
 
 - 2G 交换空间；Node 主版本与 `.nvmrc` 一致（NodeSource）；nginx、PostgreSQL。
 - 专用库 `panda_hub_dev` 与角色 `bambook_dev`（随机密码只写入 `/etc/bambook-dev/backend.env`，root:bambook-deploy 0640）。环境含 `DATABASE_URL`、随机 `JWT_SECRET` / `SYSTEM_CONFIG_ENCRYPTION_KEY`（平台 AI 等系统配置加密）/ `BAMBOOK_COOKIE_SECRET`、`NODE_ENV=production`（强制鉴权）、`PORT=8081`、`BAMBOOK_HOST=127.0.0.1`（只监听回环）、`BAMBOOK_UPLOAD_DIR` / `BAMBOOK_PRIVATE_FILES_DIR` / `BAMBOOK_AI_SUBSCRIPTION_DIR`（均在 `/srv/bambook-dev/shared`，跨版本保留）、`BAMBOOK_CODEX_SUBSCRIPTION=1`（管理员可连接 ChatGPT 订阅作为平台 AI）、`PDML_SYNC_DISABLED=true`（开发机永不同步正式 PDML）、`AUTH_REQUIRE_EMAIL_VERIFY=0`、`TZ`。重复执行 bootstrap 只补缺失项，不覆盖已有值。
-- 固定的 `bambook-dev.service`：`bambook-deploy` 身份，工作目录 `/srv/bambook-dev/current/server`，Node 执行本地 tsx CLI 与完整主 API `src/index.ts`（与正式环境同一入口，含业务、管理后台、平台 AI 路由）；只读系统、仅 `shared/` 可写（`server/logs`、`server/storage`、`server/data` 在发布时链接到 `shared/`）、内存上限 1.5G。sudo 只允许该账号重启 / 停止此服务。
+- 固定的 `bambook-dev.service`：`bambook-deploy` 身份，工作目录 `/srv/bambook-dev/current/server`，Node 执行本地 tsx CLI 与完整主 API `src/index.ts`（与正式环境同一入口，含业务、管理后台、平台 AI 路由）；只读系统、仅 `shared/` 可写（`server/logs`、`server/storage`、`server/data` 与版本根的 `output` 在发布时链接到 `shared/`）、内存上限 1.5G。sudo 只允许该账号重启 / 停止此服务。
 - nginx 仅监听 `127.0.0.1:8080`：静态前端取当前版本 `web/`，`/api/` 转发 8081。Cloudflare Tunnel 连到这里，不开放 80 / 443。
 - 每日 `pg_dump` 备份到 `/var/backups/bambook-dev`，保留 7 天。
 
@@ -34,7 +34,7 @@ SSH key 强制经过接收程序，只接受 `check`、`receive <40位提交>`�
 
 ## 数据库结构与测试账号（管理员单独确认后执行）
 
-首次部署成功后，以 root 执行 `sudo bash /srv/bambook-dev/current/scripts/deploy/init-dev-database.sh`。它只接受本机 `panda_hub_dev`：空库时按 `schema.prisma` 建表（`db push`），并把全部迁移标记为已应用作为基线——迁移历史无法从空库重放（早期迁移依赖库外已有表）；随后 `migrate deploy`、`seed:base`、补建 `owner@bambook.local`、`seed:dev-roles`，最后给管理员与各岗位测试账号设置各自随机密码，只写入 root 可读的 0600 `/srv/bambook-dev/shared/test-accounts.txt`，不打印、不入库。脚本幂等，可重复执行（重复执行会重新生成测试密码）。后续 schema 变更照常逐次确认后执行 `migrate deploy`；正式库禁止 `db push` 的原则不变。
+首次部署成功后，以 root 执行 `sudo bash /srv/bambook-dev/current/server/scripts/init-dev-database.sh`。它只接受本机 `panda_hub_dev`：空库时按 `schema.prisma` 建表（`db push`），并把全部迁移标记为已应用作为基线——迁移历史无法从空库重放（早期迁移依赖库外已有表）；随后 `migrate deploy`、`seed:base`、补建 `owner@bambook.local`、`seed:dev-roles`，最后给管理员与各岗位测试账号设置各自随机密码，只写入 root 可读的 0600 `/srv/bambook-dev/shared/test-accounts.txt`，不打印、不入库。脚本幂等，可重复执行（重复执行会重新生成测试密码）。后续 schema 变更照常逐次确认后执行 `migrate deploy`；正式库禁止 `db push` 的原则不变。
 
 ## 域名
 

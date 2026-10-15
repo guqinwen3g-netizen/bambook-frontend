@@ -29,6 +29,10 @@ for dir in logs storage data; do
   rm -rf "${release:?}/server/$dir"
   ln -sfn "$root/shared/$dir" "$release/server/$dir"
 done
+# index.ts writes generated files to <release>/output.
+install -d -m 0750 "$root/shared/output"
+rm -rf "${release:?}/output"
+ln -sfn "$root/shared/output" "$release/output"
 # Root-owned application configuration must contain shell-compatible KEY=value lines.
 set -a
 source "$environment"
