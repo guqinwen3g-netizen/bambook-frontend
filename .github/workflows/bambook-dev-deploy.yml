@@ -114,16 +114,16 @@ jobs:
       - name: Publish result as commit status and report failures on the PR
         env:
           GH_TOKEN: ${{ github.token }}
-          validate, delivery_JSON: ${{ toJSON(needs) }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           PR: ${{ github.event.pull_request.number }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           CONTEXT: ci/bambook-dev-delivery
         run: |
           set -euo pipefail
-          summary=$(jq -r 'to_entries | map("\(.key)=\(.value.result)") | join(" ")' <<<"$validate, delivery_JSON")
-          if jq -e 'any(.[]; .result == "failure")' <<<"$validate, delivery_JSON" >/dev/null; then state=failure
-          elif jq -e 'any(.[]; .result == "cancelled")' <<<"$validate, delivery_JSON" >/dev/null; then state=error
+          summary=$(jq -r 'to_entries | map("\(.key)=\(.value.result)") | join(" ")' <<<"$NEEDS_JSON")
+          if jq -e 'any(.[]; .result == "failure")' <<<"$NEEDS_JSON" >/dev/null; then state=failure
+          elif jq -e 'any(.[]; .result == "cancelled")' <<<"$NEEDS_JSON" >/dev/null; then state=error
           else state=success; fi
           gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state="$state" -f context="$CONTEXT" \
             -f target_url="$RUN_URL" -f description="${summary:0:140}" >/dev/null
