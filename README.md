@@ -6,23 +6,30 @@ Bambook 是公司内部业务系统，覆盖开发与寻样、报价、订单、
 
 ## 做到哪里
 
-主线已包含当前 Mist 页面与业务接线、报价核算与历史对照、风险管理、售后索赔公司端调整，以及供应商票据与应付首轮。智能邮箱已纳入范围并完成前端首轮，真实收发尚未接通。各模块仍有业务接线、真实集成和验收缺口，不能把“已合入”理解为全站完成或正式部署。
+主线已包含当前 Mist 页面与业务接线、报价核算 / 历史对照 / AI 审阅、风险管理、售后索赔公司端调整、供应商票据 / 预付 / 结算 / 付款、跨岗位协作、审批与放行、我的工作待办与通知中心，以及工作助手 P0 骨架和开发服务器部署流程。智能邮箱已纳入范围并完成前端首轮，真实收发尚未接通。各模块仍有业务接线、真实集成和验收缺口，不能把“已合入”理解为全站完成或正式部署。
 
 ## 当前工作
 
-**工作助手 P1 本地验证完成，待 CI、真实模型验收与用户确认。** P0 已由 [PR #24](https://github.com/guqinwen3g-netizen/bambook-main/pull/24) 合入 main `9955ee0`；P1（短期只读委托、`bambook_query/get/expand`、可点开的业务引用）在 `feat/work-assistant-p1` / 草稿 PR #25：已知页面异步问题已修，页面 / host / 服务端测试已补，本地完整 `verify:mist` 与 Electron 构建通过。真实模型只读验收与截图目视确认仍待完成，见 [P1 检查点](docs/mist-atelier/LIVE-PROGRESS.md#当前交接--工作助手-p1云端-agent-续接)。P1 尚未合入、未部署。
+> **2026-10-15 收尾交接**：进度、版本核对、开放 PR、分支清单、下一步与页面 / 工程速查见 [交接文档](docs/HANDOFF.md)。接手先读它。
 
-付款收尾批次已通过 [PR #20](https://github.com/guqinwen3g-netizen/bambook-main/pull/20) 合入 main `3740125`（此前应付收尾为 PR #19）。
+按用户确认的顺序逐项推进，每项一个可独立验收的 PR，CI 成功后先问用户再以 merge commit 合入：
 
-**付款收尾批次已合入**（[PR #20](https://github.com/guqinwen3g-netizen/bambook-main/pull/20)，main `3740125`）：已确认的结算可不等票申请付款，票到自动抵扣；未收货合同可取消并处理预付；历史付款可补登、旧付款可对应计划；“从货款中扣”的追偿可改为工厂付款。合入后的浏览器验收与票据详情“先付抵扣”显示修复在分支 `fix/mist-ap-payments-qa`。口径见决策总账 8.4.1“付款收尾实现口径”。未部署，也不涉及真实资金。
+1. 审批与放行页面 `approvals` + 付款申请审批：已合入（[PR #27](https://github.com/guqinwen3g-netizen/bambook-main/pull/27)）。生产与出运放行、受控例外尚无服务端规则，页面明示未接入。
+2. 我的工作待办来源补齐 + 通知中心 `notifications`：已合入（[PR #29](https://github.com/guqinwen3g-netizen/bambook-main/pull/29)）。主管按团队视角未做（缺团队组织数据）。
+3. 财务剩余缺口：已合入。(a) 核销冲回 / 付款冲回（[PR #32](https://github.com/guqinwen3g-netizen/bambook-main/pull/32)）；(b) 银行账户 / 期初 / 逐笔归属（[PR #34](https://github.com/guqinwen3g-netizen/bambook-main/pull/34)）；(c) 锁汇 / 结汇记录（[PR #35](https://github.com/guqinwen3g-netizen/bambook-main/pull/35)）。未做：汇兑损益 / 敞口报表、附件、导入时直接指定账户、账户停用。
+4. **下一项**：智能邮箱真实收发（需用户提供测试邮箱，凭据只进服务器环境变量）。
+5. 平台类模块（管理后台、设置、人事、报表、数据中心、业务工具、统一搜索）。
+6. 工作助手 P2–P4（P1 草稿 [PR #25](https://github.com/guqinwen3g-netizen/bambook-main/pull/25) 待用户本机真实模型验收）。
 
-报价成本 AI 审阅收尾中：原草稿 PR #8 已在最新主线上合并为新分支 `feat/quote-cost-ai-advisor-v2`，补了人工视觉复核与一处窄屏布局修复；AI 只审阅本行授权依据、价格由公式重算、人工采纳只改策略草稿。AI 分为“工作助手”（桌面端本机、个人凭据，方案见 `docs/mist-atelier/work-assistant-plan.md`，P0 骨架在 `electron/assistant/`，业务工具自 P1 起接入）与“平台 AI”（统一平台连接）两层。平台 AI 已可由管理员连接 ChatGPT 订阅作测试平台模型（GPT-6-Luna，按功能分推理档位），本地已用真实模型完成报价 AI 审阅与小竹问答验收；生产期改用企业 API。
+开发服务器（腾讯云 bambook-dev）：部署流程 [PR #26](https://github.com/guqinwen3g-netizen/bambook-main/pull/26) / [#30](https://github.com/guqinwen3g-netizen/bambook-main/pull/30) 已合入，`check` 已通过。自 [PR #33](https://github.com/guqinwen3g-netizen/bambook-main/pull/33) 起，main 每次推送的 `Mist verification` 成功后自动部署该提交（服务器端构建约 15 分钟，交付作业超时 45 分钟见 [PR #36](https://github.com/guqinwen3g-netizen/bambook-main/pull/36)；仍可在 Actions 手动 check / deploy）；当前服务器版本以运维通道 `readlink -f /srv/bambook-dev/current` 为准。所有 agent 经仓库运维通道访问，见 [开发服务器访问](docs/ops/dev-server-access.md)。正式环境（Mac mini、`jiangsupanda.com`）不在范围。
+
+AI 分为“工作助手”（桌面端本机、个人凭据，方案见 `docs/mist-atelier/work-assistant-plan.md`，P0 骨架已合入 `electron/assistant/`，P1 见 PR #25）与“平台 AI”（统一平台连接）两层。报价成本 AI 审阅已合入（PR #22）：AI 只审阅本行授权依据、价格由公式重算、人工采纳只改策略草稿。平台 AI 可由管理员连接 ChatGPT 订阅作测试平台模型（GPT-6-Luna），生产期改用企业 API。
 
 当前停点与历史见 [进度记录](docs/mist-atelier/LIVE-PROGRESS.md)。开始或接续任务时核对 GitHub 实际分支 / PR，不能只凭这份摘要判断最新状态。
 
 ## 接下来往哪里走
 
-继续完善公司端现有业务、补齐真实集成与验收缺口；报价 AI 的待验工作在对应 PR 收口。具体下一批按用户确定的优先级推进，不把客户 / 供应商独立平台默认为本轮范围。
+继续完善公司端现有业务、补齐真实集成与验收缺口。具体下一批按用户确定的优先级推进，不把客户 / 供应商独立平台默认为本轮范围。
 
 一个能独立验收的小批次完成后及时通过 PR 合回主线；未完成成果注明分支、停点与下一步，避免长期积累。工作方式见 [AGENTS.md](AGENTS.md)，详细业务与技术资料按需从 [文档导航](docs/README.md) 查找。
 
