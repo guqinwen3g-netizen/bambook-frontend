@@ -8,6 +8,7 @@ import { useNav } from '../nav';
 import { useMistSession } from '../runtime/auth';
 import { useMistWorkspace } from '../runtime/workspace';
 import { visibleMistNotifications } from '../runtime/notificationPreferences';
+import { useOptionalMistReviews } from '../runtime/reviews';
 import type { View } from '../../../../types';
 
 function dateKey(value: Date) { return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`; }
@@ -37,6 +38,7 @@ export function HomePage() {
   React.useEffect(() => { const update = () => setToday(dateKey(new Date())); const timer = window.setInterval(update, 60000); window.addEventListener('focus', update); return () => { window.clearInterval(timer); window.removeEventListener('focus', update); }; }, []);
   const days = weekDays(today), weekStart = days[0].key, weekEnd = days[6].key;
   const allTasks = (state?.tasks ?? []).filter(task => !task.done);
+  const reviews = useOptionalMistReviews(), waitingReviews = reviews?.rows.filter(row => row.canDecide).length ?? 0;
   const inRange = (date: string) => !date || (range === 'today' ? date <= today : date <= weekEnd);
   const tasks = allTasks.filter(task => inRange(task.due)).slice().sort((a, b) => sort === 'title' ? a.title.localeCompare(b.title, 'zh-CN') : (a.due || '9999').localeCompare(b.due || '9999') || a.title.localeCompare(b.title, 'zh-CN'));
   const focus = tasks[0];
@@ -95,7 +97,7 @@ export function HomePage() {
           actions={<><Button variant="white" disabled={busy || !focus} iconRight={ArrowRight} onClick={() => focus && openTarget(focus.target)}>打开事项</Button><Button variant="glass" disabled={busy || !version?.qc} icon={FileText} onClick={() => setReportVersion(version?.id ?? null)}>QC 报告</Button></>} />
         <AIBrief className="mist-col-4" icon={Sparkles} sub="工作区通知与记录 · 事实摘要" onAsk={() => openAI('请根据当前工作区记录，整理下一步行动建议。')} items={state?.settings.notifications.suggestions===false?[{strong:'主动建议已关闭',text:'仍可手动打开小竹。',onClick:()=>openAI('请根据当前工作区记录，整理下一步行动建议。')}]:brief} />
         <Card className="mist-col-8">
-          <CardHeader title="接着完成" tools={<><Dropdown<'due' | 'title'> label="排序" value={sort} onChange={setSort} options={[{ value: 'due', label: '按期限' }, { value: 'title', label: '按名称' }]} /><Button variant="quiet" size="sm" icon={SlidersHorizontal} disabled={busy || !state?.tasks.length} onClick={beginTask}>管理任务</Button></>}><span className="mist-muted" style={{ fontSize: 13 }}>{tasks.length} 项</span></CardHeader>
+          <CardHeader title="接着完成" tools={<><Dropdown<'due' | 'title'> label="排序" value={sort} onChange={setSort} options={[{ value: 'due', label: '按期限' }, { value: 'title', label: '按名称' }]} />{reviews && <Button variant="quiet" size="sm" icon={BadgeCheck} onClick={() => go('approvals')}>{waitingReviews ? `待我审批 ${waitingReviews}` : '审批与放行'}</Button>}<Button variant="quiet" size="sm" icon={SlidersHorizontal} disabled={busy || !state?.tasks.length} onClick={beginTask}>管理任务</Button></>}><span className="mist-muted" style={{ fontSize: 13 }}>{tasks.length} 项</span></CardHeader>
           {loading ? <CardBody><Skeleton height={72} /><Skeleton height={72} /></CardBody> : taskRows.length ? <TaskList items={taskRows} onOpen={item => { const task = tasks.find(task => task.id === item.id); if (task) openTarget(task.target); }} /> : <EmptyState compact title="这个时间范围没有待办" description="可以切换本周，或查看工作区其他事项。" />}
         </Card>
         <Card className="mist-col-4">
