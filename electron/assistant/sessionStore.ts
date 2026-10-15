@@ -7,8 +7,8 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { ChatMessage } from './types';
 
-export type SessionMeta = { id: string; title: string; providerId: string | null; createdAt: string; updatedAt: string; messageCount: number };
-type Line = { type: 'meta'; title: string; providerId: string | null; createdAt: string } | { type: 'message'; at: string; message: ChatMessage } | { type: 'title'; title: string };
+export type SessionMeta = { id: string; title: string; providerId: string | null; workspaceId?: string; createdAt: string; updatedAt: string; messageCount: number };
+type Line = { type: 'meta'; title: string; providerId: string | null; workspaceId?: string; createdAt: string } | { type: 'message'; at: string; message: ChatMessage } | { type: 'title'; title: string } | { type: 'workspace'; workspaceId: string };
 
 const ID = /^[a-f0-9-]{36}$/;
 const MAX_FILE_BYTES = 50 * 1024 * 1024;
@@ -39,11 +39,11 @@ export class SessionStore {
     fs.appendFileSync(file, prefix + JSON.stringify(line) + '\n', { mode: 0o600 });
   }
 
-  create(title: string, providerId: string | null): SessionMeta {
+  create(title: string, providerId: string | null, workspaceId?: string): SessionMeta {
     const id = randomUUID();
     const at = this.now().toISOString();
-    this.append(id, { type: 'meta', title: title.slice(0, 80) || '新对话', providerId, createdAt: at });
-    return { id, title: title.slice(0, 80) || '新对话', providerId, createdAt: at, updatedAt: at, messageCount: 0 };
+    this.append(id, { type: 'meta', title: title.slice(0, 80) || '新对话', providerId, workspaceId, createdAt: at });
+    return { id, title: title.slice(0, 80) || '新对话', providerId, workspaceId, createdAt: at, updatedAt: at, messageCount: 0 };
   }
 
   appendMessage(id: string, message: ChatMessage) {
@@ -52,6 +52,7 @@ export class SessionStore {
   }
 
   rename(id: string, title: string) { this.append(id, { type: 'title', title: title.slice(0, 80) }); }
+  bindWorkspace(id: string, workspaceId: string) { this.append(id, { type: 'workspace', workspaceId }); }
 
   private read(id: string): { meta: SessionMeta; messages: ChatMessage[] } | null {
     const file = this.file(id);
@@ -65,8 +66,9 @@ export class SessionStore {
       if (!raw.trim()) continue;
       let line: Line;
       try { line = JSON.parse(raw); } catch { continue; } // 断电造成的半行直接跳过
-      if (line.type === 'meta') meta = { id, title: line.title, providerId: line.providerId, createdAt: line.createdAt, updatedAt: line.createdAt, messageCount: 0 };
+      if (line.type === 'meta') meta = { id, title: line.title, providerId: line.providerId, workspaceId: line.workspaceId, createdAt: line.createdAt, updatedAt: line.createdAt, messageCount: 0 };
       else if (line.type === 'title' && meta) meta.title = line.title;
+      else if (line.type === 'workspace' && meta) meta.workspaceId = line.workspaceId;
       else if (line.type === 'message' && meta) { messages.push(line.message); meta.updatedAt = line.at; }
     }
     if (!meta) return null;

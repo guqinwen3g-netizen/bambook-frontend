@@ -14,6 +14,7 @@ import { ToolRegistry, builtinTools } from './tools';
 import { runTurn, type ConfirmRequest, type HarnessEvent } from './harness';
 import { SessionStore } from './sessionStore';
 import { systemPrompt } from './prompt';
+import { bambookTools, normalizeDelegation, type BambookDelegation } from './bambookTools';
 
 export const MAX_ACTIVE_RUNS = 2;
 export const MAX_INPUT_CHARS = 20_000;
@@ -22,10 +23,13 @@ export type AssistantEvent =
   | { type: 'run'; runId: string; sessionId: string; event: Exclude<HarnessEvent, { type: 'confirm' }> }
   | { type: 'confirm_request'; runId: string; sessionId: string; token: string; request: Omit<ConfirmRequest, 'arguments'> & { arguments: Record<string, unknown> } }
   | { type: 'run_end'; runId: string; sessionId: string; stopReason: string; text: string }
-  | { type: 'run_error'; runId: string; sessionId: string; code: string; message: string };
+  | { type: 'run_error'; runId: string; sessionId: string; code: string; message: string }
+  | { type: 'delegation_needed'; workspaceId: string | null; reason: 'missing' | 'expired' | 'rejected' };
 
 type Run = { id: string; sessionId: string; controller: AbortController; confirms: Map<string, (approved: boolean) => void> };
-type Account = { key: string; displayName: string | null; dir: string; secrets: SecretStore; chatgpt: ChatgptAuth; sessions: SessionStore };
+type Account = { key: string; displayName: string | null; dir: string; secrets: SecretStore; chatgpt: ChatgptAuth; sessions: SessionStore; delegation: BambookDelegation | null };
+const accountHash = (key: string) => createHash('sha256').update(`bambook-assistant:${key}`).digest('hex').slice(0, 24);
+const delegationScope = (d: BambookDelegation | null) => d ? `${d.apiBase}|${d.workspaceId}` : '';
 
 export type ServiceOptions = { rootDir: string; secrets: SecretStore; fetch: FetchLike; emit: (event: AssistantEvent) => void; now?: () => Date; tools?: () => ToolRegistry };
 
@@ -74,20 +78,45 @@ export class AssistantService {
     return found;
   }
 
-  private tools() { return this.options.tools?.() ?? new ToolRegistry(builtinTools()); }
+  private tools(a: Account) {
+    const scope = delegationScope(a.delegation);
+    return new ToolRegistry([
+      ...(this.options.tools?.().list() ?? builtinTools()),
+      ...bambookTools({
+        fetch: this.options.fetch,
+        delegation: () => {
+          if (this.account !== a || delegationScope(a.delegation) !== scope) throw new AssistantError('WORKSPACE_CHANGED', '账号或工作区已切换，本轮不能继续读取旧工作区，请重新发起任务。');
+          return a.delegation;
+        },
+        needed: reason => {
+          if (this.account === a) this.options.emit({ type: 'delegation_needed', workspaceId: a.delegation?.workspaceId ?? null, reason });
+        },
+      }),
+    ]);
+  }
+
+  private setDelegation(params: any) {
+    const a = this.requireAccount();
+    // 晚到的续签响应不能把旧账号的委托塞进刚切换的账号。
+    if (typeof params.accountKey !== 'string' || accountHash(params.accountKey) !== a.key) throw new AssistantError('ACCOUNT_CHANGED', '账号已切换，请在当前账号重新连接业务授权');
+    const next = params.clear === true ? null : normalizeDelegation(params, this.now());
+    if (delegationScope(a.delegation) !== delegationScope(next)) this.cancelAll();
+    a.delegation = next;
+    return { connected: !!next, workspaceId: next?.workspaceId ?? null, expiresAt: next?.expiresAt ?? null };
+  }
 
   /** 切换账号：取消该进程内所有运行与登录，按账号哈希隔离目录与凭据。 */
   selectAccount(key: unknown, displayName: unknown) {
     const text = typeof key === 'string' ? key.trim() : '';
     if (!text || text.length > 300) throw new AssistantError('NO_ACCOUNT', '账号信息无效');
     const name = typeof displayName === 'string' ? displayName.slice(0, 60) : null;
-    const hash = createHash('sha256').update(`bambook-assistant:${text}`).digest('hex').slice(0, 24);
+    const hash = accountHash(text);
     if (this.account?.key === hash) { this.account.displayName = name; return; }
     this.cancelAll();
     this.account?.chatgpt.cancelAll();
     const dir = path.join(this.options.rootDir, 'accounts', hash);
     const secrets = scopedSecrets(this.options.secrets, hash);
-    this.account = { key: hash, displayName: name, dir, secrets, chatgpt: new ChatgptAuth(secrets, { fetch: this.options.fetch }), sessions: new SessionStore(path.join(dir, 'sessions'), this.now) };
+    this.account = { key: hash, displayName: name, dir, secrets, chatgpt: new ChatgptAuth(secrets, { fetch: this.options.fetch }), sessions: new SessionStore(path.join(dir, 'sessions'), this.now), delegation: null };
   }
 
   cancelAll() { for (const run of this.runs.values()) run.controller.abort(); }
@@ -97,6 +126,7 @@ export class AssistantService {
     switch (method) {
       case 'ping': return { ok: true };
       case 'account.select': this.selectAccount(params.accountKey, params.displayName); return this.status();
+      case 'session.delegation': return this.setDelegation(params);
       case 'status': return this.status();
       case 'providers.list': return this.views(this.requireAccount());
       case 'providers.save': return this.saveProvider(params);
@@ -150,6 +180,7 @@ export class AssistantService {
       activeRuns: [...this.runs.values()].map(r => ({ runId: r.id, sessionId: r.sessionId })),
       providers: a ? this.readProviders(a).length : 0,
       chatgpt: a ? await a.chatgpt.status() : null,
+      delegation: a?.delegation ? { workspaceId: a.delegation.workspaceId, expiresAt: a.delegation.expiresAt, connected: Date.parse(a.delegation.expiresAt) > this.now().getTime() } : null,
     };
   }
 
@@ -172,6 +203,9 @@ export class AssistantService {
 
   private async startRun(params: any) {
     const a = this.requireAccount();
+    const scope = delegationScope(a.delegation);
+    if (params.accountKey !== undefined && (typeof params.accountKey !== 'string' || accountHash(params.accountKey) !== a.key)) throw new AssistantError('ACCOUNT_CHANGED', '账号已切换，请重新发起任务');
+    if (params.workspaceId !== undefined && params.workspaceId !== a.delegation?.workspaceId) throw new AssistantError('DELEGATION_NEEDED', '当前工作区的业务授权尚未连接，请连接后重试');
     const text = typeof params.text === 'string' ? params.text.trim() : '';
     if (!text) throw new AssistantError('EMPTY_INPUT', '请输入要助手做的事');
     if (text.length > MAX_INPUT_CHARS) throw new AssistantError('INPUT_TOO_LONG', `单条指令最多 ${MAX_INPUT_CHARS} 字，请拆分后再发`);
@@ -182,19 +216,22 @@ export class AssistantService {
     } else if (!(await a.secrets.get(apiKeySecret(config.id)))) {
       throw new AssistantError('MISSING_API_KEY', '该模型配置还没有填写 API Key');
     }
+    if (this.account !== a || delegationScope(a.delegation) !== scope) throw new AssistantError('WORKSPACE_CHANGED', '账号或工作区已切换，请重新发起任务');
     let sessionId = typeof params.sessionId === 'string' ? params.sessionId : '';
     let history: ChatMessage[] = [];
     if (sessionId) {
       if ([...this.runs.values()].some(r => r.sessionId === sessionId)) throw new AssistantError('SESSION_BUSY', '该会话正在运行，请等待或取消');
       const found = a.sessions.get(sessionId);
       if (!found) throw new AssistantError('SESSION_NOT_FOUND', '会话不存在或已删除');
+      if (found.meta.workspaceId && found.meta.workspaceId !== a.delegation?.workspaceId) throw new AssistantError('WORKSPACE_CHANGED', '该对话属于其他工作区，请回到原工作区继续，或新建对话');
+      if (!found.meta.workspaceId && a.delegation) a.sessions.bindWorkspace(sessionId, a.delegation.workspaceId);
       history = found.messages;
     } else {
-      sessionId = a.sessions.create(text.replace(/\s+/g, ' ').slice(0, 30), config.id).id;
+      sessionId = a.sessions.create(text.replace(/\s+/g, ' ').slice(0, 30), config.id, a.delegation?.workspaceId).id;
     }
     const run: Run = { id: randomUUID(), sessionId, controller: new AbortController(), confirms: new Map() };
     this.runs.set(run.id, run);
-    const tools = this.tools();
+    const tools = this.tools(a);
     const emit = this.options.emit;
     void (async () => {
       try {

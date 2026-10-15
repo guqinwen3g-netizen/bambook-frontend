@@ -21,6 +21,8 @@ import path from 'node:path';
 import { OpenBitFunRuntime } from '../scripts/openbitfun-runtime.mjs';
 import { resolveBambookIconPath } from './brandAssets';
 import { AssistantRequestError, AssistantSupervisor } from './assistantSupervisor';
+import { bindDelegationOrigin } from './assistant/protocol';
+import { AssistantError } from './assistant/types';
 
 let openbitfunRuntime: OpenBitFunRuntime | null = null;
 
@@ -1026,9 +1028,10 @@ ipcMain.handle('assistant:request', async (event, method: unknown, params: unkno
         throw new Error('Untrusted assistant caller');
     }
     try {
+        if (method === 'session.delegation') params = bindDelegationOrigin(params, event.senderFrame.url);
         return { ok: true, result: await getAssistantSupervisor().request(method, params) };
     } catch (error) {
-        return error instanceof AssistantRequestError
+        return error instanceof AssistantRequestError || error instanceof AssistantError
             ? { ok: false, error: { code: error.code, message: error.message } }
             : { ok: false, error: { code: 'INTERNAL', message: '工作助手请求失败，请重试' } };
     }

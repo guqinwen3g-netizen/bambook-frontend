@@ -123,6 +123,10 @@ export class MistRepository {
     });
   }
   async get(prior: TokenPayload, id: string) { return this.transact(async db => { const { actor, row } = await this.own(db, prior, id); return this.view(row, actor); }); }
+  /** 当前真实执行者（事务内重新加载账号与授权，保留会话自身的权限上限）。 */
+  async currentActor(prior:TokenPayload,permission?:string|null){return this.transact(db=>this.authorize(db,prior,permission));}
+  /** 工作助手读取：与 get 相同的进入与投影规则，同时返回重新加载后的执行者供逐类型复核。 */
+  async getForAgent(prior:TokenPayload,id:string){return this.transact(async db=>{const {row,actor}=await this.own(db,prior,id);return {workspace:this.view(row,actor),actor};});}
   async getForAssistant(prior:TokenPayload,id:string){return this.transact(async db=>{const {row,actor}=await this.own(db,prior,id,'ai:chat');return {workspace:this.view(row,actor),actor};});}
 
   async create(prior: TokenPayload, input: { name: string; slug?: string; seed?: 'demo' | 'empty' }, defaultOnly = false) {
