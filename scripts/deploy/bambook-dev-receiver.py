@@ -15,7 +15,7 @@ import tempfile
 ROOT = Path('/srv/bambook-dev')
 LIMIT = 64 * 1024 * 1024
 EXPANDED_LIMIT = 512 * 1024 * 1024
-REQUIRED = {'server/package.json', 'server/package-lock.json', 'server/src/mist/standalone.ts', 'scripts/deploy/bambook-dev-release.sh'}
+REQUIRED = {'.nvmrc', 'server/package.json', 'server/package-lock.json', 'server/src/mist/standalone.ts', 'scripts/deploy/bambook-dev-release.sh'}
 
 def validate_members(members):
     seen, total = set(), 0
@@ -25,7 +25,7 @@ def validate_members(members):
         if path.is_absolute() or '..' in path.parts or name in seen:
             raise ValueError('unsafe or duplicate archive path')
         allowed = path.parts and path.parts[0] == 'server' or name in {
-            'scripts', 'scripts/deploy', 'scripts/deploy/bambook-dev-release.sh'}
+            '.nvmrc', 'scripts', 'scripts/deploy', 'scripts/deploy/bambook-dev-release.sh'}
         if not allowed or not (member.isdir() or member.isfile()):
             raise ValueError('unsupported archive entry')
         total += member.size

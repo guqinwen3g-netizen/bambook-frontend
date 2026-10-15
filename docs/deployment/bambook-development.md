@@ -12,15 +12,19 @@
 
 SSH key 强制经过接收程序，只接受 `check`、`receive <40位提交>`、`activate <40位提交>`，不能当通用终端或 SFTP 使用。接收程序拒绝路径越界、符号链接、设备文件、重复路径和超过限制的压缩包；相同提交重复传送必须字节一致。项目 agent 无需在用户本机。
 
+服务器上运行的是 root 所有的副本 `/usr/local/libexec/bambook-dev-receiver.py`，仓库改动不会自动生效。本仓库版本要求压缩包包含 `.nvmrc`：接收程序更新后，须由管理员把服务器副本替换为合入主线的版本（root 所有、0755），否则 `receive` 会以 `unsupported archive entry` 拒绝新包。
+
 ## 应用启动前置条件
 
 由应用负责人配置开发数据库及结构、`/etc/bambook-dev/backend.env`、固定的 `bambook-dev.service`。变量至少包括 `DATABASE_URL`、足够强的 `JWT_SECRET`、`MIST_HOST=127.0.0.1`、`MIST_PORT=8082`、`MIST_LOCAL_WORKSPACE=0`。禁止把本地全权限模拟身份暴露到公网。
 
 服务应使用独立的 `bambook-deploy` 身份，工作目录为 `/srv/bambook-dev/current/server`，由 Node 执行本地 tsx CLI 和 `src/mist/standalone.ts`。仅授予此账号重启、停止该开发服务的权限，不授予通用 sudo。
 
-交付脚本安装锁定依赖、生成 Prisma client、检查 Mist 类型、切换版本并验证健康接口；失败时恢复旧版本。它不会自动执行 schema push、重置数据库或迁移真实数据。数据库 schema 的初始化与迁移由应用负责人单独确认并执行。
+交付脚本先核对服务器 Node 主版本与 `.nvmrc` 一致，再安装锁定依赖、生成 Prisma client、检查 Mist 类型；这些步骤完成后才读入 `backend.env`，依赖安装脚本看不到数据库密码和签名密钥。随后切换版本并验证健康接口，失败时恢复旧版本。激活成功后只保留当前、上一版及最近版本共 4 个，其余版本目录（各自带依赖）自动删除，避免占满系统盘。它不会自动执行 schema push、重置数据库或迁移真实数据。数据库 schema 的初始化与迁移由应用负责人单独确认并执行。
 
-开发后端域名为 `bambook-dev-api.sylway.cloud`，DNS 已指向服务器。HTTPS / 反向代理、认证、CORS 及最终公网连通需要单独验证；SSH 交付成功不代表 API 已上线。开发前端计划使用 `bambook-dev.jiangsupanda.com`。
+开发后端域名为 `bambook-dev-api.sylway.cloud`，DNS 已指向服务器。HTTPS / 反向代理、认证、CORS 及最终公网连通需要单独验证；SSH 交付成功不代表 API 已上线。
+
+开发前端与接口应放在**同一个开发域名**（建议 `bambook-dev.sylway.cloud`），`/api` 由 Cloudflare 转发到本机 8082。Mist 登录依赖 Cookie，前后端分属 `sylway.cloud` 与 `jiangsupanda.com` 两个站点时浏览器会拦截跨站 Cookie，还需额外 CORS；`jiangsupanda.com` 属于正式环境，开发环境不使用。
 
 ## 手动触发（不需要用户本地电脑）
 

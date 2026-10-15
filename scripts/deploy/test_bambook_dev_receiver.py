@@ -33,6 +33,15 @@ class ArchiveBoundaryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             receiver.validate_members(self.valid() + [entry('server/huge', size=receiver.EXPANDED_LIMIT + 1)])
 
+    def test_node_version_pin_is_required(self):
+        with self.assertRaises(ValueError):
+            receiver.validate_members([item for item in self.valid() if item.name != '.nvmrc'])
+
+    def test_other_root_files_are_rejected(self):
+        for name in ['.env', 'package.json', '.nvmrc.bak']:
+            with self.subTest(path=name), self.assertRaises(ValueError):
+                receiver.validate_members(self.valid() + [entry(name)])
+
     def test_incomplete_bundle_is_rejected(self):
         with self.assertRaises(ValueError):
             receiver.validate_members([entry('server/package.json')])
