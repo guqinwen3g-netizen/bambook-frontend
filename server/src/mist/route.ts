@@ -99,7 +99,7 @@ export function createMistRouter(options: { prisma?: any; filesRoot?: string; re
   router.get('/workspaces/default', run(async (req, res) => { res.json({ workspace: await repository.create(actor(req), { name: 'Mist 工作区', seed: 'demo' }, true) }); }));
   router.get('/workspaces', run(async (req, res) => {
     const workspaces = await repository.list(actor(req));
-    res.json({ workspaces: isAgentActor(actor(req)) ? workspaces.map(w => ({ id: w.id, name: w.name, revision: w.revision })) : workspaces });
+    res.json({ workspaces: isAgentActor(actor(req)) ? workspaces.map((w: { id: string; name: string; revision: number }) => ({ id: w.id, name: w.name, revision: w.revision })) : workspaces });
   }));
   router.get('/workspaces/archived',run(async(req,res)=>{res.json({workspaces:await repository.listArchived(actor(req))});}));
   router.post('/workspaces', run(async (req, res) => {

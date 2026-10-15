@@ -121,6 +121,20 @@ describe('工作助手读取接口（现有岗位与工作区权限）', () => {
     await request(app).get(W + ws.id + '/agent/query').set(HEADER, d.token).set('Origin', 'https://untrusted.example').expect(403);
     const list = await request(app).get('/api/mist/workspaces').set(HEADER, d.token).expect(200);
     expect(list.headers['cache-control']).toBe('private, no-store');
+    // 委托只拿到工作区标识与版本，不含 state / 成员等完整内容。
+    expect(list.body.workspaces.length).toBeGreaterThan(0);
+    for (const w of list.body.workspaces) expect(Object.keys(w).sort()).toEqual(['id', 'name', 'revision']);
+    // 本地会话入口在 Mist router 之前，也不能用委托头读取、续签或切换本人会话。
+    for (const call of [request(app).get('/api/mist/session'), request(app).post('/api/mist/session').send({ profileId: 'local-finance' })]) {
+      const denied = await call.set(HEADER, d.token).expect(403);
+      expect(denied.body.error.code).toBe('AGENT_FORBIDDEN');
+      expect(denied.headers['set-cookie']).toBeUndefined();
+      expect(denied.headers['cache-control']).toBe('private, no-store');
+    }
+    // 普通本人会话的既有行为不回归：Cookie 仍能读取完整工作区列表与本人会话。
+    const own = (await client.get('/api/mist/workspaces').expect(200)).body.workspaces;
+    expect(own.some((w: any) => w.state !== undefined || Object.keys(w).length > 3)).toBe(true);
+    expect((await client.get('/api/mist/session').expect(200)).body.user.id).toBe('local-sales');
   });
 
   it.each(['local-sales', 'local-finance', 'local-qc'])('%s only reads its own allowed object types, with working get / expand references', async profileId => {

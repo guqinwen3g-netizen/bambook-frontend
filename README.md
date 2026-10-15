@@ -10,7 +10,7 @@ Bambook 是公司内部业务系统，覆盖开发与寻样、报价、订单、
 
 ## 当前工作
 
-**工作助手 P1 云端接力中，未验收。** P0 已由 [PR #24](https://github.com/guqinwen3g-netizen/bambook-main/pull/24) 合入 main `9955ee0`；P1 的委托令牌、业务只读工具与页面授权初步实现保存在 `feat/work-assistant-p1`。后续 Agent 请从该分支继续，并先读 [P1 接力检查点](docs/mist-atelier/LIVE-PROGRESS.md#当前交接--工作助手-p1云端-agent-续接)：包含已知页面异步问题、测试缺口与验收顺序。P1 尚未合入、未部署。
+**工作助手 P1 本地验证完成，待 CI、真实模型验收与用户确认。** P0 已由 [PR #24](https://github.com/guqinwen3g-netizen/bambook-main/pull/24) 合入 main `9955ee0`；P1（短期只读委托、`bambook_query/get/expand`、可点开的业务引用）在 `feat/work-assistant-p1` / 草稿 PR #25：已知页面异步问题已修，页面 / host / 服务端测试已补，本地完整 `verify:mist` 与 Electron 构建通过。真实模型只读验收与截图目视确认仍待完成，见 [P1 检查点](docs/mist-atelier/LIVE-PROGRESS.md#当前交接--工作助手-p1云端-agent-续接)。P1 尚未合入、未部署。
 
 付款收尾批次已通过 [PR #20](https://github.com/guqinwen3g-netizen/bambook-main/pull/20) 合入 main `3740125`（此前应付收尾为 PR #19）。
 

@@ -230,7 +230,10 @@ export function WorkAssistantPage({ tabs }: { tabs?: React.ReactNode }) {
     setReady(false); setError(''); setActiveId(null); setMessages([]); setLive(null);
     (async () => {
       try {
-        setHost(await call<HostStatus>(bridge, 'host.status'));
+        const status = await call<HostStatus>(bridge, 'host.status');
+        // 迟到的初始化不能把已切走的账号重新选回 host。
+        if (cancelled) return;
+        setHost(status);
         await call(bridge, 'account.select', { accountKey, displayName: session.user?.displayName });
         const [rows, list, gpt] = await Promise.all([call<Provider[]>(bridge, 'providers.list'), call<SessionMeta[]>(bridge, 'sessions.list'), call<ChatgptStatus>(bridge, 'chatgpt.status')]);
         if (cancelled) return;
@@ -242,7 +245,8 @@ export function WorkAssistantPage({ tabs }: { tabs?: React.ReactNode }) {
   }, [bridge, accountKey, accountScope, session.user?.displayName, hostEpoch]);
 
   React.useEffect(() => {
-    setActiveId(null); activeRef.current = null; setMessages([]); setLive(null); liveRef.current = null; setInput(''); setError('');
+    // 旧上下文的 send 结束时因 scope 守卫不再回写，这里必须同时释放发送态。
+    setActiveId(null); activeRef.current = null; setMessages([]); setLive(null); liveRef.current = null; setInput(''); setSending(false); setError('');
   }, [scope]);
 
   React.useEffect(() => {
@@ -280,7 +284,11 @@ export function WorkAssistantPage({ tabs }: { tabs?: React.ReactNode }) {
     });
   }, [bridge, loadSession, workspaceId, delegation.renew, scope]);
 
-  const open = (id: string | null) => { setActiveId(id); activeRef.current = id; setMessages([]); setError(''); if (id) void loadSession(id).catch(e => setError(e instanceof Error ? e.message : '会话读取失败')); };
+  const open = (id: string | null) => {
+    const bound = scope;
+    setActiveId(id); activeRef.current = id; setMessages([]); setError('');
+    if (id) void loadSession(id).catch(e => { if (currentScope.current === bound && activeRef.current === id) setError(e instanceof Error ? e.message : '会话读取失败'); });
+  };
   const send = async () => {
     if (!bridge || !input.trim() || sending || live || !providerId || !accountReady || !canChat || delegation.phase !== 'connected') return;
     setSending(true); setError('');
@@ -298,9 +306,18 @@ export function WorkAssistantPage({ tabs }: { tabs?: React.ReactNode }) {
   const resolve = async (c: Confirm, approved: boolean) => {
     if (!bridge) return;
     setLive(run => run ? { ...run, confirms: run.confirms.filter(x => x.token !== c.token) } : run);
-    try { await call(bridge, 'confirm.resolve', { runId: c.runId, token: c.token, approved }); } catch (e) { setError(e instanceof Error ? e.message : '确认未送达'); }
+    const bound = scope;
+    try { await call(bridge, 'confirm.resolve', { runId: c.runId, token: c.token, approved }); } catch (e) { if (currentScope.current === bound) setError(e instanceof Error ? e.message : '确认未送达'); }
   };
-  const removeSession = async (id: string) => { if (!bridge) return; try { setSessions(await call<SessionMeta[]>(bridge, 'sessions.delete', { id })); if (activeId === id) open(null); } catch (e) { setError(e instanceof Error ? e.message : '删除失败'); } };
+  const removeSession = async (id: string) => {
+    if (!bridge) return;
+    const bound = scope;
+    try {
+      const rows = await call<SessionMeta[]>(bridge, 'sessions.delete', { id });
+      if (currentScope.current !== bound) return;
+      setSessions(rows); if (activeRef.current === id) open(null);
+    } catch (e) { if (currentScope.current === bound) setError(e instanceof Error ? e.message : '删除失败'); }
+  };
 
   const header = <PageHeader title="工作助手" description="在你的电脑上按指令干活，使用你本人的模型连接。对外发送、确认、删除等操作会先请你确认。" actions={bridge ? <Button icon={Settings2} disabled={!accountReady} onClick={() => setSettings({ open: true, format: null })}>我的模型</Button> : undefined} />;
   if (!bridge) return <MistPage>{header}{tabs}<Banner tone="warn" title="需在 Bambook 桌面端使用">工作助手运行在你的电脑上，邮件、附件和模型凭据都留在本机，浏览器里无法使用。请在 Bambook 桌面端打开此页。</Banner></MistPage>;
