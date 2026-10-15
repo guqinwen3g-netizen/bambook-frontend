@@ -5,7 +5,7 @@ import React from 'react';
 import { ArrowRight, Download, Landmark, Link2, ShieldCheck, Sparkles, Upload } from 'lucide-react';
 import { Banner, Button, Card, CardFooter, CardHeader, DataTable, Dialog, Drawer, EmptyState, Facts, Field, FormGrid, KeyValue, MistPage, Mono, PageHeader, Pill, Select, SummaryBar, Tabs, TextInput, Tile, useToast, type Column } from '../../../../components/mist';
 import type { MistCommand, MistInvoice, MistReceipt, MistAllocation } from '../../../../server/src/shared/mistWorkspace';
-import { isActiveMistInvoice, mistCommandPermission } from '../../../../server/src/shared/mistWorkspace';
+import { isActiveMistInvoice, mistCommandPermission, mistPaymentReverseBlock } from '../../../../server/src/shared/mistWorkspace';
 import { fmt } from '../data';
 import { useNav } from '../nav';
 import { useMistWorkspace } from '../runtime/workspace';
@@ -76,6 +76,8 @@ export function FinancePage() {
   const [importRows, setImportRows] = useRouteDraft<ImportedReceipt[]>([]), [fileName, setFileName] = React.useState('');
   const [invoiceId, setInvoiceId] = React.useState<string | null>(null);
   const [paymentOpen, setPaymentOpen] = useRouteDraft(false);
+  const [reversal,setReversal]=useRouteDraft<{kind:'allocation'|'payment';id:string;title:string}|null>(null);
+  const [reversalReason,setReversalReason]=useRouteDraft('');
   const [payment, setPayment] = useRouteDraft({ date: new Date().toISOString().slice(0, 10), payee: '', amount: '', currency: 'USD', ref: '' });
   const fileInput = React.useRef<HTMLInputElement>(null);
   const [fundingDialog,setFundingDialog]=useRouteDraft<{receiptId:string;id?:string;release?:boolean}|null>(null);
@@ -120,6 +122,10 @@ export function FinancePage() {
   };
   const fundingReceipt=receipts.find(r=>r.id===fundingDialog?.receiptId);
   const confirm = () => { if (!canFund||!receipt || !invoice || !isActiveMistInvoice(invoice) || receipt.remaining <= 0||allocationAmount===null||needsPayerBasis&&!payerBasis.trim()) return; const amount=allocationAmount;void execute({ type: 'finance.reconcile', payload: { receiptId: receipt.id, invoiceId: invoice.id,...(Math.round(amount*100)!==Math.round(maximumAllocation*100)?{amount}:{}),...(needsPayerBasis?{payerBasis:payerBasis.trim()}:{}) } }, () => { toast('核销记录已保存'); if(amount<receipt.remaining)return;const next = pendingReceipts.find(item => item.id !== receipt.id); if (next) setSel(next.id); }); };
+  const openReversal=(kind:'allocation'|'payment',id:string,title:string)=>{setReversal({kind,id,title});setReversalReason('');setFailure('');};
+  const submitReversal=()=>{if(!reversal)return;const reason=reversalReason.trim();if(!reason){setFailure('请填写冲回原因。');return;}
+    const command:MistCommand=reversal.kind==='allocation'?{type:'finance.allocation.reverse',payload:{allocationId:reversal.id,reason}}:{type:'finance.payment.reverse',payload:{paymentId:reversal.id,reason}};
+    void execute(command,()=>{setReversal(null);setReversalReason('');toast(reversal.kind==='allocation'?'核销已冲回，原记录保留，余额已回算':'付款凭证已冲回，另记反向凭证');});};
   const openArea=(next:FinanceArea)=>{setArea(next);setInvoiceId(null);if(next==='receivables')setTab('inv');go('payment-vouchers',undefined,{section:next});};
   const openReceipt=(id:string)=>{setArea('receivables');setTab('recv');setSel(id);go('payment-vouchers',id);};
   const currencies=[...new Set([...receipts.map(row=>row.currency),...invoices.map(row=>row.currency)])];
@@ -164,6 +170,7 @@ export function FinancePage() {
     {tab === 'pay' ? <Card><DataTable density={state?.settings.density} ariaLabel="付款凭证" loading={loading} rows={payments} rowKey={item => item.id} empty={<EmptyState icon={Landmark} title="还没有付款凭证" action={<Button disabled={!canVoucher||busy} onClick={() => setPaymentOpen(true)}>登记付款</Button>} />} columns={[
       { key: 'code', header: '凭证', render: item => <Mono>{item.code}</Mono> }, { key: 'date', header: '日期', render: item => item.date }, { key: 'payee', header: '收款方', render: item => item.payee },
       { key: 'amount', header: '金额', align: 'right', render: item => `${fmt(item.amount, 2)} ${item.currency}` }, { key: 'ref', header: '附言', render: item => item.ref },
+      { key: 'reverse', header: '冲回', width: '120px', render: item => {const blocked=state?mistPaymentReverseBlock(state,item):null;if(item.reversalOf)return <Pill tone="neutral">反向凭证</Pill>;if(payments.some(row=>row.reversalOf===item.id))return <Pill tone="warn">已冲回</Pill>;return blocked?<span className="mist-note">{item.amount>0?'应付页冲回':'—'}</span>:<Button size="sm" disabled={busy||!canVoucher} onClick={()=>openReversal('payment',item.id,`${item.code} · ${fmt(item.amount,2)} ${item.currency} · ${item.payee}`)}>冲回</Button>;} },
     ]} /></Card> : tab === 'inv' ? <Card><DataTable density={state?.settings.density} ariaLabel="发票" loading={loading} rows={visibleInvoices} rowKey={item => item.id} onRowClick={item => setInvoiceId(item.id)} columns={[
       { key: 'id', header: '发票', width: 'minmax(180px,2fr)', render: (item: MistInvoice) => <ObjectInvoice item={item} /> },
       { key: 'customer', header: '客户', width: '1fr', render: item => item.customer },
@@ -186,7 +193,9 @@ export function FinancePage() {
           {needsPayerBasis&&<Field label="付款方关系依据" required><TextInput value={payerBasis} onChange={event=>setPayerBasis(event.target.value)} placeholder="说明此付款方与发票客户的实际关系"/></Field>}
           {invoice&&<Field label="本次核销金额" required hint={`最多 ${fmt(maximumAllocation,2)} ${receipt.currency}；可保留剩余额，再分配到其他同币种票据。`} error={allocationAmount===null?'金额须大于零、最多两位小数且不超过可分配余额':undefined}><TextInput aria-label="本次核销金额" type="number" min="0.01" step="0.01" value={allocationInput} disabled={busy||!canFund} onChange={e=>setAllocationInput(e.target.value)}/></Field>}
           {invoice&&allocationAmount!==null&&<div className="mist-banner" data-tone="neutral"><Tile icon={Link2} size="sm"/><div><b>本次分配 {fmt(allocationAmount,2)} {receipt.currency}</b><p>核销后流水未分配 {fmt((Math.round(receipt.remaining*100)-Math.round(allocationAmount*100))/100,2)} {receipt.currency} · 发票未收 {fmt((Math.round(invoice.open*100)-Math.round(allocationAmount*100))/100,2)} {invoice.currency}</p><p>差额保留，不自动记成手续费、折让或汇兑损益。</p></div></div>}
-          <div className="mist-col"><span className="mist-eyebrow">此流水核销记录</span>{allocations.filter(a=>a.receiptId===receipt.id).map(a=><div className="mist-row mist-module-actions" key={a.id}><Mono>{invoices.find(i=>i.id===a.invoiceId)?.code||a.invoiceId}</Mono><span className="mist-num">{fmt(a.amount,2)} {a.currency}</span><Button size="sm" onClick={()=>setInvoiceId(a.invoiceId)}>查看核销票据</Button></div>)}<Button disabled title="冲回命令与原因留痕尚未接入">核销冲回</Button><span className="mist-note">核销冲回尚未接入，不能删除原核销事实。</span></div>
+          <div className="mist-col"><span className="mist-eyebrow">此流水核销记录</span>{allocations.filter(a=>a.receiptId===receipt.id).map(a=><div className="mist-row mist-module-actions" key={a.id}><Mono>{invoices.find(i=>i.id===a.invoiceId)?.code||a.invoiceId}</Mono><span className="mist-num">{fmt(a.amount,2)} {a.currency}</span><Button size="sm" onClick={()=>setInvoiceId(a.invoiceId)}>查看核销票据</Button><Button size="sm" disabled={busy||!canFund} onClick={()=>openReversal('allocation',a.id,`${receipt.code} → ${invoices.find(i=>i.id===a.invoiceId)?.code||a.invoiceId} · ${fmt(a.amount,2)} ${a.currency}`)}>核销冲回</Button></div>)}
+            {(state?.financeReversals??[]).filter(r=>r.kind==='allocation'&&r.receiptId===receipt.id).map(r=><div className="mist-col" key={r.id}><div className="mist-row mist-module-actions"><Pill tone="neutral">已冲回</Pill><Mono>{invoices.find(i=>i.id===r.invoiceId)?.code||r.invoiceId}</Mono><span className="mist-num">{fmt(r.amount,2)} {r.currency}</span></div><span className="mist-note">{r.at} · {r.actor} · {r.reason}</span></div>)}
+            <span className="mist-note">冲回须写原因；原核销记录保留，流水未分配与发票未收按剩余有效核销回算。</span></div>
         </div><CardFooter><span className="mist-note"><ShieldCheck className="mist-icon" data-size="xs" />操作记入核销记录</span><span className="mist-spacer" /><Button variant="primary" iconRight={ArrowRight} loading={busy} disabled={busy||!canFund||!invoice || receipt.remaining <= 0||allocationAmount===null||needsPayerBasis&&!payerBasis.trim()} onClick={confirm}>{receipt.remaining <= 0 ? '已核销' : '确认核销'}</Button></CardFooter></> : <EmptyState compact title="请选择一笔到账流水" />}
       </Card>
     </div>}
@@ -199,6 +208,10 @@ export function FinancePage() {
     }}>保存资金归属</Button></>}>
       {failure&&<Banner tone="bad" title="资金归属尚未保存">{failure}</Banner>}
       <FormGrid>{!fundingDialog?.release&&<><Field label="归属客户" required><Select aria-label="归属客户" value={funding.customerId} options={[{value:'',label:'请选择客户'},...(state?.customers??[]).map(c=>({value:c.id,label:c.name}))]} onChange={e=>setFunding({...funding,customerId:e.target.value,orderId:''})}/></Field><Field label="归属订单"><Select aria-label="归属订单" value={funding.orderId} options={[{value:'',label:'暂不归属订单 · 客户余额'},...(state?.orders??[]).filter(o=>o.customerId===funding.customerId&&o.currency===fundingReceipt?.currency).map(o=>({value:o.id,label:o.code}))]} onChange={e=>setFunding({...funding,orderId:e.target.value})}/></Field><Field label="归属金额" required><TextInput aria-label="归属金额" type="number" min="0.01" step="0.01" value={funding.amount} onChange={e=>setFunding({...funding,amount:e.target.value})}/></Field></>}<Field label="资金归属依据" required full><TextInput aria-label="资金归属依据" value={funding.note} onChange={e=>setFunding({...funding,note:e.target.value})}/></Field></FormGrid>
+    </Dialog>
+    <Dialog open={!!reversal} onClose={()=>{if(!busy)setReversal(null);}} title={reversal?.kind==='allocation'?'核销冲回':'付款冲回'} description={reversal?.title} footer={<><Button disabled={busy} onClick={()=>setReversal(null)}>取消</Button><Button variant="primary" loading={busy} disabled={busy||!reversalReason.trim()||(reversal?.kind==='allocation'?!canFund:!canVoucher)} onClick={submitReversal}>确认冲回</Button></>}>
+      {failure&&<Banner tone="bad" title="尚未冲回">{failure}</Banner>}<Banner title="原记录保留">{reversal?.kind==='allocation'?'冲回后这笔核销退出有效核销，到账流水未分配和发票未收按剩余核销重新计算；订单到款随之回算。原核销与冲回记录都保留可查。':'原付款凭证保留，另记一张同额负数的反向凭证；不发起银行退款。'}</Banner>
+      <FormGrid><Field label="冲回原因" required full><TextInput aria-label="冲回原因" value={reversalReason} onChange={event=>setReversalReason(event.target.value)} placeholder="例如：核错发票、重复登记"/></Field></FormGrid>
     </Dialog>
     <Dialog open={importRows.length > 0} onClose={() => { if (!busy) setImportRows([]); }} title="导入银行流水" description={fileName} width={860}
       footer={<><Button onClick={() => setImportRows([])} disabled={busy}>取消</Button><Button variant="primary" loading={busy} disabled={busy||!canVoucher} onClick={() => void execute({ type: 'finance.importReceipts', payload: { receipts: importRows } }, result => { setImportRows([]); toast(`银行流水已导入 ${Number(result.imported??0)} 笔${Number(result.skipped??0)?`，跳过 ${Number(result.skipped)} 笔已存在流水`:''}`); })}>确认导入 {importRows.length} 笔</Button></>}>

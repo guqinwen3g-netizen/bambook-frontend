@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {applyMistCommand,createMistState,MistCommandError,mistMoneyMinor,type MistCommand,type MistContext} from './mistWorkspace';
+import {applyMistCommand,createMistState,MistCommandError,mistCommandPermission,mistMoneyMinor,mistBankAccountBalances,mistFxLockUsage,mistFxRate,type MistCommand,type MistContext} from './mistWorkspace';
 const context=()=>{let id=0;return {now:'2026-10-13T08:00:00.000Z',actorName:'验证员',id:()=>`test-${++id}`} satisfies MistContext;};
 function approvedOrderFixture(amount=100){
  const ctx:MistContext={...context(),actorId:'business',authority:{supplier:{},orderReviewerIds:{garment:['reviewer'],fabric:['reviewer']}}};let state=createMistState(ctx,'empty');
@@ -91,3 +91,103 @@ it('requires explicit payer relationship evidence for a different customer name'
  f.run({type:'finance.reconcile',payload:{receiptId,invoiceId,payerBasis:'客户书面确认由母公司代付'}});expect(f.state.allocations[0].payerBasis).toBe('客户书面确认由母公司代付');
 });
 it('does not silently discard identical amounts when no bank reference exists',()=>{const ctx=context(),state=createMistState(ctx,'empty'),row={date:'2026-10-13',payer:'客户',amount:10,currency:'USD',ref:''};const result=applyMistCommand(state,{type:'finance.importReceipts',payload:{receipts:[row,row]}},ctx);expect(result.result).toEqual({imported:2,skipped:0});expect(result.state.receipts).toHaveLength(2);});
+describe('finance reversals keep the original fact and recompute balances',()=>{
+ const setup=()=>{const f=approvedOrderFixture(10),draft=f.run({type:'platform.invoice.save',payload:{orderId:f.orderId,due:'2026-10-13',amount:10,note:'实际合同票据'}}).id!;
+  const invoiceId=f.run({type:'platform.invoice.issue',payload:{id:draft}}).invoiceId as string;
+  f.run({type:'finance.importReceipts',payload:{receipts:[{date:'2026-10-13',payer:'客户公司',amount:10,currency:'USD',ref:'R-1'}]}});const receiptId=f.state.receipts[0].id;
+  f.run({type:'finance.reconcile',payload:{receiptId,invoiceId,amount:10}});return{ctx:f.ctx,s:f.state,receiptId,invoiceId};};
+ it('reverses an allocation with a reason, preserves the original record and restores both balances',()=>{
+  const {ctx,s,receiptId,invoiceId}=setup(),allocation=s.allocations[0];expect(s.receipts[0].state).toBe('matched');
+  expect(()=>applyMistCommand(s,{type:'finance.allocation.reverse',payload:{allocationId:allocation.id,reason:'  '}},ctx)).toThrow('冲回原因');
+  const next=applyMistCommand(s,{type:'finance.allocation.reverse',payload:{allocationId:allocation.id,reason:'核错发票'}},ctx).state;
+  expect(next.allocations).toHaveLength(0);expect(next.financeReversals).toHaveLength(1);
+  expect(next.financeReversals![0]).toMatchObject({kind:'allocation',targetId:allocation.id,reason:'核错发票',allocation});
+  expect(next.receipts.find(r=>r.id===receiptId)).toMatchObject({remaining:10,state:'unmatched'});expect(next.invoices.find(i=>i.id===invoiceId)!.open).toBe(10);
+  expect(next.events[0].text).toContain('核错发票');expect(s.allocations).toHaveLength(1);
+  expect(()=>applyMistCommand(next,{type:'finance.allocation.reverse',payload:{allocationId:allocation.id,reason:'再次'}},ctx)).toThrow('不存在');
+  const again=applyMistCommand(next,{type:'finance.reconcile',payload:{receiptId,invoiceId,amount:4}},ctx).state;
+  expect(again.receipts.find(r=>r.id===receiptId)!.remaining).toBe(6);expect(again.invoices.find(i=>i.id===invoiceId)!.open).toBe(6);expect(again.financeReversals).toHaveLength(1);
+ });
+ it('reverses a finance voucher once with a negative counter voucher and leaves the original untouched',()=>{
+  const ctx=context();let s=createMistState(ctx,'empty');s=applyMistCommand(s,{type:'finance.payment.save',payload:{date:'2026-10-13',payee:'物流商',amount:88.5,currency:'USD',ref:'P-1'}},ctx).state;const original=s.payments[0];
+  expect(original.origin).toBe('finance');
+  const result=applyMistCommand(s,{type:'finance.payment.reverse',payload:{paymentId:original.id,reason:'重复登记'}},ctx);const next=result.state;
+  expect(next.payments).toHaveLength(2);expect(next.payments[0]).toEqual(original);
+  expect(next.payments[1]).toMatchObject({amount:-88.5,currency:'USD',payee:'物流商',reversalOf:original.id});expect(next.payments[1].ref).toContain('重复登记');
+  expect(next.financeReversals![0]).toMatchObject({kind:'payment',targetId:original.id,voucherId:next.payments[1].id});
+  expect(()=>applyMistCommand(next,{type:'finance.payment.reverse',payload:{paymentId:original.id,reason:'再冲'}},ctx)).toThrow('已冲回');
+  expect(()=>applyMistCommand(next,{type:'finance.payment.reverse',payload:{paymentId:next.payments[1].id,reason:'再冲'}},ctx)).toThrow('反向');
+ });
+ it('leaves supplier payment vouchers to the payables reversal flow',()=>{
+  const ctx=context(),s=createMistState(ctx,'empty');s.payments.push({id:'voucher',code:'PAY-1',date:'2026-10-13',payee:'工厂',amount:5,currency:'CNY',ref:'X'});
+  s.payables={...(s.payables||{bills:[],payments:[],allocations:[]}),payments:[{id:'sp',paymentId:'voucher'} as any]};
+  expect(()=>applyMistCommand(s,{type:'finance.payment.reverse',payload:{paymentId:'voucher',reason:'错'}},ctx)).toThrow('应付页');
+ });
+ it('judges "not later than today" by the Shanghai business date, not the UTC date',()=>{
+  const ctx={...context(),now:'2026-10-15T17:00:00.000Z'};let s=createMistState(ctx,'empty');const run=(c:any)=>{const r=applyMistCommand(s,c,ctx);s=r.state;return r.result;};
+  expect(()=>run({type:'finance.account.save',payload:{name:'美元户',bankName:'中行',accountNo:'1234',currency:'USD',openingDate:'2026-10-17',openingBalance:0}})).toThrow('不能晚于今天');
+  run({type:'finance.account.save',payload:{name:'美元户',bankName:'中行',accountNo:'1234',currency:'USD',openingDate:'2026-10-16',openingBalance:0}});
+  run({type:'finance.fx.lock',payload:{date:'2026-10-16',bankName:'中行',currency:'USD',amount:10,rate:'7',localCurrency:'CNY',settleBy:'2026-10-16',ref:'FW'}});
+  expect(s.bankAccounts).toHaveLength(1);expect(s.fxRecords).toHaveLength(1);
+  s.payments.push({id:'m',code:'PAY-M',date:'2026-10-16',payee:'物流',amount:5,currency:'CNY',ref:'x',origin:'finance'} as any);
+  run({type:'finance.payment.reverse',payload:{paymentId:'m',reason:'错'}});expect(s.payments.find(p=>p.amount===-5)?.date).toBe('2026-10-16');
+ });
+ it('keeps bank accounts with opening balances and per-flow attribution; balance = opening + receipts - payments',()=>{
+  const ctx=context();let s=createMistState(ctx,'empty');const run=(c:any)=>{const r=applyMistCommand(s,c,ctx);s=r.state;return r.result;};
+  const today=ctx.now.slice(0,10);
+  expect(mistBankAccountBalances(s)).toEqual({accounts:[],unassigned:{receipts:0,payments:0}});
+  expect(()=>run({type:'finance.account.save',payload:{name:'美元户',bankName:'中行',accountNo:'12 34',currency:'USD',openingDate:today,openingBalance:1}})).not.toThrow();
+  const usd=s.bankAccounts![0];expect(usd).toMatchObject({code:'BA-001',accountNo:'1234',currency:'USD',openingBalance:1});
+  expect(()=>run({type:'finance.account.save',payload:{name:'重复',bankName:'中行',accountNo:'1234',currency:'USD',openingDate:today,openingBalance:0}})).toThrow('已登记');
+  expect(()=>run({type:'finance.account.save',payload:{name:'坏',bankName:'中行',accountNo:'99999',currency:'USD',openingDate:today,openingBalance:1.234}})).toThrow('两位小数');
+  run({type:'finance.account.save',payload:{id:usd.id,name:'美元户',bankName:'中行',accountNo:'1234',currency:'USD',openingDate:'2026-01-01',openingBalance:-100.5}});
+  expect(s.bankAccounts![0]).toMatchObject({openingBalance:-100.5,openingDate:'2026-01-01'});
+  run({type:'finance.account.save',payload:{name:'人民币户',bankName:'工行',accountNo:'5678',currency:'CNY',openingDate:'2026-01-01',openingBalance:0}});
+  run({type:'finance.importReceipts',payload:{receipts:[{date:'2026-02-01',payer:'客户',amount:1000,currency:'USD',ref:'R1'},{date:'2025-12-31',payer:'客户',amount:5,currency:'USD',ref:'R0'}]}});
+  run({type:'finance.payment.save',payload:{date:'2026-02-02',payee:'物流',amount:200.25,currency:'USD',ref:'P1'}});
+  const [r1,r0]=s.receipts,p1=s.payments[0],cny=s.bankAccounts![1];
+  expect(()=>run({type:'finance.account.assign',payload:{kind:'receipt',id:r1.id,accountId:cny.id}})).toThrow('币种');
+  expect(()=>run({type:'finance.account.assign',payload:{kind:'receipt',id:r0.id,accountId:usd.id}})).toThrow('期初');
+  run({type:'finance.account.assign',payload:{kind:'receipt',id:r1.id,accountId:usd.id}});run({type:'finance.account.assign',payload:{kind:'payment',id:p1.id,accountId:usd.id}});
+  let b=mistBankAccountBalances(s);expect(b.accounts[0]).toMatchObject({balance:699.25,receipts:1000,payments:200.25,receiptCount:1,paymentCount:1});expect(b.unassigned).toEqual({receipts:1,payments:0});
+  expect(()=>run({type:'finance.account.save',payload:{id:usd.id,name:'美元户',bankName:'中行',accountNo:'1234',currency:'USD',openingDate:'2026-01-01',openingBalance:0}})).toThrow('期初不能修改');
+  run({type:'finance.account.save',payload:{id:usd.id,name:'美元收款户',bankName:'中国银行',accountNo:'1234',currency:'USD',openingDate:'2026-01-01',openingBalance:-100.5}});expect(s.bankAccounts![0].name).toBe('美元收款户');
+  run({type:'finance.payment.reverse',payload:{paymentId:p1.id,reason:'重复'}});expect(s.payments[1].accountId).toBe(usd.id);
+  b=mistBankAccountBalances(s);expect(b.accounts[0].balance).toBe(899.5);
+  expect(()=>run({type:'finance.account.assign',payload:{kind:'receipt',id:r1.id,accountId:null}})).toThrow('调整原因');
+  run({type:'finance.account.assign',payload:{kind:'receipt',id:r1.id,accountId:null,reason:'归错账户'}});expect(s.receipts[0].accountId).toBeUndefined();expect(s.events[0].text).toContain('归错账户');
+  expect(mistBankAccountBalances(s).accounts[0].balance).toBe(-100.5);
+  expect(mistCommandPermission({type:'finance.account.save',payload:{} as any})).toBe('vouchers:write');
+  expect(mistCommandPermission({type:'finance.account.assign',payload:{} as any})).toBe('vouchers:write');
+ });
+ it('records FX locks and settlements from actual bank amounts; settlement moves account balances and draws down the lock',()=>{
+  const ctx=context();let s=createMistState(ctx,'empty');const run=(c:any)=>{const r=applyMistCommand(s,c,ctx);s=r.state;return r.result;};
+  run({type:'finance.account.save',payload:{name:'美元户',bankName:'中行',accountNo:'1111',currency:'USD',openingDate:'2026-01-01',openingBalance:10000}});
+  run({type:'finance.account.save',payload:{name:'人民币户',bankName:'中行',accountNo:'2222',currency:'CNY',openingDate:'2026-01-01',openingBalance:0}});
+  const [usd,cny]=s.bankAccounts!;
+  expect(()=>run({type:'finance.fx.lock',payload:{date:'2026-03-01',bankName:'中行',currency:'USD',amount:5000,rate:'7.1',localCurrency:'USD',settleBy:'2026-06-30',ref:'FW-1'}})).toThrow('不同');
+  expect(()=>run({type:'finance.fx.lock',payload:{date:'2026-03-01',bankName:'中行',currency:'USD',amount:5000,rate:'7.1234567',localCurrency:'CNY',settleBy:'2026-06-30',ref:'FW-1'}})).toThrow('6 位小数');
+  const lockId=run({type:'finance.fx.lock',payload:{date:'2026-03-01',bankName:'中行',currency:'USD',amount:5000,rate:'7.123456',localCurrency:'CNY',settleBy:'2026-06-30',ref:'FW-1'}}).id as string;
+  expect(s.fxRecords![0]).toMatchObject({kind:'lock',code:'FX-001',localAmount:35617.28,rate:'7.123456'});
+  expect(mistBankAccountBalances(s).accounts.map(a=>a.balance)).toEqual([10000,0]);
+  expect(()=>run({type:'finance.fx.settle',payload:{date:'2026-04-01',fromAccountId:usd.id,toAccountId:usd.id,amount:1,localAmount:7,ref:'S'}})).toThrow('不同币种');
+  expect(()=>run({type:'finance.fx.settle',payload:{date:'2026-04-01',fromAccountId:usd.id,toAccountId:cny.id,amount:6000,localAmount:42000,ref:'S',lockId}})).toThrow('剩余');
+  const settleId=run({type:'finance.fx.settle',payload:{date:'2026-04-01',fromAccountId:usd.id,toAccountId:cny.id,amount:3000,localAmount:21370.37,ref:'BK-778',lockId}}).id as string;
+  expect(s.fxRecords![1]).toMatchObject({kind:'settlement',currency:'USD',localCurrency:'CNY',rate:'7.123457',lockId,bankName:'中行'});
+  expect(mistFxLockUsage(s,lockId)).toEqual({settled:3000,remaining:2000});
+  let b=mistBankAccountBalances(s);expect(b.accounts.map(a=>a.balance)).toEqual([7000,21370.37]);expect(b.accounts[1]).toMatchObject({fxIn:21370.37,fxOut:0});
+  expect(()=>run({type:'finance.account.save',payload:{id:cny.id,name:'人民币户',bankName:'中行',accountNo:'2222',currency:'CNY',openingDate:'2026-01-01',openingBalance:5}})).toThrow('期初不能修改');
+  expect(()=>run({type:'finance.fx.reverse',payload:{id:lockId,reason:'错'}})).toThrow('先冲回');
+  run({type:'finance.fx.reverse',payload:{id:settleId,reason:'水单金额录错'}});expect(s.fxRecords![1].reversed).toMatchObject({reason:'水单金额录错'});
+  expect(mistBankAccountBalances(s).accounts.map(a=>a.balance)).toEqual([10000,0]);expect(mistFxLockUsage(s,lockId).remaining).toBe(5000);
+  expect(()=>run({type:'finance.fx.reverse',payload:{id:settleId,reason:'再'}})).toThrow('已冲回');
+  run({type:'finance.fx.reverse',payload:{id:lockId,reason:'合同取消'}});expect(s.fxRecords).toHaveLength(2);
+  expect(()=>run({type:'finance.fx.settle',payload:{date:'2026-04-02',fromAccountId:usd.id,toAccountId:cny.id,amount:1,localAmount:7,ref:'S2',lockId}})).toThrow('已冲回');
+  expect(mistFxRate(1000,7123.45)).toBe('7.123450');
+  expect(mistCommandPermission({type:'finance.fx.settle',payload:{} as any})).toBe('vouchers:write');
+ });
+ it('maps reversal permissions to the existing finance scopes',()=>{
+  expect(mistCommandPermission({type:'finance.allocation.reverse',payload:{allocationId:'a',reason:'r'}})).toBe('invoices:reconcile');
+  expect(mistCommandPermission({type:'finance.payment.reverse',payload:{paymentId:'p',reason:'r'}})).toBe('vouchers:write');
+ });
+});

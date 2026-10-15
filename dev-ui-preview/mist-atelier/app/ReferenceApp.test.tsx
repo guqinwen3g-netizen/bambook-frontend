@@ -335,6 +335,26 @@ describe('one Mist entry with real authentication and workspace state', () => {
     expect((getByRole(host!, 'textbox', { name: '本批次草稿' }) as HTMLInputElement).value).toBe('');
     expect(requests.filter(request => request.path.endsWith('/auth/logout'))).toHaveLength(1);
   });
+  it('opens approvals outside the menu from global search and restores it from a direct link', async () => {
+    await signIn(); await mount(); await waitFor(() => expect(probes.home).toHaveBeenCalled());
+    await openSearch(); input(searchInput(), '审批与放行');
+    await click(getByRole(getByRole(host!, 'dialog', { name: '搜索' }), 'button', { name: /审批与放行/ }));
+    expect(new URLSearchParams(location.search).get('view')).toBe('approvals');
+    await waitFor(() => expect(host!.textContent).toContain('没有待你审批的事项'));
+    act(() => root!.unmount()); host!.remove(); root = undefined; host = undefined;
+    await mount(); await waitFor(() => expect(host!.textContent).toContain('没有待你审批的事项'));
+    expect(host!.querySelector('h1')?.textContent).toContain('审批与放行'); expect(host!.textContent).not.toContain('没有查看权限');
+  });
+  it('opens the notification center outside the menu from global search and restores it from a direct link', async () => {
+    await signIn(); await mount(); await waitFor(() => expect(probes.home).toHaveBeenCalled());
+    await openSearch(); input(searchInput(), '通知中心');
+    await click(getByRole(getByRole(host!, 'dialog', { name: '搜索' }), 'button', { name: /通知中心/ }));
+    expect(new URLSearchParams(location.search).get('view')).toBe('notifications');
+    await waitFor(() => expect(host!.querySelector('h1')?.textContent).toContain('通知中心'));
+    act(() => root!.unmount()); host!.remove(); root = undefined; host = undefined;
+    await mount(); await waitFor(() => expect(host!.querySelector('h1')?.textContent).toContain('通知中心'));
+    expect(host!.textContent).not.toContain('没有查看权限'); expect(host!.textContent).toContain('通知订阅');
+  });
   it('keeps the supplier search while opening its exact record', async () => {
     await signIn('staff-a',['suppliers:read']);
     const state=currentContext().state!;

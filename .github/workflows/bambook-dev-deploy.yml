@@ -1,0 +1,177 @@
+name: Bambook development delivery
+on:
+  pull_request:
+    paths:
+      - .github/workflows/bambook-dev-deploy.yml
+      - scripts/deploy/**
+  # Automatic delivery: every successful `Mist verification` run for a push to main deploys that exact revision.
+  workflow_run:
+    workflows: [Mist verification]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Check the channel, or deploy the verified main revision
+        required: true
+        default: check
+        type: choice
+        options: [check, deploy]
+permissions:
+  contents: read
+  checks: read
+concurrency:
+  # Serialize real deliveries only; PR checks get their own per-ref group so they never queue behind a delivery.
+  group: ${{ github.event_name != 'pull_request' && 'bambook-development-delivery' || format('bambook-dev-check-{0}', github.ref) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  validate:
+    # workflow_run: only verified pushes to main (not PR runs, not failures).
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+      - run: python3 scripts/deploy/test_bambook_dev_receiver.py
+      - run: bash -n scripts/deploy/bambook-dev-release.sh && bash -n scripts/deploy/bootstrap-dev-server.sh && bash -n server/scripts/init-dev-database.sh
+  delivery:
+    needs: validate
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      github.event_name == 'workflow_run'
+    runs-on: ubuntu-latest
+    # Server-side install + prisma generate + tsc on the small dev VM takes ~15 min; 20 cancelled run 21 mid-activation.
+    timeout-minutes: 45
+    env:
+      DEPLOY_HOST: 124.222.56.61
+      DEPLOY_USER: bambook-deploy
+      MODE: ${{ github.event_name == 'workflow_run' && 'deploy' || inputs.mode }}
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          persist-credentials: false
+      - name: Require successful application verification for deployment
+        if: env.MODE == 'deploy'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_SHA/check-runs" \
+            --jq '.check_runs | any(.name == "verify" and .status == "completed" and .conclusion == "success")' | grep -qx true
+          # Never roll back: a delayed run for an older revision must not replace a newer main.
+          main_sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          if [ "$main_sha" != "$RELEASE_SHA" ]; then
+            echo "::error::$RELEASE_SHA is no longer the tip of main ($main_sha); refusing to deploy a stale revision"
+            exit 1
+          fi
+      - name: Configure dedicated SSH identity and pinned host key
+        env:
+          DEPLOY_KEY: ${{ secrets.BAMBOOK_DEV_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.BAMBOOK_DEV_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          mkdir -p "$RUNNER_TEMP/bambook-ssh"
+          printf '%s\n' "$DEPLOY_KEY" > "$RUNNER_TEMP/bambook-ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/bambook-ssh/known_hosts"
+      - name: Check delivery channel
+        run: |
+          ssh -i "$RUNNER_TEMP/bambook-ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/bambook-ssh/known_hosts" \
+            -o ConnectTimeout=15 "$DEPLOY_USER@$DEPLOY_HOST" check
+      - name: Use repository Node version
+        if: env.MODE == 'deploy'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Build same-origin web frontend
+        if: env.MODE == 'deploy'
+        env:
+          BAMBOOK_WEB_SUBDOMAIN: '1'
+          VITE_API_BASE_URL: /api
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          npm run build
+          # Same revision must produce the same bundle bytes (receiver replay check): pin the build start time.
+          node -e 'const f="dist/mist-version.json",fs=require("fs"),v=JSON.parse(fs.readFileSync(f));v.startedAt=v.committedAt;fs.writeFileSync(f,JSON.stringify(v))'
+      - name: Send verified release and activate
+        if: env.MODE == 'deploy'
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          stage="$RUNNER_TEMP/bundle"
+          rm -rf "$stage" && mkdir -p "$stage/web"
+          git archive --format=tar HEAD .nvmrc server scripts/deploy/bambook-dev-release.sh | tar -x -C "$stage"
+          # Legacy map datasets in public/ are not used by the Mist renderer; keep the bundle small.
+          tar -c -C dist --exclude=./data --exclude=./geo --exclude=./glyphs --exclude='./*.geojson' --exclude='./earth_*' . | tar -x -C "$stage/web"
+          test -f "$stage/web/index.html"
+          test -z "$(find "$stage" -type l -print -quit)"
+          tar -c -C "$stage" --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner .nvmrc server scripts web | gzip -n > "$RUNNER_TEMP/backend.tar.gz"
+          ssh_options=(-i "$RUNNER_TEMP/bambook-ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/bambook-ssh/known_hosts" -o ConnectTimeout=15)
+          ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "receive $RELEASE_SHA" < "$RUNNER_TEMP/backend.tar.gz"
+          ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "activate $RELEASE_SHA"
+      - name: Remove temporary credentials
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/bambook-ssh"
+  report:
+    needs: [validate, delivery]
+    # Skipped workflow_run triggers (failed verification, PR runs) publish nothing.
+    if: always() && needs.validate.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      statuses: write
+      actions: read
+      pull-requests: write
+    steps:
+      - name: Publish result as commit status and report failures on the PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          SHA: ${{ github.event.pull_request.head.sha || github.event.workflow_run.head_sha || github.sha }}
+          PR: ${{ github.event.pull_request.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CONTEXT: ci/bambook-dev-delivery
+        run: |
+          set -euo pipefail
+          summary=$(jq -r 'to_entries | map("\(.key)=\(.value.result)") | join(" ")' <<<"$NEEDS_JSON")
+          if jq -e 'any(.[]; .result == "failure")' <<<"$NEEDS_JSON" >/dev/null; then state=failure
+          elif jq -e 'any(.[]; .result == "cancelled")' <<<"$NEEDS_JSON" >/dev/null; then state=error
+          else state=success; fi
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state="$state" -f context="$CONTEXT" \
+            -f target_url="$RUN_URL" -f description="${summary:0:140}" >/dev/null
+          echo "status $CONTEXT=$state ($summary) on $SHA"
+          [ "$state" = success ] && exit 0
+          [ -n "$PR" ] || exit 0
+          jobs=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100")
+          {
+            echo "### CI \`$CONTEXT\`: **$state** on \`${SHA:0:7}\`"
+            echo "Run: $RUN_URL"
+            echo
+            jq -r '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | "- job **\(.name)** (\(.conclusion)): " + ([.steps[]? | select(.conclusion == "failure") | .name] | join(", "))' <<<"$jobs"
+            for id in $(jq -r '.jobs[] | select(.conclusion == "failure") | .id' <<<"$jobs"); do
+              name=$(jq -r --argjson id "$id" '.jobs[] | select(.id == $id) | .name' <<<"$jobs")
+              echo
+              echo "<details open><summary>Log tail: $name</summary>"
+              echo
+              echo '```'
+              gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$id/logs" 2>&1 \
+                | sed -e 's/\x1b\[[0-9;]*[A-Za-z]//g' -e 's/^[0-9T:.-]*Z //' | grep -v '^##\[group\]\|^##\[endgroup\]' \
+                | tail -n 80 | cut -c1-300 | sed 's/```/` ` `/g'
+              echo '```'
+              echo "</details>"
+            done
+          } > "$RUNNER_TEMP/ci-report.md"
+          gh pr comment "$PR" -R "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/ci-report.md"

@@ -5,14 +5,15 @@ import { Banner, Button, Card, ChoiceCards, Dialog, Field, FormGrid, FormSection
 import type { MistSettings } from '../../../../server/src/shared/mistWorkspace';
 import { useMistSession } from '../runtime/auth';
 import { useMistWorkspace } from '../runtime/workspace';
+import { useNav } from '../nav';
 import { WorkspaceMembers } from './WorkspaceMembers';
 
 type TextKey = 'workspaceName' | 'profileName' | 'profileEmail' | 'locale';
 type TextValues = Pick<MistSettings, TextKey>;
 export function SettingsPage() {
-  const workspace = useMistWorkspace(), session = useMistSession(), toast = useToast();
+  const workspace = useMistWorkspace(), session = useMistSession(), toast = useToast(), nav = useNav();
   const { state, loading, saving, pending } = workspace;
-  const [sec, setSec] = React.useState('appearance'), [error, setError] = React.useState('');
+  const [sec, setSec] = React.useState(() => ['appearance', 'notify', 'workspace', 'account', 'security'].includes(String(nav?.route?.section)) ? String(nav!.route.section) : 'appearance'), [error, setError] = React.useState('');
   const [lifecycle,setLifecycle]=React.useState<{action:'archive'|'restore';id?:string;name:string}|null>(null),[lifecycleBusy,setLifecycleBusy]=React.useState(false);
   const lifecycleLock=React.useRef(false),mounted=React.useRef(true);
   React.useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);

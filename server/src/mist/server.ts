@@ -40,6 +40,9 @@ export function createMistServer(prisma?: any,options:{local?:MistLocalRuntime;h
     const {createEmailService}=require('../auth/email') as typeof import('../auth/email');
     const requireEmailVerification = process.env.AUTH_REQUIRE_EMAIL_VERIFY ? !/^(0|false|no)$/i.test(process.env.AUTH_REQUIRE_EMAIL_VERIFY.trim()) : true;
     app.use('/api/auth', createAuthRouter({ prisma, email: createEmailService(), verification: createDbVerificationStore({ prisma }), requireEmailVerification }));
+    // The local-identity session exists only in local mode. Answer 404 before authentication so the web app
+    // detects server-account mode and shows sign-in (a 401 here made it fall back to the local-workspace screen).
+    app.all('/api/mist/session', (_req, res) => { res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Local workspace session is not available on this server' } }); });
     app.use('/api/mist', createMistRouter({ prisma,contract:mistContract as MistContract, filesRoot: process.env.MIST_FILES_DIR || path.resolve(__dirname, '../../private/mist-files') }));
   }
   app.use((error: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

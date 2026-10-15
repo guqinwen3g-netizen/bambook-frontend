@@ -8,6 +8,8 @@ import { useNav } from '../nav';
 import { useMistSession } from '../runtime/auth';
 import { useMistWorkspace } from '../runtime/workspace';
 import { visibleMistNotifications } from '../runtime/notificationPreferences';
+import { useOptionalMistReviews } from '../runtime/reviews';
+import { mistWorkQueue, mistEmailFollowUpTaskIds } from '../runtime/workQueue';
 import type { View } from '../../../../types';
 
 function dateKey(value: Date) { return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`; }
@@ -37,6 +39,7 @@ export function HomePage() {
   React.useEffect(() => { const update = () => setToday(dateKey(new Date())); const timer = window.setInterval(update, 60000); window.addEventListener('focus', update); return () => { window.clearInterval(timer); window.removeEventListener('focus', update); }; }, []);
   const days = weekDays(today), weekStart = days[0].key, weekEnd = days[6].key;
   const allTasks = (state?.tasks ?? []).filter(task => !task.done);
+  const reviews = useOptionalMistReviews(), waitingReviews = reviews?.rows.filter(row => row.canDecide).length ?? 0;
   const inRange = (date: string) => !date || (range === 'today' ? date <= today : date <= weekEnd);
   const tasks = allTasks.filter(task => inRange(task.due)).slice().sort((a, b) => sort === 'title' ? a.title.localeCompare(b.title, 'zh-CN') : (a.due || '9999').localeCompare(b.due || '9999') || a.title.localeCompare(b.title, 'zh-CN'));
   const focus = tasks[0];
@@ -51,9 +54,12 @@ export function HomePage() {
     catch (failure) { if (alive.current && activeScope.current === current) { const message = failure instanceof Error ? failure.message : '操作未完成，请重试'; setError(message); toast(message, 'bad'); } }
     finally { if (alive.current && activeScope.current === current) operation.current = false; }
   };
-  const taskRows: TaskItem[] = tasks.map(task => ({ id: task.id, when: !task.due ? '未定期限' : task.due < today ? '已逾期' : task.due === today ? '今天' : task.due.slice(5), urgent: !!task.due && task.due <= today,
-    title: task.title, meta: [task.kind === 'development' ? '开发事项' : '工作事项', state?.devs.find(dev=>dev.id===task.target.id)?.code||state?.orders.find(order=>order.id===task.target.id)?.code, task.target.versionId ? state?.versions.find(v => v.id === task.target.versionId)?.label : undefined].filter(Boolean).join(' · '),
-    status: { tone: task.due && task.due < today ? 'warn' : 'accent', label: task.due && task.due < today ? '已逾期' : '待处理' } }));
+  const emailTasks = mistEmailFollowUpTaskIds(state);
+  const queue = mistWorkQueue(state, { canRead: view => session.canAccessView(view as View), me: session.user?.id ?? '', reviews: reviews?.rows, today });
+  const queueRows: TaskItem[] = queue.map(item => ({ id: item.id, when: item.when, urgent: item.urgent, title: item.title, meta: item.meta, status: { tone: item.urgent ? 'warn' : 'accent', label: item.sourceLabel } }));
+  const taskRows: TaskItem[] = [...queueRows, ...tasks.map(task => ({ id: task.id, when: !task.due ? '未定期限' : task.due < today ? '已逾期' : task.due === today ? '今天' : task.due.slice(5), urgent: !!task.due && task.due <= today,
+    title: task.title, meta: [emailTasks.has(task.id) ? '邮件跟进' : task.kind === 'development' ? '开发事项' : '工作事项', state?.devs.find(dev=>dev.id===task.target.id)?.code||state?.orders.find(order=>order.id===task.target.id)?.code, task.target.versionId ? state?.versions.find(v => v.id === task.target.versionId)?.label : undefined].filter(Boolean).join(' · '),
+    status: { tone: task.due && task.due < today ? 'warn' : 'accent', label: task.due && task.due < today ? '已逾期' : '待处理' } as TaskItem['status'] }))];
   const outstanding = new Map<string, number>();
   state?.invoices.forEach(invoice => { if (invoice.open > 0) outstanding.set(invoice.currency, (outstanding.get(invoice.currency) ?? 0) + invoice.open); });
   const currencies = [...outstanding.entries()].sort(([a], [b]) => a.localeCompare(b));
@@ -77,7 +83,7 @@ export function HomePage() {
   return (
     <MistPage>
       <PageHeader variant="greeting" eyebrow={`${dateLabel} · ${workspace.workspace?.name ?? '工作空间'}`} title={<>{greeting}，<em>{state?.settings.profileName?.trim() || session.user?.displayName || '同事'}</em></>}
-        description={!state ? (loading ? '正在读取你的工作空间…' : '工作空间尚未读取成功，请重试。') : `${hidden.size ? '当前可见' : '当前有'} ${allTasks.length} 件事等你推进，其中 ${allTasks.filter(task => task.due === today).length} 件今天到期。`}
+        description={!state ? (loading ? '正在读取你的工作空间…' : '工作空间尚未读取成功，请重试。') : `${hidden.size ? '当前可见' : '当前有'} ${allTasks.length + queue.length} 件事等你推进，其中 ${allTasks.filter(task => task.due === today).length} 件今天到期${queue.length ? `，${queue.length} 件来自审批、QC、出运或财务` : ''}。`}
         actions={<><Segmented<'today' | 'week'> ariaLabel="时间范围" value={range} onChange={setRange} options={[{ value: 'today', label: '今天' }, { value: 'week', label: '本周' }]} />
           <Button variant="primary" icon={Plus} disabled={busy || !state || !session.hasPermission('products:write')} onClick={() => go('development/new')}>新建</Button></>} />
       {(error || workspace.error) && <Banner tone="bad" title={error || workspace.error} actions={<Button size="sm" icon={RefreshCw} onClick={() => { setError(''); void workspace.refresh(); }}>重新读取</Button>} />}
@@ -95,8 +101,8 @@ export function HomePage() {
           actions={<><Button variant="white" disabled={busy || !focus} iconRight={ArrowRight} onClick={() => focus && openTarget(focus.target)}>打开事项</Button><Button variant="glass" disabled={busy || !version?.qc} icon={FileText} onClick={() => setReportVersion(version?.id ?? null)}>QC 报告</Button></>} />
         <AIBrief className="mist-col-4" icon={Sparkles} sub="工作区通知与记录 · 事实摘要" onAsk={() => openAI('请根据当前工作区记录，整理下一步行动建议。')} items={state?.settings.notifications.suggestions===false?[{strong:'主动建议已关闭',text:'仍可手动打开小竹。',onClick:()=>openAI('请根据当前工作区记录，整理下一步行动建议。')}]:brief} />
         <Card className="mist-col-8">
-          <CardHeader title="接着完成" tools={<><Dropdown<'due' | 'title'> label="排序" value={sort} onChange={setSort} options={[{ value: 'due', label: '按期限' }, { value: 'title', label: '按名称' }]} /><Button variant="quiet" size="sm" icon={SlidersHorizontal} disabled={busy || !state?.tasks.length} onClick={beginTask}>管理任务</Button></>}><span className="mist-muted" style={{ fontSize: 13 }}>{tasks.length} 项</span></CardHeader>
-          {loading ? <CardBody><Skeleton height={72} /><Skeleton height={72} /></CardBody> : taskRows.length ? <TaskList items={taskRows} onOpen={item => { const task = tasks.find(task => task.id === item.id); if (task) openTarget(task.target); }} /> : <EmptyState compact title="这个时间范围没有待办" description="可以切换本周，或查看工作区其他事项。" />}
+          <CardHeader title="接着完成" tools={<><Dropdown<'due' | 'title'> label="排序" value={sort} onChange={setSort} options={[{ value: 'due', label: '按期限' }, { value: 'title', label: '按名称' }]} />{reviews && <Button variant="quiet" size="sm" icon={BadgeCheck} onClick={() => go('approvals')}>{waitingReviews ? `待我审批 ${waitingReviews}` : '审批与放行'}</Button>}<Button variant="quiet" size="sm" icon={SlidersHorizontal} disabled={busy || !state?.tasks.length} onClick={beginTask}>管理任务</Button></>}><span className="mist-muted" style={{ fontSize: 13 }}>{tasks.length} 项</span></CardHeader>
+          {loading ? <CardBody><Skeleton height={72} /><Skeleton height={72} /></CardBody> : taskRows.length ? <TaskList items={taskRows} onOpen={item => { const target = queue.find(entry => entry.id === item.id)?.target ?? tasks.find(task => task.id === item.id)?.target; if (target) openTarget(target); }} /> : <EmptyState compact title="这个时间范围没有待办" description="可以切换本周，或查看工作区其他事项。" />}
         </Card>
         <Card className="mist-col-4">
           <CardHeader title={day===today?'今日安排':`${day.slice(5)} 安排`} tools={<TextLink iconRight={ArrowUpRight} onClick={() => go('calendar',undefined,{section:day})}>日历</TextLink>} />
