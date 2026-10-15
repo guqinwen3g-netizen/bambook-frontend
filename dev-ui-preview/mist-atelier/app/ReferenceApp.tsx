@@ -33,7 +33,8 @@ import { PLATFORM_PAGES } from './pages/modules/PlatformPages';
 import { LocalAdminPanel } from './pages/modules/LocalAdminPanel';
 import { LocalMesPage } from './pages/modules/LocalMesPage';
 import { EmailsPage } from './pages/modules/EmailsPage';
-import { MistReviewButton } from './runtime/reviews';
+import { MistReviewButton, MistReviewProvider } from './runtime/reviews';
+import { ApprovalsPage } from './pages/ApprovalsPage';
 import { moduleSearchRecords } from './runtime/search';
 import { apiService } from '../../../services/apiService';
 import { platformBusinessDate } from '../../../server/src/shared/mistPlatform';
@@ -43,11 +44,11 @@ const PAGES: Record<string, React.FC> = {
   ...FULFILLMENT_PAGES,...MARKET_PAGES,...PLATFORM_PAGES,
   emails: EmailsPage, cockpit: HomePage, development: DevListPage, 'development/detail': DevDetailPage, 'development/new': DevCreatePage,
   orders: OrderListPage, 'orders/detail': OrderDetailPage, 'orders/new': OrderCreatePage, calendar: CalendarPage, 'payment-vouchers': FinancePage, crm: CustomerPage,
-  'production-board': ProductionPage, 'system-settings': SettingsPage, settings: SettingsPage, 'workspace-settings': SettingsPage, states: StatesPage, 'design-system': DesignSystemPage,
+  'production-board': ProductionPage, 'system-settings': SettingsPage, settings: SettingsPage, 'workspace-settings': SettingsPage, approvals: ApprovalsPage, states: StatesPage, 'design-system': DesignSystemPage,
 };
-const LIVE_VIEWS = new Set(['emails','cockpit','development','development/detail','development/new','orders','orders/detail','orders/new','payment-vouchers','crm','production-board','calendar','system-settings','settings','workspace-settings']);
+const LIVE_VIEWS = new Set(['emails','cockpit','development','development/detail','development/new','orders','orders/detail','orders/new','payment-vouchers','crm','production-board','calendar','system-settings','settings','workspace-settings','approvals']);
 const ROUTE_KEYS = ['view','id','versionId','batchId','section','customerId','orderLineId','productionId','detail'] as const;
-const LABELS: Record<string, string> = { 'design-system': '设计系统', states: '空 / 加载 / 错误', 'system-settings': '系统设置', settings: '系统设置', 'workspace-settings': '工作空间设置' };
+const LABELS: Record<string, string> = { 'design-system': '设计系统', states: '空 / 加载 / 错误', 'system-settings': '系统设置', settings: '系统设置', 'workspace-settings': '工作空间设置', approvals: '审批与放行' };
 const GROUPS: Record<string, string> = { overview: '我的事务', customer: '客户与市场', fulfillment: '订单履约', finance: '财务与成本', platform: '平台' };
 
 export function readMistRoute(): Route {
@@ -85,7 +86,7 @@ function useSections(): NavSection[] {
 function crumbsFor(route: Route, go: (view: string, id?: string) => void, objectLabel?: string, versionLabel?: string): Crumb[] {
   const base = route.view.split('/')[0], mod = getModuleByView(base as View);
   const label = mod?.productLabel ?? LABELS[base] ?? base;
-  const crumbs: Crumb[] = [{ label: mod ? GROUPS[mod.nav.group] : base === 'workspace-settings' ? '我的事务' : '设计系统', hideOnMobile: true }];
+  const crumbs: Crumb[] = [{ label: mod ? GROUPS[mod.nav.group] : base === 'workspace-settings' || base === 'approvals' ? '我的事务' : '设计系统', hideOnMobile: true }];
   if (route.view.includes('/')) {
     crumbs.push({ label, onClick: () => go(base) });
     crumbs.push(route.view.endsWith('/new') ? { label: base === 'orders' ? '新建订单' : '新建开发案' } : { label: objectLabel || route.id || '未指定对象', mono: true });
@@ -203,6 +204,7 @@ function AppInner({ theme, setTheme }: { theme: ThemeMode; setTheme: (theme: The
     ...(state ? moduleSearchRecords(state).filter(r => session.canAccessView(r.view as View)).map(r => ({ id: r.view + '-' + r.id, group: r.group, label: r.label, hint: r.hint, keywords: r.keywords, run: () => go(r.view, r.id) })) : []),
     ...sections.flatMap(section => section.items.map(item => ({ id: 'go-' + item.id, group: '跳转', label: item.label, hint: section.label, icon: item.icon, run: () => go(item.id) }))),
     ...(canDevelopment?[{id:'new-dev',group:'操作',label:'新建开发案',run:()=>go('development/new')}]:[]),
+    { id: 'approvals', group: '操作', label: '审批与放行', keywords: '审批 待我审批 放行 付款申请', icon: ClipboardList, run: () => go('approvals') },
     { id: 'theme', group: '操作', label: '切换深浅色', icon: Moon, run: toggleTheme },
     { id: 'ai', group: '操作', label: '问小竹', hint: '⌘ J', icon: Sparkles, run: ()=>openAI() },
   ];
@@ -225,7 +227,7 @@ function AppInner({ theme, setTheme }: { theme: ThemeMode; setTheme: (theme: The
   const name = state?.settings.profileName?.trim() || user.displayName || user.email;
   const roles = user.roleLabels?.map(role => role.name).join(' · ') || user.roles.map(role => ({ owner: '负责人', admin: '管理员', manager: '管理者', merchandiser: '业务员', finance: '财务', sales: '业务员', viewer: '查看人员', agent_operator: '助手操作员' })[role]).join(' · ');
   return (
-    <Nav.Provider value={nav}><MistDensityContext.Provider value={state?.settings.density||'default'}>
+    <Nav.Provider value={nav}><MistReviewProvider><MistDensityContext.Provider value={state?.settings.density||'default'}>
       <MistAppShell collapsed={collapsed} scrollKey={route.view + (route.id ?? '')}
         sidebar={<MistSidebarPresentation sections={sections} activeId={base === 'development' ? 'development' : base}
           onNavigate={id => go(id)} collapsed={collapsed} onToggleCollapsed={() => setCollapsed(value => !value)}
@@ -272,7 +274,7 @@ function AppInner({ theme, setTheme }: { theme: ThemeMode; setTheme: (theme: The
         <KeyValue items={[{ label: '当前工作身份', value: user.displayName || user.email }, { label: '工作区显示名', value: name }, { label: '工作邮箱', value: user.email }, { label: '职责', value: roles || '未设置' }, { label: '部门', value: user.department || '未设置' }]} />
         {account&&<MistVersionInfo demoSeed={state?.settings.demoSeed} />}
       </Drawer>
-    </MistDensityContext.Provider></Nav.Provider>
+    </MistDensityContext.Provider></MistReviewProvider></Nav.Provider>
   );
 }
 

@@ -8,7 +8,7 @@ const bridge=vi.hoisted(()=>({workspace:null as any,sessionKey:'session-a',canAs
 vi.mock('./runtime/auth',()=>({MistSessionProvider:({children}:any)=>children,useMistSession:()=>({status:'authenticated',sessionKey:bridge.sessionKey,user:{id:bridge.sessionKey,displayName:'Test user',email:'test@example.test',roles:['sales'],permissions:['*'],roleLabels:[]},hasRole:()=>false,hasPermission:()=>bridge.canAsk,canAccessView:()=>true})}));
 vi.mock('./runtime/workspace',()=>({MistWorkspaceProvider:({children}:any)=>children,useMistWorkspace:()=>bridge.workspace}));
 vi.mock('../../../services/apiService',()=>({apiService:{getAuthHeaders:()=>({'X-Test-Auth':'authenticated'})}}));
-vi.mock('./runtime/reviews',()=>({MistReviewButton:()=>null}));
+vi.mock('./runtime/reviews',()=>({MistReviewButton:()=>null,MistReviewProvider:({children}:{children:React.ReactNode})=>children,useOptionalMistReviews:()=>null}));
 vi.mock('./pages/HomePage',()=>({HomePage:()=>null}));
 vi.mock('./pages/OrderDetailPage',()=>({OrderDetailPage:()=>null}));
 vi.mock('./pages/modules/FulfillmentPages',()=>({FULFILLMENT_PAGES:{}}));
