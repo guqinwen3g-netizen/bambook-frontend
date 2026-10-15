@@ -34,7 +34,7 @@ SSH key 强制经过接收程序，只接受 `check`、`receive <40位提交>`�
 
 ## 数据库结构与测试账号（管理员单独确认后执行）
 
-首次部署成功后，以 `bambook-deploy` 身份、在 `/srv/bambook-dev/current/server` 读入 `backend.env` 后执行：`npx prisma migrate deploy` → `npm run seed:base` → `npx tsx scripts/seed-empty-owner.ts` → `npm run seed:dev-roles` → `BAMBOOK_DEV_ENVIRONMENT=1 npx tsx scripts/set-dev-environment-passwords.ts /srv/bambook-dev/shared/test-accounts.txt`。最后一步给管理员与各岗位测试账号设置各自随机密码，只写入该 0600 文件，不打印、不入库；`seed-empty-owner` 的默认密码随之失效。后续 schema 变更仍逐次确认后执行 `migrate deploy`。
+首次部署成功后，以 root 执行 `sudo bash /srv/bambook-dev/current/scripts/deploy/init-dev-database.sh`。它只接受本机 `panda_hub_dev`：空库时按 `schema.prisma` 建表（`db push`），并把全部迁移标记为已应用作为基线——迁移历史无法从空库重放（早期迁移依赖库外已有表）；随后 `migrate deploy`、`seed:base`、补建 `owner@bambook.local`、`seed:dev-roles`，最后给管理员与各岗位测试账号设置各自随机密码，只写入 root 可读的 0600 `/srv/bambook-dev/shared/test-accounts.txt`，不打印、不入库。脚本幂等，可重复执行（重复执行会重新生成测试密码）。后续 schema 变更照常逐次确认后执行 `migrate deploy`；正式库禁止 `db push` 的原则不变。
 
 ## 域名
 

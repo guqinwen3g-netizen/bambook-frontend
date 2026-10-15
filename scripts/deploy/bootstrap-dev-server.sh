@@ -105,6 +105,10 @@ server {
     client_max_body_size 64m;
     location /api/ {
         proxy_pass http://127.0.0.1:8082;
+        # 管理员登录响应携带较大的 Set-Cookie，默认 4k/8k 头缓冲会 502。
+        proxy_buffer_size 64k;
+        proxy_buffers 8 64k;
+        proxy_busy_buffers_size 128k;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
