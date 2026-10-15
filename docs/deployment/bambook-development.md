@@ -21,3 +21,44 @@ SSH key 强制经过接收程序，只接受 `check`、`receive <40位提交>`�
 交付脚本安装锁定依赖、生成 Prisma client、检查 Mist 类型、切换版本并验证健康接口；失败时恢复旧版本。它不会自动执行 schema push、重置数据库或迁移真实数据。数据库 schema 的初始化与迁移由应用负责人单独确认并执行。
 
 开发后端域名为 `bambook-dev-api.sylway.cloud`，DNS 已指向服务器。HTTPS / 反向代理、认证、CORS 及最终公网连通需要单独验证；SSH 交付成功不代表 API 已上线。开发前端计划使用 `bambook-dev.jiangsupanda.com`。
+
+## 手动触发（不需要用户本地电脑）
+
+云端 coding agent 或仓库维护者打开 GitHub → Actions → `Bambook development delivery` → Run workflow，选择 `main`：
+
+- `check`：只检查专用 SSH 通道，不上传、不启动应用。输出 `channel: ready` 才表示通道连接成功。
+- `deploy`：交付当次选中的主线提交并激活。必须先通过同一提交的 `verify`；应用环境、数据库 schema 和服务单元未配置时会明确失败，不把连接成功当成应用上线。
+
+这是人工决定何时发布、由流程执行上传；普通 push 不会自动发布。不要把私钥放进任务提示词或导出仓库 Secrets。代码必须由仓库版本生成，不上传个人工作区、密钥或运行数据。
+
+## GitHub Actions 不可用时的控制台备用方式
+
+使用已授权的腾讯云 OrcaTerm 管理会话，或另行授权的管理员 SSH 登录；受限的 `bambook-deploy` 密钥不能打开通用 shell/SFTP。
+
+1. 在有仓库权限的构建环境选定已验证的完整 40 位提交号，以 `git archive` 打包该提交的 `server` 和 `scripts/deploy/bambook-dev-release.sh`。包中不包含数据库、附件、`.env`、`node_modules`。
+2. 用腾讯云控制台文件上传将包放到管理员可读的临时位置，校验 SHA-256。若文件管理器不支持当前免密会话，需使用已授权的 SSH/SFTP 方式，不临时开放匿名上传接口。
+3. 管理员以接收账号调用同一接收程序，而不是直接覆盖运行目录。将下面占位值替换成实际完整提交号和上传包路径：
+
+```sh
+revision=REPLACE_WITH_VERIFIED_40_CHARACTER_COMMIT
+bundle=/home/ubuntu/REPLACE_WITH_UPLOADED_BUNDLE.tar.gz
+sudo -u bambook-deploy env SSH_ORIGINAL_COMMAND="receive $revision" \
+  /usr/bin/python3 /usr/local/libexec/bambook-dev-receiver.py < "$bundle"
+sudo -u bambook-deploy env SSH_ORIGINAL_COMMAND="activate $revision" \
+  /usr/bin/python3 /usr/local/libexec/bambook-dev-receiver.py
+```
+
+只有第一步返回接收成功，才执行第二步激活。两条命令都不应打印环境文件或密码。服务启动前置条件与自动流程相同。
+
+## 状态与故障判断
+
+- DNS 存在：只代表域名解析已配置。
+- `check` 成功：只代表 GitHub/SSH 交付通道可用。
+- `receive` 成功：只代表准确提交的文件收到，尚未启动。
+- `activate` 成功：本机健康检查通过，仍需验证外部 HTTPS、认证和前端请求。
+- CI 未通过：修复代码或验证环境后重跑，不直接跳过门禁。
+- 接收失败：保留原服务，核对包路径、大小、提交号及文件范围。
+- 激活失败：脚本在存在旧版本时回切旧版本；不会回滚数据库。迁移必须单独具备恢复方案。
+- 域名不可访问：分别排查 Cloudflare 规则、源站证书、反向代理、防火墙与应用健康，不把 DNS 成功误判为服务上线。
+
+目前已验证：Node/npm、PostgreSQL 本机运行、专用账号外部 SSH check、非允许命令拒绝、DNS 记录。尚未验证：应用首次部署、数据库结构、服务单元、HTTPS、公网业务接口。
