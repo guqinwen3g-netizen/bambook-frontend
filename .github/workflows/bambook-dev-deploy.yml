@@ -16,8 +16,9 @@ permissions:
   contents: read
   checks: read
 concurrency:
-  group: bambook-development-delivery
-  cancel-in-progress: false
+  # Serialize real deliveries only; PR checks get their own per-ref group so they never queue behind a delivery.
+  group: ${{ github.event_name == 'workflow_dispatch' && 'bambook-development-delivery' || format('bambook-dev-check-{0}', github.ref) }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 jobs:
   validate:
     runs-on: ubuntu-latest
