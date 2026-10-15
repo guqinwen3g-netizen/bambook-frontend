@@ -1,19 +1,47 @@
-request: 742541d7711f8598883bfcc2ca903ed4f7eadd79
+request: a038d2c0e63d24670c180cb81f91caf4a8b4641f
 exit: 0
-seconds: 5
-finished: 2026-10-15T16:14:47Z
-run: https://github.com/guqinwen3g-netizen/bambook-main/actions/runs/38767322180
+seconds: 20
+finished: 2026-10-15T16:47:02Z
+run: https://github.com/guqinwen3g-netizen/bambook-main/actions/runs/38771806146
 ---
-Thu Oct 15 04:14:47 PM UTC 2026
-check-4
-== current
-/srv/bambook-dev/releases/aede4e44817880dd642c68a14daf444c00f04554
-/srv/bambook-dev/releases/aede4e44817880dd642c68a14daf444c00f04554/
-/srv/bambook-dev/releases/6a72104ff93761d2c9d5b1a3bbcede5b887b2001/
-/srv/bambook-dev/releases/349db8d155b8e06c4b842ceec12aa4f0fe4dfa22/
-== services
-active
-active
-{"status":"ok","node":"PandaAI-Sovereign-Node-Prisma","timestamp":1792080887185,"version":"1.0.0","build":"unknown","authRequired":true,"realtime":"sse-in-process","database":"ok","tts":{"provider":"melo","prewarmOk":null}}
-health 200
-== processes
+mail-probe-1
+== os
+Ubuntu 26.04 LTS
+7.0.0-30-generic
+4
+               total        used        free      shared  buff/cache   available
+Mem:            3718        1178        1722          61        1166        2539
+/dev/vda3        39G  8.5G   29G  23% /
+== ip
+
+124.222.56.61
+== listen
+Local Peer
+127.0.0.1:5432 
+127.0.0.1:8082 
+127.0.0.1:8080 
+127.0.0.1:8081 
+0.0.0.0:22 
+127.0.0.1:20241 
+127.0.0.53%lo:53 
+127.0.0.1:7890 
+127.0.0.54:53 
+[::]:22 
+[::1]:5432 
+== tools
+docker: no
+podman: no
+nginx: /usr/sbin/nginx
+caddy: no
+postfix: no
+dovecot: no
+certbot: no
+== outbound 25
+gmail-smtp-in.l.google.com:25 blocked
+mx1.qq.com:25 blocked
+== outbound 587
+open
+== firewall
+== whoami
+uid=1003(bambook-ops) gid=1003(bambook-ops) groups=1003(bambook-ops)
+sudo-ok
