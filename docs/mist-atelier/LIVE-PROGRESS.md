@@ -5,21 +5,14 @@
 
 ## 当前接力停点
 
-以下按本次核对的 GitHub 状态校正；接续前仍须核对最新分支和 PR。
+**2026-10-15 收尾**：完整交接见 [docs/HANDOFF.md](../HANDOFF.md)（版本核对、开放 PR、分支清单、下一步、页面与工程速查）。接续前仍须核对 GitHub 最新分支、PR 与 Actions。
 
-- **工作助手 P0（骨架）：待合入。** 方案见 [work-assistant-plan.md](work-assistant-plan.md)（方案文档 PR #23）；代码分支 `feat/work-assistant-p0`，最新提交与 CI 以对应 PR 为准。未部署。
-- **付款收尾批次：已合入。** [PR #20](https://github.com/guqinwen3g-netizen/bambook-main/pull/20) 以 merge commit 进入 main `3740125`；合入后浏览器验收与一处显示修复见分支 `fix/mist-ap-payments-qa` 对应 PR。未部署、不涉及真实资金。
-- **应付收尾批次：已合入。** [PR #19](https://github.com/guqinwen3g-netizen/bambook-main/pull/19) 以 merge commit 进入 main `c63f8f0`；范围与验收见下方历史检查点。
-- **结算确认、预付抵扣与票据去重批次：已合入。** [PR #18](https://github.com/guqinwen3g-netizen/bambook-main/pull/18) 以 merge commit 进入 main `ff6cf96`；范围与验收见下方历史检查点。
-- **供应商预付款批次：已合入。** [PR #17](https://github.com/guqinwen3g-netizen/bambook-main/pull/17) 以 merge commit 进入 main `bd0c3ba`；范围与验收见下方历史检查点。
-- **跨账号、跨岗位办理同一笔业务：已合入。** [PR #16](https://github.com/guqinwen3g-netizen/bambook-main/pull/16) 以 merge commit 进入 main `eaa301d`；范围与验收见下方历史检查点。
-- **供应商票据与应付首轮：已合入。** [PR #15](https://github.com/guqinwen3g-netizen/bambook-main/pull/15) 已进入 main `e5aa0ce`。范围为公司端票据登记、付款分配、未分配保留和采购回读；不代表预付款闭环、付款申请审批、冲回、银行账户或部署完成。下方历史中的“发票到才算应付、付款不另审批、财务直接作废”不是已确认规则，已由后续方向覆盖。
-- **报价成本 AI 审阅：收尾中。** 原 [草稿 PR #8](https://github.com/guqinwen3g-netizen/bambook-main/pull/8)（`feat/quote-cost-ai-advisor`，基线 `369e657`）与主线只在文档冲突；已在最新 main `93616aa` 上合并成新分支 `feat/quote-cost-ai-advisor-v2` 并补人工视觉复核，最新提交与 CI 以新 PR 为准。仍没有真实 GPT / DeepSeek 实连。
-- **售后索赔公司端修订：已合入。** [PR](https://github.com/guqinwen3g-netizen/bambook-main/pull/12) 已进入主线，核对时主线为 `46053f9`，对应 CI 成功。范围仅公司端，通知工厂记录方式和内部备注；不代表客户 / 供应商平台或正式部署完成。
-- **协作规范批次：已合入。** [PR](https://github.com/guqinwen3g-netizen/bambook-main/pull/9) 已进入主线，不再等待原批次验证或合入。当前规则以根 `AGENTS.md` 为准。
-- **风险管理首轮：已合入。** [PR](https://github.com/guqinwen3g-netizen/bambook-main/pull/10) 已进入主线；后续缺口按具体任务继续。
+- **本轮已合入（merge commit）**：#26 部署流程 `44458c9`、#27 审批与放行 `fbf1ab6`、#28 运维通道文档 `e5cafcd`、#30 部署 report 修复 `f642b3f`、#29 我的工作待办 + 通知中心 `ea41cbe`。此前 #19–#24（应付收尾、付款收尾、付款 QA、报价 AI 审阅 v2、工作助手方案、工作助手 P0）均已合入。
+- **开放**：#25 工作助手 P1 草稿（待最新 main 同步、CI、用户真实模型验收）；#2 面料开发旧 PR（代码已随后续集成进入 main，疑似已取代，待用户确认是否关闭）。
+- **开发服务器**：仍运行旧版 `544f1c9`，服务与健康接口正常；最新 main 尚未 deploy（需用户同意并在 Actions 手动触发）。
+- **下一项**：财务剩余缺口（核销 / 付款冲回 → 银行账户与期初 → 锁汇结汇），尚未开分支。
 
-## 当前交接 · 工作助手 P0
+## 当前交接 · 工作助手 P0（已合入 PR #24）
 
 ### 检查点 · 2026-10-15 · 骨架完成
 
@@ -28,7 +21,7 @@
 - 验收：助手单测 25 个、页面测试 14 个、`tsc`（mist + assistant）、`verify:mist`、`electron-vite build`（产出 `out/main/assistant-host.js`）通过；真实模型用用户本人 ChatGPT Pro Max 凭据只读验收：工具调用后作答，外发工具弹确认、拒绝后未发送；页面浅 / 深色 × 1440 / 1180 / 390 无溢出、无报错。
 - 未做：业务工具（P1 委托令牌 + `bambook.query/get/expand`）；旧 OpenBitFun IPC 清理（方案第 11 节）；下线服务端个人订阅接口（工作助手正式上线后）；打包安装后的真机内存超限演练。
 
-## 当前交接 · 报价成本 AI 审阅收尾
+## 当前交接 · 报价成本 AI 审阅收尾（已合入 PR #22）
 
 ### 检查点 · 2026-10-16 · AI 分层与 ChatGPT 订阅接入
 
