@@ -1,10 +1,7 @@
 set -u
-echo mail-probe-1
-echo '== os'; . /etc/os-release; echo "$PRETTY_NAME"; uname -r; nproc; free -m | head -2; df -h / | tail -1
-echo '== ip'; curl -s --max-time 5 https://api.ipify.org; echo; curl -s --max-time 3 http://metadata.tencentyun.com/latest/meta-data/public-ipv4; echo
-echo '== listen'; ss -ltnp 2>/dev/null | awk '{print $4, $6}' | cut -c1-120
-echo '== tools'; for c in docker podman nginx caddy postfix dovecot certbot; do printf '%s: ' $c; command -v $c || echo no; done
-echo '== outbound 25'; for h in gmail-smtp-in.l.google.com mx1.qq.com; do timeout 8 bash -c "echo > /dev/tcp/$h/25" && echo "$h:25 open" || echo "$h:25 blocked"; done
-echo '== outbound 587'; timeout 8 bash -c 'echo > /dev/tcp/smtp.gmail.com/587' && echo open || echo blocked
-echo '== firewall'; (ufw status 2>/dev/null || true) | head -5; (firewall-cmd --list-all 2>/dev/null || true) | head -8; iptables -S INPUT 2>/dev/null | head -8
-echo '== whoami'; id; sudo -n true 2>/dev/null && echo sudo-ok || echo no-sudo
+echo mail-probe-2
+echo '== apt'; apt-cache policy postfix dovecot-core dovecot-imapd dovecot-lmtpd opendkim 2>/dev/null | grep -E '^[a-z]|Candidate'
+echo '== net'; for u in https://github.com https://deb.debian.org https://acme-v02.api.letsencrypt.org/directory; do printf '%s ' $u; curl -s -o /dev/null -w '%{http_code}\n' --max-time 8 $u || echo fail; done
+echo '== cloudflared'; systemctl is-active cloudflared 2>/dev/null; sudo ls /etc/cloudflared 2>/dev/null; sudo grep -rlE 'CF_API|CLOUDFLARE_API|api_token' /etc /srv/bambook-dev/shared 2>/dev/null | head
+echo '== ingress'; sudo sh -c 'cat /etc/cloudflared/config.yml 2>/dev/null' | grep -vi -E 'secret|token|credentials' | head -20
+echo '== shared'; sudo ls -la /srv/bambook-dev/shared | head -20
