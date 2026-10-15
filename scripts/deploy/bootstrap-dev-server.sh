@@ -30,7 +30,8 @@ node --version
 
 # Directories: releases are owned by the delivery account; persistent runtime data lives in shared/.
 install -d -m 0755 -o "$deploy_user" -g "$deploy_user" "$root" "$root/releases" "$root/shared"
-install -d -m 0700 -o "$deploy_user" -g "$deploy_user" "$root/shared/mist-files" "$root/shared/ai-subscriptions" "$root/shared/logs"
+install -d -m 0700 -o "$deploy_user" -g "$deploy_user" "$root/shared/mist-files" "$root/shared/ai-subscriptions" "$root/shared/logs" \
+  "$root/shared/uploads" "$root/shared/private-files" "$root/shared/storage" "$root/shared/data"
 install -d -m 0750 -o root -g "$deploy_user" "$etc"
 
 # Dedicated development database and role. The password is generated once and only written to backend.env.
@@ -58,6 +59,19 @@ ENV
   umask 022
   unset password
 fi
+# Main API settings; appended only when missing, so existing values (and secrets) are preserved on re-runs.
+ensure_env() { grep -q "^$1=" "$etc/backend.env" || printf '%s=%s\n' "$1" "$2" >> "$etc/backend.env"; }
+ensure_env NODE_ENV production
+ensure_env PORT 8081
+ensure_env BAMBOOK_HOST 127.0.0.1
+ensure_env BAMBOOK_PUBLIC_BASE_URL "$public_origin"
+ensure_env BAMBOOK_UPLOAD_DIR "$root/shared/uploads"
+ensure_env BAMBOOK_PRIVATE_FILES_DIR "$root/shared/private-files"
+ensure_env SYSTEM_CONFIG_ENCRYPTION_KEY "$(openssl rand -hex 32)"
+ensure_env BAMBOOK_COOKIE_SECRET "$(openssl rand -hex 32)"
+ensure_env BAMBOOK_CODEX_SUBSCRIPTION 1
+# Development host never syncs with the production PDML system.
+ensure_env PDML_SYNC_DISABLED true
 chown root:"$deploy_user" "$etc/backend.env"; chmod 0640 "$etc/backend.env"
 if ! sudo -u postgres psql -tAc "select 1 from pg_database where datname='$database'" | grep -qx 1; then
   sudo -u postgres createdb -O "$db_role" "$database"
@@ -66,7 +80,7 @@ fi
 # Fixed service unit; the delivery account may only restart or stop it.
 cat > /etc/systemd/system/bambook-dev.service <<UNIT
 [Unit]
-Description=Bambook development backend (Mist workspace server)
+Description=Bambook development backend (main API)
 After=network-online.target postgresql.service
 Wants=network-online.target
 
@@ -75,7 +89,7 @@ User=$deploy_user
 Group=$deploy_user
 WorkingDirectory=$root/current/server
 EnvironmentFile=$etc/backend.env
-ExecStart=/usr/bin/node node_modules/tsx/dist/cli.mjs src/mist/standalone.ts
+ExecStart=/usr/bin/node node_modules/tsx/dist/cli.mjs src/index.ts
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true
@@ -104,7 +118,7 @@ server {
     root /srv/bambook-dev/current/web;
     client_max_body_size 64m;
     location /api/ {
-        proxy_pass http://127.0.0.1:8082;
+        proxy_pass http://127.0.0.1:8081;
         # 管理员登录响应携带较大的 Set-Cookie，默认 4k/8k 头缓冲会 502。
         proxy_buffer_size 64k;
         proxy_buffers 8 64k;

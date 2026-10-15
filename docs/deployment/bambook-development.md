@@ -19,9 +19,9 @@ SSH key 强制经过接收程序，只接受 `check`、`receive <40位提交>`�
 以 root 运行仓库中的 `scripts/deploy/bootstrap-dev-server.sh`（腾讯云 OrcaTerm 或管理员 SSH）。脚本幂等、不打印生成的密钥，已有配置与数据库保留：
 
 - 2G 交换空间；Node 主版本与 `.nvmrc` 一致（NodeSource）；nginx、PostgreSQL。
-- 专用库 `panda_hub_dev` 与角色 `bambook_dev`（随机密码只写入 `/etc/bambook-dev/backend.env`，root:bambook-deploy 0640）。环境含 `DATABASE_URL`、随机 `JWT_SECRET`、`MIST_HOST=127.0.0.1`、`MIST_PORT=8082`、`MIST_LOCAL_WORKSPACE=0`、`MIST_CORS_ORIGINS`、`MIST_FILES_DIR` / `BAMBOOK_AI_SUBSCRIPTION_DIR`（均在 `/srv/bambook-dev/shared`，跨版本保留）、`AUTH_REQUIRE_EMAIL_VERIFY=0`、`TZ`。禁止把本地全权限模拟身份暴露到公网。
-- 固定的 `bambook-dev.service`：`bambook-deploy` 身份，工作目录 `/srv/bambook-dev/current/server`，Node 执行本地 tsx CLI 与 `src/mist/standalone.ts`；只读系统、仅 `shared/` 可写（运行日志在 `shared/logs`，发布时链接为 `server/logs`）、内存上限 1.5G。sudo 只允许该账号重启 / 停止此服务。
-- nginx 仅监听 `127.0.0.1:8080`：静态前端取当前版本 `web/`，`/api/` 转发 8082。Cloudflare Tunnel 连到这里，不开放 80 / 443。
+- 专用库 `panda_hub_dev` 与角色 `bambook_dev`（随机密码只写入 `/etc/bambook-dev/backend.env`，root:bambook-deploy 0640）。环境含 `DATABASE_URL`、随机 `JWT_SECRET` / `SYSTEM_CONFIG_ENCRYPTION_KEY`（平台 AI 等系统配置加密）/ `BAMBOOK_COOKIE_SECRET`、`NODE_ENV=production`（强制鉴权）、`PORT=8081`、`BAMBOOK_HOST=127.0.0.1`（只监听回环）、`BAMBOOK_UPLOAD_DIR` / `BAMBOOK_PRIVATE_FILES_DIR` / `BAMBOOK_AI_SUBSCRIPTION_DIR`（均在 `/srv/bambook-dev/shared`，跨版本保留）、`BAMBOOK_CODEX_SUBSCRIPTION=1`（管理员可连接 ChatGPT 订阅作为平台 AI）、`PDML_SYNC_DISABLED=true`（开发机永不同步正式 PDML）、`AUTH_REQUIRE_EMAIL_VERIFY=0`、`TZ`。重复执行 bootstrap 只补缺失项，不覆盖已有值。
+- 固定的 `bambook-dev.service`：`bambook-deploy` 身份，工作目录 `/srv/bambook-dev/current/server`，Node 执行本地 tsx CLI 与完整主 API `src/index.ts`（与正式环境同一入口，含业务、管理后台、平台 AI 路由）；只读系统、仅 `shared/` 可写（`server/logs`、`server/storage`、`server/data` 在发布时链接到 `shared/`）、内存上限 1.5G。sudo 只允许该账号重启 / 停止此服务。
+- nginx 仅监听 `127.0.0.1:8080`：静态前端取当前版本 `web/`，`/api/` 转发 8081。Cloudflare Tunnel 连到这里，不开放 80 / 443。
 - 每日 `pg_dump` 备份到 `/var/backups/bambook-dev`，保留 7 天。
 
 服务器上运行的接收程序是 root 所有的副本 `/usr/local/libexec/bambook-dev-receiver.py`，仓库改动不会自动生效。本版本要求压缩包包含 `.nvmrc` 与 `web/index.html`：接收程序更新后，须由管理员把服务器副本替换为合入主线的版本（root 所有、0755），否则 `receive` 会以 `unsupported archive entry` 拒绝新包。

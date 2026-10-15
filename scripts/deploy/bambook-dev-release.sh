@@ -22,19 +22,22 @@ cd "$release/server"
 # Install and build before loading application secrets, so dependency install scripts never see them.
 npm ci --include=dev --no-audit --no-fund
 npm exec -- prisma generate
-npm run typecheck:mist
-# The service runs with a read-only release tree; runtime logs (server/logs) live in shared/ across releases.
-install -d -m 0750 "$root/shared/logs"
-rm -rf "$release/server/logs"
-ln -sfn "$root/shared/logs" "$release/server/logs"
+npm exec -- tsc --noEmit -p tsconfig.json
+# The service runs with a read-only release tree; paths the API writes relative to server/ live in shared/ across releases.
+for dir in logs storage data; do
+  install -d -m 0750 "$root/shared/$dir"
+  rm -rf "${release:?}/server/$dir"
+  ln -sfn "$root/shared/$dir" "$release/server/$dir"
+done
 # Root-owned application configuration must contain shell-compatible KEY=value lines.
 set -a
 source "$environment"
 set +a
 : "${DATABASE_URL:?dedicated development database required}"
 : "${JWT_SECRET:?development authentication secret required}"
-[[ "${MIST_LOCAL_WORKSPACE:-0}" != 1 ]]
-[[ "${MIST_HOST:-127.0.0.1}" == 127.0.0.1 ]]
+: "${SYSTEM_CONFIG_ENCRYPTION_KEY:?configuration encryption key required}"
+[[ "${BAMBOOK_HOST:-}" == 127.0.0.1 ]]
+[[ "${PDML_SYNC_DISABLED:-}" == true ]]
 # Schema changes remain an explicit application-owner action; delivery never pushes or resets a database.
 previous=$(readlink "$root/current" || true)
 ln -sfn "$release" "$root/.current-next"
@@ -64,7 +67,7 @@ if ! sudo -n /usr/bin/systemctl restart bambook-dev.service; then
   exit 1
 fi
 for attempt in $(seq 1 30); do
-  if curl --fail --silent --max-time 3 http://127.0.0.1:8082/api/health > "$root/.health.json" && \
+  if curl --fail --silent --max-time 3 http://127.0.0.1:${PORT:-8081}/api/health > "$root/.health.json" && \
       /usr/bin/python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d.get("status")=="ok" and d.get("database")=="ok" and d.get("mode")!="local"' "$root/.health.json"; then
     echo "Activated $(basename "$release")"
     prune || echo 'Old release cleanup failed; activation is unaffected.' >&2
