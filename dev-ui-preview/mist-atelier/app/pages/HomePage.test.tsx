@@ -109,3 +109,11 @@ it('keeps a genuinely visible empty ledger distinct from a hidden ledger',()=>{
   const card=host.querySelectorAll<HTMLElement>('.mist-stat')[3];
   expect(card.querySelector('.mist-stat-v')?.textContent).toBe('0.00');expect(card.textContent).toContain('0 张未结发票');expect(card.textContent).not.toContain('已隐藏');
 });
+it('lists derived work from QC returns and rejected payment requests and opens the exact source',async()=>{
+  const state=seam.value.state;state.fulfillment.qcTasks=[{id:'qc-back',code:'QC-BACK',source:{kind:'version',versionId:'v',devId:'d'},domain:'garment',kind:'sample',factory:'回传工厂',location:'',contact:'',due:'',requestedBy:'当前员工',assignee:'',state:'reported',reportIds:['r'],createdAt:'2026-10-01'}];
+  state.payables={...(state.payables||{bills:[],payments:[],allocations:[]}),requests:[{id:'pr-back',code:'PR-BACK',purpose:'prepayment',supplierId:'s',supplier:'实际供应商',currency:'CNY',amount:10,planId:'p',lines:[],reason:'',fileIds:[],requesterId:'owner',requester:'当前员工',submittedAt:new Date().toISOString(),reviewerIds:['boss'],snapshot:[],state:'rejected',decision:{actorId:'boss',actor:'财务主管',at:new Date().toISOString(),decision:'rejected',note:'缺合同'},paymentHistory:[]}]};
+  render();const rows=[...host.querySelectorAll<HTMLElement>('.mist-task')];expect(rows.map(row=>row.textContent).join('|')).toContain('QC-BACK');expect(rows.map(row=>row.textContent).join('|')).toContain('PR-BACK · 付款申请被退回');
+  expect(host.querySelector('.mist-page-head')?.textContent).toContain('件来自审批、QC、出运或财务');
+  await click(rows.find(row=>row.textContent?.includes('PR-BACK'))!);expect(go).toHaveBeenLastCalledWith('payment-vouchers','pr-back',{view:'payment-vouchers',id:'pr-back'});
+  await click(rows.find(row=>row.textContent?.includes('QC-BACK'))!);expect(go).toHaveBeenLastCalledWith('qc-workbench','qc-back',{view:'qc-workbench',id:'qc-back'});
+});
