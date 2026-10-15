@@ -105,3 +105,12 @@ sudo -u bambook-deploy env SSH_ORIGINAL_COMMAND="activate $revision" /usr/bin/py
 - 管理员登录 502：nginx 响应头缓冲不足。
 - 平台 AI 失败：`sudo bambook-dev-proxy test`；`systemctl status sing-box`。
 - 域名不可访问：`systemctl status cloudflared`、nginx、两个服务健康，逐层排查。
+
+## 开发邮箱（`sylway.cloud`）
+
+`scripts/deploy/bootstrap-dev-mail.sh`（经运维通道执行，可重复）：Postfix + Dovecot 2.4，虚拟域 `sylway.cloud`，Maildir 在 `/var/mail/vhosts`（`vmail` 5000），账号在 `/etc/dovecot/users`（SHA512-CRYPT），生成的密码只写入 `/srv/bambook-dev/shared/mail-accounts.txt`（root 0600），不打印。
+
+- 端口：SMTP 25 / submission 587（STARTTLS + 账号认证，发件人必须是登录账号本人）/ IMAP 143、993；**只监听 127.0.0.1**。证书暂用自签 snakeoil。
+- 测试邮箱：`sales@`、`finance@`、`customer-demo@`（模拟客户）、`factory-demo@`（模拟工厂）。站内互发、冒名拒绝、错误密码拒绝已实测。
+- 对外投递：腾讯云默认封出站 25，外部收件人直接退回（`external delivery is not enabled on bambook-dev yet`），不排队。
+- 对外开通前置（用户操作 / 授权）：Cloudflare 上 `mail.sylway.cloud` A 记录（仅 DNS，不走代理）+ MX + SPF + DKIM（需加 OpenDKIM）+ DMARC；腾讯云安全组放行入站 25（及按需 587 / 993）；申请解封出站 25 与反向解析（PTR）；Let's Encrypt 证书。完成后再把 `inet_interfaces` / Dovecot `listen` 放开。
