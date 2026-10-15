@@ -126,7 +126,9 @@ export type FulfillmentPurchase = {
     destination: string;
     note: string;
     fileIds: string[];
-    state: 'draft' | 'pending' | 'approved' | 'rejected';
+    state: 'draft' | 'pending' | 'approved' | 'rejected' | 'cancelled';
+    /** 已批准合同未执行即取消（无收货、无结算、无票据）；已付预付须选择退款或转抵。取消后不恢复，需要时重新建单。 */
+    cancellation?: { at: string; actor: string; reason: string; prepaid: number; prepayment?: 'refund' | 'transfer'; targetPurchaseId?: string; targetPurchaseCode?: string };
     requesterId: string;
     createdBy: string;
     createdAt: string;
@@ -799,7 +801,7 @@ function requiredShipmentDocuments(root: MistState, shipment: FulfillmentShipmen
     for (const orderId of new Set(shipment.lines.map(line => line.orderId))) if (!documents.some(document => document.type === 'CI' && document.orderId === orderId)) fail('请按原订单分别签发CI');
     return documents.filter(document => document.type === 'PL' || document.type === 'CI');
 }
-export function getFulfillmentReviews(root: MistState): MistReviewTask[] { return (root.fulfillment?.purchases || []).filter(p => p.submittedAt).map(p => ({ id: `procurement:${p.id}`, kind: 'procurement', entityId: p.id, title: `${p.code} · ${p.supplier}`, requesterId: p.requesterId, reviewerIds: p.reviewerIds, status: p.state === 'pending' ? 'pending' : p.state === 'approved' ? 'approved' : 'rejected', submittedAt: p.submittedAt!, requiredPermission: 'procurement:approve', fileIds: [...p.fileIds], target: { view: 'procurement', id: p.id }, details: [{ label: '来源', value: fulfillmentSourceLabel(root, { kind: 'orderLine', orderId: p.orderId, lineId: p.lineId }) }, { label: '采购内容', value: p.description }, { label: '供应商', value: p.supplier }, { label: '数量', value: `${p.quantity} ${p.unit}` }, { label: '金额', value: `${lineAmount(p.quantity, p.price)} ${p.currency}` }, { label: '付款条件', value: p.terms }, { label: '交付地点', value: p.destination }, { label: '交期', value: p.due }] })); }
+export function getFulfillmentReviews(root: MistState): MistReviewTask[] { return (root.fulfillment?.purchases || []).filter(p => p.submittedAt).map(p => ({ id: `procurement:${p.id}`, kind: 'procurement', entityId: p.id, title: `${p.code} · ${p.supplier}`, requesterId: p.requesterId, reviewerIds: p.reviewerIds, status: p.state === 'pending' ? 'pending' : p.state === 'approved' || p.state === 'cancelled' ? 'approved' : 'rejected', submittedAt: p.submittedAt!, requiredPermission: 'procurement:approve', fileIds: [...p.fileIds], target: { view: 'procurement', id: p.id }, details: [{ label: '来源', value: fulfillmentSourceLabel(root, { kind: 'orderLine', orderId: p.orderId, lineId: p.lineId }) }, { label: '采购内容', value: p.description }, { label: '供应商', value: p.supplier }, { label: '数量', value: `${p.quantity} ${p.unit}` }, { label: '金额', value: `${lineAmount(p.quantity, p.price)} ${p.currency}` }, { label: '付款条件', value: p.terms }, { label: '交付地点', value: p.destination }, { label: '交期', value: p.due }] })); }
 /** Called only on the aggregate's transaction clone; throws before its snapshot is committed. */
 export function applyFulfillmentCommand(root: MistState, command: FulfillmentCommand, ctx: MistContext): MistCommandResult {
     const f = root.fulfillment || (root.fulfillment = createFulfillmentState(ctx, root));

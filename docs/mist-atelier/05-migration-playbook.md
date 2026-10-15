@@ -1,5 +1,11 @@
 # 05 · 在 Mist Atelier 上继续开发
 
+## 2026-10-16 付款收尾批次
+
+- 基于 main `c63f8f0`（PR #19 已合入），分支 `feat/mist-ap-payments`。`mistPayables.ts`：付款申请与付款增加用途 `settlement`（`settlementId`），命令 `payable.payment.backfill`（历史补登，`backfill: true`）、`payable.payment.plan`（旧付款对应 / 取消对应计划，`planLinked`）、`payable.purchase.cancel`（取消未执行合同并选预付去向）。推导：`settlementAdvancePaidMinor / CreditsMinor / OpenMinor / RoomMinor`、`billAdvanceCreditMinor`（票据未付扣除先付抵扣）、`legacyPaymentPlanOptions`、`backfillBillOptions`、`ADVANCE_INVOICE_REMIND_DAYS = 30`；`supplierPayments(root, today)` 返回 `aheadOpen / aheadOverdue`，汇总增加已付未收票 / 超期 / 待工厂退回。
+- `mistFulfillment.ts` 采购状态增加 `cancelled` 与 `cancellation`；`mistClaimCoordination.ts` / `mistPlatform.ts` 新命令 `platform.claim.recovery.method`（仅改为 `payment`）。
+- 界面：新 `FinancePayments.tsx`（结算详情“不等票付款”、先付申请、历史补登、对应计划弹窗）；采购详情“取消合同”与已取消说明；剩余预付弹窗支持已取消合同；索赔“两笔账”增加“改为工厂付款”与无可扣票据提示。修复 `Timeline` 说明 `<p>` 内嵌 `<div>` 的警告（改为 `div.mist-tl-text`）。
+
 ## 2026-10-15 应付收尾批次
 
 - 基于 main `ff6cf96`（PR #18 已合入），分支 `feat/mist-ap-closeout`。`mistPayables.ts` 新增 `payables.deductions`（DD-）与 `payables.prepaymentMoves`（PM-），命令 `payable.bill.link`、`payable.deduction.register/reverse`、`payable.prepayment.refund/transfer/reverse`；`payable.bill.register` 行可带 `awaitingSettlement: true`。推导：`billHeld`、`billDeductedMinor`（未付扣除扣款）、`deductibleRecoveries`、`recoveryDeductedMinor`、`prepaymentTransferTargets`，`purchasePrepaymentReadback` 增加转入 / 退款 / 转出 / 记录。审批材料与提示金额统一千分位（`fx`）。

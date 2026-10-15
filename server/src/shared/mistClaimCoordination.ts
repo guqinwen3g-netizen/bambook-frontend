@@ -33,10 +33,11 @@ export type ClaimCoordinationCommand =
   | { type: 'platform.claim.verify'; payload: { id: string; result: ClaimVerifyResult; scope: string; affectedQuantity: number; unit: string; goodsLocation: ClaimGoodsLocation; mitigation: string; factoryResponse: string; safety: boolean; fileIds: string[] } }
   | { type: 'platform.claim.recovery.open'; payload: { claimId: string; supplierId: string; currency: string; requested: number; basis: string } }
   | { type: 'platform.claim.recovery.agree'; payload: { id: string; agreed: number; method: ClaimRecoveryMethod; note: string } }
+  | { type: 'platform.claim.recovery.method'; payload: { id: string; method: 'payment'; reason: string } }
   | { type: 'platform.claim.recovery.settle'; payload: { id: string; amount: number; reference: string; date: string } }
   | { type: 'platform.claim.recovery.waive'; payload: { id: string; reason: string } };
 
-export const CLAIM_COORDINATION_COMMANDS = ['platform.claim.notify', 'platform.claim.verify', 'platform.claim.recovery.open', 'platform.claim.recovery.agree', 'platform.claim.recovery.settle', 'platform.claim.recovery.waive'] as const;
+export const CLAIM_COORDINATION_COMMANDS = ['platform.claim.notify', 'platform.claim.verify', 'platform.claim.recovery.open', 'platform.claim.recovery.agree', 'platform.claim.recovery.method', 'platform.claim.recovery.settle', 'platform.claim.recovery.waive'] as const;
 export const CLAIM_GOODS_LOCATIONS: ClaimGoodsLocation[] = ['factory', 'transit', 'customer', 'sold', 'unknown'];
 export const CLAIM_RECOVERY_METHODS: ClaimRecoveryMethod[] = ['deduction', 'payment', 'replacement', 'mixed'];
 export const CLAIM_LOCATION_LABEL: Record<ClaimGoodsLocation, string> = { factory: '还在工厂', transit: '运输途中', customer: '已到客户仓库', sold: '已上架 / 已销售', unknown: '尚不清楚' };
@@ -146,12 +147,27 @@ export function applyClaimCoordinationCommand(root: MistState, claims: ClaimLike
       emit(root, c, claim.id, '工厂 ' + row.supplierName + ' 同意承担 ' + row.currency + ' ' + row.agreed + '（' + CLAIM_METHOD_LABEL[row.method] + '）');
       return { id: row.id, claimId: claim.id };
     }
+    case 'platform.claim.recovery.method': {
+      // 原约定“从货款中扣”（或组合方式）但货款已付清 / 没有可扣票据：经工厂确认改为工厂直接付款。已扣部分保留，只改还没扣的部分。
+      const v = command.payload, { claim, row } = recoveryOf(claims, v.id); active(claim); actor(c);
+      if (row.state !== 'Agreed') fail('只有工厂已同意、尚未落实的追偿可以改补偿方式', 'PRECONDITION');
+      if (row.method !== 'deduction' && row.method !== 'mixed') fail('只有“从货款中扣”或组合方式可以改为工厂付款', 'PRECONDITION');
+      if (v.method !== 'payment') fail('目前只支持改为工厂付款');
+      const deductedMinor = recoveryDeductedMinor(root, row.id), left = mistMoneyMinor(row.agreed ?? 0) - deductedMinor;
+      if (left <= 0) fail('同意金额已全部从货款中扣，无需改方式', 'PRECONDITION');
+      const reason = text(v.reason, '改方式原因与工厂确认依据', true, 1000), from = row.method;
+      row.method = 'payment';
+      const fmt = (m: number) => (m / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      row.events.push({ at: c.now, by: c.actorName, action: 'method', note: CLAIM_METHOD_LABEL[from] + ' → 工厂付款' + (deductedMinor ? '（已从货款扣 ' + row.currency + ' ' + fmt(deductedMinor) + ' 保留）' : '') + '，待工厂付 ' + row.currency + ' ' + fmt(left) + ' · ' + reason });
+      emit(root, c, claim.id, '向 ' + row.supplierName + ' 的追偿改为工厂付款：' + reason);
+      return { id: row.id, claimId: claim.id };
+    }
     case 'platform.claim.recovery.settle': {
       const v = command.payload, { claim, row } = recoveryOf(claims, v.id); active(claim); actor(c);
       if (row.state !== 'Agreed') fail('须先记录工厂同意的金额与方式，才能登记实际落实');
-      // 从货款中扣：由财务在应付里按票据登记扣款，扣满后自动落实；组合方式：已扣部分 + 本次其他方式落实合计不超过同意金额。
+      // 从货款中扣：由财务在应付里按票据登记扣款，扣满后自动落实；其他方式（含由扣款改来的工厂付款）：已扣部分 + 本次落实合计不超过同意金额。
       if (row.method === 'deduction') fail('该追偿方式为“从货款中扣”，请由财务在应付里按工厂票据登记索赔扣款，扣满后自动落实', 'PRECONDITION');
-      const deducted = row.method === 'mixed' ? recoveryDeductedMinor(root, row.id) : 0;
+      const deducted = recoveryDeductedMinor(root, row.id);
       const other = amount(v.amount, '实际落实金额'), settledMinor = deducted + mistMoneyMinor(other);
       if (settledMinor > mistMoneyMinor(row.agreed ?? 0)) fail(deducted ? `已从货款中扣 ${(deducted / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}，加上本次落实会超过工厂同意金额` : '实际落实金额不能超过工厂同意金额');
       const settled = settledMinor / 100;

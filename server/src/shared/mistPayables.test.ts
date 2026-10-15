@@ -405,4 +405,173 @@ describe('索赔工厂扣款抵应付', () => {
     expect(recOf(s)).toMatchObject({ state: 'Settled', settled: 3000 });
     expect(err(() => as('财务-林', s, { type: 'payable.deduction.reverse', payload: { id: d.result.id, reason: 'x' } }))).toContain('不能单独冲回');
   });
+
+  it('货款已付清没地方扣：经工厂确认改为工厂付款，已扣部分保留，落实时合计不超过同意金额', () => {
+    let { s, billId } = withClaim('deduction', 3000);
+    expect(mistCommandPermission({ type: 'platform.claim.recovery.method', payload: {} } as any)).toBe('aftersales:write');
+    s = deduct(s, billId, 1000).state;
+    expect(err(() => as('业务-王', s, { type: 'platform.claim.recovery.method', payload: { id: 'rec-1', method: 'payment', reason: '' } }))).toContain('未填写');
+    s = as('业务-王', s, { type: 'platform.claim.recovery.method', payload: { id: 'rec-1', method: 'payment', reason: '货款已付清，工厂邮件同意电汇余款' } }).state;
+    expect(recOf(s)).toMatchObject({ state: 'Agreed', method: 'payment' });
+    expect(recOf(s).events.at(-1).note).toContain('已从货款扣 CNY 1,000.00 保留');
+    expect(err(() => deduct(s, billId, 100, 'DN-9'))).toContain('不是从货款中扣');
+    expect(err(() => as('业务-王', s, { type: 'platform.claim.recovery.method', payload: { id: 'rec-1', method: 'payment', reason: '再改' } }))).toContain('只有“从货款中扣”');
+    expect(err(() => as('财务-林', s, { type: 'platform.claim.recovery.settle', payload: { id: 'rec-1', amount: 2000.01, reference: '工厂电汇', date: today } }))).toContain('已从货款中扣 1,000.00');
+    s = as('财务-林', s, { type: 'platform.claim.recovery.settle', payload: { id: 'rec-1', amount: 2000, reference: '工厂电汇 TT-10', date: today } }).state;
+    expect(recOf(s)).toMatchObject({ state: 'Settled', settled: 3000 });
+  });
+  it('已全部扣完时无需改方式', () => {
+    let { s, billId } = withClaim('mixed', 1000);
+    s = deduct(s, billId, 1000).state;
+    expect(err(() => as('业务-王', s, { type: 'platform.claim.recovery.method', payload: { id: 'rec-1', method: 'payment', reason: '改' } }))).toContain('无需改方式');
+  });
+});
+
+describe('付款收尾：不等票付款、合同取消预付、历史补登', () => {
+  let rc = 0;
+  const receive = (st: MistState, purchaseId: string, quantity: number) => { const id = 'pay-rcpt-' + (++rc); st.fulfillment.receipts.push({ id, purchaseId, quantity, rejected: 0, destination: 'warehouse', location: '嘉兴仓', date: '2026-10-13', evidence: '收货单', fileIds: [], actor: '仓库', createdAt: '2026-10-13T02:00:00.000Z' } as any); return id; };
+  function prepaid() {
+    const { state, po1, po2 } = demo();
+    let s = run(state, { type: 'payable.plan.register', payload: { purchaseId: po1.id, amount: 33480, trigger: '合同签订后 7 天内', basis: '合同第 5 条' } }).state;
+    const planId = prepaymentPlans(s)[0].id;
+    const req = as('业务-王', s, { type: 'payable.request.submit', payload: { purpose: 'prepayment', planId, amount: 33480, reason: '按合同申请预付' } }); s = req.state;
+    s = as('主管-周', s, decide(String(req.result.id))).state;
+    s = as('财务-林', s, { type: 'payable.payment.register', payload: { requestId: req.result.id, date: '2026-10-14', amount: 33480, reference: 'BANK-PP' } }).state;
+    return { s, po1, po2, planId };
+  }
+  const settled = () => {
+    let { s, po1 } = prepaid();
+    const st = as('业务-王', s, { type: 'payable.settlement.submit', payload: { purchaseId: po1.id, receiptIds: [receive(s, po1.id, 1000)] } }); s = st.state;
+    s = as('财务-林', s, { type: 'payable.settlement.confirm', payload: { id: st.result.id, prepaymentApplied: 13950 } }).state;
+    return { s, po1, stId: String(st.result.id) };
+  };
+  /** PO-2026-00004：与 PO-00001 同一工厂、未收货；批准后预付 5,000。 */
+  function prepaidFresh() {
+    const { state, po1 } = demo();
+    const po4 = state.fulfillment.purchases.find(p => p.code === 'PO-2026-00004')!; po4.state = 'approved';
+    let s = run(state, { type: 'payable.plan.register', payload: { purchaseId: po4.id, amount: 5000, trigger: '签约后', basis: '合同第 3 条' } }).state;
+    const planId = prepaymentPlans(s, po4.id)[0].id;
+    const req = as('业务-王', s, { type: 'payable.request.submit', payload: { purpose: 'prepayment', planId, amount: 5000, reason: '按合同申请预付' } }); s = req.state;
+    s = as('主管-周', s, decide(String(req.result.id))).state;
+    s = as('财务-林', s, { type: 'payable.payment.register', payload: { requestId: req.result.id, date: '2026-10-14', amount: 5000, reference: 'BANK-P4' } }).state;
+    return { s, po1, po4, planId };
+  }
+  const advance = (s: MistState, settlementId: string, amount: number, reason = '工厂开票慢，货已到，按结算先付') => as('业务-王', s, { type: 'payable.request.submit', payload: { purpose: 'settlement', settlementId, amount, reason } });
+
+  it('不等票按结算付款：限结算净额未收票部分，记为已付未收票，票到关联后自动抵扣；超 30 天提醒', () => {
+    let { s, po1, stId } = settled();
+    expect(payablesCommandPermission({ type: 'payable.request.submit', payload: { purpose: 'settlement' } } as any)).toBe('finance:payment_request:create');
+    expect(err(() => advance(s, stId, 32550.01))).toContain('不等票可申请 32,550.00');
+    expect(err(() => advance(s, stId, 100, ''))).toContain('未填写');
+    const req = advance(s, stId, 30000); s = req.state;
+    expect(paymentRequests(s)[0].snapshot.find(x => x.label === '未收票原因')!.value).toContain('开票慢');
+    expect(err(() => advance(s, stId, 2550.01))).toContain('不等票可申请 2,550.00');
+    s = as('主管-周', s, decide(String(req.result.id))).state;
+    expect(err(() => as('财务-林', s, { type: 'payable.payment.register', payload: { requestId: req.result.id, date: today, amount: 30000, reference: 'BANK-ST', allocations: [{ billId: 'x', amount: 1 }] } }))).toContain('不能直接分配');
+    const pay = as('财务-林', s, { type: 'payable.payment.register', payload: { requestId: req.result.id, date: today, amount: 30000, reference: 'BANK-ST' } }); s = pay.state;
+    const pid = String(pay.result.id);
+    expect(supplierPayments(s, today).find(p => p.id === pid)).toMatchObject({ purpose: 'settlement', aheadOpen: 30000, aheadOverdue: false, unallocated: 0 });
+    expect(supplierPayableSummary(s, today)[0]).toMatchObject({ ahead: 30000, aheadOverdue: 0, unallocated: 0 });
+    expect(supplierPayableSummary(s, '2026-11-14')[0]).toMatchObject({ aheadOverdue: 1 });
+    expect(err(() => as('财务-林', s, { type: 'payable.payment.allocate', payload: { supplierPaymentId: pid, allocations: [{ billId: 'x', amount: 1 }] } }))).toContain('自动抵扣');
+    expect(err(() => as('财务-林', s, { type: 'payable.settlement.reverse', payload: { id: stId, reason: 'x' } }))).toContain('按结算的付款');
+    // 票到：关联结算后先付款抵到票据，未付 = 46,500 − 13,950 − 30,000
+    const b = run(s, bill(po1.supplierId, [{ purchaseId: po1.id, amount: 46500 }], { invoiceNo: 'VAT-ST', lines: [{ purchaseId: po1.id, amount: 46500, settlementId: stId }] })); s = b.state;
+    expect(payableBills(s, today).find(x => x.id === b.result.id)).toMatchObject({ prepaymentCredit: 13950, advanceCredit: 30000, open: 2550, status: 'partial' });
+    expect(supplierPayments(s, today).find(p => p.id === pid)!.aheadOpen).toBe(0);
+    expect(supplierPayableSummary(s, '2026-11-14')[0]).toMatchObject({ ahead: 0, aheadOverdue: 0, open: 2550 });
+    expect(err(() => advance(s, stId, 1))).toContain('不等票可申请 0.00');
+    expect(err(() => as('财务-林', s, { type: 'payable.payment.reverse', payload: { supplierPaymentId: pid, reason: '误付' } }))).toContain('已抵到供应商票据');
+    s = as('财务-林', s, { type: 'payable.bill.void', payload: { id: b.result.id, reason: '票开错' } }).state;
+    expect(supplierPayments(s, today).find(p => p.id === pid)!.aheadOpen).toBe(30000);
+    s = as('财务-林', s, { type: 'payable.payment.reverse', payload: { supplierPaymentId: pid, reason: '流水录错' } }).state;
+    expect(paymentRequests(s).find(r => r.id === req.result.id)!.state).toBe('approved');
+  });
+
+  it('合同未执行取消：须无收货 / 结算 / 票据 / 在途申请；已付预付选退款则待退回，到账登记后清零', () => {
+    let { s, po4: po1, planId } = prepaidFresh();
+    const cancel = (st: MistState, payload: Record<string, unknown>) => as('业务-王', st, { type: 'payable.purchase.cancel', payload: { purchaseId: po1.id, reason: '客户取消订单，工厂未开工', ...payload } });
+    expect(payablesCommandPermission({ type: 'payable.purchase.cancel', payload: {} } as any)).toBe('procurement:write');
+    expect(err(() => cancel(s, {}))).toContain('请选择让工厂退款');
+    const withReceipt = structuredClone(s); receive(withReceipt, po1.id, 10);
+    expect(err(() => cancel(withReceipt, { prepayment: 'refund' }))).toContain('已有收货记录');
+    const req = as('业务-王', s, { type: 'payable.plan.register', payload: { purchaseId: po1.id, stage: 'final', amount: 1000, trigger: '尾款', basis: '合同' } });
+    const pending = run(req.state, bill(po1.supplierId, [{ purchaseId: po1.id, amount: 100 }], { invoiceNo: 'VAT-C', lines: [{ purchaseId: po1.id, amount: 100, awaitingSettlement: true }] })).state;
+    expect(err(() => cancel(pending, { prepayment: 'refund' }))).toContain('作废票据');
+    const c1 = cancel(s, { prepayment: 'refund' }); s = c1.state;
+    const po = s.fulfillment.purchases.find(p => p.id === po1.id)!;
+    expect(po).toMatchObject({ state: 'cancelled', cancellation: { prepaid: 5000, prepayment: 'refund', actor: '业务-王' } });
+    expect(prepaymentPlans(s).find(p => p.id === planId)).toMatchObject({ state: 'cancelled', paid: 5000 });
+    expect(purchasePrepaymentReadback(s, po1.id)).toMatchObject({ available: 5000, residualAfterFinal: 5000, refundDue: 5000 });
+    expect(supplierPayableSummary(s, today).find(r => r.supplierId === po1.supplierId)).toMatchObject({ refundDue: 5000, prepaid: 0 });
+    expect(s.events[0]).toMatchObject({ entityType: 'procurement', entityId: po1.id });
+    expect(getMistReviewTasks(s).find(t => t.entityId === po1.id)?.status).not.toBe('rejected');
+    expect(err(() => cancel(s, { prepayment: 'refund' }))).toContain('已取消');
+    expect(err(() => as('业务-王', s, { type: 'payable.request.submit', payload: { purpose: 'prepayment', planId, amount: 1, reason: 'x' } }))).toContain('已取消');
+    s = as('财务-林', s, { type: 'payable.prepayment.refund', payload: { purchaseId: po1.id, amount: 5000, date: today, reference: 'TT-BACK', reason: '合同取消，工厂退回预付' } }).state;
+    expect(purchasePrepaymentReadback(s, po1.id)).toMatchObject({ available: 0, refundDue: 0, refunded: 5000 });
+    expect(supplierPayableSummary(s, today).find(r => r.supplierId === po1.supplierId)?.refundDue ?? 0).toBe(0);
+  });
+
+  it('合同取消转抵：选同一工厂其他合同，财务办理转抵；在途付款申请须先撤回', () => {
+    let { s, po4: po1, po1: target } = prepaidFresh();
+    const planId = run(s, { type: 'payable.plan.register', payload: { purchaseId: po1.id, amount: 1000, trigger: '二期', basis: '合同' } });
+    const live = as('业务-王', planId.state, { type: 'payable.request.submit', payload: { purpose: 'prepayment', planId: prepaymentPlans(planId.state).find(p => p.amount === 1000)!.id, amount: 1000, reason: '二期预付' } }).state;
+    expect(err(() => as('业务-王', live, { type: 'payable.purchase.cancel', payload: { purchaseId: po1.id, reason: '取消', prepayment: 'refund' } }))).toContain('先撤回');
+    expect(err(() => as('业务-王', s, { type: 'payable.purchase.cancel', payload: { purchaseId: po1.id, reason: '取消', prepayment: 'transfer', targetPurchaseId: po1.id } }))).toContain('同一供应商');
+    s = as('业务-王', s, { type: 'payable.purchase.cancel', payload: { purchaseId: po1.id, reason: '改由下一单生产', prepayment: 'transfer', targetPurchaseId: target.id } }).state;
+    expect(s.fulfillment.purchases.find(p => p.id === po1.id)!.cancellation).toMatchObject({ prepayment: 'transfer', targetPurchaseCode: target.code });
+    expect(supplierPayableSummary(s, today).find(r => r.supplierId === po1.supplierId)).toMatchObject({ prepaid: 5000, refundDue: 0 });
+    s = as('财务-林', s, { type: 'payable.prepayment.transfer', payload: { purchaseId: po1.id, targetPurchaseId: target.id, amount: 5000, reason: '按取消约定转抵' } }).state;
+    expect(purchasePrepaymentReadback(s, target.id)).toMatchObject({ transferredIn: 5000, available: 5000 });
+  });
+
+  it('历史补登：按凭证补到计划对应一期，不走审批、留操作人，占用计划额度，可冲回', () => {
+    const { state, po1 } = demo();
+    const po2 = state.fulfillment.purchases.find(p => p.code === 'PO-2026-00003')!; po2.state = 'approved';
+    let s = run(state, { type: 'payable.plan.register', payload: { purchaseId: po1.id, amount: 33480, trigger: '签约后', basis: '合同第 5 条' } }).state;
+    const planId = prepaymentPlans(s)[0].id;
+    const backfill = (st: MistState, payload: Record<string, unknown>) => as('财务-林', st, { type: 'payable.payment.backfill', payload: { planId, date: '2026-09-01', amount: 10000, reference: 'V-2026-089', note: '上线前已付', ...payload } });
+    expect(payablesCommandPermissions({ type: 'payable.payment.backfill', payload: {} } as any)).toEqual(['vouchers:write']);
+    expect(payablesCommandPermissions({ type: 'payable.payment.backfill', payload: { billId: 'b' } } as any)).toEqual(['vouchers:write', 'invoices:reconcile']);
+    expect(err(() => backfill(s, { amount: 33480.01 }))).toContain('本次补登超出');
+    expect(err(() => backfill(s, { date: '2026-10-15' }))).toContain('未来');
+    expect(err(() => backfill(s, { billId: 'x' }))).toContain('不分配到票据');
+    const r = backfill(s, {}); s = r.state;
+    expect(supplierPayments(s).find(p => p.id === r.result.id)).toMatchObject({ backfill: true, purpose: 'prepayment', planId, actor: '财务-林' });
+    expect(prepaymentPlans(s).find(p => p.id === planId)).toMatchObject({ paid: 10000, requested: 10000, available: 23480 });
+    expect(purchasePrepaymentReadback(s, po1.id).paid).toBe(10000);
+    expect(paymentRequests(s)).toHaveLength(0);
+    expect(err(() => backfill(s, { reference: 'v-2026-089', amount: 1 }))).toContain('已登记过');
+    expect(err(() => as('业务-王', s, { type: 'payable.request.submit', payload: { purpose: 'prepayment', planId, amount: 23480.01, reason: 'x' } }))).toContain('剩余可申请 23,480.00');
+    s = as('财务-林', s, { type: 'payable.payment.reverse', payload: { supplierPaymentId: r.result.id, reason: '凭证号录错' } }).state;
+    expect(prepaymentPlans(s).find(p => p.id === planId)).toMatchObject({ paid: 0, available: 33480 });
+    // 进度款 / 尾款补登须对应已登记票据，并分配到票据。
+    s = run(s, { type: 'payable.plan.register', payload: { purchaseId: po2.id, stage: 'progress', amount: 5000, trigger: '中期', basis: '合同' } }).state;
+    const progress = prepaymentPlans(s).find(p => p.purchaseId === po2.id)!;
+    const b = run(s, bill(po2.supplierId, [{ purchaseId: po2.id, amount: 8000 }], { invoiceNo: 'VAT-P2', currency: po2.currency })); s = b.state;
+    expect(err(() => as('财务-林', s, { type: 'payable.payment.backfill', payload: { planId: progress.id, date: '2026-09-02', amount: 5000, reference: 'V-090' } }))).toContain('对应票据');
+    const pb = as('财务-林', s, { type: 'payable.payment.backfill', payload: { planId: progress.id, billId: b.result.id, date: '2026-09-02', amount: 5000, reference: 'V-090' } }); s = pb.state;
+    expect(payableBills(s, today).find(x => x.id === b.result.id)).toMatchObject({ paid: 5000, open: 3000 });
+    expect(prepaymentPlans(s).find(p => p.id === progress.id)).toMatchObject({ paid: 5000, available: 0 });
+  });
+
+  it('审批规则前的旧付款：可事后对应到计划（须已分配到该合同票据），可取消对应', () => {
+    const { state } = demo();
+    const po2 = state.fulfillment.purchases.find(p => p.code === 'PO-2026-00003')!; po2.state = 'approved';
+    let s = run(state, { type: 'payable.plan.register', payload: { purchaseId: po2.id, stage: 'final', amount: 6000, trigger: '尾款', basis: '合同' } }).state;
+    const plan = prepaymentPlans(s)[0];
+    const b = run(s, bill(po2.supplierId, [{ purchaseId: po2.id, amount: 8000 }], { invoiceNo: 'VAT-L', currency: po2.currency })); s = b.state;
+    s.payables!.payments.push({ id: 'legacy-1', paymentId: 'lp-1', code: 'PAY-2026-0900', supplierId: po2.supplierId, supplier: po2.supplier, date: '2026-08-01', amount: 6000, currency: po2.currency, reference: 'OLD-1', fileIds: [], note: '', createdAt: '2026-08-01T00:00:00.000Z', actor: '旧系统' });
+    const link = (st: MistState, planId: string | null) => as('财务-林', st, { type: 'payable.payment.plan', payload: { supplierPaymentId: 'legacy-1', planId, note: '对应尾款' } });
+    expect(payablesCommandPermission({ type: 'payable.payment.plan', payload: {} } as any)).toBe('invoices:write');
+    expect(err(() => link(s, plan.id))).toContain('没有分配到合同');
+    s.payables!.allocations.push({ id: 'la-1', supplierPaymentId: 'legacy-1', billId: String(b.result.id), amount: 6000, currency: po2.currency, at: '2026-08-01T00:00:00.000Z', actor: '旧系统' });
+    s = link(s, plan.id).state;
+    expect(supplierPayments(s).find(p => p.id === 'legacy-1')).toMatchObject({ planId: plan.id, planCode: plan.code, planLinked: { actor: '财务-林' } });
+    expect(prepaymentPlans(s)[0]).toMatchObject({ paid: 6000, available: 0 });
+    expect(err(() => link(s, plan.id))).toContain('已对应计划');
+    s = link(s, null).state;
+    expect(prepaymentPlans(s)[0]).toMatchObject({ paid: 0, available: 6000 });
+  });
 });

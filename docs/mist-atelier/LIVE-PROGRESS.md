@@ -7,7 +7,8 @@
 
 以下按本次核对的 GitHub 状态校正；接续前仍须核对最新分支和 PR。
 
-- **应付收尾批次：进行中。** 分支 `feat/mist-ap-closeout`，基线 main `ff6cf96`；最新提交与 CI 以对应 PR 为准。未部署、不涉及真实资金。
+- **付款收尾批次：进行中。** 分支 `feat/mist-ap-payments`，基线 main `c63f8f0`；最新提交与 CI 以对应 PR 为准。未部署、不涉及真实资金。
+- **应付收尾批次：已合入。** [PR #19](https://github.com/guqinwen3g-netizen/bambook-main/pull/19) 以 merge commit 进入 main `c63f8f0`；范围与验收见下方历史检查点。
 - **结算确认、预付抵扣与票据去重批次：已合入。** [PR #18](https://github.com/guqinwen3g-netizen/bambook-main/pull/18) 以 merge commit 进入 main `ff6cf96`；范围与验收见下方历史检查点。
 - **供应商预付款批次：已合入。** [PR #17](https://github.com/guqinwen3g-netizen/bambook-main/pull/17) 以 merge commit 进入 main `bd0c3ba`；范围与验收见下方历史检查点。
 - **跨账号、跨岗位办理同一笔业务：已合入。** [PR #16](https://github.com/guqinwen3g-netizen/bambook-main/pull/16) 以 merge commit 进入 main `eaa301d`；范围与验收见下方历史检查点。
@@ -16,6 +17,15 @@
 - **售后索赔公司端修订：已合入。** [PR](https://github.com/guqinwen3g-netizen/bambook-main/pull/12) 已进入主线，核对时主线为 `46053f9`，对应 CI 成功。范围仅公司端，通知工厂记录方式和内部备注；不代表客户 / 供应商平台或正式部署完成。
 - **协作规范批次：已合入。** [PR](https://github.com/guqinwen3g-netizen/bambook-main/pull/9) 已进入主线，不再等待原批次验证或合入。当前规则以根 `AGENTS.md` 为准。
 - **风险管理首轮：已合入。** [PR](https://github.com/guqinwen3g-netizen/bambook-main/pull/10) 已进入主线；后续缺口按具体任务继续。
+
+## 当前交接 · 付款收尾批次
+
+### 检查点 · 2026-10-16
+
+- 用户确认计划后开“付款收尾”批：按结算不等票付款、合同未执行取消的预付处理、历史付款补登与旧付款对应计划、“从货款中扣”改为工厂付款，以及 Timeline `<p>` 嵌 `<div>` 警告修复。口径写入决策总账 8.4.1“付款收尾实现口径”，岗位矩阵未改。
+- 服务端与界面范围见推进手册 2026-10-16 段。冲回保护：结算有先付款时不能冲回结算；先付款已抵到票据时不能直接冲回；取消合同的退款到账前在汇总列“待工厂退回”。
+- 完整 `npm run verify:mist` 本地通过：UI 66 文件 / 836 项、服务端 41 文件 / 580 项、工具链 1 文件 / 4 项，Mist 检查 157 文件 0 error 0 warning；云端 CI 见 PR。本批未做浏览器端到端验收，新流程由服务端与组件测试覆盖。
+- 留后续：取消合同不可恢复；改方式仅支持改为工厂付款；真实环境联调（PostgreSQL / Electron / 1180）；PR #8 报价 AI 收尾。
 
 ## 当前交接 · 应付收尾批次
 
