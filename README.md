@@ -17,11 +17,11 @@ Bambook 是公司内部业务系统，覆盖开发与寻样、报价、订单、
 1. 审批与放行页面 `approvals` + 付款申请审批：已合入（[PR #27](https://github.com/guqinwen3g-netizen/bambook-main/pull/27)）。生产与出运放行、受控例外尚无服务端规则，页面明示未接入。
 2. 我的工作待办来源补齐 + 通知中心 `notifications`：已合入（[PR #29](https://github.com/guqinwen3g-netizen/bambook-main/pull/29)）。主管按团队视角未做（缺团队组织数据）。
 3. 财务剩余缺口：已合入。(a) 核销冲回 / 付款冲回（[PR #32](https://github.com/guqinwen3g-netizen/bambook-main/pull/32)）；(b) 银行账户 / 期初 / 逐笔归属（[PR #34](https://github.com/guqinwen3g-netizen/bambook-main/pull/34)）；(c) 锁汇 / 结汇记录（[PR #35](https://github.com/guqinwen3g-netizen/bambook-main/pull/35)）。未做：汇兑损益 / 敞口报表、附件、导入时直接指定账户、账户停用。
-4. 智能邮箱真实收发：开发服务器已自建 `sylway.cloud` 邮箱（Postfix + Dovecot，只在本机回环监听，4 个测试邮箱，密码只在服务器 root 文件），站内互发已实测；对外收发待 Cloudflare DNS、腾讯云 25 端口解封 / 反向解析 / 安全组。应用接 IMAP/SMTP 未开始。
+4. 智能邮箱真实收发：开发服务器已自建 `sylway.cloud` 邮箱（Postfix + Dovecot，只在本机回环监听，4 个测试邮箱，密码只在服务器 root 文件），站内互发已实测，安装脚本与说明已入库（[PR #40](https://github.com/guqinwen3g-netizen/bambook-main/pull/40)）；对外收发待 Cloudflare DNS、腾讯云 25 端口解封 / 反向解析 / 安全组。应用接 IMAP/SMTP 未开始。
 5. **下一项**：平台类模块（管理后台、设置、人事、报表、数据中心、业务工具、统一搜索）。
-6. 工作助手：P1 只读委托已合入（[PR #25](https://github.com/guqinwen3g-netizen/bambook-main/pull/25)，用户账号真实模型只读验收通过；桌面窗口与 host 重启重连未验）。已知：问到不可读类型时会拿相近数据代替，待修提示词。P2–P4 未开始。
+6. 工作助手：P1 只读委托已合入（[PR #25](https://github.com/guqinwen3g-netizen/bambook-main/pull/25)，用户账号真实模型只读验收通过；桌面窗口与 host 重启重连未验）。不可读类型如实说明、不提出没有的起草能力已修（[PR #42](https://github.com/guqinwen3g-netizen/bambook-main/pull/42)，真实模型复测通过）。P2–P4 未开始。
 
-开发服务器（腾讯云 bambook-dev）：部署流程 [PR #26](https://github.com/guqinwen3g-netizen/bambook-main/pull/26) / [#30](https://github.com/guqinwen3g-netizen/bambook-main/pull/30) 已合入，`check` 已通过。自 [PR #33](https://github.com/guqinwen3g-netizen/bambook-main/pull/33) 起，main 每次推送的 `Mist verification` 成功后自动部署该提交（服务器端构建约 15 分钟，超时预算与中断回切见 [开发环境部署](docs/deployment/bambook-development.md)；仍可在 Actions 手动 check / deploy）；当前服务器版本以运维通道 `readlink -f /srv/bambook-dev/current` 为准。所有 agent 经仓库运维通道访问，见 [开发服务器访问](docs/ops/dev-server-access.md)。正式环境（Mac mini、`jiangsupanda.com`）不在范围。
+开发服务器（腾讯云 bambook-dev）：部署流程 [PR #26](https://github.com/guqinwen3g-netizen/bambook-main/pull/26) / [#30](https://github.com/guqinwen3g-netizen/bambook-main/pull/30) 已合入，`check` 已通过。自 [PR #33](https://github.com/guqinwen3g-netizen/bambook-main/pull/33) 起，main 每次推送的 `Mist verification` 成功后自动部署该提交（服务器端实测约 2.5 分钟：`npm ci` 77s、`tsc` 54s；lockfile 未变时复用上一版依赖，[PR #43](https://github.com/guqinwen3g-netizen/bambook-main/pull/43)；超时预算与中断回切见 [开发环境部署](docs/deployment/bambook-development.md)；仍可在 Actions 手动 check / deploy）；当前服务器版本以运维通道 `readlink -f /srv/bambook-dev/current` 为准。所有 agent 经仓库运维通道访问，见 [开发服务器访问](docs/ops/dev-server-access.md)。正式环境（Mac mini、`jiangsupanda.com`）不在范围。
 
 AI 分为“工作助手”（桌面端本机、个人凭据，方案见 `docs/mist-atelier/work-assistant-plan.md`，P0 骨架已合入 `electron/assistant/`，P1 见 PR #25）与“平台 AI”（统一平台连接）两层。报价成本 AI 审阅已合入（PR #22）：AI 只审阅本行授权依据、价格由公式重算、人工采纳只改策略草稿。平台 AI 可由管理员连接 ChatGPT 订阅作测试平台模型（GPT-6-Luna），生产期改用企业 API。
 
