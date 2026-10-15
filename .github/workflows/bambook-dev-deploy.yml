@@ -68,7 +68,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
-          git archive --format=tar.gz HEAD server scripts/deploy/bambook-dev-release.sh > "$RUNNER_TEMP/backend.tar.gz"
+          git archive --format=tar.gz HEAD .nvmrc server scripts/deploy/bambook-dev-release.sh > "$RUNNER_TEMP/backend.tar.gz"
           ssh_options=(-i "$RUNNER_TEMP/bambook-ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/bambook-ssh/known_hosts" -o ConnectTimeout=15)
           ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "receive $GITHUB_SHA" < "$RUNNER_TEMP/backend.tar.gz"
           ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "activate $GITHUB_SHA"
