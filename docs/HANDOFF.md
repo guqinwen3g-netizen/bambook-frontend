@@ -1,5 +1,7 @@
 # 交接 · 2026-10-15 收尾
 
+> **2026-10-15 起不再逐 PR 同步本页状态**：当前状态以 [README](../README.md) 当前工作和 GitHub 为准；本页保留页面 / 工程速查与历史背景。
+>
 > 给下一位接手的 Agent。本页是一次性收尾快照，写于 main `ea41cbe`（PR #29 合入）之后、本交接 PR 之前。开始工作前**必须**重新核对 GitHub 实际分支 / PR / Actions，以 GitHub 为准；常设入口仍是 [README](../README.md) 与 [AGENTS.md](../AGENTS.md)。
 
 ## 1. 一句话现状

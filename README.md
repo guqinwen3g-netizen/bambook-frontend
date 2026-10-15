@@ -12,14 +12,14 @@ Bambook 是公司内部业务系统，覆盖开发与寻样、报价、订单、
 
 > **2026-10-15 收尾交接**：进度、版本核对、开放 PR、分支清单、下一步与页面 / 工程速查见 [交接文档](docs/HANDOFF.md)。接手先读它。
 
-按用户确认的顺序逐项推进，每项一个可独立验收的 PR，CI 成功后先问用户再以 merge commit 合入：
+按用户确认的顺序逐项推进，每项一个可独立验收的 PR；范围已确认的批次在最新提交 CI 通过后直接以 merge commit 合入（规则见 [AGENTS.md](AGENTS.md)）：
 
 1. 审批与放行页面 `approvals` + 付款申请审批：已合入（[PR #27](https://github.com/guqinwen3g-netizen/bambook-main/pull/27)）。生产与出运放行、受控例外尚无服务端规则，页面明示未接入。
 2. 我的工作待办来源补齐 + 通知中心 `notifications`：已合入（[PR #29](https://github.com/guqinwen3g-netizen/bambook-main/pull/29)）。主管按团队视角未做（缺团队组织数据）。
 3. 财务剩余缺口：已合入。(a) 核销冲回 / 付款冲回（[PR #32](https://github.com/guqinwen3g-netizen/bambook-main/pull/32)）；(b) 银行账户 / 期初 / 逐笔归属（[PR #34](https://github.com/guqinwen3g-netizen/bambook-main/pull/34)）；(c) 锁汇 / 结汇记录（[PR #35](https://github.com/guqinwen3g-netizen/bambook-main/pull/35)）。未做：汇兑损益 / 敞口报表、附件、导入时直接指定账户、账户停用。
-4. **下一项**：智能邮箱真实收发（需用户提供测试邮箱，凭据只进服务器环境变量）。
-5. 平台类模块（管理后台、设置、人事、报表、数据中心、业务工具、统一搜索）。
-6. 工作助手 P2–P4（P1 草稿 [PR #25](https://github.com/guqinwen3g-netizen/bambook-main/pull/25) 待用户本机真实模型验收）。
+4. 智能邮箱真实收发：开发服务器已自建 `sylway.cloud` 邮箱（Postfix + Dovecot，只在本机回环监听，4 个测试邮箱，密码只在服务器 root 文件），站内互发已实测；对外收发待 Cloudflare DNS、腾讯云 25 端口解封 / 反向解析 / 安全组。应用接 IMAP/SMTP 未开始。
+5. **下一项**：平台类模块（管理后台、设置、人事、报表、数据中心、业务工具、统一搜索）。
+6. 工作助手：P1 只读委托已合入（[PR #25](https://github.com/guqinwen3g-netizen/bambook-main/pull/25)，用户账号真实模型只读验收通过；桌面窗口与 host 重启重连未验）。已知：问到不可读类型时会拿相近数据代替，待修提示词。P2–P4 未开始。
 
 开发服务器（腾讯云 bambook-dev）：部署流程 [PR #26](https://github.com/guqinwen3g-netizen/bambook-main/pull/26) / [#30](https://github.com/guqinwen3g-netizen/bambook-main/pull/30) 已合入，`check` 已通过。自 [PR #33](https://github.com/guqinwen3g-netizen/bambook-main/pull/33) 起，main 每次推送的 `Mist verification` 成功后自动部署该提交（服务器端构建约 15 分钟，交付作业超时 45 分钟见 [PR #36](https://github.com/guqinwen3g-netizen/bambook-main/pull/36)；仍可在 Actions 手动 check / deploy）；当前服务器版本以运维通道 `readlink -f /srv/bambook-dev/current` 为准。所有 agent 经仓库运维通道访问，见 [开发服务器访问](docs/ops/dev-server-access.md)。正式环境（Mac mini、`jiangsupanda.com`）不在范围。
 
