@@ -72,6 +72,19 @@ if (process.isMainFrame) {
     });
 }
 
+// 工作助手桥：仅主窗口主框架可用；凭据与模型调用都在 assistant-host 里，渲染进程只拿结果与事件。
+if (process.isMainFrame) {
+    contextBridge.exposeInMainWorld('bambookAssistant', {
+        request: (method: string, params?: unknown) =>
+            ipcRenderer.invoke('assistant:request', method, params) as Promise<{ ok: true; result: unknown } | { ok: false; error: { code: string; message: string } }>,
+        onEvent: (cb: (event: unknown) => void) => {
+            const handler = (_e: unknown, payload: unknown) => cb(payload);
+            ipcRenderer.on('assistant:event', handler);
+            return () => ipcRenderer.removeListener('assistant:event', handler);
+        },
+    });
+}
+
 contextBridge.exposeInMainWorld('bambookServer', {
     health: (host: string, port: number) =>
         ipcRenderer.invoke('server:health', host, port) as Promise<{ ok: boolean; ms?: number }>,

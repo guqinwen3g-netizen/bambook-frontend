@@ -7,6 +7,7 @@
 
 以下按本次核对的 GitHub 状态校正；接续前仍须核对最新分支和 PR。
 
+- **工作助手 P0（骨架）：待合入。** 方案见 [work-assistant-plan.md](work-assistant-plan.md)（方案文档 PR #23）；代码分支 `feat/work-assistant-p0`，最新提交与 CI 以对应 PR 为准。未部署。
 - **付款收尾批次：已合入。** [PR #20](https://github.com/guqinwen3g-netizen/bambook-main/pull/20) 以 merge commit 进入 main `3740125`；合入后浏览器验收与一处显示修复见分支 `fix/mist-ap-payments-qa` 对应 PR。未部署、不涉及真实资金。
 - **应付收尾批次：已合入。** [PR #19](https://github.com/guqinwen3g-netizen/bambook-main/pull/19) 以 merge commit 进入 main `c63f8f0`；范围与验收见下方历史检查点。
 - **结算确认、预付抵扣与票据去重批次：已合入。** [PR #18](https://github.com/guqinwen3g-netizen/bambook-main/pull/18) 以 merge commit 进入 main `ff6cf96`；范围与验收见下方历史检查点。
@@ -17,6 +18,15 @@
 - **售后索赔公司端修订：已合入。** [PR](https://github.com/guqinwen3g-netizen/bambook-main/pull/12) 已进入主线，核对时主线为 `46053f9`，对应 CI 成功。范围仅公司端，通知工厂记录方式和内部备注；不代表客户 / 供应商平台或正式部署完成。
 - **协作规范批次：已合入。** [PR](https://github.com/guqinwen3g-netizen/bambook-main/pull/9) 已进入主线，不再等待原批次验证或合入。当前规则以根 `AGENTS.md` 为准。
 - **风险管理首轮：已合入。** [PR](https://github.com/guqinwen3g-netizen/bambook-main/pull/10) 已进入主线；后续缺口按具体任务继续。
+
+## 当前交接 · 工作助手 P0
+
+### 检查点 · 2026-10-15 · 骨架完成
+
+- 范围（方案第 12 节 P0）：`electron/assistant/` 独立 utilityProcess（`assistant-host.js`），由 `electron/assistantSupervisor.ts` 拉起并守护（堆上限 1024MB、内存超 1536MB 即杀、心跳 15 秒 / 10 秒超时、10 分钟内最多重启 5 次、退避重启后恢复账号）；preload 桥 `window.bambookAssistant`（仅主窗口主框架，方法白名单）；模型适配 OpenAI Chat Completions / Responses / ChatGPT 登录（本机设备码）；轻量 Harness（步数 40、单轮 30 分钟、单工具 60 秒、结果截断、读工具并行、写工具串行、按对象合并确认、外发逐条确认、一次性确认令牌、可取消）；本机 JSONL 会话；凭据经主进程 safeStorage 加密，按账号隔离，不写配置文件。
+- 页面：小竹页增加“工作助手”分页（`?view=assistant&section=work`），会话栏 + 对话 + 确认卡片 + 停止 + 模型选择 + 设置（模型列表 / 表单 / ChatGPT 登录）；浏览器中提示需在桌面端使用。
+- 验收：助手单测 25 个、页面测试 14 个、`tsc`（mist + assistant）、`verify:mist`、`electron-vite build`（产出 `out/main/assistant-host.js`）通过；真实模型用用户本人 ChatGPT Pro Max 凭据只读验收：工具调用后作答，外发工具弹确认、拒绝后未发送；页面浅 / 深色 × 1440 / 1180 / 390 无溢出、无报错。
+- 未做：业务工具（P1 委托令牌 + `bambook.query/get/expand`）；旧 OpenBitFun IPC 清理（方案第 11 节）；下线服务端个人订阅接口（工作助手正式上线后）；打包安装后的真机内存超限演练。
 
 ## 当前交接 · 报价成本 AI 审阅收尾
 

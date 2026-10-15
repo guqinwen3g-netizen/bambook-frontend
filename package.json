@@ -43,10 +43,10 @@
     "deploy:web:subdomain:light": "BAMBOOK_WEB_SUBDOMAIN=1 BAMBOOK_WEB_LIGHT=1 bash scripts/ops-upload-webapp.sh",
     "deploy:server": "bash scripts/ops-upload-package.sh",
     "deploy:all": "npm run deploy:server && npm run deploy:web",
-    "test": "vitest run dev-ui-preview/mist-atelier/app components/mist",
+    "test": "vitest run dev-ui-preview/mist-atelier/app components/mist electron/assistant",
     "test:mist:tooling": "vitest run scripts/mist-version.test.ts",
     "test:mist:server": "npm --prefix server run test:mist",
-    "typecheck:mist": "tsc -p tsconfig.mist.json",
+    "typecheck:mist": "tsc -p tsconfig.mist.json && tsc -p tsconfig.assistant.json",
     "typecheck:mist:server": "npm --prefix server run typecheck:mist",
     "verify:mist": "npm run typecheck:mist && npm run typecheck:mist:server && npm test && npm run test:mist:server && npm run test:mist:tooling && npm run build && npm run mist:check"
   },
