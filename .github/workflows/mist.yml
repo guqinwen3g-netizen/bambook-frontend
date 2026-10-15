@@ -15,7 +15,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Pull requests that only touch documentation (docs/**, top-level *.md) skip the full build and only get a
+  # whitespace check. Pushes to main and manual runs always run the full verification (delivery depends on it).
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Classify changed files
+        id: classify
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          docs_only=false
+          if [ "$EVENT" = pull_request ]; then
+            files=$(git diff --name-only "$BASE...$HEAD")
+            echo "changed files:"; echo "$files" | sed 's/^/  /'
+            if [ -n "$files" ] && ! grep -Ev '^(docs/.*|[^/]+\.md)$' <<<"$files" >/dev/null; then
+              docs_only=true
+              git diff --check "$BASE...$HEAD"
+            fi
+          fi
+          echo "docs_only=$docs_only" | tee -a "$GITHUB_OUTPUT"
   verify:
+    needs: [changes]
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -41,7 +74,7 @@ jobs:
       - name: Verify current Mist application
         run: npm run verify:mist
   report:
-    needs: [verify]
+    needs: [changes, verify]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
