@@ -15,7 +15,7 @@ import tempfile
 ROOT = Path('/srv/bambook-dev')
 LIMIT = 64 * 1024 * 1024
 EXPANDED_LIMIT = 512 * 1024 * 1024
-REQUIRED = {'.nvmrc', 'server/package.json', 'server/package-lock.json', 'server/src/index.ts', 'scripts/deploy/bambook-dev-release.sh', 'web/index.html'}
+REQUIRED = {'.nvmrc', 'server/package.json', 'server/package-lock.json', 'server/src/index.ts', 'server/src/mist/standalone.ts', 'scripts/deploy/bambook-dev-release.sh', 'web/index.html'}
 
 def validate_members(members):
     seen, total = set(), 0

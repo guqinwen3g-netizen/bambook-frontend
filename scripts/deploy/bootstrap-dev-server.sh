@@ -102,33 +102,66 @@ MemoryMax=1536M
 [Install]
 WantedBy=multi-user.target
 UNIT
+cat > /etc/systemd/system/bambook-dev-mist.service <<UNIT
+[Unit]
+Description=Bambook development backend (Mist workspace API)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+User=$deploy_user
+Group=$deploy_user
+WorkingDirectory=$root/current/server
+EnvironmentFile=$etc/backend.env
+ExecStart=/usr/bin/node node_modules/tsx/dist/cli.mjs src/mist/standalone.ts
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=$root/shared
+MemoryMax=768M
+
+[Install]
+WantedBy=multi-user.target
+UNIT
 systemctl daemon-reload
-systemctl enable bambook-dev.service >/dev/null
+systemctl enable bambook-dev.service bambook-dev-mist.service >/dev/null
 cat > /etc/sudoers.d/bambook-deploy <<SUDO
-$deploy_user ALL=(root) NOPASSWD: /usr/bin/systemctl restart bambook-dev.service, /usr/bin/systemctl stop bambook-dev.service
+$deploy_user ALL=(root) NOPASSWD: /usr/bin/systemctl restart bambook-dev.service, /usr/bin/systemctl stop bambook-dev.service, /usr/bin/systemctl restart bambook-dev-mist.service, /usr/bin/systemctl stop bambook-dev-mist.service
 SUDO
 chmod 0440 /etc/sudoers.d/bambook-deploy
 visudo -cf /etc/sudoers.d/bambook-deploy >/dev/null
 
 # Same-origin web entry: static frontend from the active release, /api to the backend. Loopback only; Cloudflare Tunnel connects here.
+install -d /etc/nginx/snippets
+cat > /etc/nginx/snippets/bambook-dev-proxy.conf <<'NGINX'
+# 管理员登录响应携带较大的 Set-Cookie，默认 4k/8k 头缓冲会 502。
+proxy_buffer_size 64k;
+proxy_buffers 8 64k;
+proxy_busy_buffers_size 128k;
+proxy_http_version 1.1;
+proxy_set_header Host $host;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto https;
+proxy_buffering off;
+proxy_read_timeout 300s;
+NGINX
 cat > /etc/nginx/sites-available/bambook-dev <<'NGINX'
 server {
     listen 127.0.0.1:8080;
     server_name _;
     root /srv/bambook-dev/current/web;
     client_max_body_size 64m;
+    # Mist workspace routes are served by the Mist API; everything else under /api/ by the main API.
+    location /api/mist/ {
+        proxy_pass http://127.0.0.1:8082;
+        include snippets/bambook-dev-proxy.conf;
+    }
     location /api/ {
         proxy_pass http://127.0.0.1:8081;
-        # 管理员登录响应携带较大的 Set-Cookie，默认 4k/8k 头缓冲会 502。
-        proxy_buffer_size 64k;
-        proxy_buffers 8 64k;
-        proxy_busy_buffers_size 128k;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto https;
-        proxy_buffering off;
-        proxy_read_timeout 300s;
+        include snippets/bambook-dev-proxy.conf;
     }
     location /assets/ {
         add_header Cache-Control "public, max-age=31536000, immutable";

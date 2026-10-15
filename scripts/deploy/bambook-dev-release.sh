@@ -40,6 +40,8 @@ set +a
 : "${DATABASE_URL:?dedicated development database required}"
 : "${JWT_SECRET:?development authentication secret required}"
 : "${SYSTEM_CONFIG_ENCRYPTION_KEY:?configuration encryption key required}"
+[[ "${MIST_LOCAL_WORKSPACE:-0}" != 1 ]]
+[[ "${MIST_HOST:-127.0.0.1}" == 127.0.0.1 ]]
 [[ "${BAMBOOK_HOST:-}" == 127.0.0.1 ]]
 [[ "${PDML_SYNC_DISABLED:-}" == true ]]
 # Schema changes remain an explicit application-owner action; delivery never pushes or resets a database.
@@ -51,9 +53,11 @@ rollback() {
     ln -sfn "$previous" "$root/.current-rollback"
     mv -Tf "$root/.current-rollback" "$root/current"
     sudo -n /usr/bin/systemctl restart bambook-dev.service || true
+    sudo -n /usr/bin/systemctl restart bambook-dev-mist.service || true
   else
     rm -f "$root/current"
     sudo -n /usr/bin/systemctl stop bambook-dev.service || true
+    sudo -n /usr/bin/systemctl stop bambook-dev-mist.service || true
   fi
 }
 # Keep the active and previous releases plus the newest few; each release carries its own node_modules.
@@ -66,13 +70,17 @@ prune() {
     if (( kept > keep_releases - 2 )); then rm -rf -- "$candidate"; fi
   done < <(ls -1dt "$root"/releases/*/ 2>/dev/null | sed 's#/$##')
 }
-if ! sudo -n /usr/bin/systemctl restart bambook-dev.service; then
+if ! sudo -n /usr/bin/systemctl restart bambook-dev.service || ! sudo -n /usr/bin/systemctl restart bambook-dev-mist.service; then
   rollback
   exit 1
 fi
-for attempt in $(seq 1 30); do
-  if curl --fail --silent --max-time 3 http://127.0.0.1:${PORT:-8081}/api/health > "$root/.health.json" && \
-      /usr/bin/python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d.get("status")=="ok" and d.get("database")=="ok" and d.get("mode")!="local"' "$root/.health.json"; then
+# Main API (business, admin) and Mist workspace API must both report a healthy database connection.
+healthy() {
+  curl --fail --silent --max-time 3 "http://127.0.0.1:$1/api/health" > "$root/.health.json" && \
+    /usr/bin/python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d.get("status")=="ok" and d.get("database")=="ok" and d.get("mode")!="local"' "$root/.health.json"
+}
+for attempt in $(seq 1 45); do
+  if healthy "${PORT:-8081}" && healthy "${MIST_PORT:-8082}"; then
     echo "Activated $(basename "$release")"
     prune || echo 'Old release cleanup failed; activation is unaffected.' >&2
     exit 0

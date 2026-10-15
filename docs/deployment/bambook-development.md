@@ -20,8 +20,8 @@ SSH key 强制经过接收程序，只接受 `check`、`receive <40位提交>`�
 
 - 2G 交换空间；Node 主版本与 `.nvmrc` 一致（NodeSource）；nginx、PostgreSQL。
 - 专用库 `panda_hub_dev` 与角色 `bambook_dev`（随机密码只写入 `/etc/bambook-dev/backend.env`，root:bambook-deploy 0640）。环境含 `DATABASE_URL`、随机 `JWT_SECRET` / `SYSTEM_CONFIG_ENCRYPTION_KEY`（平台 AI 等系统配置加密）/ `BAMBOOK_COOKIE_SECRET`、`NODE_ENV=production`（强制鉴权）、`PORT=8081`、`BAMBOOK_HOST=127.0.0.1`（只监听回环）、`BAMBOOK_UPLOAD_DIR` / `BAMBOOK_PRIVATE_FILES_DIR` / `BAMBOOK_AI_SUBSCRIPTION_DIR`（均在 `/srv/bambook-dev/shared`，跨版本保留）、`BAMBOOK_CODEX_SUBSCRIPTION=1`（管理员可连接 ChatGPT 订阅作为平台 AI）、`PDML_SYNC_DISABLED=true`（开发机永不同步正式 PDML）、`AUTH_REQUIRE_EMAIL_VERIFY=0`、`TZ`。重复执行 bootstrap 只补缺失项，不覆盖已有值。
-- 固定的 `bambook-dev.service`：`bambook-deploy` 身份，工作目录 `/srv/bambook-dev/current/server`，Node 执行本地 tsx CLI 与完整主 API `src/index.ts`（与正式环境同一入口，含业务、管理后台、平台 AI 路由）；只读系统、仅 `shared/` 可写（`server/logs`、`server/storage`、`server/data` 与版本根的 `output` 在发布时链接到 `shared/`）、内存上限 1.5G。sudo 只允许该账号重启 / 停止此服务。
-- nginx 仅监听 `127.0.0.1:8080`：静态前端取当前版本 `web/`，`/api/` 转发 8081。Cloudflare Tunnel 连到这里，不开放 80 / 443。
+- 两个固定服务，均以 `bambook-deploy` 身份、工作目录 `/srv/bambook-dev/current/server`、Node 执行本地 tsx CLI：`bambook-dev.service` 跑完整主 API `src/index.ts`（与正式环境同一入口；业务、管理后台、产品、报价、财务、知识库等），监听 127.0.0.1:8081；`bambook-dev-mist.service` 跑 Mist 工作区 API `src/mist/standalone.ts`（工作区、评审、平台 AI 模型 / ChatGPT 订阅），监听 127.0.0.1:8082。前端 Mist Atelier 两者都要用；两者共用同一库与 `JWT_SECRET`，登录态互通。只读系统、仅 `shared/` 可写（`server/logs`、`server/storage`、`server/data` 与版本根的 `output` 在发布时链接到 `shared/`），内存上限分别 1.5G / 768M。sudo 只允许该账号重启 / 停止这两个服务；发布时两个都通过健康检查才算激活，否则回滚。
+- nginx 仅监听 `127.0.0.1:8080`：静态前端取当前版本 `web/`，`/api/mist/` 转发 8082，其余 `/api/` 转发 8081（公共代理参数在 `/etc/nginx/snippets/bambook-dev-proxy.conf`，含较大的响应头缓冲，避免管理员登录 Cookie 导致 502）。Cloudflare Tunnel 连到这里，不开放 80 / 443。
 - 每日 `pg_dump` 备份到 `/var/backups/bambook-dev`，保留 7 天。
 
 服务器上运行的接收程序是 root 所有的副本 `/usr/local/libexec/bambook-dev-receiver.py`，仓库改动不会自动生效。本版本要求压缩包包含 `.nvmrc` 与 `web/index.html`：接收程序更新后，须由管理员把服务器副本替换为合入主线的版本（root 所有、0755），否则 `receive` 会以 `unsupported archive entry` 拒绝新包。
