@@ -1,0 +1,100 @@
+name: Bambook development ops channel
+
+# Agent / 维护者访问开发服务器的统一通道（只需仓库 contents 写权限）：
+#   1. 在 ops-channel 分支上提交 ops/request.sh（要在开发服务器上执行的 bash 脚本）；
+#   2. 本工作流用仓库 secret BAMBOOK_DEV_OPS_SSH_KEY 以 bambook-ops（可 sudo）登录开发服务器执行；
+#   3. 结果（退出码 + 脱敏输出）提交回 ops-channel：ops/results/<请求提交>.md 与 ops/last-result.md。
+# 只接受仓库所有者推送；只连开发服务器（不涉及 Mac mini、正式域名与真实资金）。
+on:
+  push:
+    branches: [ops-channel]
+    paths: [ops/request.sh]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bambook-dev-ops
+  cancel-in-progress: false
+
+env:
+  DEV_HOST: 124.222.56.61
+  DEV_USER: bambook-ops
+
+jobs:
+  run:
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ops-channel
+          fetch-depth: 1
+      - name: Configure SSH identity and pinned host key
+        env:
+          OPS_KEY: ${{ secrets.BAMBOOK_DEV_OPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.BAMBOOK_DEV_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$OPS_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          printf '%s\n' "$OPS_KEY" > "$RUNNER_TEMP/ops_key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/known_hosts"
+      - name: Run request on development server
+        id: run
+        env:
+          REQUEST_SHA: ${{ github.sha }}
+        run: |
+          set -uo pipefail
+          git show "$REQUEST_SHA:ops/request.sh" > "$RUNNER_TEMP/request.sh"
+          start=$(date +%s)
+          timeout 900 ssh -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts" -i "$RUNNER_TEMP/ops_key" \
+            "$DEV_USER@$DEV_HOST" 'bash -s' < "$RUNNER_TEMP/request.sh" > "$RUNNER_TEMP/out.txt" 2>&1
+          code=$?
+          rm -f "$RUNNER_TEMP/ops_key"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "seconds=$(( $(date +%s) - start ))" >> "$GITHUB_OUTPUT"
+      - name: Redact and commit result
+        if: always()
+        env:
+          REQUEST_SHA: ${{ github.sha }}
+          CODE: ${{ steps.run.outputs.code }}
+          SECONDS_USED: ${{ steps.run.outputs.seconds }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, re, datetime
+          t = os.environ['RUNNER_TEMP']
+          try: out = open(os.path.join(t, 'out.txt'), errors='replace').read()
+          except FileNotFoundError: out = '(no output captured)'
+          pats = [
+            (r'-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----', '[REDACTED PRIVATE KEY]'),
+            (r'(postgres(?:ql)?://[^:\s/]+:)[^@\s]+@', r'\1[REDACTED]@'),
+            (r'\b(sk-[A-Za-z0-9_\-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})', '[REDACTED TOKEN]'),
+            (r'(?im)^(\s*(?:export\s+)?[A-Z0-9_]*(?:SECRET|TOKEN|API_KEY|PASSWORD|PASSWD)[A-Z0-9_]*\s*[=:]\s*).+$', r'\1[REDACTED]'),
+          ]
+          for p, r in pats: out = re.sub(p, r, out, flags=re.S)
+          limit = 200000
+          if len(out) > limit: out = '…(truncated, showing last %d chars)…\n' % limit + out[-limit:]
+          now = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+          body = (f"request: {os.environ['REQUEST_SHA']}\nexit: {os.environ.get('CODE') or 'not run'}\n"
+                  f"seconds: {os.environ.get('SECONDS_USED') or '?'}\nfinished: {now}\nrun: {os.environ['RUN_URL']}\n"
+                  f"---\n{out}")
+          open(os.path.join(t, 'result.md'), 'w').write(body)
+          PY
+          git config user.name 'bambook-ops-bot'
+          git config user.email 'bambook-ops-bot@users.noreply.github.com'
+          for attempt in 1 2 3 4 5; do
+            git fetch -q origin ops-channel && git reset -q --hard origin/ops-channel
+            mkdir -p ops/results
+            cp "$RUNNER_TEMP/result.md" "ops/results/$REQUEST_SHA.md"
+            cp "$RUNNER_TEMP/result.md" ops/last-result.md
+            git add ops/results ops/last-result.md
+            git commit -q -m "ops result for ${REQUEST_SHA:0:7} (exit ${CODE:-none})"
+            git push -q origin HEAD:ops-channel && break
+            sleep 3
+          done
+          test "${CODE:-1}" = 0
