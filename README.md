@@ -10,6 +10,8 @@ Bambook 是公司内部业务系统，覆盖开发与寻样、报价、订单、
 
 ## 当前工作
 
+**工作助手 P1 云端接力中，未验收。** P0 已由 [PR #24](https://github.com/guqinwen3g-netizen/bambook-main/pull/24) 合入 main `9955ee0`；P1 的委托令牌、业务只读工具与页面授权初步实现保存在 `feat/work-assistant-p1`。后续 Agent 请从该分支继续，并先读 [P1 接力检查点](docs/mist-atelier/LIVE-PROGRESS.md#当前交接--工作助手-p1云端-agent-续接)：包含已知页面异步问题、测试缺口与验收顺序。P1 尚未合入、未部署。
+
 付款收尾批次已通过 [PR #20](https://github.com/guqinwen3g-netizen/bambook-main/pull/20) 合入 main `3740125`（此前应付收尾为 PR #19）。
 
 **付款收尾批次已合入**（[PR #20](https://github.com/guqinwen3g-netizen/bambook-main/pull/20)，main `3740125`）：已确认的结算可不等票申请付款，票到自动抵扣；未收货合同可取消并处理预付；历史付款可补登、旧付款可对应计划；“从货款中扣”的追偿可改为工厂付款。合入后的浏览器验收与票据详情“先付抵扣”显示修复在分支 `fix/mist-ap-payments-qa`。口径见决策总账 8.4.1“付款收尾实现口径”。未部署，也不涉及真实资金。

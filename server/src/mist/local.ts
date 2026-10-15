@@ -7,6 +7,7 @@ import type {FreshAuthority} from './authority';
 import {MistApiError} from './errors';
 import {hasScope} from '../auth/permissionService';
 import {getDefaultScopeListForRole,SYSTEM_ROLE_IDS} from '../_shared/rolePermissionMatrix';
+import {createAgentDelegation} from './agentDelegation';
 
 const COOKIE='bambook_mist_local';
 const SESSION_LIFETIME=7*24*60*60*1000;
@@ -92,5 +93,7 @@ export function createMistLocalRuntime(options:{directory?:string;host?:string;e
   const sessionGet:RequestHandler=(req,res)=>{void(async()=>{await ready;requestGuard(req);const token=req.cookies?.[COOKIE],id=token===undefined?'local-operator':verify(token);setSession(res,id);})().catch(e=>failure(res,e));};
   const sessionPost:RequestHandler=(req,res)=>{void(async()=>{await ready;requestGuard(req);verify(req.cookies?.[COOKIE]);if(!record(req.body)||Object.keys(req.body).some(k=>k!=='profileId')||typeof req.body.profileId!=='string')invalid('请选择有效本地工作身份');mistLocalPublicUser(req.body.profileId);setSession(res,req.body.profileId);})().catch(e=>failure(res,e));};
   const authenticate:RequestHandler=(req,res,next)=>{void(async()=>{await ready;requestGuard(req);const token=req.cookies?.[COOKIE],id=verify(token);(req as Request&{actor:TokenPayload}).actor=actor(id,token);next();})().catch(e=>failure(res,e));};
-  return{ready,database,authenticate,authorize,sessionGet,sessionPost,actorForProfile};
+  // 工作助手委托：签名密钥从本地会话密钥派生；还原时为该身份签一份新的本地会话，供仓储照常复核。
+  const agentDelegation=createAgentDelegation({rootSecret:()=>{if(!secret)invalid('本地工作空间尚未就绪',503);return secret;},resolve:profileId=>actorForProfile(profileId),now:clock});
+  return{ready,database,authenticate,authorize,sessionGet,sessionPost,actorForProfile,agentDelegation,requestGuard};
 }

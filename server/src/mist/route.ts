@@ -12,6 +12,15 @@ import { hasScope } from '../auth/permissionService';
 import { codexSubscriptions, CodexSubscriptionError, PLATFORM_SUBJECT, personalSubject, type CodexSubscriptionService } from '../ai/codexSubscription';
 import { platformProfileList } from '../ai/platformModel';
 import { SYSTEM_ROLE_IDS } from '../_shared/rolePermissionMatrix';
+import { AGENT_DELEGATION_HEADER, agentRouteAllowed, createAgentDelegation, isAgentActor, type AgentDelegation } from './agentDelegation';
+import { agentCatalog, agentGet, agentQuery, agentRelated } from './agentRead';
+/** 服务端模式：委托签名密钥从 JWT 密钥派生（生产启动已强制配置）；还原的执行者没有任何权限，仓储会在事务里重新加载真实账号。 */
+export function defaultAgentDelegation(): AgentDelegation {
+  return createAgentDelegation({
+    rootSecret: () => process.env.JWT_SECRET || 'change-me-in-production-at-least-32-chars',
+    resolve: userId => ({ userId, roles: [], permissions: [], departmentIds: [], authorizationLoaded: true }),
+  });
+}
 function exactBody(body: unknown, allowed: string[]) {
   if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !allowed.includes(key))) fail('INVALID_INPUT', '请求字段无效；身份只能来自登录会话', 400);
   return body as Record<string, any>;
@@ -20,10 +29,25 @@ function publicError(res: Response, error: any) {
   const known = error instanceof MistApiError || (typeof error?.code === 'string' && Number(error?.status) >= 400 && Number(error?.status) < 500);
   res.status(known ? Number(error.status) : 500).json({ ok: false, error: { code: known ? error.code : 'MIST_REQUEST_FAILED', message: known ? error.message : '工作区操作未完成，请查询原请求回执或稍后重试' } });
 }
-export function createMistRouter(options: { prisma?: any; filesRoot?: string; repository?: MistRepository; contract?: MistContract; authenticate?: RequestHandler; subscriptions?: CodexSubscriptionService }) {
+export function createMistRouter(options: { prisma?: any; filesRoot?: string; repository?: MistRepository; contract?: MistContract; authenticate?: RequestHandler; subscriptions?: CodexSubscriptionService; delegation?: AgentDelegation; delegationGuard?: (req: Request) => void }) {
   const repository = options.repository ?? new MistRepository(options.prisma, options.contract ?? require('../shared/mistWorkspace') as MistContract, new MistPrivateFiles(options.filesRoot ?? path.resolve(__dirname, '../../private/mist-files')));
   const router = Router();
-  router.use(options.authenticate ?? requireAuth);
+  const authenticate = options.authenticate ?? requireAuth;
+  const delegation = options.delegation ?? defaultAgentDelegation();
+  // 带委托头的请求一律按工作助手身份处理（比本人会话更窄），且只放行工作助手读取接口。
+  router.use((req, res, next) => {
+    const header = req.headers[AGENT_DELEGATION_HEADER];
+    if (header === undefined) { authenticate(req, res, next); return; }
+    void (async () => {
+      options.delegationGuard?.(req);
+      if (typeof header !== 'string') fail('AGENT_DELEGATION_INVALID', '工作助手委托无效', 401);
+      const agent = await delegation.authenticate(header);
+      if (!agentRouteAllowed(req.method, req.path)) fail('AGENT_FORBIDDEN', '工作助手委托只能读取业务数据，不能调用此接口', 403);
+      (req as Request & { actor: TokenPayload }).actor = agent;
+      res.setHeader('Cache-Control', 'private, no-store');
+      next();
+    })().catch(error => publicError(res, error));
+  });
   const actor = (req: Request) => (req as Request & { actor: TokenPayload }).actor;
   const run = (handler: (req: Request, res: Response) => Promise<void>): RequestHandler => (req, res) => { void handler(req, res).catch(error => publicError(res, error)); };
   // ChatGPT 订阅连接：凭据只留在服务器，响应只含连接状态与设备验证码。
@@ -48,12 +72,35 @@ export function createMistRouter(options: { prisma?: any; filesRoot?: string; re
   router.post('/ai/subscriptions/chatgpt/login', subscriptionCall(async (req, res) => { const a = aiActor(req); exactBody(req.body ?? {}, []); res.status(201).json({ login: await subscriptions().startLogin(personalSubject(a.userId)) }); }));
   router.get('/ai/subscriptions/chatgpt/login/:loginId', subscriptionCall((req, res) => { const a = aiActor(req); res.json({ login: subscriptions().getLogin(personalSubject(a.userId), req.params.loginId), chatgpt: subscriptions().status(personalSubject(a.userId)) }); }));
   router.post('/ai/subscriptions/chatgpt/disconnect', subscriptionCall((req, res) => { const a = aiActor(req); exactBody(req.body ?? {}, []); res.json({ chatgpt: subscriptions().disconnect(personalSubject(a.userId)) }); }));
+  // 工作助手：本人会话签发短期委托；委托身份只读，权限 = 账号权限 ∩ 工作助手上限。
+  router.post('/agent/delegations', run(async (req, res) => {
+    exactBody(req.body ?? {}, []);
+    const current = await repository.currentActor(actor(req), 'ai:chat');
+    const issued = delegation.issue(current);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.status(201).json({ delegation: issued, readable: agentCatalog({ ...current, permissionCeiling: issued.ceiling }) });
+  }));
+  router.get('/workspaces/:id/agent/query', run(async (req, res) => {
+    const { workspace, actor: current } = await repository.getForAgent(actor(req), req.params.id);
+    res.json({ workspace: { id: workspace.id, name: workspace.name, revision: workspace.revision }, ...agentQuery(workspace.state, current, { type: req.query.type, q: req.query.q, limit: req.query.limit }) });
+  }));
+  router.get('/workspaces/:id/agent/objects/:type/:objectId', run(async (req, res) => {
+    const { workspace, actor: current } = await repository.getForAgent(actor(req), req.params.id);
+    res.json({ workspace: { id: workspace.id, name: workspace.name, revision: workspace.revision }, object: agentGet(workspace.state, current, req.params.type, req.params.objectId) });
+  }));
+  router.get('/workspaces/:id/agent/objects/:type/:objectId/related', run(async (req, res) => {
+    const { workspace, actor: current } = await repository.getForAgent(actor(req), req.params.id);
+    res.json({ workspace: { id: workspace.id, name: workspace.name, revision: workspace.revision }, object: agentRelated(workspace.state, current, req.params.type, req.params.objectId) });
+  }));
   router.get('/reviews', run(async (req,res)=>{res.json({reviews:await repository.listReviews(actor(req))});}));
   router.get('/reviews/:workspaceId/receipts/:requestId', run(async (req,res)=>{res.json({receipt:await repository.reviewReceipt(actor(req),req.params.workspaceId,req.params.requestId)});}));
   router.get('/reviews/:workspaceId/:reviewId/files/:fileId',run(async(req,res)=>{const {file,bytes}=await repository.reviewFile(actor(req),req.params.workspaceId,req.params.reviewId,req.params.fileId);res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Content-Disposition',`attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`);res.type('application/octet-stream').send(Buffer.from(bytes));}));
   router.post('/reviews/:workspaceId/:reviewId', run(async (req,res)=>{const body=exactBody(req.body,['requestId','expectedRevision','decision','note']);res.json(await repository.decideReview(actor(req),req.params.workspaceId,req.params.reviewId,body as any));}));
   router.get('/workspaces/default', run(async (req, res) => { res.json({ workspace: await repository.create(actor(req), { name: 'Mist 工作区', seed: 'demo' }, true) }); }));
-  router.get('/workspaces', run(async (req, res) => { res.json({ workspaces: await repository.list(actor(req)) }); }));
+  router.get('/workspaces', run(async (req, res) => {
+    const workspaces = await repository.list(actor(req));
+    res.json({ workspaces: isAgentActor(actor(req)) ? workspaces.map(w => ({ id: w.id, name: w.name, revision: w.revision })) : workspaces });
+  }));
   router.get('/workspaces/archived',run(async(req,res)=>{res.json({workspaces:await repository.listArchived(actor(req))});}));
   router.post('/workspaces', run(async (req, res) => {
     const body = exactBody(req.body, ['name', 'slug', 'seed']);

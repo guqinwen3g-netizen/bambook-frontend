@@ -7,6 +7,7 @@ import {createMistLocalRuntime,mistLocalRequested,assertMistLocalMode,type MistL
 import {MistRepository,type MistContract} from './repository';
 import {MistPrivateFiles} from './files';
 import * as mistContract from '../shared/mistWorkspace';
+import { AGENT_DELEGATION_HEADER } from './agentDelegation';
 export function createMistServer(prisma?: any,options:{local?:MistLocalRuntime;host?:string}={}) {
   const app = express(); app.disable('x-powered-by');
   const host=options.host??process.env.MIST_HOST??'127.0.0.1';
@@ -24,9 +25,14 @@ export function createMistServer(prisma?: any,options:{local?:MistLocalRuntime;h
   });
   if(local){
     app.locals.mistLocal=local;
+    // 本地会话入口在 Mist router 之前；同样不能把委托头当本人登录 / 切换身份。
+    app.all('/api/mist/session',(req,res,next)=>{
+      if(req.headers[AGENT_DELEGATION_HEADER]===undefined){next();return;}
+      res.status(403).set('Cache-Control','private, no-store').json({ok:false,error:{code:'AGENT_FORBIDDEN',message:'工作助手委托不能操作本人登录会话'}});
+    });
     app.get('/api/mist/session',local.sessionGet);app.post('/api/mist/session',local.sessionPost);
     const repository=new MistRepository(local.database,mistContract as MistContract,new MistPrivateFiles(path.join(local.database.directory,'files')),local.authorize);
-    app.use('/api/mist',createMistRouter({repository,authenticate:local.authenticate}));
+    app.use('/api/mist',createMistRouter({repository,authenticate:local.authenticate,delegation:local.agentDelegation,delegationGuard:local.requestGuard}));
   }else{
     if(!prisma)throw new Error('Mist server requires an explicit database outside local mode');
     const {createAuthRouter}=require('../auth/route') as typeof import('../auth/route');

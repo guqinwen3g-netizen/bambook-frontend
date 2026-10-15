@@ -146,7 +146,7 @@ assistant-host（utilityProcess，独立进程，有内存/并发上限）
 | P3 本机邮箱与文件 | IMAP/SMTP、本机邮件库、`mail.*`、授权文件夹、`bambook.upload` | 同步、检索、起草、确认发送全流程；未确认不发送；附件只在确认后上传 |
 | P4 文档生成 | `docs.pptx/docx/xlsx/md`、上下文压缩 | 以真实业务数据生成可打开的 PPT 与企划稿；长会话压缩后仍能正确引用对象 |
 
-进度：P0 骨架已完成（2026-10-15，见 LIVE-PROGRESS 检查点）；P1 起待开工。
+进度：P0 骨架已由 PR #24 合入 main `9955ee0`（2026-10-15）；P1 业务读在 `feat/work-assistant-p1` 开发中，当前是未验收的云端接力检查点，已知缺口与准确验证范围见 LIVE-PROGRESS“工作助手 P1”。P2 起未开工。P1 实际工具名使用 `bambook_query/get/expand`（模型工具名不支持点号）。
 
 每期：类型检查 + 单元测试 + `verify:mist`；页面浅 / 深色 × 1440 / 1180 / 390 截图检查；真实模型验收用用户本人的连接。
 

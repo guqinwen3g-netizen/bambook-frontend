@@ -4,8 +4,11 @@
  */
 import React from 'react';
 import { ExternalLink, KeyRound, LogIn, MessageSquarePlus, RefreshCw, Settings2, Square, Trash2 } from 'lucide-react';
-import { Banner, Button, Card, CardHeader, Checkbox, Dialog, EmptyState, Field, FormGrid, KeyValue, MistPage, Mono, PageHeader, Pill, Select, TextArea, TextInput } from '../../../../../components/mist';
+import { Banner, Button, Card, CardHeader, Checkbox, Dialog, EmptyState, Field, FormGrid, KeyValue, MistPage, Mono, PageHeader, Pill, Select, TextArea, TextInput, TextLink } from '../../../../../components/mist';
 import { useMistSession } from '../../runtime/auth';
+import { useMistWorkspace } from '../../runtime/workspace';
+import { useNav } from '../../nav';
+import { useAssistantDelegation } from './useAssistantDelegation';
 
 // ── 桥接层 ─────────────────────────────────────────────────────────
 
@@ -29,7 +32,7 @@ async function call<T>(bridge: AssistantBridge, method: string, params?: unknown
 
 type Format = 'openai' | 'openai-responses' | 'chatgpt-subscription';
 type Provider = { id: string; name: string; format: Format; base_url: string; request_url?: string; model: string; context_window: number; max_tokens: number; temperature?: number; top_p?: number; reasoning?: string; custom_headers?: Record<string, string>; custom_request_body?: Record<string, unknown>; skip_ssl_verify?: boolean; has_api_key: boolean };
-type SessionMeta = { id: string; title: string; providerId: string | null; createdAt: string; updatedAt: string; messageCount: number };
+type SessionMeta = { id: string; title: string; providerId: string | null; workspaceId?: string; createdAt: string; updatedAt: string; messageCount: number };
 type ToolCall = { id: string; name: string; arguments: string };
 type Message = { role: 'user'; content: string } | { role: 'assistant'; content: string; toolCalls?: ToolCall[] } | { role: 'tool'; toolCallId: string; name: string; content: string };
 type ChatgptStatus = { connected: boolean; email: string | null; plan: string | null; connectedAt: string | null };
@@ -40,7 +43,7 @@ type LiveRun = { runId: string; sessionId: string; text: string; tools: Array<{ 
 
 const FORMAT_LABEL: Record<Format, string> = { openai: 'OpenAI 兼容 · Chat Completions', 'openai-responses': 'OpenAI 兼容 · Responses', 'chatgpt-subscription': 'ChatGPT 账号登录' };
 const REASONING = [{ value: '', label: '模型默认' }, { value: 'low', label: '低' }, { value: 'medium', label: '中' }, { value: 'high', label: '高' }, { value: 'xhigh', label: '超高' }, { value: 'max', label: '最高（max）' }];
-const TOOL_LABEL: Record<string, string> = { current_time: '读取本机时间' };
+const TOOL_LABEL: Record<string, string> = { current_time: '读取本机时间', bambook_query: '查询业务记录', bambook_get: '读取业务详情', bambook_expand: '展开关联记录' };
 const RISK_LABEL: Record<string, string> = { write: '修改业务数据', external: '对外发送', local_write: '写入本机文件', draft: '生成草稿', read: '读取' };
 const time = (iso: string) => new Date(iso).toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 
@@ -153,20 +156,47 @@ function SettingsDialog({ open, onClose, bridge, providers, setProviders, chatgp
 
 // ── 对话 ───────────────────────────────────────────────────────────
 
-function MessageView({ message }: { message: Message }) {
+const LINK_VIEWS = new Set(['crm', 'orders/detail', 'development/detail', 'products', 'samples', 'quotations', 'suppliers', 'procurement', 'production-board', 'shipments', 'invoices', 'risks', 'claims']);
+export function parseBusinessLink(link: string): { view: string; id: string } | null {
+  try {
+    const url = new URL(link);
+    if (url.protocol !== 'bambook:' || url.hostname !== 'open' || url.port || url.username || url.password || url.pathname || url.hash
+      || [...url.searchParams.keys()].some(k => !['view', 'id'].includes(k)) || url.searchParams.getAll('view').length !== 1 || url.searchParams.getAll('id').length !== 1) return null;
+    const view = url.searchParams.get('view') ?? '', id = url.searchParams.get('id') ?? '';
+    return LINK_VIEWS.has(view) && !!id.trim() && id.length <= 200 && !/[\u0000-\u001f\u007f]/.test(id) ? { view, id } : null;
+  } catch { return null; }
+}
+
+function BusinessText({ text, onOpen }: { text: string; onOpen: (view: string, id: string) => void }) {
+  const pieces: React.ReactNode[] = [];
+  const pattern = /\[([^\]\n]{1,160})\]\((bambook:\/\/[^\s)]+)\)/g;
+  let from = 0;
+  for (const match of text.matchAll(pattern)) {
+    const at = match.index!, target = parseBusinessLink(match[2]);
+    if (!target) continue;
+    pieces.push(text.slice(from, at));
+    pieces.push(<TextLink key={at} title="打开业务原记录" onClick={() => onOpen(target.view, target.id)}>{match[1]}</TextLink>);
+    from = at + match[0].length;
+  }
+  pieces.push(text.slice(from));
+  return <p>{pieces}</p>;
+}
+
+function MessageView({ message, onOpen }: { message: Message; onOpen: (view: string, id: string) => void }) {
   if (message.role === 'tool') return null;
   if (message.role === 'user') return <div className="mist-wa-msg" data-role="user"><p>{message.content}</p></div>;
   return <div className="mist-wa-msg" data-role="assistant">
-    {message.content && <p>{message.content}</p>}
+    {message.content && <BusinessText text={message.content} onOpen={onOpen} />}
     {message.toolCalls?.map(c => <span key={c.id} className="mist-note">· {TOOL_LABEL[c.name] ?? c.name}</span>)}
   </div>;
 }
 
 export function WorkAssistantPage({ tabs }: { tabs?: React.ReactNode }) {
-  const session = useMistSession();
+  const session = useMistSession(), w = useMistWorkspace(), nav = useNav();
+  const workspaceId = w.workspace?.id, canChat = session.hasPermission('ai:chat');
   const bridge = React.useMemo(getAssistantBridge, []);
   const [host, setHost] = React.useState<HostStatus | null>(null);
-  const [ready, setReady] = React.useState(false), [error, setError] = React.useState('');
+  const [ready, setReady] = React.useState(false), [boundAccount, setBoundAccount] = React.useState(''), [hostEpoch, setHostEpoch] = React.useState(0), [error, setError] = React.useState('');
   const [providers, setProviders] = React.useState<Provider[]>([]), [providerId, setProviderId] = React.useState('');
   const [chatgpt, setChatgpt] = React.useState<ChatgptStatus | null>(null);
   const [sessions, setSessions] = React.useState<SessionMeta[]>([]), [activeId, setActiveId] = React.useState<string | null>(null);
@@ -176,13 +206,23 @@ export function WorkAssistantPage({ tabs }: { tabs?: React.ReactNode }) {
   const activeRef = React.useRef<string | null>(null); activeRef.current = activeId;
   const liveRef = React.useRef<LiveRun | null>(null); liveRef.current = live;
   const accountKey = session.user ? `${typeof location !== 'undefined' ? location.origin : ''}|${session.user.id}` : '';
+  const accountScope = accountKey + '|' + session.sessionKey;
+  const scope = accountScope + '|' + (workspaceId ?? '');
+  const currentScope = React.useRef(scope); currentScope.current = scope;
+  const accountReady = ready && boundAccount === accountScope;
+  const delegation = useAssistantDelegation({ bridge, accountKey, scope, workspaceId, enabled: accountReady && canChat });
+  const openBusiness = (view: string, id: string) => nav.go(view, id);
+  const visibleSessions = sessions.filter(s => !s.workspaceId || s.workspaceId === workspaceId);
+
 
   const refreshChatgpt = React.useCallback(() => { if (bridge) void call<ChatgptStatus>(bridge, 'chatgpt.status').then(setChatgpt).catch(() => undefined); }, [bridge]);
   const loadSession = React.useCallback(async (id: string) => {
     if (!bridge) return;
     const found = await call<{ meta: SessionMeta; messages: Message[] }>(bridge, 'sessions.get', { id });
-    if (activeRef.current === id) setMessages(found.messages);
-  }, [bridge]);
+    if (currentScope.current !== scope || activeRef.current !== id) return;
+    if (found.meta.workspaceId && found.meta.workspaceId !== workspaceId) throw new Error('该对话属于其他工作区，请回到原工作区查看');
+    setMessages(found.messages);
+  }, [bridge, scope, workspaceId]);
 
   React.useEffect(() => {
     if (!bridge || !accountKey) return;
@@ -195,16 +235,26 @@ export function WorkAssistantPage({ tabs }: { tabs?: React.ReactNode }) {
         const [rows, list, gpt] = await Promise.all([call<Provider[]>(bridge, 'providers.list'), call<SessionMeta[]>(bridge, 'sessions.list'), call<ChatgptStatus>(bridge, 'chatgpt.status')]);
         if (cancelled) return;
         setProviders(rows); setSessions(list); setChatgpt(gpt); setProviderId(id => rows.some(r => r.id === id) ? id : rows[0]?.id ?? '');
-        setReady(true);
+        setBoundAccount(accountScope); setReady(true);
       } catch (e) { if (!cancelled) setError(e instanceof Error ? e.message : '工作助手未就绪'); }
     })();
     return () => { cancelled = true; };
-  }, [bridge, accountKey, session.user?.displayName]);
+  }, [bridge, accountKey, accountScope, session.user?.displayName, hostEpoch]);
+
+  React.useEffect(() => {
+    setActiveId(null); activeRef.current = null; setMessages([]); setLive(null); liveRef.current = null; setInput(''); setError('');
+  }, [scope]);
 
   React.useEffect(() => {
     if (!bridge) return;
     return bridge.onEvent((event: any) => {
-      if (event?.type === 'host_status') { setHost(event.status); return; }
+      if (event?.type === 'host_status') {
+        setHost(event.status);
+        if (event.status?.state === 'running') setHostEpoch(n => n + 1);
+        if (event.status?.state === 'restarting' || event.status?.state === 'failed') { setReady(false); setLive(null); liveRef.current = null; }
+        return;
+      }
+      if (event?.type === 'delegation_needed') { if (!event.workspaceId || event.workspaceId === workspaceId) void delegation.renew(); return; }
       const current = liveRef.current;
       if (!current || event?.runId !== current.runId) return;
       if (event.type === 'run') {
@@ -225,24 +275,25 @@ export function WorkAssistantPage({ tabs }: { tabs?: React.ReactNode }) {
         else if (event.stopReason === 'timeout') setError('任务超过 30 分钟，已停止。可以继续发指令接着做。');
         setLive(null);
         void loadSession(event.sessionId).catch(() => undefined);
-        void call<SessionMeta[]>(bridge, 'sessions.list').then(setSessions).catch(() => undefined);
+        void call<SessionMeta[]>(bridge, 'sessions.list').then(rows => { if (currentScope.current === scope) setSessions(rows); }).catch(() => undefined);
       }
     });
-  }, [bridge, loadSession]);
+  }, [bridge, loadSession, workspaceId, delegation.renew, scope]);
 
-  const open = (id: string | null) => { setActiveId(id); setMessages([]); setError(''); if (id) void loadSession(id).catch(e => setError(e instanceof Error ? e.message : '会话读取失败')); };
+  const open = (id: string | null) => { setActiveId(id); activeRef.current = id; setMessages([]); setError(''); if (id) void loadSession(id).catch(e => setError(e instanceof Error ? e.message : '会话读取失败')); };
   const send = async () => {
-    if (!bridge || !input.trim() || sending || live || !providerId) return;
+    if (!bridge || !input.trim() || sending || live || !providerId || !accountReady || !canChat || delegation.phase !== 'connected') return;
     setSending(true); setError('');
-    const text = input.trim();
+    const text = input.trim(), bound = scope;
     try {
-      const { runId, sessionId } = await call<{ runId: string; sessionId: string }>(bridge, 'run.start', { providerId, text, sessionId: activeId ?? undefined });
+      const { runId, sessionId } = await call<{ runId: string; sessionId: string }>(bridge, 'run.start', { providerId, text, sessionId: activeId ?? undefined, accountKey, workspaceId });
+      if (currentScope.current !== bound) return;
       setInput('');
       setActiveId(sessionId); activeRef.current = sessionId;
       setMessages(items => [...items, { role: 'user', content: text }]);
       setLive({ runId, sessionId, text: '', tools: [], confirms: [] });
-      if (!activeId) void call<SessionMeta[]>(bridge, 'sessions.list').then(setSessions).catch(() => undefined);
-    } catch (e) { setError(e instanceof Error ? e.message : '发送失败'); } finally { setSending(false); }
+      if (!activeId) void call<SessionMeta[]>(bridge, 'sessions.list').then(rows => { if (currentScope.current === bound) setSessions(rows); }).catch(() => undefined);
+    } catch (e) { if (currentScope.current === bound) setError(e instanceof Error ? e.message : '发送失败'); } finally { if (currentScope.current === bound) setSending(false); }
   };
   const resolve = async (c: Confirm, approved: boolean) => {
     if (!bridge) return;
@@ -251,7 +302,7 @@ export function WorkAssistantPage({ tabs }: { tabs?: React.ReactNode }) {
   };
   const removeSession = async (id: string) => { if (!bridge) return; try { setSessions(await call<SessionMeta[]>(bridge, 'sessions.delete', { id })); if (activeId === id) open(null); } catch (e) { setError(e instanceof Error ? e.message : '删除失败'); } };
 
-  const header = <PageHeader title="工作助手" description="在你的电脑上按指令干活，使用你本人的模型连接。对外发送、确认、删除等操作会先请你确认。" actions={bridge ? <Button icon={Settings2} disabled={!ready} onClick={() => setSettings({ open: true, format: null })}>我的模型</Button> : undefined} />;
+  const header = <PageHeader title="工作助手" description="在你的电脑上按指令干活，使用你本人的模型连接。对外发送、确认、删除等操作会先请你确认。" actions={bridge ? <Button icon={Settings2} disabled={!accountReady} onClick={() => setSettings({ open: true, format: null })}>我的模型</Button> : undefined} />;
   if (!bridge) return <MistPage>{header}{tabs}<Banner tone="warn" title="需在 Bambook 桌面端使用">工作助手运行在你的电脑上，邮件、附件和模型凭据都留在本机，浏览器里无法使用。请在 Bambook 桌面端打开此页。</Banner></MistPage>;
   const provider = providers.find(p => p.id === providerId);
   const providerReady = provider ? (provider.format === 'chatgpt-subscription' ? !!chatgpt?.connected : provider.has_api_key) : false;
@@ -260,32 +311,36 @@ export function WorkAssistantPage({ tabs }: { tabs?: React.ReactNode }) {
     {host?.state === 'failed' && <Banner tone="bad" title="工作助手已停止" actions={<Button icon={RefreshCw} onClick={() => void call<HostStatus>(bridge, 'host.restart').then(setHost).catch(e => setError(e.message))}>重新启动</Button>}>多次异常退出（{host.reason ?? '未知原因'}），已停止自动重启。</Banner>}
     {host?.state === 'restarting' && <Banner tone="warn" title="工作助手正在重启">{host.reason ?? ''}。进行中的任务已停止，对话已保存。</Banner>}
     {error && <Banner tone="bad" title="未完成">{error}</Banner>}
-    {ready && !providers.length ? <Card><div className="mist-card-body"><EmptyState title="先连接你的模型" description="工作助手只用你本人的模型：ChatGPT 账号登录，或你自己的 OpenAI 兼容 API。凭据只保存在这台电脑。" action={<div className="mist-row"><Button variant="primary" icon={LogIn} onClick={() => setSettings({ open: true, format: 'chatgpt-subscription' })}>用 ChatGPT 登录</Button><Button icon={KeyRound} onClick={() => setSettings({ open: true, format: 'openai' })}>添加 API 配置</Button></div>} /></div></Card> :
+    {!canChat ? <Banner tone="warn" title="无工作助手使用权限">当前账号没有 ai:chat 权限；不会签发委托，也不能向模型发送任务。</Banner> :
+      <Banner tone={delegation.phase === 'connected' ? 'ai' : 'warn'} title={delegation.phase === 'connected' ? '业务读取已连接 · ' + (w.workspace?.name ?? '') : delegation.phase === 'connecting' ? '正在连接业务读取' : '业务读取未连接'} actions={<Button size="sm" disabled={!accountReady || !workspaceId || delegation.phase === 'connecting'} onClick={() => void delegation.renew()}>重新连接</Button>}>
+        {delegation.phase === 'connected' ? <>可读：{delegation.readable.length ? delegation.readable.map(t => t.label).join('、') : '当前账号暂无首批可读对象'}。仅限当前工作区，权限由服务端每次复核；{delegation.expiresAt ? time(delegation.expiresAt) + ' 到期，提前自动续签。' : ''}</> : delegation.error || (!workspaceId ? '请先选择可访问的工作区。' : '由本人会话签发短期只读委托，业务写入、邮件与文档能力尚未开放。')}
+      </Banner>}
+    {accountReady && !providers.length ? <Card><div className="mist-card-body"><EmptyState title="先连接你的模型" description="工作助手只用你本人的模型：ChatGPT 账号登录，或你自己的 OpenAI 兼容 API。凭据只保存在这台电脑。" action={<div className="mist-row"><Button variant="primary" icon={LogIn} onClick={() => setSettings({ open: true, format: 'chatgpt-subscription' })}>用 ChatGPT 登录</Button><Button icon={KeyRound} onClick={() => setSettings({ open: true, format: 'openai' })}>添加 API 配置</Button></div>} /></div></Card> :
     <section className="mist-wa">
       <Card className="mist-wa-rail">
         <CardHeader title="对话" tools={<Button size="sm" icon={MessageSquarePlus} disabled={!!live} onClick={() => open(null)}>新对话</Button>} />
-        <div className="mist-wa-list">{sessions.map(s => <div key={s.id} className="mist-wa-item" data-active={s.id === activeId || undefined}>
+        <div className="mist-wa-list">{visibleSessions.map(s => <div key={s.id} className="mist-wa-item" data-active={s.id === activeId || undefined}>
           <button type="button" className="mist-wa-open" disabled={!!live && s.id !== activeId} onClick={() => open(s.id)}><span>{s.title}</span><span className="mist-note">{time(s.updatedAt)}</span></button>
           <Button size="sm" variant="quiet" icon={Trash2} aria-label={'删除对话 ' + s.title} disabled={!!live && live.sessionId === s.id} onClick={() => void removeSession(s.id)} />
-        </div>)}{!sessions.length && <p className="mist-note">还没有对话</p>}</div>
+        </div>)}{!visibleSessions.length && <p className="mist-note">还没有对话</p>}</div>
       </Card>
       <Card className="mist-wa-main">
         <div className="mist-wa-thread" aria-live="polite">
-          {messages.map((m, i) => <MessageView key={i} message={m} />)}
+          {messages.map((m, i) => <MessageView key={i} message={m} onOpen={openBusiness} />)}
           {live && <div className="mist-wa-msg" data-role="assistant">
             {live.tools.map(t => <span key={t.id} className="mist-note">· {TOOL_LABEL[t.name] ?? t.name}{t.state === 'running' ? ' …' : t.state === 'ok' ? ' · 完成' : ' · ' + (t.summary ?? '未完成')}</span>)}
-            {live.text ? <p>{live.text}</p> : !live.confirms.length && <p className="mist-note">正在处理…</p>}
+            {live.text ? <BusinessText text={live.text} onOpen={openBusiness} /> : !live.confirms.length && <p className="mist-note">正在处理…</p>}
           </div>}
           {live?.confirms.map(c => <Banner key={c.token} tone="warn" title={'需要你确认：' + (RISK_LABEL[c.risk] ?? c.tool)} actions={<><Button variant="primary" onClick={() => void resolve(c, true)}>确认执行</Button><Button onClick={() => void resolve(c, false)}>不执行</Button></>}>{c.summary}</Banner>)}
-          {!messages.length && !live && <EmptyState title="告诉助手要做什么" description="例如：帮我把今天的待办整理成清单。业务数据、邮箱和文档能力会陆续开放。" compact />}
+          {!messages.length && !live && <EmptyState title="告诉助手要做什么" description="例如：查找某个订单，展开关联开发单，并附上原记录编号供我核对。业务写入、邮箱和文档能力尚未开放。" compact />}
         </div>
         <div className="mist-wa-composer">
-          <TextArea aria-label="给工作助手的指令" rows={3} maxLength={20000} value={input} disabled={!ready} placeholder="输入指令，Ctrl+Enter 发送" onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void send(); } }} />
+          <TextArea aria-label="给工作助手的指令" rows={3} maxLength={20000} value={input} disabled={!accountReady || !canChat} placeholder="输入指令，Ctrl+Enter 发送" onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void send(); } }} />
           <div className="mist-row">
             <Select aria-label="使用的模型" value={providerId} options={providers.map(p => ({ value: p.id, label: p.name + ' · ' + p.model }))} onChange={e => setProviderId(e.target.value)} />
             {!providerReady && provider && <span className="mist-note">{provider.format === 'chatgpt-subscription' ? 'ChatGPT 未登录' : '缺少 API Key'}</span>}
             <span className="mist-wa-spacer" />
-            {live ? <Button icon={Square} onClick={() => void call(bridge, 'run.cancel', { runId: live.runId }).catch(e => setError(e.message))}>停止</Button> : <Button variant="ai" loading={sending} disabled={!ready || !input.trim() || !providerReady || sending} onClick={() => void send()}>发送</Button>}
+            {live ? <Button icon={Square} onClick={() => void call(bridge, 'run.cancel', { runId: live.runId }).catch(e => setError(e.message))}>停止</Button> : <Button variant="ai" loading={sending} disabled={!accountReady || !canChat || delegation.phase !== 'connected' || !input.trim() || !providerReady || sending} onClick={() => void send()}>发送</Button>}
           </div>
         </div>
       </Card>

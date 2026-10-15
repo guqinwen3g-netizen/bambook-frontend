@@ -1,5 +1,6 @@
 /** 主进程 ⇄ assistant-host 的消息格式。 */
 import type { AssistantEvent } from './service';
+import { AssistantError } from './types';
 
 export type HostInbound =
   | { kind: 'request'; id: number; method: string; params?: unknown }
@@ -13,12 +14,22 @@ export type HostOutbound =
 
 /** 渲染进程可调用的方法白名单（主进程在转发前校验）。 */
 export const RENDERER_METHODS = new Set([
-  'ping', 'status', 'account.select',
+  'ping', 'status', 'account.select', 'session.delegation',
   'providers.list', 'providers.save', 'providers.delete', 'providers.models',
   'chatgpt.status', 'chatgpt.login.start', 'chatgpt.login.get', 'chatgpt.logout',
   'sessions.list', 'sessions.get', 'sessions.delete',
   'run.start', 'run.cancel', 'confirm.resolve',
 ]);
+
+/** 只允许主窗口当前 HTTP(S) 来源接收委托；渲染层不能指定另一个 apiBase。 */
+export function bindDelegationOrigin(params: unknown, senderUrl: string): Record<string, unknown> {
+  let url: URL;
+  try { url = new URL(senderUrl); } catch { throw new AssistantError('DELEGATION_ORIGIN_INVALID', '请在已连接服务器的 Bambook 页面重新授权'); }
+  if (!['http:', 'https:'].includes(url.protocol) || url.origin === 'null' || url.username || url.password) {
+    throw new AssistantError('DELEGATION_ORIGIN_INVALID', '业务授权只支持当前应用的 HTTP(S) 来源');
+  }
+  return { ...(params && typeof params === 'object' && !Array.isArray(params) ? params : {}), apiBase: url.origin };
+}
 
 /** 资源守护参数。 */
 export const HOST_LIMITS = {

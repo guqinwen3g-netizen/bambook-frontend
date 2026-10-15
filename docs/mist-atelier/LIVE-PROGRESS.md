@@ -7,7 +7,7 @@
 
 以下按本次核对的 GitHub 状态校正；接续前仍须核对最新分支和 PR。
 
-- **工作助手 P0（骨架）：待合入。** 方案见 [work-assistant-plan.md](work-assistant-plan.md)（方案文档 PR #23）；代码分支 `feat/work-assistant-p0`，最新提交与 CI 以对应 PR 为准。未部署。
+- **工作助手 P1（业务读取）：开发中，云端接力检查点。** 分支 `feat/work-assistant-p1`，见下方“当前交接 · 工作助手 P1”。P0 已经 PR #24 以 merge commit `9955ee0` 合入 main（方案文档 PR #23 随同进入）。P1 尚未验收、未合入、未部署。
 - **付款收尾批次：已合入。** [PR #20](https://github.com/guqinwen3g-netizen/bambook-main/pull/20) 以 merge commit 进入 main `3740125`；合入后浏览器验收与一处显示修复见分支 `fix/mist-ap-payments-qa` 对应 PR。未部署、不涉及真实资金。
 - **应付收尾批次：已合入。** [PR #19](https://github.com/guqinwen3g-netizen/bambook-main/pull/19) 以 merge commit 进入 main `c63f8f0`；范围与验收见下方历史检查点。
 - **结算确认、预付抵扣与票据去重批次：已合入。** [PR #18](https://github.com/guqinwen3g-netizen/bambook-main/pull/18) 以 merge commit 进入 main `ff6cf96`；范围与验收见下方历史检查点。
@@ -18,6 +18,50 @@
 - **售后索赔公司端修订：已合入。** [PR](https://github.com/guqinwen3g-netizen/bambook-main/pull/12) 已进入主线，核对时主线为 `46053f9`，对应 CI 成功。范围仅公司端，通知工厂记录方式和内部备注；不代表客户 / 供应商平台或正式部署完成。
 - **协作规范批次：已合入。** [PR](https://github.com/guqinwen3g-netizen/bambook-main/pull/9) 已进入主线，不再等待原批次验证或合入。当前规则以根 `AGENTS.md` 为准。
 - **风险管理首轮：已合入。** [PR](https://github.com/guqinwen3g-netizen/bambook-main/pull/10) 已进入主线；后续缺口按具体任务继续。
+
+## 当前交接 · 工作助手 P1（云端 Agent 续接）
+
+### 检查点 · 2026-10-15 · 用户要求暂停实施并交接
+
+- **代码入口**：仓库 `guqinwen3g-netizen/bambook-main`，任务分支 `feat/work-assistant-p1`；从已合入的 main `9955ee0` 续作。此分支是未完成检查点，不是可合入成品；草稿 PR 的准确 head / CI 以 GitHub 为准。
+- **目标**：按 [工作助手方案](work-assistant-plan.md) 第 6、7、12 节完成 P1：短期只读委托 + `bambook_query/get/expand` + 可点开的业务引用。P2 写草稿、执行、邮箱、文档生成不在本批。
+- **长期约束**：不改岗位矩阵；业务口径写入决策总账；继续用 Mist 唯一前端。成果走远端分支 / PR，不打 zip；最新提交完整 CI 成功且用户再次确认后，才可 merge commit 合入。不得部署、动真实资金或执行外部客户动作。
+
+#### 已写入本检查点（需继续复核）
+
+- 服务端：`server/src/mist/agentDelegation.ts`、`agentRead.ts`；`route.ts / repository.ts / local.ts / server.ts` 接线。
+  - 本人会话 `POST /api/mist/agent/delegations`（复核 `ai:chat`），HMAC 用途派生密钥、2 小时 TTL；委托经 `x-bambook-delegation`，不能当普通 Bearer / Cookie，也不能自行续签。
+  - 委托仅允许 GET 工作区列表（只返回 id/name/revision）和本批 query/get/related；其他 Mist 入口拒绝，本地 `/session` 也另行拦截委托头。读取仍走真实账号与成员资格复核、现有读投影和逐类型读权限检查。
+  - 16 类对象；query 最多 20 条、约 20k 字符；get 约 16k；related 最多 30 条、只按 `Id/Ids` 引用字段扩展；图片省略、长字段截短。返回 `bambook://open?view=...&id=...`。
+- 本机：`electron/assistant/bambookTools.ts`；service 注册三个只读免确认工具，使用委托头、不用 Cookie、不跟随重定向；缺失/到期/401 发 `delegation_needed`。
+  - `session.delegation` 要求匹配当前 `accountKey`，令牌只存内存；主进程用 `bindDelegationOrigin` 将 apiBase 固定为发送方主框架 HTTP(S) origin。
+  - 切换账号清授权；更换工作区取消运行；本机会话新增 workspaceId 绑定，旧 P0 无绑定会话在首次业务续聊时绑定。系统提示新增原样引用 link、资料不作为指令等规则。
+- 前端：`WorkAssistantPage.tsx` + 新 `useAssistantDelegation.ts` 已初步接线：本人会话申请、提前 10 分钟续签、需要授权事件重连、可读类型提示、白名单引用按钮、当前工作区会话过滤。**尚未浏览器验收，也未更新原页面测试。**
+
+#### 实际验证（区分版本与未验内容）
+
+- 最新检查点 `tsc -p tsconfig.assistant.json`、`tsc -p tsconfig.mist.json` 均通过。
+- 最新定向测试：`npx vitest run electron/assistant dev-ui-preview/mist-atelier/app/pages/modules/WorkAssistantPage.test.tsx`：助手 6 文件 / 33 项通过（含新工具测试 8 项）；原页面 4 项全部失败，原测试未 mock 新增工作区 / 导航上下文与委托 API。不能删测试或降低断言来过关。
+- 新 `server/src/mist/agentDelegation.test.ts` 11 项曾通过，覆盖签名/到期/会话隔离、写面拒绝、sales/finance/qc 可读类型、成员撤销与权限刷新、链接/关联/结果上限。**其后又加了本地 `/session` 拦截与工作区列表最小返回，这两处尚未重跑。**
+- host service 的新授权方法、账户/空间切换及续签仍缺专门测试。完整 `verify:mist`、最新服务端类型检查、Electron 构建、UI 截图和本批真实模型验收均未做；不要沿用 P0 的通过状态。
+
+#### 下一位 Agent 从这里继续（优先顺序）
+
+1. 先读根 `AGENTS.md`、`.qoder/skills/bambook-ui/SKILL.md` 和本检查点，核对分支 diff；不要从 main 重开分支或重复 P0。
+2. **已定位但未修**：页面 scope 切换会清输入/消息，却未重置 `sending`；旧 send 的 finally 因 scope guard 不再更新，会可能卡住发送。初始化 await `host.status` 后、调用 `account.select` 前也缺 cancelled 检查，迟到初始化可能选回旧账号。`open()` 的错误回调也要加上下文边界。
+3. 完善 service 测试：委托只在内存且账号隔离；迟到续签不能装进新账号；同空间续签不取消、换空间取消；请求使用新 token；过期触发事件；旧空间会话不能在新空间续聊；异步凭据读取期间切账号不启动旧运行。
+4. 更新页面原测试并补自动续签、事件去重/重连、账号/空间切换取消与丢弃迟到响应、无权限/失败重试、业务引用白名单/恶意 URL/原记录回程。检查 host 重启后的重连与卸载撤下授权行为。
+5. 重跑服务端 11 项并补 `/session` 拦截和委托列表不含 state 的断言；检查普通用户 Cookie / API 的既有行为不回归。现有矩阵 sales/finance 都可读 16 类，qc 不可读 invoice/risk；不要为了制造差异修改矩阵。
+6. 类型检查（Mist + assistant + server）、定向测试，再完整 `npm run verify:mist` 和 `electron-vite build`；长校验后台落日志，等待时复核 diff / 文档，不空等。检查桌面实际加载 origin 与 HTTP(S) 来源绑定能否配合，不放宽 origin pinning 来绕过。
+7. 用本地 dev:mist 测浅/深 × 1440/1180/390、正常/空/失败状态与引用点击；用本人模型做真实只读查询/详情/关联及越权验收，明确区分 mock 与真实。**云端不继承原本机私有 QA 脚本、运行数据或个人模型凭据**；缺凭据则如实列待验，不复制密钥进仓库或日志。
+8. 更新本检查点、方案进度与首页，再推送草稿 PR；最新 head 的完整 CI 通过后向用户汇报并询问是否合入。不得擅自合入。
+
+#### 交付与环境注意
+
+- 云端可直接 checkout `feat/work-assistant-p1`；本检查点及代码都应以远端为准，不依赖原会话上下文或 `/data` 文件。
+- 推荐 Node 22，`npm ci`、`npm ci --prefix server`、`(cd server && npm exec -- prisma generate)`；具体命令与 CI 见根 README / `.github/workflows/mist.yml`。
+- 仅原本地环境 git fetch 不可用，远端通过 GitHub MCP `push_files`；云端如有正常 Git 权限可用其标准流程。不要强推或改写已有历史。
+- 原会话 `get_check_runs` 权限返回 403，曾用 PR `mergeable_state` 作辅助观察；云端须尽可能直接核实最新 head 的 **verify 成功**，不能把不冲突/可合并当作 CI 成功。
 
 ## 当前交接 · 工作助手 P0
 
