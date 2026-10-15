@@ -3,8 +3,8 @@ import React from 'react';
 import { ArrowDownLeft, ArrowUpRight, Landmark, ReceiptText } from 'lucide-react';
 import { Banner, Button, Card, DataTable, EmptyState, Facts, Mono, ObjectCell, Pill, SearchField, Segmented, StatCard, StatGrid, Tabs, Toolbar, type Column } from '../../../../components/mist';
 import type { MistState, MistReceipt, MistPayment } from '../../../../server/src/shared/mistWorkspace';
-import { isActiveMistInvoice, mistBankAccountBalances } from '../../../../server/src/shared/mistWorkspace';
-import { AccountAssignDialog, BankAccountDialog, accountLabel, editAccountDraft, newAccountDraft, useBankAccountCommand } from './FinanceBankAccounts';
+import { isActiveMistInvoice, mistBankAccountBalances, mistFxLockUsage, type MistFxRecord } from '../../../../server/src/shared/mistWorkspace';
+import { AccountAssignDialog, BankAccountDialog, FxDialog, FxReverseDialog, accountLabel, editAccountDraft, newAccountDraft, newFxDraft, useBankAccountCommand } from './FinanceBankAccounts';
 import { useMistWorkspace } from '../runtime/workspace';
 import { useNav } from '../nav';
 import { ActionBar, DetailBlock, DetailBody, ListDetail } from './modules/pageKit';
@@ -98,20 +98,35 @@ export function financeCustomerReceivables(state: MistState | null) {
 export function FinanceAccounts() {
   const { state, loading } = useMistWorkspace(), { go } = useNav(); const customers = financeCustomerReceivables(state);
   const { canWrite } = useBankAccountCommand(), [editing, setEditing] = React.useState<ReturnType<typeof newAccountDraft> | null>(null);
+  const [fx, setFx] = React.useState<ReturnType<typeof newFxDraft> | null>(null), [reversing, setReversing] = React.useState<MistFxRecord | null>(null);
+  const fxRows = [...(state?.fxRecords || [])].sort((a, b) => b.date.localeCompare(a.date) || b.code.localeCompare(a.code)), accountCode = (id?: string) => (state?.bankAccounts || []).find(a => a.id === id)?.code || '';
+  const currencies = new Set((state?.bankAccounts || []).map(a => a.currency)), canSettle = currencies.size >= 2;
   const bank = state ? mistBankAccountBalances(state) : { accounts: [], unassigned: { receipts: 0, payments: 0 } }, unassigned = bank.unassigned.receipts + bank.unassigned.payments;
   const used = (id?: string) => !!id && !!bank.accounts.find(a => a.account.id === id && a.receiptCount + a.paymentCount > 0);
   return <div className="mist-col">
     {!bank.accounts.length ? <Banner tone="warn" title="还没有登记公司银行账户">登记账户、币种和期初余额后，把收付款流水逐笔归属到账户，系统按“期初 + 归属到账 − 归属付款”计算余额；不会用全部收款减付款猜余额。</Banner>
       : unassigned > 0 ? <Banner tone="warn" title={`${unassigned} 笔流水还没有归属账户`}>未归属的 {bank.unassigned.receipts} 笔到账、{bank.unassigned.payments} 笔付款不计入任何账户余额，请在“收付款记录”逐笔归属。</Banner> : null}
-    <ActionBar actions={[{ label: '新增账户', onClick: () => setEditing(newAccountDraft()), reason: canWrite ? undefined : '需要付款凭证权限' }, { label: '查看未归属流水', onClick: () => go('payment-vouchers', undefined, { section: 'records' }), hidden: !unassigned }, { label: '汇兑锁定 / 结汇记录', onClick: () => {}, reason: '汇兑与结汇服务尚未接入，不能自动按汇率折算余额' }]} />
+    <ActionBar actions={[{ label: '新增账户', onClick: () => setEditing(newAccountDraft()), reason: canWrite ? undefined : '需要付款凭证权限' }, { label: '查看未归属流水', onClick: () => go('payment-vouchers', undefined, { section: 'records' }), hidden: !unassigned }, { label: '登记锁汇', onClick: () => setFx(newFxDraft('lock', state)), reason: canWrite ? undefined : '需要付款凭证权限' }, { label: '登记结汇', onClick: () => setFx(newFxDraft('settlement', state)), reason: !canWrite ? '需要付款凭证权限' : canSettle ? undefined : '先登记原币和本币两个不同币种的账户' }]} />
     <Card><DataTable ariaLabel="公司银行账户" rows={bank.accounts} rowKey={r => r.account.id} loading={loading} onRowClick={r => { if (canWrite) setEditing(editAccountDraft(r.account)); }} columns={[
       { key: 'account', header: '账户', width: 'minmax(200px,1.6fr)', render: r => <ObjectCell name={<><Mono>{r.account.code}</Mono> {r.account.name}</>} meta={`${r.account.bankName} · ${r.account.accountNo} · 期初日 ${r.account.openingDate}`} /> },
       { key: 'opening', header: '期初', width: '150px', align: 'right', hideOnMobile: true, render: r => <span className="mist-num">{money(r.account.openingBalance, r.account.currency)}</span> },
       { key: 'in', header: '归属到账', width: '150px', align: 'right', hideOnMobile: true, render: r => <span className="mist-num" title={`${r.receiptCount} 笔`}>{money(r.receipts, r.account.currency)}</span> },
       { key: 'out', header: '归属付款', width: '150px', align: 'right', hideOnMobile: true, render: r => <span className="mist-num" title={`${r.paymentCount} 笔`}>{money(r.payments, r.account.currency)}</span> },
+      { key: 'fx', header: '结汇划转', width: '150px', align: 'right', hideOnMobile: true, render: r => <span className="mist-num">{money(r.fxIn - r.fxOut, r.account.currency)}</span> },
       { key: 'balance', header: '账户余额', width: '150px', align: 'right', render: r => <span className="mist-num">{money(r.balance, r.account.currency)}</span> },
     ]} empty={<EmptyState title="暂无公司银行账户" description="点上方“新增账户”登记账户与期初余额。" />} /></Card>
     {editing && <BankAccountDialog draft={editing} used={used(editing.id)} onClose={() => setEditing(null)} />}
+    <Card><DataTable ariaLabel="锁汇与结汇记录" rows={fxRows} rowKey={r => r.id} loading={loading} columns={[
+      { key: 'code', header: '记录', width: 'minmax(160px,1.2fr)', render: r => <ObjectCell name={<><Mono>{r.code}</Mono> {r.kind === 'lock' ? '锁汇' : '结汇'}</>} meta={`${r.date} · ${r.ref}${r.kind === 'lock' ? ' · 交割截止 ' + r.settleBy : ''}`} /> },
+      { key: 'amount', header: '原币', width: '140px', align: 'right', render: r => <span className="mist-num">{money(r.amount, r.currency)}</span> },
+      { key: 'rate', header: '汇率', width: '100px', align: 'right', hideOnMobile: true, render: r => <span className="mist-num" title={r.kind === 'lock' ? '锁定汇率' : '由水单金额得出'}>{r.rate}</span> },
+      { key: 'local', header: '本币', width: '150px', align: 'right', hideOnMobile: true, render: r => <span className="mist-num">{money(r.localAmount, r.localCurrency)}</span> },
+      { key: 'bank', header: '银行 / 账户', width: 'minmax(120px,1fr)', hideOnMobile: true, render: r => r.kind === 'lock' ? r.bankName : `${accountCode(r.fromAccountId)} → ${accountCode(r.toAccountId)}${r.lockId ? ' · 交割 ' + ((state?.fxRecords || []).find(x => x.id === r.lockId)?.code || '') : ''}` },
+      { key: 'state', header: '状态', width: '150px', render: r => r.reversed ? <Pill tone="neutral">已冲回</Pill> : r.kind === 'lock' ? (() => { const u = mistFxLockUsage(state!, r.id); return <Pill tone={u.remaining > 0 ? 'accent' : 'ok'}>{u.remaining > 0 ? `剩余 ${money(u.remaining, r.currency)}` : '已全部交割'}</Pill>; })() : <Pill tone="ok">已入账</Pill> },
+      { key: 'act', header: '操作', width: '150px', render: r => r.reversed ? <span className="mist-note">{r.reversed.reason}</span> : <span className="mist-row">{r.kind === 'lock' && mistFxLockUsage(state!, r.id).remaining > 0 && canWrite && canSettle && <Button size="sm" onClick={() => setFx(newFxDraft('settlement', state, r.id))}>交割</Button>}{canWrite && <Button size="sm" onClick={() => setReversing(r)}>冲回</Button>}</span> },
+    ]} empty={<EmptyState title="暂无锁汇或结汇记录" description="锁汇登记银行远期合同；结汇按银行水单登记，入账后计入账户余额。" />} /></Card>
+    {fx && state && <FxDialog state={state} draft={fx} onClose={() => setFx(null)} />}
+    {reversing && <FxReverseDialog record={reversing} onClose={() => setReversing(null)} />}
     <Card><DataTable ariaLabel="客户应收余额（原币）" rows={customers} rowKey={r => r.id} loading={loading} onRowClick={r => { if (r.customerId) go('payment-vouchers', undefined, { section: 'open', customerId: r.customerId }); }} columns={[
       { key: 'customer', header: '客户', render: r => <ObjectCell name={r.name} meta={r.customerId ? '由来源订单确认客户' : '缺少来源客户标识，请核对'} /> },
       { key: 'count', header: '未结票据', width: '90px', align: 'right', render: r => r.invoices }, { key: 'amount', header: '未收余额', width: '150px', align: 'right', render: r => money(r.amount, r.currency) },

@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {applyMistCommand,createMistState,MistCommandError,mistCommandPermission,mistMoneyMinor,mistBankAccountBalances,type MistCommand,type MistContext} from './mistWorkspace';
+import {applyMistCommand,createMistState,MistCommandError,mistCommandPermission,mistMoneyMinor,mistBankAccountBalances,mistFxLockUsage,mistFxRate,type MistCommand,type MistContext} from './mistWorkspace';
 const context=()=>{let id=0;return {now:'2026-10-13T08:00:00.000Z',actorName:'验证员',id:()=>`test-${++id}`} satisfies MistContext;};
 function approvedOrderFixture(amount=100){
  const ctx:MistContext={...context(),actorId:'business',authority:{supplier:{},orderReviewerIds:{garment:['reviewer'],fabric:['reviewer']}}};let state=createMistState(ctx,'empty');
@@ -150,6 +150,32 @@ describe('finance reversals keep the original fact and recompute balances',()=>{
   expect(mistBankAccountBalances(s).accounts[0].balance).toBe(-100.5);
   expect(mistCommandPermission({type:'finance.account.save',payload:{} as any})).toBe('vouchers:write');
   expect(mistCommandPermission({type:'finance.account.assign',payload:{} as any})).toBe('vouchers:write');
+ });
+ it('records FX locks and settlements from actual bank amounts; settlement moves account balances and draws down the lock',()=>{
+  const ctx=context();let s=createMistState(ctx,'empty');const run=(c:any)=>{const r=applyMistCommand(s,c,ctx);s=r.state;return r.result;};
+  run({type:'finance.account.save',payload:{name:'美元户',bankName:'中行',accountNo:'1111',currency:'USD',openingDate:'2026-01-01',openingBalance:10000}});
+  run({type:'finance.account.save',payload:{name:'人民币户',bankName:'中行',accountNo:'2222',currency:'CNY',openingDate:'2026-01-01',openingBalance:0}});
+  const [usd,cny]=s.bankAccounts!;
+  expect(()=>run({type:'finance.fx.lock',payload:{date:'2026-03-01',bankName:'中行',currency:'USD',amount:5000,rate:'7.1',localCurrency:'USD',settleBy:'2026-06-30',ref:'FW-1'}})).toThrow('不同');
+  expect(()=>run({type:'finance.fx.lock',payload:{date:'2026-03-01',bankName:'中行',currency:'USD',amount:5000,rate:'7.1234567',localCurrency:'CNY',settleBy:'2026-06-30',ref:'FW-1'}})).toThrow('6 位小数');
+  const lockId=run({type:'finance.fx.lock',payload:{date:'2026-03-01',bankName:'中行',currency:'USD',amount:5000,rate:'7.123456',localCurrency:'CNY',settleBy:'2026-06-30',ref:'FW-1'}}).id as string;
+  expect(s.fxRecords![0]).toMatchObject({kind:'lock',code:'FX-001',localAmount:35617.28,rate:'7.123456'});
+  expect(mistBankAccountBalances(s).accounts.map(a=>a.balance)).toEqual([10000,0]);
+  expect(()=>run({type:'finance.fx.settle',payload:{date:'2026-04-01',fromAccountId:usd.id,toAccountId:usd.id,amount:1,localAmount:7,ref:'S'}})).toThrow('不同币种');
+  expect(()=>run({type:'finance.fx.settle',payload:{date:'2026-04-01',fromAccountId:usd.id,toAccountId:cny.id,amount:6000,localAmount:42000,ref:'S',lockId}})).toThrow('剩余');
+  const settleId=run({type:'finance.fx.settle',payload:{date:'2026-04-01',fromAccountId:usd.id,toAccountId:cny.id,amount:3000,localAmount:21370.37,ref:'BK-778',lockId}}).id as string;
+  expect(s.fxRecords![1]).toMatchObject({kind:'settlement',currency:'USD',localCurrency:'CNY',rate:'7.123457',lockId,bankName:'中行'});
+  expect(mistFxLockUsage(s,lockId)).toEqual({settled:3000,remaining:2000});
+  let b=mistBankAccountBalances(s);expect(b.accounts.map(a=>a.balance)).toEqual([7000,21370.37]);expect(b.accounts[1]).toMatchObject({fxIn:21370.37,fxOut:0});
+  expect(()=>run({type:'finance.account.save',payload:{id:cny.id,name:'人民币户',bankName:'中行',accountNo:'2222',currency:'CNY',openingDate:'2026-01-01',openingBalance:5}})).toThrow('期初不能修改');
+  expect(()=>run({type:'finance.fx.reverse',payload:{id:lockId,reason:'错'}})).toThrow('先冲回');
+  run({type:'finance.fx.reverse',payload:{id:settleId,reason:'水单金额录错'}});expect(s.fxRecords![1].reversed).toMatchObject({reason:'水单金额录错'});
+  expect(mistBankAccountBalances(s).accounts.map(a=>a.balance)).toEqual([10000,0]);expect(mistFxLockUsage(s,lockId).remaining).toBe(5000);
+  expect(()=>run({type:'finance.fx.reverse',payload:{id:settleId,reason:'再'}})).toThrow('已冲回');
+  run({type:'finance.fx.reverse',payload:{id:lockId,reason:'合同取消'}});expect(s.fxRecords).toHaveLength(2);
+  expect(()=>run({type:'finance.fx.settle',payload:{date:'2026-04-02',fromAccountId:usd.id,toAccountId:cny.id,amount:1,localAmount:7,ref:'S2',lockId}})).toThrow('已冲回');
+  expect(mistFxRate(1000,7123.45)).toBe('7.123450');
+  expect(mistCommandPermission({type:'finance.fx.settle',payload:{} as any})).toBe('vouchers:write');
  });
  it('maps reversal permissions to the existing finance scopes',()=>{
   expect(mistCommandPermission({type:'finance.allocation.reverse',payload:{allocationId:'a',reason:'r'}})).toBe('invoices:reconcile');
