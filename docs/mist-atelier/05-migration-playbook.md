@@ -2,6 +2,12 @@
 
 ## 报价成本 AI 审阅操作协议（2026-10-14，quote-cost-advisor-v1）
 
+### 模型连接（2026-10-15）
+
+- 服务器设 `BAMBOOK_CODEX_SUBSCRIPTION=1` 后，有 `ai:chat` 权限的用户可在小竹页“我的 ChatGPT 订阅”连接自己的账号：点击连接 → 打开 `https://auth.openai.com/codex/device` 输入验证码 → 页面自动显示已连接。若 OpenAI 提示未允许设备码登录，需在 ChatGPT 设置的安全选项中开启 Codex 设备码授权。
+- 已连接用户的小竹对话与报价 AI 审阅优先使用其订阅（默认 `gpt-6-luna`、推理 `max`，可用 `BAMBOOK_CODEX_MODEL` / `BAMBOOK_CODEX_REASONING` 调整）；订阅失败时再用服务器企业 API（`ARK_*` / `BAMBOOK_LLM_BACKUP*`）。测试期用本人账号；正式版每人连接自己的订阅或统一企业 API，不共享个人订阅。
+- 订阅的可用模型由 OpenAI 按账号与客户端版本下发，会变化；若返回“不支持该模型”，核对 `chatgpt.com/backend-api/codex/models?client_version=1.0.0` 中 `visibility=list` 的模型后调整配置。
+
 ### 边界与工作方法
 
 报价前的产品 / 面料单价核算留在准确报价条目；订单与周期的实际成本 / 利润留在“成本与利润核算”，不把整个模块叫 BOM。AI 是可选审阅层，不取代专业公式、财务事实、人工决策或审批。

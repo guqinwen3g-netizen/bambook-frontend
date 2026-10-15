@@ -171,7 +171,7 @@ export async function runQuoteCostAdvisor(
   };
   const material = JSON.stringify(facts);
   if (material.length > 60000) fail("依据过长，请精简后审阅");
-  const complete = deps.complete ?? createLlmCompleter();
+  const complete = deps.complete ?? createLlmCompleter({ actorId: args.actor?.userId });
   const response = await runMistAssistant(
     {
       ...args,
