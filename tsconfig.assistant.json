@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "lib": ["ES2022", "DOM"], "types": ["node"] },
+  "files": [],
+  "include": ["electron/assistant/**/*.ts", "electron/assistantSupervisor.ts"],
+  "exclude": ["node_modules", "dist", "out"]
+}

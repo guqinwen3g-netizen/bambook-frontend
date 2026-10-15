@@ -67,7 +67,11 @@ export default defineConfig((async (env) => {
             build: {
                 outDir: 'out/main',
                 lib: {
-                    entry: path.resolve(__dirname, 'electron/main.ts'),
+                    // assistant-host 是工作助手的 utilityProcess 入口，与主进程同目录输出。
+                    entry: {
+                        main: path.resolve(__dirname, 'electron/main.ts'),
+                        'assistant-host': path.resolve(__dirname, 'electron/assistant/host.ts'),
+                    },
                     formats: ['cjs'],
                 },
                 rollupOptions: {
@@ -76,7 +80,7 @@ export default defineConfig((async (env) => {
                         // .js (not .cjs): Electron 41 only treats .js as a
                         // main-process entry. The nested package.json written
                         // by writeCjsMarker forces CJS parsing.
-                        entryFileNames: 'main.js',
+                        entryFileNames: '[name].js',
                     },
                 },
             },

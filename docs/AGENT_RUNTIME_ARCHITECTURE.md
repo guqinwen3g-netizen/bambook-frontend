@@ -61,6 +61,8 @@ npm run agent:status:local
 
 ## 2.2 OpenBitFun local integration — guarded resumption (2026-10-11)
 
+> **2026-10-15 superseded:** OpenBitFun runtime embedding is retired. The work assistant is now a lightweight Bambook-native Agent in the Electron desktop app — see `docs/mist-atelier/work-assistant-plan.md`. This section is kept as history.
+
 The user authorized resumption after reboot. The incident photo reports **OpenBitFun 201.35 GB**; it does not distinguish the application from its descendants. No pre-crash process trace exists, so original-incident attribution remains unconfirmed. The integration is **not an accepted MVP**.
 
 ### Resource boundary

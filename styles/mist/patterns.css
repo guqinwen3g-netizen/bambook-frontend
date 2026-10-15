@@ -556,3 +556,32 @@
 /* 表格单元格内的移动端标签：手机宽度隐藏表头时说明数字含义。 */
 .mist-cell-sm-label { display: none; }
 @media (max-width: 760px) { .mist-cell-sm-label { display: block; font-size: 12px; } }
+
+/* ── 工作助手（本机 Agent）：窄会话栏 + 对话区 ───────────────── */
+.mist-wa { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: var(--mist-gap); align-items: start; margin-top: var(--mist-gap); }
+.mist-wa-list { display: flex; flex-direction: column; gap: 2px; padding: 0 8px 10px; max-height: 60vh; overflow-y: auto; }
+.mist-wa-list > .mist-note { padding: 8px; }
+.mist-wa-item { display: flex; align-items: center; gap: 4px; border-radius: var(--mist-r-md); }
+.mist-wa-item[data-active] { background: var(--mist-accent-tint); }
+.mist-wa-item > .mist-wa-open { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px; border: 0; background: none; color: var(--mist-ink); font: inherit; font-size: var(--mist-text-sm); text-align: left; cursor: pointer; border-radius: var(--mist-r-md); }
+.mist-wa-item > .mist-wa-open > span:first-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mist-wa-item > .mist-wa-open:hover:not(:disabled) { background: var(--mist-fill); }
+.mist-wa-item > .mist-wa-open:disabled { cursor: default; color: var(--mist-ink-3); }
+.mist-wa-main { display: flex; flex-direction: column; min-height: 420px; }
+.mist-wa-thread { flex: 1; display: flex; flex-direction: column; gap: 12px; padding: 16px; max-height: 62vh; overflow-y: auto; }
+.mist-wa-msg { display: flex; flex-direction: column; gap: 4px; max-width: 86%; font-size: var(--mist-text-sm); color: var(--mist-ink); }
+.mist-wa-msg p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.mist-wa-msg[data-role="user"] { align-self: flex-end; padding: 8px 12px; border-radius: var(--mist-r-md); background: var(--mist-card-2); }
+.mist-wa-composer { display: flex; flex-direction: column; gap: 8px; padding: 12px 16px 16px; border-top: 1px solid var(--mist-line); }
+.mist-wa-composer .mist-row { flex-wrap: wrap; }
+.mist-wa-spacer { flex: 1; }
+@media (max-width: 760px) {
+  .mist-wa { grid-template-columns: minmax(0, 1fr); }
+  .mist-wa-list { max-height: 180px; }
+  .mist-wa-msg { max-width: 100%; }
+}
+.mist-wa-advanced { margin: 4px 0 12px; }
+.mist-wa-advanced > summary { cursor: pointer; padding: 6px 0; font-size: var(--mist-text-sm); color: var(--mist-ink-2); }
+.mist-wa-advanced[open] > summary { margin-bottom: 8px; }
+.mist-wa-thread .mist-banner { flex-wrap: wrap; }
+.mist-wa-thread .mist-banner > div:first-child { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
