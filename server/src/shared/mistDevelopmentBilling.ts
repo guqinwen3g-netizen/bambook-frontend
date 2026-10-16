@@ -17,6 +17,7 @@ export type MistBillingRequest = {
 };
 export type MistDevBilling = { makingFees: MistMakingFee[]; request?: MistBillingRequest; settledAt?: string };
 
+export const DEVELOPMENT_BILLING_LOCK = '已发起开票，费用已锁定，不能追加实物或寄样';
 const cents = (amount: number) => Math.round(amount * 100);
 /** 本案全部入库实物（各版本来源），按登记顺序。 */
 export function developmentSamplesOf(state: MistState, dev: MistDev) {

@@ -14,6 +14,7 @@ import { DevNoticeCard } from './DevNotices';
 import { DevRoundsCard, NewRoundDialog, RoundRequirementsDialog, versionQcFlag, type NewRoundInput } from './DevRounds';
 import { ToProductDialog, developmentVersionLinks, productConversionBlocker } from './DevVersionLinks';
 import { DevSampleFormsCard } from './DevSampleForms';
+import { DEVELOPMENT_BILLING_LOCK } from '../../../../server/src/shared/mistDevelopmentBilling';
 import { DevBillingCard } from './DevBilling';
 import { confirmationNeedsForms, developmentVersionSamples, sampleRef } from '../../../../server/src/shared/mistDevelopmentSamples';
 
@@ -182,7 +183,7 @@ export function DevDetailPage(){
   const resampleRound=version?.qcDecision?.roundId?state?.rounds?.find(round=>round.id===version.qcDecision!.roundId):undefined;
   const roundBlocker=developmentRoundBlocker(state!,dev);
   const parentVersion=version&&state?minorParent(state,version):undefined,childMinors=version&&state?minorVersions(state,version):[],minorBlocker=version&&state?minorVersionBlocker(state,dev,version):'请先选择版本';
-  const sampleBlocker=version?.minor?`小版本沿用 ${parentVersion?.label||'大版本'} 实物，不登记新实物`:undefined,qcBlocker=version?.minor?`小版本沿用 ${parentVersion?.label||'大版本'} QC 结论`:childMinors.length?`已有小版本 ${childMinors.map(item=>item.label).join('、')} 沿用本版 QC 结论，不能改写`:undefined;
+  const sampleBlocker=version?.minor?`小版本沿用 ${parentVersion?.label||'大版本'} 实物，不登记新实物`:dev.billing?.request?DEVELOPMENT_BILLING_LOCK:undefined,qcBlocker=version?.minor?`小版本沿用 ${parentVersion?.label||'大版本'} QC 结论`:childMinors.length?`已有小版本 ${childMinors.map(item=>item.label).join('、')} 沿用本版 QC 结论，不能改写`:undefined;
   const openResample=()=>{if(!version?.qc)return;setFailure('');setRoundInitial({factories:[version.factory],referenceVersionIds:[version.id],requirements:`QC 意见（${version.label}）：${version.qc.opinion||'见 QC 报告'}`,targetDate:dev.due||'',fileIds:[],resampleFromVersionId:version.id});setDialog('round');};
   const openDecision=(kind:'rework'|'abandon')=>{setDecision({kind,note:''});setFailure('');setDialog('qcDecide');};
   const qcGate=!version?null:version.qcDecision?.kind==='abandon'?<Banner tone="bad" title="本版已放弃 · 不采用">{version.qcDecision.note||'未填写原因'}；其他版本不受影响。</Banner>

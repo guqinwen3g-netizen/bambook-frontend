@@ -119,3 +119,13 @@ describe('BB-DEV-9 permissions',()=>{
   expect(mistCommandPermission({type:'finance.developmentInvoice.issue',payload:{} as any})).toBe('invoices:write');
  });
 });
+
+describe('frozen development billing',()=>{
+ it.each(['dispatch','form','warehouse'] as const)('rejects adding unbillable %s activity after requesting invoicing',kind=>{
+  const f=fixture(true);confirm(f);const sample=f.samples()[0];
+  f.run({type:'development.fee.recordMaking',payload:{devId:f.at.devId,sampleId:sample.id,amount:10,currency:'EUR'}});
+  f.run({type:'development.billing.request',payload:{devId:f.at.devId}});
+  const command:MistCommand=kind==='dispatch'?{type:'development.sample.dispatch',payload:{...f.at,sampleId:sample.id,quantity:1,recipient:'新寄样',fee:{amount:5,currency:'EUR'}}}:kind==='form'?{type:'development.version.addSampleForm',payload:{...f.at,form:'色样',quantity:1,unit:'份'}}:{type:'fulfillment.samples.create',payload:{name:'仓库追加',category:'面料',form:'米样',quantity:1,unit:'米',size:'',color:'',location:'架B',source:{kind:'version',...f.at},fileIds:[],note:''}};
+  f.unchanged(()=>f.run(command),/已发起开票|费用已锁定/);
+ });
+});

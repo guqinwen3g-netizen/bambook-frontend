@@ -1,4 +1,5 @@
 /** Actual fulfillment records in the persisted Mist workspace. No fixture import. */
+import { DEVELOPMENT_BILLING_LOCK } from './mistDevelopmentBilling';
 import {developmentDomain} from './mistDevelopmentDomain';
 import { MistCommandError, lineAmount, mistMoneyMinor, assertMistOrderApproved, assertMistOrderDeposit, assertMistOrderOpen, isActiveMistInvoice } from './mistWorkspace';
 import type { MistState, MistContext, MistCommandResult, MistQc, MistTarget, MistProduction } from './mistWorkspace';
@@ -690,6 +691,7 @@ function purchaseSnapshot(purchase: FulfillmentPurchase): FulfillmentPurchaseRev
 }
 function addSample(root: MistState, input: SampleInput, ctx: MistContext) {
     const f = root.fulfillment, s = source(root, input.source), category = text(input.category, '类别'), quantity = qty(input.quantity), unit = text(input.unit, '单位');
+    if (s.kind === 'version' && get(root.devs, s.devId, '来源开发案').billing?.request) fail(DEVELOPMENT_BILLING_LOCK, 'PRECONDITION');
     if (category === '成衣' && (quantity !== 1 || unit !== '件')) fail('成衣必须逐件建档，数量为1件');
     if (unit !== '米' && !Number.isInteger(quantity)) fail('非米样数量须为整数');
     if (s.kind === 'orderLine') {

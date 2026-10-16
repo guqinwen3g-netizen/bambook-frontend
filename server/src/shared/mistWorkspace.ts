@@ -11,7 +11,7 @@ import {createPlatformState,applyPlatformCommand,platformCommandPermission,getPl
 import type {MistCreditDocumentIssue} from './mistCreditDocuments';
 import {developmentNoticeBlocker,developmentNoticeContent,developmentNoticeFingerprint,developmentNoticeNo,type DevNoticeArtifact,type DevNoticeRecord,type DevNoticeSnapshot} from './mistDevelopmentNotice';
 import type {MistReviewTask} from './mistReview';
-import {billingRequestBlocker,billingTotals,developmentBillTo,developmentBillingSettled,developmentBillingStage,developmentFeeSummary,developmentSamplesOf,makingFeeBlocker,type MistDevBilling} from './mistDevelopmentBilling';
+import {DEVELOPMENT_BILLING_LOCK,billingRequestBlocker,billingTotals,developmentBillTo,developmentBillingSettled,developmentBillingStage,developmentFeeSummary,developmentSamplesOf,makingFeeBlocker,type MistDevBilling} from './mistDevelopmentBilling';
 import {confirmationNeedsForms,developmentVersionSamples,sampleDispatchBlocker,sampleFormBlocker,sampleRef,type MistSampleDispatch,type MistSampleFee,type MistSampleRef} from './mistDevelopmentSamples';
 import {assertOrderLineSource,type OrderLineSource} from './mistOrderSource';
 import {lineQuantityFromBreakdown,type OrderLineBreakdown} from './mistOrderBreakdown';
@@ -707,6 +707,7 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
     }
     case 'development.recordSample': {
       const [dev,v]=versionOf(state,p.devId,p.versionId);
+      if(dev.billing?.request)throw new MistCommandError('PRECONDITION',DEVELOPMENT_BILLING_LOCK);
       if(v.minor)throw new MistCommandError('PRECONDITION','小版本 '+v.label+' 沿用大版本实物，不登记新实物');
       if(v.archivedAt||v.qc||v.confirmations.length)throw new MistCommandError('PRECONDITION','已有QC、确认或留档记录的实物不可替换，请创建新版本');
       if(state.fulfillment.samples.some(s=>s.source.kind==='version'&&s.source.versionId===v.id))throw new MistCommandError('PRECONDITION','已有入库实物不能覆盖，请创建新版本或在本版追加实物形态');
@@ -858,6 +859,7 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
     }
     case 'development.sample.dispatchFee': {
       const [dev,v]=versionOf(state,p.devId,p.versionId), row=(v.dispatches||[]).find(d=>d.id===p.dispatchId);
+      if(dev.billing?.request)throw new MistCommandError('PRECONDITION',DEVELOPMENT_BILLING_LOCK);
       if(!row)throw new MistCommandError('NOT_FOUND','寄样记录不存在',404);
       if(row.fee)throw new MistCommandError('PRECONDITION','寄样费已登记，不能覆盖');
       row.fee=sampleFee(p.fee);row.feeRecordedAt=context.now;row.feeRecordedBy=context.actorName;dev.updatedAt=context.now;
