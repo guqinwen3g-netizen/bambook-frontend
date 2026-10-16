@@ -30,7 +30,7 @@ export function quotationFormalDocumentBlocker(q: Pick<MarketQuotation, 'approva
 }
 /** 任何版本（含草稿）都需要的基础数据。 */
 export function quotationDocumentBlocker(input: { issuer?: MistCompanyProfile; customerFound: boolean; lineCount: number }): string | null {
-  if (!input.issuer || !input.issuer.legalName) return '先在 设置 › 公司档案 填写公司抬头，才能生成报价单';
+  if (!input.issuer || !input.issuer.legalName) return '工作区尚未维护公司资料（公司抬头），需管理员补全后才能生成报价单';
   if (!input.customerFound) return '报价客户不存在或无权查看';
   if (!input.lineCount) return '报价没有条目';
   return null;
