@@ -68,6 +68,13 @@ describe('BB-DEV-4 试样通知单',()=>{
   const replay=await repo.execute(testActor(),workspaceId,{requestId:'n2',expectedRevision:revision-1,command:{type:'development.notice.generate',payload:{devId,versionId:version('R2-A').id}}} as never);
   expect(replay.replayed).toBe(true);expect(renderPdf).toHaveBeenCalledTimes(2);
  });
+ it('rejects a stale notice request before rendering even when another factory was updated',async()=>{
+  await notice('other-factory','R2-B');
+  renderPdf.mockClear();
+  const before=structuredClone(state()),beforeRevision=revision;
+  await expect(repo.execute(testActor(),workspaceId,{requestId:'stale-notice',expectedRevision:0,command:{type:'development.notice.generate',payload:{devId,versionId:version('R2-A').id}}} as never)).rejects.toMatchObject({code:'REVISION_CONFLICT'});
+  expect(renderPdf).not.toHaveBeenCalled();expect(state()).toEqual(before);expect(db.workspaces.get(workspaceId).revision).toBe(beforeRevision);expect(await names()).toHaveLength(1);
+ });
  it('reports a renderer failure as a confirmed rejection without persisting and allows a later retry',async()=>{
   const before=structuredClone(state()),beforeRevision=db.workspaces.get(workspaceId).revision;
   renderPdf.mockRejectedValueOnce(new Error('browser unavailable'));
