@@ -4,7 +4,7 @@ import { Banner, Button, Facts, Mono, Pill } from '../../../../components/mist';
 import type { MistOrder, MistOrderLine, MistState } from '../../../../server/src/shared/mistWorkspace';
 import type { OrderGovernanceFields } from '../../../../server/src/shared/mistOrderGovernance';
 import { formatOrderQuantity } from './orderAmounts';
-import { currentLineStage, lineShipping, lineStages, type LineStage } from './orderLineTrack';
+import { currentLineStage, lineShipping, lineStages, lineTrackLabel, type LineStage } from './orderLineTrack';
 import { DetailBlock } from './modules/pageKit';
 
 const SHIP_STATE: Record<string, string> = { preparing: '准备中', ready: '待出运', departed: '已离港' };
@@ -26,7 +26,7 @@ export function OrderLineFulfillment({ state, order, line, go }: { state: MistSt
       { label: 'PO / 合同号', value: contract?.kind === 'internal' ? contract.internalPurpose || '内部用途待填' : contract?.poNumber || '待补充' },
       { label: '规格', value: spec || `${line.style} · ${line.name}` },
       { label: '订单数量', value: `${q(line.qty)} ${unit}` },
-      { label: '履约模式', value: order.type === 'fabric' ? '面料：坯布 / 染整 → 色样 → 检验 → 完工 → 出运' : '成衣：产前样 → 面辅料 → 开裁 → 检验 → 完工 → 出运' },
+      { label: '履约模式', value: lineTrackLabel(order) },
       { label: '工厂分支', value: factories.length ? factories.join('、') : '尚未开立生产' },
     ]} />
     <div className="mist-col" style={{ gap: 8 }}>
