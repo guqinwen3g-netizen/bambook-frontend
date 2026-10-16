@@ -5,7 +5,7 @@ import path from 'node:path';
 import { createMistState, applyMistCommand, mistCommandPermission, mistMoneyMinor, renderDemoFile } from '../shared/mistWorkspace';
 import { MistRepository, type MistContract } from './repository';
 import { MistPrivateFiles } from './files';
-import { MemoryMistDatabase, testActor, testAuthority } from './__tests__/support';
+import { MemoryMistDatabase, requestReceiptCount, testActor, testAuthority } from './__tests__/support';
 const contract: MistContract = { createMistState, applyMistCommand, mistCommandPermission, renderDemoFile };
 let root: string, db: MemoryMistDatabase, repo: MistRepository;
 beforeEach(async () => { root = await mkdtemp(path.join(tmpdir(), 'mist-real-contract-')); db = new MemoryMistDatabase(); repo = new MistRepository(db, contract, new MistPrivateFiles(root), testAuthority().authorize, () => new Date('2026-10-13T04:00:00Z')); });
@@ -39,7 +39,7 @@ describe('Mist repository with the real shared business commands', () => {
     expect(replay.replayed).toBe(true); expect(replay.workspace.state.allocations).toEqual(first.workspace.state.allocations);
     await expect(repo.execute(testActor(), workspace.id, { requestId: 'excess', expectedRevision: 1, command: { ...command.command, payload: { ...command.command.payload, amount: receipt.amount + invoice.amount + 1 } } })).rejects.toMatchObject({ code: 'VALIDATION' });
     expect(await repo.get(testActor(), workspace.id)).toEqual(first.workspace);
-    expect(db.receipts.size).toBe(2); // One creation receipt and one reconciliation receipt.
+    expect(requestReceiptCount(db)).toBe(2); // One creation receipt and one reconciliation receipt.
   });
   it('keeps the switcher name and settings name consistent through a typed rename', async () => {
     const input = { name: '第一工作区', seed: 'empty' as const, slug: 'rename-after-create' };

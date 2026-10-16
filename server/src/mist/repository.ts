@@ -44,6 +44,59 @@ function identifier(value: unknown, label: string, maxLength = 120): string {
   return value;
 }
 function revision(value: unknown): number { if (!Number.isSafeInteger(value) || Number(value) < 0) fail('INVALID_INPUT', '工作区版本无效', 400); return Number(value); }
+/** 服务端版本标记占用的请求编号前缀；客户端请求编号不得使用，避免伪造或占用版本标记。 */
+const REVISION_MARKER_PREFIX = 'mist-revision:';
+const REVISION_MARKER_HASH = 'mist-revision-change-keys:v1';
+/** 自动合并只跨越有限个落后版本；整笔事务因并发序列化失败最多尝试有限次，不睡眠、不无界循环。 */
+export const MIST_MAX_REBASE_GAP = 20;
+export const MIST_MAX_SAVE_ATTEMPTS = 3;
+const MAX_CHANGE_KEYS = 2000;
+const RETRYABLE_TRANSACTION_CODES = ['P2034', 'P2002'];
+/** PostgreSQL 可串行化失败 / 死锁：经 Prisma 普通查询报 P2034，经行锁原生查询（FOR UPDATE）报 P2010 并带原始 SQLSTATE。 */
+const retryableTransaction = (error: any) => RETRYABLE_TRANSACTION_CODES.includes(error?.code) || error?.code === 'P2010' && ['40001', '40P01'].includes(error?.meta?.code);
+/** 审批 / 确认 / 签发 / 放行 / 正式单据：操作人依据所见内容作出判断，版本落后时必须刷新重新确认，不自动合并。 */
+const NON_REBASABLE_COMMAND = /\.(decide|confirm|issue|release|document)$/;
+function requestIdentifier(value: unknown, maxLength = 120): string {
+  const id = identifier(value, '请求编号', maxLength);
+  if (id.startsWith(REVISION_MARKER_PREFIX)) fail('INVALID_INPUT', '请求编号无效', 400);
+  return id;
+}
+const revisionMarker = (value: number) => `${REVISION_MARKER_PREFIX}${value}`;
+function plainRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype; }
+function keyedById(list: unknown[]): Map<string, unknown> | null {
+  const map = new Map<string, unknown>();
+  for (const item of list) { if (!plainRecord(item) || typeof item.id !== 'string' || !item.id || map.has(item.id)) return null; map.set(item.id, item); }
+  return map;
+}
+/**
+ * 本次命令实际写入的位置：对象逐字段下钻，带唯一 id 的记录数组按记录（整条记录为最小单位）比较，
+ * 其余数组或值整体比较。返回 null 表示写入范围过大，无法作为安全合并依据。
+ */
+export function mistChangeKeys(before: unknown, after: unknown): string[][] | null {
+  const out = new Map<string, string[]>();
+  const add = (path: string[]) => { out.set(JSON.stringify(path), path); };
+  const walk = (a: unknown, b: unknown, path: string[]) => {
+    if (out.size > MAX_CHANGE_KEYS || Object.is(a, b)) return;
+    if (Array.isArray(a) && Array.isArray(b)) {
+      const left = keyedById(a), right = keyedById(b);
+      if (left && right) {
+        for (const id of new Set([...left.keys(), ...right.keys()])) {
+          const x = left.get(id), y = right.get(id);
+          if (x === undefined || y === undefined || canonical(x) !== canonical(y)) add([...path, 'i:' + id]);
+        }
+        return;
+      }
+    } else if (plainRecord(a) && plainRecord(b)) {
+      for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) walk(a[key], b[key], [...path, 'k:' + key]);
+      return;
+    }
+    if (a === undefined || b === undefined || canonical(a) !== canonical(b)) add(path);
+  };
+  walk(before, after, []);
+  out.delete(JSON.stringify(['k:reviewerIds'])); // 由最新状态重新派生，不代表业务写入。
+  return out.size > MAX_CHANGE_KEYS ? null : [...out.values()];
+}
+const overlapping = (a: string[], b: string[]) => { for (let i = 0; i < Math.min(a.length, b.length); i++) if (a[i] !== b[i]) return false; return true; };
 function claimIdentifier(value:unknown):string { const id=identifier(value,'案件编号');if(!/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(id))fail('INVALID_INPUT','案件编号无效',400);return id; }
 function activeUploadClaim(state:MistState,claimId:string){
   const claim=Array.isArray(state.platform?.claims)?state.platform.claims.find(item=>item.id===claimId):undefined;
@@ -82,7 +135,7 @@ export class MistRepository {
   async listArchived(prior:TokenPayload){return this.transact(async db=>{const actor=await this.authorize(db,prior);const rows: MistWorkspaceRow[]=await db.mistWorkspace.findMany({where:{ownerId:actor.userId},orderBy:{updatedAt:'desc'}});return rows.filter(archived).map(row=>({id:row.id,name:row.name,revision:row.revision,archivedAt:row.state.workspaceArchive!.at}));});}
   private async activeWorkspace(db:any,actor:TokenPayload,preferredId?:string){const rows:MistWorkspaceRow[]=await db.mistWorkspace.findMany({where:{ownerId:actor.userId},orderBy:{updatedAt:'desc'}});const active=rows.filter(row=>!archived(row));const existing=active.find(row=>row.id===preferredId)??active[0];if(existing){this.contract.normalizeMistState?.(existing.state,this.context(actor));return existing;}const context=this.context(actor),state=this.contract.createMistState(context,'empty');state.settings.workspaceName='新的工作空间';return db.mistWorkspace.create({data:{id:randomUUID(),ownerId:actor.userId,slug:'continuation-'+randomUUID(),name:state.settings.workspaceName,revision:0,state}});}
   async changeArchive(prior:TokenPayload,workspaceId:string,input:{requestId:string;expectedRevision:number},action:'archive'|'restore'){
-    identifier(input.requestId,'请求编号');revision(input.expectedRevision);const hash=createHash('sha256').update(canonical({actorId:prior.userId,action,expectedRevision:input.expectedRevision})).digest('hex');
+    requestIdentifier(input.requestId);revision(input.expectedRevision);const hash=createHash('sha256').update(canonical({actorId:prior.userId,action,expectedRevision:input.expectedRevision})).digest('hex');
     return this.transact(async db=>{const{actor,row}=await this.own(db,prior,workspaceId,null,true,true,true);const previous=await db.mistCommandReceipt.findUnique({where:{workspaceId_requestId:{workspaceId,requestId:input.requestId}}});
       if(previous){if(previous.actorId!==actor.userId||previous.inputHash!==hash)fail('REQUEST_CONFLICT','请求编号已用于另一项操作',409);const active=await this.activeWorkspace(db,actor,previous.result.result.activeWorkspaceId);return{workspace:this.view(active,actor),receipt:{requestId:previous.requestId,...previous.result},replayed:true};}
       if(row.revision!==input.expectedRevision)fail('REVISION_CONFLICT','工作区已更新，请刷新后重试',409);
@@ -97,7 +150,7 @@ export class MistRepository {
   }
   /** 所有者明确授权/撤销其他账号进入本空间；只记录访问，不授予任何业务权限，历史保留。 */
   async changeMember(prior:TokenPayload,workspaceId:string,input:{requestId:string;expectedRevision:number;action:'add'|'remove';account:string}){
-    identifier(input.requestId,'请求编号');revision(input.expectedRevision);const account=identifier(input.account,'账号',200);
+    requestIdentifier(input.requestId);revision(input.expectedRevision);const account=identifier(input.account,'账号',200);
     if(!['add','remove'].includes(input.action))fail('INVALID_INPUT','请选择授权或撤销',400);
     const hash=createHash('sha256').update(canonical({actorId:prior.userId,type:'workspace.member',action:input.action,account,expectedRevision:input.expectedRevision})).digest('hex');
     return this.transact(async db=>{
@@ -176,7 +229,7 @@ export class MistRepository {
   }
   async receipt(prior: TokenPayload, workspaceId: string, requestId: string) { return this.transact(async db => {
     await this.own(db, prior, workspaceId,null,false,true);
-    const receipt = await db.mistCommandReceipt.findUnique({ where: { workspaceId_requestId: { workspaceId, requestId: identifier(requestId, '请求编号', typeof requestId === 'string' && requestId.startsWith('create:') ? 127 : 120) } } });
+    const receipt = await db.mistCommandReceipt.findUnique({ where: { workspaceId_requestId: { workspaceId, requestId: requestIdentifier(requestId, typeof requestId === 'string' && requestId.startsWith('create:') ? 127 : 120) } } });
     if (!receipt || receipt.actorId !== prior.userId) fail('NOT_FOUND', '请求回执不存在', 404);
     return { requestId: receipt.requestId, ...receipt.result };
   }); }
@@ -186,89 +239,124 @@ export class MistRepository {
     return this.executeInternal(prior, workspaceId, input, { command: input.command });
   }
   private async executeInternal(prior: TokenPayload, workspaceId: string, input: Omit<MistCommandRequest, 'command'> & { command?: any; claimId?: string }, hashPayload: any, upload?: MistFileInput) {
-    identifier(input.requestId, '请求编号'); revision(input.expectedRevision);
+    requestIdentifier(input.requestId); revision(input.expectedRevision);
     const hash = createHash('sha256').update(canonical({ actorId: prior.userId, expectedRevision: input.expectedRevision, ...hashPayload })).digest('hex');
-    let stored: MistStoredFile | undefined;
-    try { return await this.transact(async db => {
-      const permission = upload&&input.claimId!==undefined?'aftersales:write':this.contract.mistCommandPermission(input.command ?? { type: 'files.add', payload: {} });
-      const { actor, row } = await this.own(db, prior, workspaceId, permission, true);
-      await this.authorizeCompoundCommand(db, prior, input.command);
-      if (!isOwner(row, actor) && permission === null && !MEMBER_PERSONAL_COMMANDS.includes(input.command?.type)) fail('FORBIDDEN', '工作空间设置只能由所有者修改', 403);
-      const previous = await db.mistCommandReceipt.findUnique({ where: { workspaceId_requestId: { workspaceId, requestId: input.requestId } } });
-      if (previous) {
-        if (previous.actorId !== actor.userId || previous.inputHash !== hash || previous.expectedRevision !== input.expectedRevision) fail('REQUEST_CONFLICT', '此请求编号已用于另一项操作', 409);
-        return { workspace: this.view(row, actor), receipt: { requestId: previous.requestId, ...previous.result }, replayed: true };
-      }
-      if (row.revision !== input.expectedRevision) fail('REVISION_CONFLICT', '工作区已更新，请刷新后重试', 409);
-      if(upload&&input.claimId!==undefined)activeUploadClaim(row.state,input.claimId);
-      const context = this.context(actor);
-      if (MEMBER_PERSONAL_COMMANDS.includes(input.command?.type)) {
-        const visible = projectState(row.state, actor, this.emptyState(actor), row.ownerId).state;
-        const { type, payload } = input.command;
-        const collection = type === 'notification.read' ? visible.notifications : type === 'task.complete' ? visible.tasks : type === 'calendar.save' && payload.id ? visible.calendar : undefined;
-        if (collection && !collection.some(item => item.id === payload.id)) fail('NOT_FOUND', '记录不存在或当前账号无权访问', 404);
-        if (type === 'calendar.save' && !canReadTarget(actor, payload.target)) fail('FORBIDDEN', '无权关联该业务来源', 403);
-        if (type === 'notification.readAll') context.visibleNotificationIds = visible.notifications.map(item => item.id);
-      }
-      if(input.command) context.authority = await mistApprovalAuthority(db,actor,input.command.type);
-      const plan = input.command ? this.contract.getRequiredBusinessNumberPlan?.(row.state, input.command) ?? [] : [];
-      const numbers = await prepareMistBusinessNumbers(db, row.state, plan, context.now);
-      context.consumeBusinessNumber = prefix => numbers.consume(prefix);
-      if (upload) stored = { ...await this.files.write(workspaceId, upload, context.now), uploadedBy: actor.userId };
-      if (input.command?.type === 'platform.credit.issue') {
-        const payload = assertCreditIssuePayload(input.command.payload);
-        const credit = row.state.platform.credits.find(note => note.id === payload.creditId);
-        if (credit?.printVersions?.some(version => version.sourceVersionId === payload.versionId)) fail('CREDIT_ALREADY_ISSUED', '该来源版本已签发，请读取已归档的正式原件', 409);
-        const printSnapshot = prepareCreditDocumentSnapshot(row.state, payload.creditId, payload.versionId, context);
-        const prepared = await this.creditArchiveBuilder(printSnapshot);
-        stored = await this.files.write(workspaceId, prepared.file, context.now);
-        context.creditDocumentIssue = bindIssueArchive(prepared, stored, { id: context.id, workspaceId, requestId: input.requestId });
-      }
-      if (input.command?.type === 'market.quotation.document') {
-        const snapshot = prepareQuotationDocumentSnapshot(row.state, input.command.payload || {}, context);
-        const prepared = await buildQuotationDocument(snapshot, nextQuotationDocumentSeq(row.state, snapshot.quotationId), { renderPdf: this.quotationPdfRenderer });
-        stored = await this.files.write(workspaceId, prepared.file, context.now);
-        (context as typeof context & { quotationDocument?: unknown }).quotationDocument = bindQuotationDocument(prepared, stored, { id: context.id, workspaceId, requestId: input.requestId });
-      }
-      const command = upload ? { type: 'files.add', payload: { file: stored } } : input.command;
-      const applied = this.contract.applyMistCommand(structuredClone(row.state), command, context);
-      numbers.assertConsumed();
-      if(upload&&input.claimId!==undefined)applied.result={...applied.result,claimId:input.claimId};
-      if(this.contract.getMistReviewTasks)(applied.state as any).reviewerIds=[...new Set(this.contract.getMistReviewTasks(applied.state).flatMap(t=>t.reviewerIds))];
-      canonical(applied.state); canonical(applied.result);
-      const nextRevision = row.revision + 1;
-      const saved = await db.mistWorkspace.update({ where: { id: workspaceId }, data: { state: applied.state, name: identifier(applied.state.settings.workspaceName, '工作区名称'), revision: nextRevision } });
-      const result = { revision: nextRevision, result: applied.result };
-      await db.mistCommandReceipt.create({ data: { id: randomUUID(), workspaceId, requestId: input.requestId, actorId: actor.userId, inputHash: hash, expectedRevision: input.expectedRevision, result } });
-      await this.authorize(db, prior, permission);
-      await this.authorizeCompoundCommand(db, prior, input.command);
-      return { workspace: this.view(saved, actor), receipt: { requestId: input.requestId, ...result }, replayed: false };
-    }); } catch (error: any) {
-      if (stored) {
-        // A confirmed rollback removes its blob. Unknown commit outcomes retain
-        // the private blob until the durable request receipt can be checked.
-        try {
-          const receipt = await this.prisma.mistCommandReceipt.findUnique({ where: { workspaceId_requestId: { workspaceId, requestId: input.requestId } } });
-          if (!receipt) await this.files.remove(workspaceId, stored);
-        } catch { /* Do not delete a potentially committed attachment. */ }
-      }
-      if (['P2034', 'P2002'].includes(error?.code)) {
+    const permissionFor = () => upload&&input.claimId!==undefined?'aftersales:write':this.contract.mistCommandPermission(input.command ?? { type: 'files.add', payload: {} });
+    // 每次尝试都是一笔全新事务：重新读取最新状态并重新核验账号、成员、权限与业务门禁；不复用旧整份状态。
+    for (let attempt = 1; ; attempt++) {
+      let stored: MistStoredFile | undefined;
+      try { return await this.transact(async db => {
+        const permission = permissionFor();
+        const { actor, row } = await this.own(db, prior, workspaceId, permission, true);
+        await this.authorizeCompoundCommand(db, prior, input.command);
+        if (!isOwner(row, actor) && permission === null && !MEMBER_PERSONAL_COMMANDS.includes(input.command?.type)) fail('FORBIDDEN', '工作空间设置只能由所有者修改', 403);
+        const previous = await db.mistCommandReceipt.findUnique({ where: { workspaceId_requestId: { workspaceId, requestId: input.requestId } } });
+        if (previous) {
+          if (previous.actorId !== actor.userId || previous.inputHash !== hash || previous.expectedRevision !== input.expectedRevision) fail('REQUEST_CONFLICT', '此请求编号已用于另一项操作', 409);
+          return { workspace: this.view(row, actor), receipt: { requestId: previous.requestId, ...previous.result }, replayed: true };
+        }
+        // 版本落后时只在能证明安全时把本命令重新应用到最新状态；否则照旧明确拒绝。
+        const concurrent = row.revision === input.expectedRevision ? undefined : await this.concurrentChanges(db, workspaceId, row.revision, input.expectedRevision, upload ? 'files.add' : input.command?.type);
+        if(upload&&input.claimId!==undefined)activeUploadClaim(row.state,input.claimId);
+        const context = this.context(actor);
+        if (MEMBER_PERSONAL_COMMANDS.includes(input.command?.type)) {
+          const visible = projectState(row.state, actor, this.emptyState(actor), row.ownerId).state;
+          const { type, payload } = input.command;
+          const collection = type === 'notification.read' ? visible.notifications : type === 'task.complete' ? visible.tasks : type === 'calendar.save' && payload.id ? visible.calendar : undefined;
+          if (collection && !collection.some(item => item.id === payload.id)) fail('NOT_FOUND', '记录不存在或当前账号无权访问', 404);
+          if (type === 'calendar.save' && !canReadTarget(actor, payload.target)) fail('FORBIDDEN', '无权关联该业务来源', 403);
+          if (type === 'notification.readAll') context.visibleNotificationIds = visible.notifications.map(item => item.id);
+        }
+        if(input.command) context.authority = await mistApprovalAuthority(db,actor,input.command.type);
+        const plan = input.command ? this.contract.getRequiredBusinessNumberPlan?.(row.state, input.command) ?? [] : [];
+        const numbers = await prepareMistBusinessNumbers(db, row.state, plan, context.now);
+        context.consumeBusinessNumber = prefix => numbers.consume(prefix);
+        if (upload) stored = { ...await this.files.write(workspaceId, upload, context.now), uploadedBy: actor.userId };
+        if (input.command?.type === 'platform.credit.issue') {
+          const payload = assertCreditIssuePayload(input.command.payload);
+          const credit = row.state.platform.credits.find(note => note.id === payload.creditId);
+          if (credit?.printVersions?.some(version => version.sourceVersionId === payload.versionId)) fail('CREDIT_ALREADY_ISSUED', '该来源版本已签发，请读取已归档的正式原件', 409);
+          const printSnapshot = prepareCreditDocumentSnapshot(row.state, payload.creditId, payload.versionId, context);
+          const prepared = await this.creditArchiveBuilder(printSnapshot);
+          stored = await this.files.write(workspaceId, prepared.file, context.now);
+          context.creditDocumentIssue = bindIssueArchive(prepared, stored, { id: context.id, workspaceId, requestId: input.requestId });
+        }
+        if (input.command?.type === 'market.quotation.document') {
+          const snapshot = prepareQuotationDocumentSnapshot(row.state, input.command.payload || {}, context);
+          const prepared = await buildQuotationDocument(snapshot, nextQuotationDocumentSeq(row.state, snapshot.quotationId), { renderPdf: this.quotationPdfRenderer });
+          stored = await this.files.write(workspaceId, prepared.file, context.now);
+          (context as typeof context & { quotationDocument?: unknown }).quotationDocument = bindQuotationDocument(prepared, stored, { id: context.id, workspaceId, requestId: input.requestId });
+        }
+        const command = upload ? { type: 'files.add', payload: { file: stored } } : input.command;
+        const applied = this.contract.applyMistCommand(structuredClone(row.state), command, context);
+        numbers.assertConsumed();
+        if(upload&&input.claimId!==undefined)applied.result={...applied.result,claimId:input.claimId};
+        if(this.contract.getMistReviewTasks)(applied.state as any).reviewerIds=[...new Set(this.contract.getMistReviewTasks(applied.state).flatMap(t=>t.reviewerIds))];
+        canonical(applied.state); canonical(applied.result);
+        const changeKeys = mistChangeKeys(row.state, applied.state);
+        if (concurrent) {
+          if (!changeKeys) fail('REVISION_CONFLICT', '工作区已被他人更新，本次修改范围过大无法自动合并，请刷新后重试', 409);
+          if (changeKeys!.some(key => concurrent.some(other => overlapping(key, other)))) fail('REVISION_CONFLICT', '其他人已修改同一记录，为避免覆盖对方的更新未自动合并，请刷新核对后重试', 409);
+        }
+        const nextRevision = row.revision + 1;
+        const saved = await db.mistWorkspace.update({ where: { id: workspaceId }, data: { state: applied.state, name: identifier(applied.state.settings.workspaceName, '工作区名称'), revision: nextRevision } });
+        const result = { revision: nextRevision, result: applied.result };
+        await db.mistCommandReceipt.create({ data: { id: randomUUID(), workspaceId, requestId: input.requestId, actorId: actor.userId, inputHash: hash, expectedRevision: input.expectedRevision, result } });
+        // 同事务记下本版本写入的位置，供之后落后版本的保存判断能否安全合并；原请求回执保持原样。
+        await db.mistCommandReceipt.create({ data: { id: randomUUID(), workspaceId, requestId: revisionMarker(nextRevision), actorId: actor.userId, inputHash: REVISION_MARKER_HASH, expectedRevision: row.revision, result: { revision: nextRevision, keys: changeKeys } } });
+        await this.authorize(db, prior, permission);
+        await this.authorizeCompoundCommand(db, prior, input.command);
+        return { workspace: this.view(saved, actor), receipt: { requestId: input.requestId, ...result }, replayed: false };
+      }); } catch (error: any) {
+        let blobSettled = true;
+        if (stored) {
+          blobSettled = false;
+          // A competing copy can own this request receipt while referencing a
+          // different file. Check the durable workspace before retaining this
+          // attempt's blob; never delete a committed attachment or guess after
+          // an unavailable/unknown commit result.
+          try {
+            const receipt = await this.prisma.mistCommandReceipt.findUnique({ where: { workspaceId_requestId: { workspaceId, requestId: input.requestId } } });
+            const durable = receipt && retryableTransaction(error)
+              ? await this.transact(db => db.mistWorkspace.findFirst({ where: { id: workspaceId } })) as MistWorkspaceRow | null
+              : null;
+            if (!receipt || durable && Array.isArray(durable.state.files) && !durable.state.files.some(file => file.id === stored!.id)) {
+              await this.files.remove(workspaceId, stored); blobSettled = true;
+            }
+          } catch { /* Do not delete a potentially committed attachment. */ }
+        }
+        if (!retryableTransaction(error)) throw error;
         // A competing copy of this same request may have committed while this
         // serializable transaction rolled back. Resolve its durable receipt.
-        return this.transact(async db => {
-          const permission = upload&&input.claimId!==undefined?'aftersales:write':this.contract.mistCommandPermission(input.command ?? { type: 'files.add', payload: {} });
-          const { row, actor } = await this.own(db, prior, workspaceId, permission);
+        const replay = await this.transact(async db => {
+          const { row, actor } = await this.own(db, prior, workspaceId, permissionFor());
           await this.authorizeCompoundCommand(db, prior, input.command);
           const receipt = await db.mistCommandReceipt.findUnique({ where: { workspaceId_requestId: { workspaceId, requestId: input.requestId } } });
-          if (receipt) {
-            if (receipt.actorId !== prior.userId || receipt.inputHash !== hash) fail('REQUEST_CONFLICT', '此请求编号已用于另一项操作', 409);
-            return { workspace: this.view(row, actor), receipt: { requestId: receipt.requestId, ...receipt.result }, replayed: true };
-          }
-          fail('REVISION_CONFLICT', '工作区并发更新，请核对原请求回执后重试', 409);
+          if (!receipt) return undefined;
+          if (receipt.actorId !== prior.userId || receipt.inputHash !== hash) fail('REQUEST_CONFLICT', '此请求编号已用于另一项操作', 409);
+          return { workspace: this.view(row, actor), receipt: { requestId: receipt.requestId, ...receipt.result }, replayed: true };
         });
+        if (replay) return replay;
+        // 文件副作用无法确认已清理时不再重试，避免重复生成或残留。
+        if (!blobSettled) fail('REVISION_CONFLICT', '工作区并发更新，请核对原请求回执后重试', 409);
+        if (attempt >= MIST_MAX_SAVE_ATTEMPTS) fail('REVISION_CONFLICT', `多人同时保存发生冲突，已自动重试${MIST_MAX_SAVE_ATTEMPTS}次仍未成功，请刷新后重试`, 409);
       }
-      throw error;
     }
+  }
+  /** 收集从客户端所见版本到最新版本之间每个版本的写入位置；任何一个版本无法证明时拒绝自动合并。 */
+  private async concurrentChanges(db: any, workspaceId: string, current: number, expected: number, type: string | undefined): Promise<string[][]> {
+    const refuse = (message: string): never => fail('REVISION_CONFLICT', message, 409);
+    if (expected > current) refuse('工作区版本无效，请刷新后重试');
+    if (!type || NON_REBASABLE_COMMAND.test(type) || type === 'development.notice.generate') refuse('工作区已被他人更新，此操作需基于最新内容重新确认，请刷新后重试');
+    if (current - expected > MIST_MAX_REBASE_GAP) refuse('工作区已有较多更新，无法自动合并，请刷新后重试');
+    const keys: string[][] = [];
+    for (let value = expected + 1; value <= current; value++) {
+      const marker = await db.mistCommandReceipt.findUnique({ where: { workspaceId_requestId: { workspaceId, requestId: revisionMarker(value) } } });
+      const recorded = marker?.inputHash === REVISION_MARKER_HASH && marker.result?.revision === value && Array.isArray(marker.result.keys) && marker.result.keys.every((key: unknown) => Array.isArray(key) && key.every(part => typeof part === 'string')) ? marker.result.keys as string[][] : null;
+      if (!recorded) refuse('工作区已被他人更新，无法确认本次修改可安全合并，请刷新后重试');
+      keys.push(...recorded!);
+    }
+    return keys;
   }
   /** 演示种子里的附件只有占位记录；这里生成真实 PDF 并改写为工作区私有存储路径。 */
   private async writeDemoFiles(workspaceId: string, state: MistState) {
@@ -296,14 +384,14 @@ export class MistRepository {
     const bytes=await this.files.read(workspaceId,file);await this.authorize(db,prior);return {file,bytes};
   });}
   async reviewReceipt(prior:TokenPayload,workspaceId:string,requestId:string){return this.transact(async db=>{
-    const actor=await this.authorize(db,prior);identifier(requestId,'请求编号');
+    const actor=await this.authorize(db,prior);requestIdentifier(requestId);
     const item=await db.mistCommandReceipt.findUnique({where:{workspaceId_requestId:{workspaceId,requestId}}});
     if(!item||item.actorId!==actor.userId)fail('NOT_FOUND','原审批回执不存在',404);
     return {requestId:item.requestId,...item.result};
   });}
   async decideReview(prior:TokenPayload,workspaceId:string,reviewId:string,input:{requestId:string;expectedRevision:number;decision:'approved'|'rejected';note:string}){
     if(!/^[0-9a-f-]{36}$/i.test(workspaceId))fail('INVALID_INPUT','工作区编号无效',400);
-    identifier(input.requestId,'请求编号');revision(input.expectedRevision);identifier(reviewId,'审批编号');
+    requestIdentifier(input.requestId);revision(input.expectedRevision);identifier(reviewId,'审批编号');
     if(!['approved','rejected'].includes(input.decision)||typeof input.note!=='string'||!input.note.trim()||input.note.length>4000)fail('INVALID_INPUT','请选择审批结论并填写意见',400);
     const hash=createHash('sha256').update(canonical({actorId:prior.userId,reviewId,...input})).digest('hex');
     return this.transact(async db=>{

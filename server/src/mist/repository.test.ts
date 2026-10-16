@@ -5,7 +5,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { MistPrivateFiles, MIST_FILE_MAX_BYTES } from './files';
 import { MistRepository } from './repository';
-import { MemoryMistDatabase, testActor, testAuthority, testContract } from './__tests__/support';
+import { MemoryMistDatabase, requestReceiptCount, testActor, testAuthority, testContract } from './__tests__/support';
 let root: string, db: MemoryMistDatabase, auth: ReturnType<typeof testAuthority>, repo: MistRepository;
 beforeEach(async () => { root = await mkdtemp(path.join(tmpdir(), 'mist-repo-')); db = new MemoryMistDatabase(); auth = testAuthority(); repo = new MistRepository(db, testContract, new MistPrivateFiles(root), auth.authorize); });
 afterEach(async () => { await rm(root, { recursive: true, force: true }); });
@@ -105,7 +105,7 @@ describe('Mist transactional workspace', () => {
   it('serializes two commands from the same revision so only one can change the balance', async () => {
     const a = await repo.create(testActor(), { name: 'One', seed: 'empty' });
     const results = await Promise.allSettled([repo.execute(testActor(), a.id, command('a', 0, 1)), repo.execute(testActor(), a.id, command('b', 0, 2))]);
-    expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1); expect((await repo.get(testActor(), a.id)).revision).toBe(1); expect(db.receipts.size).toBe(2);
+    expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1); expect((await repo.get(testActor(), a.id)).revision).toBe(1); expect(requestReceiptCount(db)).toBe(2);
   });
   it('rolls back both state and receipt if the account loses authorization before commit', async () => {
     const contract = { ...testContract, applyMistCommand: (...args: Parameters<typeof testContract.applyMistCommand>) => {

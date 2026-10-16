@@ -11,7 +11,7 @@ import {MistPrivateFiles} from './files';
 import {buildIssueArchive} from './creditPrint';
 import {createMistRouter} from './route';
 import {MistLocalDatabase} from './local';
-import {MemoryMistDatabase,testActor,testAuthority} from './__tests__/support';
+import {MemoryMistDatabase,requestReceiptCount,testActor,testAuthority} from './__tests__/support';
 import {frozenCreditDocumentFixture,appendFrozenCreditDocumentV2,CREDIT_DOCUMENT_IDS as ids,CREDIT_DOCUMENT_NOW as now} from './__tests__/creditDocumentsFixture';
 
 let directory:string,db:MemoryMistDatabase,auth:ReturnType<typeof testAuthority>,files:MistPrivateFiles,repo:MistRepository,workspaceId:string,app:express.Express;
@@ -34,7 +34,7 @@ beforeEach(async()=>{
 afterEach(async()=>{vi.restoreAllMocks();await rm(directory,{recursive:true,force:true});});
 
 it('atomically archives private bytes, printVersion and receipt; the original request replays without another render',async()=>{
- const original=structuredClone(state()),result=await repo.execute(testActor(),workspaceId,issue()),version=credit().printVersions![0];expect(result.workspace.revision).toBe(1);expect(result.receipt.result).toMatchObject({creditId:ids.credit,versionId:version.id,fileId:version.fileId});expect(credit().printVersions).toHaveLength(1);expect(await names()).toHaveLength(2);expect(db.receipts.size).toBe(2);expect(version).toMatchObject({sourceVersionId:ids.source,sha256:digest(pdfBytes),bytes:pdfBytes.length});expect(await files.read(workspaceId,state().files.find(file=>file.id===version.fileId)!)).toEqual(pdfBytes);expect(original.files).toHaveLength(1);expect(original.platform.credits[0].printVersions).toBeUndefined();
+ const original=structuredClone(state()),result=await repo.execute(testActor(),workspaceId,issue()),version=credit().printVersions![0];expect(result.workspace.revision).toBe(1);expect(result.receipt.result).toMatchObject({creditId:ids.credit,versionId:version.id,fileId:version.fileId});expect(credit().printVersions).toHaveLength(1);expect(await names()).toHaveLength(2);expect(requestReceiptCount(db)).toBe(2);expect(version).toMatchObject({sourceVersionId:ids.source,sha256:digest(pdfBytes),bytes:pdfBytes.length});expect(await files.read(workspaceId,state().files.find(file=>file.id===version.fileId)!)).toEqual(pdfBytes);expect(original.files).toHaveLength(1);expect(original.platform.credits[0].printVersions).toBeUndefined();
  const replay=await repo.execute(testActor(),workspaceId,issue());expect(replay.replayed).toBe(true);expect(replay.receipt).toEqual(result.receipt);expect(renderPdf).toHaveBeenCalledOnce();expect(builder).toHaveBeenCalledOnce();expect(await names()).toHaveLength(2);
  await expect(repo.execute(testActor(),workspaceId,issue('same-source-new-request',1))).rejects.toMatchObject({code:'CREDIT_ALREADY_ISSUED',status:409});expect(renderPdf).toHaveBeenCalledOnce();expect(credit().printVersions).toHaveLength(1);
 });
