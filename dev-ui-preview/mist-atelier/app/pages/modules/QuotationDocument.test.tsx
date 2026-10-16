@@ -44,10 +44,10 @@ describe('BB-QUO-6 生成报价单', () => {
     expect(reasons()).toContain('生成正式报价单：此报价须业务审批，未批准只能生成草稿水印版');
     expect(button('生成草稿水印版')!.disabled).toBe(false);
   });
-  it('未填公司档案时两种都禁用并指向设置', async () => {
+  it('未维护公司资料时两种都禁用并写明需管理员补全', async () => {
     setup({}, false); await mount();
     expect(button('生成正式报价单')!.disabled).toBe(true); expect(button('生成草稿水印版')!.disabled).toBe(true);
-    expect(reasons()).toContain('设置 › 公司档案');
+    expect(reasons()).toContain('工作区尚未维护公司资料（公司抬头），需管理员补全后才能生成报价单');
   });
   it('列出每次生成的文件记录（新在前），可下载与打印', async () => {
     setup({ documents: [record(true, 1), record(false, 2)] });
