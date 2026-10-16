@@ -78,9 +78,21 @@ jobs:
           git -C capacity-source archive --format=tar "$SOURCE_SHA" | gzip -1 > "$RUNNER_TEMP/capacity-source.tar.gz"
           digest=$(sha256sum "$RUNNER_TEMP/capacity-source.tar.gz" | cut -d' ' -f1)
           echo "capacity source sha=$SOURCE_SHA archive-sha256=$digest bytes=$(stat -c%s "$RUNNER_TEMP/capacity-source.tar.gz")"
-          timeout 120 ssh -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
-            -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts" -i "$RUNNER_TEMP/ops_key" \
-            "$DEV_USER@$DEV_HOST" "umask 077; root=/var/tmp/bambook-ci-capacity-$SOURCE_SHA; test ! -e \$root && mkdir -m 700 \$root && mkdir \$root/source && cat > \$root/source.tar.gz && echo '$digest  '\$root/source.tar.gz | sha256sum -c - && echo '$digest' > \$root/source.sha256 && tar -xzf \$root/source.tar.gz -C \$root/source && rm \$root/source.tar.gz" < "$RUNNER_TEMP/capacity-source.tar.gz"
+          ssh_options=(-o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts" -i "$RUNNER_TEMP/ops_key")
+          root="/var/tmp/bambook-ci-capacity-$SOURCE_SHA"
+          meta=$(timeout --kill-after=10 30 ssh "${ssh_options[@]}" "$DEV_USER@$DEV_HOST" "umask 077; mkdir -p '$root/source'; test ! -e '$root/source.sha256'; if test -f '$root/source.tar.gz'; then stat -c%s '$root/source.tar.gz'; sha256sum '$root/source.tar.gz' | cut -d' ' -f1; else echo 0; echo empty; fi")
+          offset=$(head -1 <<<"$meta")
+          remote_prefix=$(tail -1 <<<"$meta")
+          [[ "$offset" =~ ^[0-9]+$ ]]
+          test "$offset" -le "$(stat -c%s "$RUNNER_TEMP/capacity-source.tar.gz")"
+          if [ "$offset" -gt 0 ]; then
+            local_prefix=$(head -c "$offset" "$RUNNER_TEMP/capacity-source.tar.gz" | sha256sum | cut -d' ' -f1)
+            test "$local_prefix" = "$remote_prefix"
+          fi
+          echo "resuming verified archive prefix at byte $offset"
+          tail -c "+$((offset + 1))" "$RUNNER_TEMP/capacity-source.tar.gz" | \
+            timeout --kill-after=10 600 ssh "${ssh_options[@]}" "$DEV_USER@$DEV_HOST" \
+            "umask 077; cat >> '$root/source.tar.gz' && echo '$digest  $root/source.tar.gz' | sha256sum -c - && echo '$digest' > '$root/source.sha256' && tar -xzf '$root/source.tar.gz' -C '$root/source' && rm '$root/source.tar.gz'"
       - name: Run request on development server
         id: run
         run: |
