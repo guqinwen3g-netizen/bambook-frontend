@@ -75,24 +75,59 @@ jobs:
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$(git -C capacity-source rev-parse HEAD)" = "$SOURCE_SHA"
           # Source only: no credentials, node_modules, build output or running application data.
-          git -C capacity-source archive --format=tar "$SOURCE_SHA" | gzip -1 > "$RUNNER_TEMP/capacity-source.tar.gz"
+          python3 - <<'PACK_SOURCE'
+          import gzip,hashlib,io,json,os,pathlib,subprocess,tarfile
+          root=pathlib.Path('capacity-source'); manifest=[]; included=[]; omitted=[]
+          items=subprocess.check_output(['git','-C',str(root),'ls-tree','-rz','HEAD']).split(b'\0')
+          archive=pathlib.Path(os.environ['RUNNER_TEMP'])/'capacity-source.tar.gz'
+          with archive.open('wb') as raw,gzip.GzipFile(fileobj=raw,mode='wb',compresslevel=9,mtime=0) as zipped,tarfile.open(fileobj=zipped,mode='w|') as tar:
+           for row in items:
+            if not row:continue
+            meta,name=row.split(b'\t',1);mode,kind,blob=meta.split();name=name.decode()
+            if kind!=b'blob' or mode not in (b'100644',b'100755'):raise RuntimeError('unsupported source mode: '+name)
+            data=(root/name).read_bytes()
+            if name.startswith('server/'):
+             manifest.append({'path':name,'sha256':hashlib.sha256(data).hexdigest(),'mode':int(mode,8)&0o777});continue
+            if (name.startswith('docs/') and not name.startswith('docs/mist-atelier/')) or name.startswith(('build/','public/data/','public/geo/','public/glyphs/','public/earth_')) or (name.startswith('public/') and name.endswith('.geojson')):
+             omitted.append(name);continue
+            entry=tarfile.TarInfo(name);entry.size=len(data);entry.mode=int(mode,8)&0o777;entry.mtime=0;tar.addfile(entry,io.BytesIO(data));included.append(name)
+           data=json.dumps(manifest).encode();entry=tarfile.TarInfo('capacity-server-source.json');entry.size=len(data);entry.mode=0o600;tar.addfile(entry,io.BytesIO(data))
+          covered=set(included)|{x['path'] for x in manifest}
+          missing=[row.split(b'\t',1)[1].decode() for row in items if row and (b'.test.' in row or b'.spec.' in row) and row.split(b'\t',1)[1].decode() not in covered]
+          if missing:raise RuntimeError('omitted tests: '+repr(missing))
+          print(json.dumps({'archive_bytes':archive.stat().st_size,'transferred_files':len(included),'server_files_verified_from_exact_release':len(manifest),'omitted_assets_or_documentation':len(omitted),'omitted_tests':missing}))
+          PACK_SOURCE
           digest=$(sha256sum "$RUNNER_TEMP/capacity-source.tar.gz" | cut -d' ' -f1)
           echo "capacity source sha=$SOURCE_SHA archive-sha256=$digest bytes=$(stat -c%s "$RUNNER_TEMP/capacity-source.tar.gz")"
-          ssh_options=(-o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts" -i "$RUNNER_TEMP/ops_key")
+          ssh_options=(-T -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 -o IPQoS=throughput -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts" -i "$RUNNER_TEMP/ops_key")
           root="/var/tmp/bambook-ci-capacity-$SOURCE_SHA"
-          meta=$(timeout --kill-after=10 30 ssh "${ssh_options[@]}" "$DEV_USER@$DEV_HOST" "umask 077; mkdir -p '$root/source'; test ! -e '$root/source.sha256'; if test -f '$root/source.tar.gz'; then stat -c%s '$root/source.tar.gz'; sha256sum '$root/source.tar.gz' | cut -d' ' -f1; else echo 0; echo empty; fi")
-          offset=$(head -1 <<<"$meta")
-          remote_prefix=$(tail -1 <<<"$meta")
+          begin=$(date +%s)
+          head -c 65536 "$RUNNER_TEMP/capacity-source.tar.gz" | timeout --kill-after=10 30 ssh "${ssh_options[@]}" "$DEV_USER@$DEV_HOST" "set -e; umask 077; mkdir -p '$root/source'; cat > '$root/transport-probe.bin'; stat -c 'probe_bytes=%s' '$root/transport-probe.bin'"
+          echo "64KiB probe seconds including SSH connection=$(( $(date +%s)-begin ))"
+          meta=$(timeout --kill-after=10 30 ssh "${ssh_options[@]}" "$DEV_USER@$DEV_HOST" "set -e; test ! -e '$root/source.sha256'; if test -f '$root/required-source.tar.gz'; then stat -c%s '$root/required-source.tar.gz'; sha256sum '$root/required-source.tar.gz' | cut -d' ' -f1; else echo 0; echo empty; fi")
+          offset=$(head -1 <<<"$meta"); remote_prefix=$(tail -1 <<<"$meta")
           [[ "$offset" =~ ^[0-9]+$ ]]
           test "$offset" -le "$(stat -c%s "$RUNNER_TEMP/capacity-source.tar.gz")"
           if [ "$offset" -gt 0 ]; then
-            local_prefix=$(head -c "$offset" "$RUNNER_TEMP/capacity-source.tar.gz" | sha256sum | cut -d' ' -f1)
-            test "$local_prefix" = "$remote_prefix"
+            test "$(head -c "$offset" "$RUNNER_TEMP/capacity-source.tar.gz" | sha256sum | cut -d' ' -f1)" = "$remote_prefix"
           fi
-          echo "resuming verified archive prefix at byte $offset"
+          echo "resuming verified required-source prefix at byte $offset"
           tail -c "+$((offset + 1))" "$RUNNER_TEMP/capacity-source.tar.gz" | \
             timeout --kill-after=10 600 ssh "${ssh_options[@]}" "$DEV_USER@$DEV_HOST" \
-            "umask 077; cat >> '$root/source.tar.gz' && echo '$digest  $root/source.tar.gz' | sha256sum -c - && echo '$digest' > '$root/source.sha256' && tar -xzf '$root/source.tar.gz' -C '$root/source' && rm '$root/source.tar.gz'"
+            "set -e; umask 077; cat >> '$root/required-source.tar.gz'; echo '$digest  $root/required-source.tar.gz' | sha256sum -c -; echo '$digest' > '$root/source.sha256'; tar -xzf '$root/required-source.tar.gz' -C '$root/source'; rm '$root/required-source.tar.gz'"
+          timeout --kill-after=10 60 ssh "${ssh_options[@]}" "$DEV_USER@$DEV_HOST" "python3 - '$SOURCE_SHA'" <<'COPY_SOURCE'
+          import hashlib,json,pathlib,shutil,sys
+          sha=sys.argv[1];root=pathlib.Path('/var/tmp/bambook-ci-capacity-'+sha);source=root/'source';release=pathlib.Path('/srv/bambook-dev/releases')/sha
+          manifest=json.loads((source/'capacity-server-source.json').read_text())
+          for item in manifest:
+           relative=pathlib.PurePosixPath(item['path'])
+           if not str(relative).startswith('server/') or '..' in relative.parts:raise RuntimeError('invalid source path')
+           origin=release/relative
+           if origin.is_symlink() or hashlib.sha256(origin.read_bytes()).hexdigest()!=item['sha256']:raise RuntimeError('fixed release source mismatch: '+str(relative))
+           target=source/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(origin,target);target.chmod(item['mode'])
+          (source/'capacity-server-source.json').unlink()
+          print('verified and copied exact-release controlled server files: '+str(len(manifest)))
+          COPY_SOURCE
       - name: Run request on development server
         id: run
         run: |
