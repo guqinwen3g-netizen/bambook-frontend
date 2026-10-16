@@ -55,3 +55,18 @@ describe('BB-DEV-2 round card and new-round dialog',()=>{
     expect(newRoundError({factories:['A厂'],requirements:'x',fileIds:[],referenceVersionIds:[],targetDate:''})).toContain('目标日期');
   });
 });
+
+describe('acceptance review #59 on the page',()=>{
+  it('rejects duplicate factories in the form with a reason',()=>{
+    expect(newRoundError({factories:['A厂','A厂'],requirements:'x',fileIds:[],referenceVersionIds:[],targetDate:'2026-11-01'})).toBe('同一轮内工厂不能重复：A厂');
+  });
+  it('disables 开新一轮 with the reason once the case is cancelled through the page',async()=>{
+    expect(button('开新一轮')!.disabled).toBe(false);
+    await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('button')].find(item=>item.getAttribute('aria-label')==='更多')!.click());
+    await click('取消开发案');expect(button('确认取消')!.disabled).toBe(true);await fill('原因','客户撤单');await click('确认取消');
+    expect(state.devs[0].closure).toMatchObject({kind:'cancelled',reason:'客户撤单'});
+    await act(async()=>{bridge.current={...bridge.current,state};render();});
+    const create=[...document.querySelectorAll<HTMLButtonElement>('#mist-dev-rounds button')].find(item=>item.textContent?.trim()==='开新一轮')!;
+    expect(create.disabled).toBe(true);expect(document.querySelector('#mist-dev-rounds')!.textContent).toContain('开发案已取消，不能再开新一轮');
+  });
+});

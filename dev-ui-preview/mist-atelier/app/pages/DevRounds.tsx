@@ -3,7 +3,7 @@ import React from 'react';
 import { FileText, Layers, Plus } from 'lucide-react';
 import { Banner, Button, Card, CardHeader, Checkbox, Dialog, Field, FormGrid, Mono, Pill, TextArea, TextInput, UploadZone } from '../../../../components/mist';
 import type { MistDev, MistState, MistVersion } from '../../../../server/src/shared/mistWorkspace';
-import { caseFactoryLetters, developmentRoundViews, factoryLetterAt, nextRoundNumber, roundVersionLabel } from '../../../../server/src/shared/mistDevelopmentRounds';
+import { caseFactoryLetters, developmentRoundBlocker, duplicateRoundFactories, developmentRoundViews, factoryLetterAt, nextRoundNumber, roundVersionLabel } from '../../../../server/src/shared/mistDevelopmentRounds';
 
 export type NewRoundInput = { factories: string[]; requirements: string; fileIds: string[]; referenceVersionIds: string[]; targetDate: string; resampleFromVersionId?: string };
 
@@ -28,6 +28,8 @@ export function previewRoundLabels(state: MistState, dev: MistDev, factories: st
 }
 export function newRoundError(input: NewRoundInput): string | null {
   if (!input.factories.length) return '请至少选择一家参与工厂';
+  const duplicated = duplicateRoundFactories(input.factories);
+  if (duplicated.length) return `同一轮内工厂不能重复：${duplicated.join('、')}`;
   if (!input.requirements.trim()) return '请填写本轮共同要求';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.targetDate)) return '请填写本轮目标日期';
   return null;
@@ -37,7 +39,7 @@ export function DevRoundsCard({ state, dev, versionId, busy, onSelect, onCreate 
   const views = developmentRoundViews(state, dev), letters = caseFactoryLetters(state, dev);
   const label = (id: string) => state.versions.find(version => version.id === id)?.label || '已不可见版本';
   return <Card id="mist-dev-rounds">
-    <CardHeader title="开发轮次" sub={Object.keys(letters).length ? `工厂字母固定：${Object.entries(letters).map(([factory, letter]) => `${letter} ${factory}`).join(' · ')}` : '尚无参与工厂'} tools={<Button size="sm" icon={Plus} disabled={busy} onClick={onCreate}>开新一轮</Button>} />
+    <CardHeader title="开发轮次" sub={Object.keys(letters).length ? `工厂字母固定：${Object.entries(letters).map(([factory, letter]) => `${letter} ${factory}`).join(' · ')}` : '尚无参与工厂'} tools={(blocker => <><Button size="sm" icon={Plus} disabled={busy || !!blocker} title={blocker || undefined} onClick={onCreate}>开新一轮</Button>{blocker && <span className="mist-note">{blocker}</span>}</>)(developmentRoundBlocker(state, dev))} />
     {views.length ? views.map(view => <div key={view.number} className="mist-section" style={{ padding: '10px 22px' }} data-round={view.number}>
       <div className="mist-row"><Pill tone={view.round ? 'accent' : 'neutral'}>{view.number ? `R${view.number}` : '未编号'}</Pill>
         <span className="mist-muted" style={{ fontSize: 12.5 }}>{view.round ? `目标 ${view.round.targetDate}${view.round.referenceVersionIds.length ? ` · 参考 ${view.round.referenceVersionIds.map(label).join('、')}` : ''}${view.round.fileIds.length ? ` · 附件 ${view.round.fileIds.length}` : ''}` : '历史记录 · 按原版本号只读展示'}</span></div>
@@ -56,7 +58,7 @@ export function NewRoundDialog({ open, state, dev, busy, failure, factoryOptions
   React.useEffect(() => { if (open) setForm({ factories: [], requirements: '', fileIds: [], referenceVersionIds: [], targetDate: dev.due || '', ...initial }); }, [open, dev.id]);
   const source = form.resampleFromVersionId ? state.versions.find(version => version.id === form.resampleFromVersionId) : undefined;
   const toggle = (key: 'factories' | 'referenceVersionIds', value: string, checked: boolean) => setForm(previous => ({ ...previous, [key]: checked ? [...previous[key], value] : previous[key].filter(item => item !== value) }));
-  const error = newRoundError(form), preview = previewRoundLabels(state, dev, form.factories);
+  const error = developmentRoundBlocker(state, dev) || newRoundError(form), preview = previewRoundLabels(state, dev, form.factories);
   return <Dialog open={open} onClose={() => !busy && onClose()} width={720} icon={Layers} title={`开启第 ${nextRoundNumber(state, dev)} 轮`} description="每家参与工厂在本轮形成一个版本；之前各轮记录保持不变。" footer={<>
     <Button variant="quiet" disabled={busy} onClick={onClose}>取消</Button>
     <Button variant="primary" loading={busy} disabled={!!error} onClick={() => onSubmit(form)}>{error ? error : `建立 ${preview.join('、')}`}</Button></>}>

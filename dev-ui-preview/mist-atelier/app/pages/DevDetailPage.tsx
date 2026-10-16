@@ -9,6 +9,7 @@ import { IMG, STAGES } from '../data';
 import { useMistWorkspace } from '../runtime/workspace';
 import { useNav } from '../nav';
 import { developmentFactoryOptions, InlineDevelopmentFactoryDialog } from './DevCreatePage';
+import { developmentRoundBlocker } from '../../../../server/src/shared/mistDevelopmentRounds';
 import { DevRoundsCard, NewRoundDialog, versionQcFlag, type NewRoundInput } from './DevRounds';
 
 export function localConfirmationTime(date=new Date()){return Number.isNaN(date.getTime())?'':new Date(date.getTime()-date.getTimezoneOffset()*60_000).toISOString().slice(0,16);}
@@ -46,8 +47,8 @@ export function DevDetailPage(){
   const {go,route}=useNav();const {state,loading,error,run,uploadFile,downloadFile,fileUrl,pending,recover,saving}=useMistWorkspace();const toast=useToast();
   const dev=state?.devs.find(item=>item.id===route.id),versions=state?.versions.filter(version=>version.devId===dev?.id)||[];
   const fabricDomain=!!dev&&developmentDomain(dev.values)==='fabric';
-  const [versionId,setVersionId]=React.useState(route.versionId||''),[form,setForm]=React.useState<Form>(()=>emptyForm()),[dialog,setDialog]=React.useState<'confirm'|'actions'|'revise'|'archive'|'sample'|'qc'|'edit'|'round'|'qcDecide'|null>(null),[busy,setBusy]=React.useState(false),[failure,setFailure]=React.useState('');
-  const [note,setNote]=React.useState(''),[sample,setSample]=React.useState({sample:'',quantity:'1',form:'',unit:'',location:'',color:'',returnedAt:localConfirmationTime()}),[qc,setQc]=React.useState<QcForm>(()=>qcForm(null)),[edit,setEdit]=React.useState({goal:'',due:'',factories:''}),[factoryDialog,setFactoryDialog]=React.useState(false),[roundInitial,setRoundInitial]=React.useState<Partial<NewRoundInput>|undefined>(),[decision,setDecision]=React.useState<{kind:'rework'|'abandon';note:string}>({kind:'rework',note:''});
+  const [versionId,setVersionId]=React.useState(route.versionId||''),[form,setForm]=React.useState<Form>(()=>emptyForm()),[dialog,setDialog]=React.useState<'confirm'|'actions'|'revise'|'archive'|'sample'|'qc'|'edit'|'round'|'qcDecide'|'close'|null>(null),[busy,setBusy]=React.useState(false),[failure,setFailure]=React.useState('');
+  const [note,setNote]=React.useState(''),[sample,setSample]=React.useState({sample:'',quantity:'1',form:'',unit:'',location:'',color:'',returnedAt:localConfirmationTime()}),[qc,setQc]=React.useState<QcForm>(()=>qcForm(null)),[edit,setEdit]=React.useState({goal:'',due:'',factories:''}),[factoryDialog,setFactoryDialog]=React.useState(false),[roundInitial,setRoundInitial]=React.useState<Partial<NewRoundInput>|undefined>(),[decision,setDecision]=React.useState<{kind:'rework'|'abandon';note:string}>({kind:'rework',note:''}),[closure,setClosure]=React.useState<{kind:'archived'|'cancelled';reason:string}>({kind:'cancelled',reason:''});
   const version=versions.find(item=>item.id===(versionId||dev?.currentVersionId)),scope=React.useRef('');scope.current=`${dev?.id||''}:${version?.id||''}`;
   const fabricRequirements=version?.fabricRequirements||dev?.values.fabricRequirements;
   const reportUploadScope=React.useRef<string|null>(null);
@@ -57,8 +58,8 @@ export function DevDetailPage(){
   const set=<K extends keyof Form>(key:K,value:Form[K])=>setForm(previous=>({...previous,[key]:value}));
   const chooseVersion=(id:string)=>{if(busy||!dev)return;setVersionId(id);setDialog(null);go('development/detail',dev.id,{versionId:id,...(route.customerId?{customerId:route.customerId}:{})});};
   const finish=(message:string)=>{setDialog(null);setFailure('');toast(message);};
-  const act=async(kind:'confirm'|'draft'|'revise'|'archive'|'sample'|'qc'|'edit'|'qcDecide')=>{
-    if(!dev||busyRef.current||(!version&&kind!=='edit'))return;const originalScope=scope.current;busyRef.current=true;setBusy(true);setFailure('');
+  const act=async(kind:'confirm'|'draft'|'revise'|'archive'|'sample'|'qc'|'edit'|'qcDecide'|'close')=>{
+    if(!dev||busyRef.current||(!version&&kind!=='edit'&&kind!=='close'))return;const originalScope=scope.current;busyRef.current=true;setBusy(true);setFailure('');
     try{
       if(kind==='draft'){await run({type:'development.saveConfirmationDraft',payload:{devId:dev.id,versionId:version!.id,draft:{...form,confirmedAt:form.confirmedAt&&!Number.isNaN(new Date(form.confirmedAt).getTime())?new Date(form.confirmedAt).toISOString():''}}});}
       else if(kind==='confirm'){
@@ -76,11 +77,14 @@ export function DevDetailPage(){
         if(!qc.reviewer.trim()||!qc.report.trim()||Number.isNaN(new Date(qc.reviewedAt).getTime()))throw Error('请填写评审人、报告和有效评审时间');
         const facts=fabricDomain?{measurements:[],fabricMeasurements:fabricQcFacts(qc.fabricMeasurements)}:qcMeasurementFacts(qc);
         await run({type:'development.recordQc',payload:{devId:dev.id,versionId:version!.id,...(fabricDomain?{domain:'fabric' as const}:{}),qc:{result:qc.result,reviewer:qc.reviewer,report:qc.report,opinion:qc.opinion,reviewedAt:new Date(qc.reviewedAt).toISOString(),...facts}}});
+      }else if(kind==='close'){
+        if(!closure.reason.trim())throw Error('请填写原因');
+        await run({type:'development.close',payload:{devId:dev.id,kind:closure.kind,reason:closure.reason}});
       }else if(kind==='qcDecide'){
         if(decision.kind==='abandon'&&!decision.note.trim())throw Error('请填写放弃原因');
         await run({type:'development.qc.decide',payload:{devId:dev.id,versionId:version!.id,decision:decision.kind,note:decision.note}});
       }else await run({type:'development.update',payload:{devId:dev.id,patch:{goal:edit.goal,due:edit.due,factories:edit.factories.split(/[、,，\n]/).map(value=>value.trim()).filter(Boolean)}}});
-      if(live.current&&(kind==='revise'||scope.current===originalScope))finish(({draft:'本版确认草稿已保存',confirm:'已保存本版需求方确认',revise:'新版本已建立，原版记录已保留',archive:'已保存本版成果留档',sample:'已保存本版返样实物',qc:'已保存本版 QC 报告',edit:'开发计划已更新',qcDecide:decision.kind==='rework'?'已转为整改复检，原 QC 记录已保留':'本版已标记不采用，其他版本不受影响'})[kind]);
+      if(live.current&&(kind==='revise'||scope.current===originalScope))finish(({draft:'本版确认草稿已保存',confirm:'已保存本版需求方确认',revise:'新版本已建立，原版记录已保留',archive:'已保存本版成果留档',sample:'已保存本版返样实物',qc:'已保存本版 QC 报告',edit:'开发计划已更新',close:closure.kind==='cancelled'?'开发案已取消':'开发案已归档',qcDecide:decision.kind==='rework'?'已转为整改复检，原 QC 记录已保留':'本版已标记不采用，其他版本不受影响'})[kind]);
     }catch(cause){if(live.current&&scope.current===originalScope)setFailure(cause instanceof Error?cause.message:'操作失败，原内容已保留');}finally{busyRef.current=false;if(live.current)setBusy(false);}
   };
   const uploadReport=async(files:File[])=>{if(busyRef.current||pending)return;if(files.length!==1){setFailure('每次请选择一份 QC 报告');return;}const originalScope=scope.current;reportUploadScope.current=originalScope;busyRef.current=true;setBusy(true);try{const file=await uploadFile(files[0]);if(live.current&&scope.current===originalScope)setQc(previous=>({...previous,report:file.id}));reportUploadScope.current=null;}catch(cause){if(live.current&&scope.current===originalScope)setFailure(String(cause));}finally{busyRef.current=false;if(live.current)setBusy(false);}};
@@ -130,11 +134,12 @@ export function DevDetailPage(){
   const measurements=version?.qc?.measurements||[],measureStats=measurements.reduce((counts,row)=>{const difference=Math.abs(row.actual-row.standard),epsilon=row.tolerance===0?0:Number.EPSILON*Math.max(1,row.actual,row.standard,row.tolerance)*4;return{within:counts.within+(difference<=row.tolerance+epsilon?1:0),attention:counts.attention+(difference>row.tolerance*.5+epsilon?1:0)};},{within:0,attention:0});
   const qcFailed=version?.qc?.result==='reject'&&!version.qcDecision,qcAllowsConfirm=!!version?.qc&&version.qc.result!=='reject'&&!version.qcDecision;
   const resampleRound=version?.qcDecision?.roundId?state?.rounds?.find(round=>round.id===version.qcDecision!.roundId):undefined;
+  const roundBlocker=developmentRoundBlocker(state!,dev);
   const openResample=()=>{if(!version?.qc)return;setFailure('');setRoundInitial({factories:[version.factory],referenceVersionIds:[version.id],requirements:`QC 意见（${version.label}）：${version.qc.opinion||'见 QC 报告'}`,targetDate:dev.due||'',fileIds:[],resampleFromVersionId:version.id});setDialog('round');};
   const openDecision=(kind:'rework'|'abandon')=>{setDecision({kind,note:''});setFailure('');setDialog('qcDecide');};
   const qcGate=!version?null:version.qcDecision?.kind==='abandon'?<Banner tone="bad" title="本版已放弃 · 不采用">{version.qcDecision.note||'未填写原因'}；其他版本不受影响。</Banner>
     :version.qcDecision?.kind==='resample'?<Banner tone="neutral" title="本版 QC 不通过 · 已重新打样">{resampleRound?`已开第 ${resampleRound.number} 轮，请在新版本上记录 QC 与确认。`:'已开新一轮。'}</Banner>
-    :qcFailed?<><Banner tone="bad" title="QC 不通过 · 不能记录确认">{version.qc!.opinion||'请查看 QC 报告'}</Banner><div className="mist-row" role="group" aria-label="QC 不通过处理" style={{flexWrap:'wrap',gap:8,marginTop:10}}>{!fabricDomain&&<Button size="sm" disabled={busy} onClick={()=>openDecision('rework')}>整改复检</Button>}<Button size="sm" disabled={busy} onClick={openResample}>重新打样</Button><Button size="sm" variant="quiet" disabled={busy} onClick={()=>openDecision('abandon')}>放弃本版</Button></div></>
+    :qcFailed?<><Banner tone="bad" title="QC 不通过 · 不能记录确认">{version.qc!.opinion||'请查看 QC 报告'}</Banner><div className="mist-row" role="group" aria-label="QC 不通过处理" style={{flexWrap:'wrap',gap:8,marginTop:10}}>{!fabricDomain&&<Button size="sm" disabled={busy} onClick={()=>openDecision('rework')}>整改复检</Button>}<Button size="sm" disabled={busy||!!roundBlocker} title={roundBlocker||undefined} onClick={openResample}>重新打样</Button><Button size="sm" variant="quiet" disabled={busy} onClick={()=>openDecision('abandon')}>放弃本版</Button>{roundBlocker&&<span className="mist-note">{roundBlocker}</span>}</div></>
     :version.qc?.result==='conditional'?<Banner tone="warn" title="需关注 · QC 有保留通过">{version.qc.opinion||'请查看 QC 报告'}</Banner>
     :!version.qc?<Banner tone="neutral" title={version.qcHistory?.length?'整改中 · 待复检':'QC 待评审'}>QC 通过或有保留通过后才能记录需求方确认。</Banner>:null;
   const qcReviewedAt=version?.qc?localConfirmationTime(new Date(version.qc.reviewedAt)):'';
@@ -189,7 +194,11 @@ export function DevDetailPage(){
       </div>
     </div>
     <Dialog open={dialog==='confirm'} onClose={()=>!busy&&setDialog(null)} icon={form.result==='rejected'?X:CircleCheck} tone={form.result==='rejected'?'bad':form.result==='needs_adjustment'?'warn':'ok'} title={`记录 ${version?.label||''}：${resultLabel[form.result]}？`} description="本次决定只记录在当前准确版本；原有报告和历史记录继续保留。" footer={<>{recovery}<Button variant="quiet" disabled={busy} onClick={()=>setDialog(null)}>取消</Button><Button variant={form.result==='rejected'?'danger':'primary'} loading={busy} onClick={()=>void act('confirm')}>确认提交</Button></>}><KeyValue items={[{label:'实际确认人',value:form.confirmer},{label:'组织',value:form.organization},{label:'确认依据',value:form.basis}]} /></Dialog>
-    <Dialog open={dialog==='actions'} onClose={()=>setDialog(null)} title="开发版本操作"><div className="mist-col"><Button disabled={!version} onClick={()=>{setNote('');setDialog('revise');}}>基于本版发起修改</Button><Button disabled={!version||!!version.archivedAt} onClick={()=>setDialog('archive')}>成果留档</Button><Button onClick={()=>{setFailure('');setDialog('round');}}>开新一轮</Button><Button onClick={openEdit}>编辑开发计划</Button></div></Dialog>
+    <Dialog open={dialog==='actions'} onClose={()=>setDialog(null)} title="开发版本操作"><div className="mist-col"><Button disabled={!version||!!roundBlocker} title={roundBlocker||undefined} onClick={()=>{setNote('');setDialog('revise');}}>基于本版发起修改</Button><Button disabled={!version||!!version.archivedAt} onClick={()=>setDialog('archive')}>成果留档</Button><Button disabled={!!roundBlocker} title={roundBlocker||undefined} onClick={()=>{setFailure('');setDialog('round');}}>开新一轮</Button><Button onClick={openEdit}>编辑开发计划</Button>{roundBlocker&&<p className="mist-note">{roundBlocker}</p>}{!dev.closure&&<><Button variant="quiet" onClick={()=>{setClosure({kind:'cancelled',reason:''});setFailure('');setDialog('close');}}>取消开发案</Button><Button variant="quiet" onClick={()=>{setClosure({kind:'archived',reason:''});setFailure('');setDialog('close');}}>归档开发案</Button></>}</div></Dialog>
+    <Dialog open={dialog==='close'} onClose={()=>!busy&&setDialog(null)} icon={X} tone="warn" title={closure.kind==='cancelled'?'取消开发案':'归档开发案'} description="结束后不能再开新一轮、改版或重新打样；已有版本记录保留。" footer={<><Button variant="quiet" disabled={busy} onClick={()=>setDialog(null)}>返回</Button><Button variant="primary" loading={busy} disabled={!closure.reason.trim()} onClick={()=>void act('close')}>{closure.kind==='cancelled'?'确认取消':'确认归档'}</Button></>}>
+      {failure&&<Banner tone="bad" title="尚未保存">{failure}</Banner>}
+      <Field label="原因" required full><TextArea value={closure.reason} onChange={event=>setClosure(previous=>({...previous,reason:event.target.value}))} /></Field>
+    </Dialog>
     <Dialog open={dialog==='qcDecide'} onClose={()=>!busy&&setDialog(null)} icon={decision.kind==='rework'?Pencil:X} tone={decision.kind==='rework'?'warn':'bad'} title={decision.kind==='rework'?`整改复检 ${version?.label||''}`:`放弃 ${version?.label||''}`} description={decision.kind==='rework'?'工厂在同一版本上整改，再提交 QC；本次不通过记录会保留。':'本版标记为不采用，其他版本不受影响。'} footer={<><Button variant="quiet" disabled={busy} onClick={()=>setDialog(null)}>取消</Button><Button variant="primary" loading={busy} disabled={decision.kind==='abandon'&&!decision.note.trim()} onClick={()=>void act('qcDecide')}>{decision.kind==='rework'?'确认整改复检':'确认放弃本版'}</Button></>}>
       {failure&&<Banner tone="bad" title="尚未保存">{failure}</Banner>}
       <Field label={decision.kind==='rework'?'整改要求':'放弃原因'} required={decision.kind==='abandon'} full><TextArea value={decision.note} onChange={event=>setDecision(previous=>({...previous,note:event.target.value}))} placeholder={decision.kind==='rework'?'例如：袖长按 QC 意见改短 1cm':'例如：工厂工艺无法达到要求'} /></Field>

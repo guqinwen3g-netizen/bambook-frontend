@@ -4,6 +4,7 @@
  * 工厂字母在本案首次参与时分配，之后固定不变；历史版本号（如 R1-A-1）按原样保留、只读。
  */
 import type { MistDev, MistRound, MistState, MistVersion } from './mistWorkspace';
+import { developmentCharged } from './mistDevelopmentDomain';
 
 /** 第 n 个字母（0 → A，25 → Z，26 → AA）。 */
 export function factoryLetterAt(index: number): string {
@@ -71,4 +72,24 @@ export function developmentRoundViews(state: MistState, dev: MistDev): Developme
     views.get(number)!.versions.push(version);
   }
   return [...views.values()].sort((a, b) => a.number - b.number);
+}
+
+/** 开发案级结束状态：手工取消 / 归档，或不收费开发案任一版本获需求方认可即结案（收费开发案的最终结案以财务销账为准）。 */
+export function developmentClosure(state: MistState, dev: MistDev): { kind: 'closed' | 'archived' | 'cancelled'; label: string } | null {
+  if (dev.closure?.kind === 'cancelled') return { kind: 'cancelled', label: '已取消' };
+  if (dev.closure?.kind === 'archived') return { kind: 'archived', label: '已归档' };
+  if (dev.closure?.kind === 'closed') return { kind: 'closed', label: '已结案' };
+  if (!developmentCharged(dev.values) && state.versions.some(version => version.devId === dev.id && version.confirmations.at(-1)?.result === 'approved')) return { kind: 'closed', label: '已结案' };
+  return null;
+}
+/** 开新一轮（含改版、重新打样）的阻断原因；可以开时返回 null。 */
+export function developmentRoundBlocker(state: MistState, dev: MistDev): string | null {
+  const closure = developmentClosure(state, dev);
+  return closure ? `开发案${closure.label}，不能再开新一轮` : null;
+}
+/** 同一轮内工厂重复（去空格后比较）时返回重复的工厂名。 */
+export function duplicateRoundFactories(factories: unknown[]): string[] {
+  const seen = new Set<string>(), duplicated = new Set<string>();
+  for (const item of factories) { const name = typeof item === 'string' ? item.trim() : ''; if (!name) continue; if (seen.has(name)) duplicated.add(name); seen.add(name); }
+  return [...duplicated];
 }
