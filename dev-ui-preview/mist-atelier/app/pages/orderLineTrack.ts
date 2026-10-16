@@ -1,9 +1,13 @@
-/** 订单条目阶段轨迹：只由已登记事实推导，不写入任何状态。 */
+/** 订单条目阶段轨迹：只由已登记事实推导，不写入任何状态。
+ * 成衣：产前样 → 面辅料 → 开裁 → 生产检验 → 完工登记 → 出运（6 步）。
+ * 面料：坯布 / 染整 → 色样确认 → 生产检验 → 完工 → 出运（5 步，没有开裁；"生产中"由生产分支开立 / 未完成推导，不读取看板 cut 列）。 */
 import type { MistOrder, MistOrderLine, MistState } from '../../../../server/src/shared/mistWorkspace';
 import type { StepState } from '../../../../components/mist';
 
 export type LineStageKey = 'pp' | 'material' | 'cut' | 'inspection' | 'completion' | 'shipment';
 export type LineStage = { key: LineStageKey; label: string; state: StepState; caption?: string; reason?: string; target?: { view: string; id?: string } };
+export const LINE_TRACK_LABEL = { garment: '成衣：产前样 → 面辅料 → 开裁 → 生产检验 → 完工登记 → 出运', fabric: '面料：坯布 / 染整 → 色样确认 → 生产检验 → 完工 → 出运' } as const;
+export const lineTrackLabel = (order: Pick<MistOrder, 'type'>) => order.type === 'fabric' ? LINE_TRACK_LABEL.fabric : LINE_TRACK_LABEL.garment;
 export type LineShipping = { ordered: number; planned: number; departed: number; variance: number; variancePercent: number | null; shipments: Array<{ id: string; code: string; quantity: number; state: string; plannedDate: string }> };
 
 const num = (value: number) => Number.isInteger(value) ? String(value) : String(Number(value.toFixed(4)));
@@ -52,7 +56,14 @@ export function lineStages(state: MistState, order: MistOrder, line: MistOrderLi
   const qcTasks = (f?.qcTasks || []).filter(task => task.kind === 'production' && task.source.kind === 'orderLine' && task.source.lineId === line.id);
   const inspection: LineStage = (() => {
     const base = { key: 'inspection' as const, label: '生产检验' };
-    if (!qcTasks.length) return { ...base, state: 'todo', caption: '未发起检验' };
+    if (!qcTasks.length) {
+      if (!fabric) return { ...base, state: 'todo', caption: '未发起检验' };
+      // 面料没有开裁步：生产分支已开立且未完工即"生产中"，与看板列无关
+      const running = jobs.filter(job => job.col !== 'done');
+      if (!jobs.length) return { ...base, state: 'todo', caption: '未开立生产' };
+      if (running.length) return { ...base, state: 'now', caption: `生产中 · ${running.length} 个分支 · 未发起检验`, target: { view: 'production-board', id: running[0].id } };
+      return { ...base, state: 'now', caption: '生产已完成 · 未发起检验', target: { view: 'production-board', id: jobs[0].id } };
+    }
     const nok = qcTasks.find(task => reportOf(task)?.result === 'reject' && !task.businessContinued);
     if (nok) return { ...base, state: 'blocked', caption: 'QC NOK', reason: `${nok.code} 结论 NOK，需要暂停、复验后由 QC 恢复。`, target: { view: 'qc-workbench', id: nok.id } };
     const passed = qcTasks.filter(task => { const result = reportOf(task)?.result; return result === 'pass' || result === 'conditional' || !!task.businessContinued; });
@@ -67,7 +78,7 @@ export function lineStages(state: MistState, order: MistOrder, line: MistOrderLi
   const ship = lineShipping(state, line);
   const shipment: LineStage = !ship.planned ? { key: 'shipment', label: '出运', state: 'todo', caption: '未排出运' }
     : { key: 'shipment', label: '出运', state: ship.departed >= line.qty ? 'done' : 'now', caption: `已离港 ${num(ship.departed)} / ${num(line.qty)} ${unit}`, target: { view: 'shipments', id: ship.shipments[0].id } };
-  return [pp, material, cut, inspection, completion, shipment];
+  return fabric ? [material, pp, inspection, completion, shipment] : [pp, material, cut, inspection, completion, shipment];
 }
 
 /** 条目当前阶段：先报受阻，再报第一个未完成的阶段。 */
