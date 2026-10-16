@@ -30,7 +30,7 @@ def worker():
     phases = [
         ('install-frontend', ['npm','ci','--no-audit','--no-fund'], 240),
         ('install-server', ['npm','ci','--prefix','server','--no-audit','--no-fund'], 240),
-        ('prisma-generate', ['npm','--prefix','server','exec','--','prisma','generate'], 90),
+        ('prisma-generate', ['npm','--prefix','server','exec','--','prisma','generate','--schema=server/prisma/schema.prisma'], 90),
         ('typecheck-frontend', ['npm','run','typecheck:mist'], 180),
         ('typecheck-server', ['npm','run','typecheck:mist:server'], 180),
         ('test-frontend', ['npm','test','--','--maxWorkers=1','--no-file-parallelism'], 240),
