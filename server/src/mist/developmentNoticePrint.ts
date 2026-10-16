@@ -12,7 +12,10 @@ const fail = (message: string): never => { throw new MistCommandError('DEVELOPME
 const contentOf = (s: DevNoticeSnapshot) => { const { noticeNo: _n, seq: _s, templateVersion: _t, generatedAt: _a, generatedBy: _b, generatedById: _c, ...content } = s; return content; };
 
 export async function buildDevelopmentNotice(snapshot: DevNoticeSnapshot, options: { renderPdf?: (html: string) => Promise<PdfRenderResult> } = {}): Promise<PreparedDevelopmentNotice> {
-  const result = await (options.renderPdf || ((html: string) => renderHtmlToPdf(html, { format: 'A4' })))(renderDevelopmentNoticeHtml(snapshot));
+  const html = renderDevelopmentNoticeHtml(snapshot), render = options.renderPdf || ((value: string) => renderHtmlToPdf(value, { format: 'A4' }));
+  let result: PdfRenderResult;
+  // 渲染失败发生在文件写入和落库之前，明确拒绝以便前端结束本次请求。
+  try { result = await render(html); } catch (error) { console.error('[mist] development notice PDF render failed:', error instanceof Error ? error.message : error); throw new MistCommandError('DEVELOPMENT_NOTICE_PDF_UNAVAILABLE', '通知单 PDF 渲染服务暂不可用，本次未生成文件，请稍后重试或联系管理员', 422); }
   const bytes = Buffer.from(result.pdf);
   if (bytes.length < 10 || bytes.subarray(0, 5).toString() !== '%PDF-' || !bytes.subarray(Math.max(0, bytes.length - 1024)).toString('ascii').includes('%%EOF')) return fail('PDF渲染未返回有效通知单');
   const sha = createHash('sha256').update(bytes).digest('hex');
