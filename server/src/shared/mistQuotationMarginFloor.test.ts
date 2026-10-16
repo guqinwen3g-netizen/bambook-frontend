@@ -122,4 +122,40 @@ describe('BB-QUO-3 最低毛利率底价线',()=>{
   expect(lineBelowMarginFloor({price:'100.00',cost:'85.00',marginFloor:f})).toBe(false);expect(lineBelowMarginFloor({price:'100.00',cost:'85.01',marginFloor:f})).toBe(true);
   expect(quoteLineMarginPercent('3.00','2.00')).toBe('33.33');expect(quoteLineMarginPercent('1.00','1.20')).toBe('-20.00');expect(quoteLineMarginPercent('1.00','')).toBeNull();
  });
+ it('changing the product category after saving does not let an edit inherit the old family’s “no floor”: the line uses the new family’s current floor, same as a new quote',()=>{
+  // 独立复验反例：成衣产品无底线保存 → 设面料 20% → 产品改面料/米 → 编辑原报价按米保存。
+  const {ctx,s}=setup();const p=run(s,{type:'market.product.save',payload:{input:garment}},ctx).id!;
+  const id=run(s,{type:'market.quotation.save',payload:{input:quote(p)}},ctx).id!;const q=()=>s.market.quotations.find(x=>x.id===id)!;
+  expect(q().lines[0].family).toBe('garment');expect(q().lines[0].marginFloor).toBeUndefined();
+  run(s,{type:'market.marginFloor.set',payload:{family:'fabric',minMarginPercent:'20',effectiveFrom:'2026-10-13',reason:'面料定价'}},ctx);
+  run(s,{type:'market.product.save',payload:{id:p,input:{...garment,category:'fabric',unit:'米'}}},ctx);
+  const fabricLine={...quote(p).lines[0],unit:'米',family:'garment' as never,marginFloor:null as never};
+  run(s,{type:'market.quotation.save',payload:{id,input:{...quote(p),lines:[fabricLine]}}},ctx);
+  expect(q().lines[0].family).toBe('fabric');expect(q().lines[0].marginFloor).toMatchObject({family:'fabric',version:1,minMarginPercent:'20'});expect(quotationNeedsApproval(q())).toBe(true);
+  const freshId=run(s,{type:'market.quotation.save',payload:{input:{...quote(p),lines:[fabricLine]}}},ctx).id!,fresh=s.market.quotations.find(x=>x.id===freshId)!;
+  expect(fresh.lines[0].marginFloor).toMatchObject({family:'fabric',version:1});expect(quotationNeedsApproval(fresh)).toBe(true);
+ });
+ it('legacy lines without a saved family are judged by their saved unit, never by the product’s current category',()=>{
+  const {ctx,s}=setup();const p=run(s,{type:'market.product.save',payload:{input:garment}},ctx).id!;
+  const a=run(s,{type:'market.quotation.save',payload:{input:quote(p)}},ctx).id!,b=run(s,{type:'market.quotation.save',payload:{input:quote(p)}},ctx).id!;
+  const q=(id:string)=>s.market.quotations.find(x=>x.id===id)!;
+  q(a).lines.forEach(l=>delete l.family);q(b).lines.forEach(l=>delete l.family); // 模拟本字段上线前保存的历史报价
+  // 类别未变：历史“件”条目=成衣当时无底线 → 之后设成衣 15% 不追溯。
+  setFloor(s,ctx,'15');
+  run(s,{type:'market.quotation.save',payload:{id:a,input:{...quote(p),note:'改备注'}}},ctx);
+  expect(q(a).lines[0].marginFloor).toBeUndefined();expect(quotationNeedsApproval(q(a))).toBe(false);
+  // 类别改为面料：历史“件”条目不是面料 → 面料是新加入板块，取当前面料 20%。
+  run(s,{type:'market.marginFloor.set',payload:{family:'fabric',minMarginPercent:'20',effectiveFrom:'2026-10-13',reason:'面料定价'}},ctx);
+  run(s,{type:'market.product.save',payload:{id:p,input:{...garment,category:'fabric',unit:'米'}}},ctx);
+  run(s,{type:'market.quotation.save',payload:{id:b,input:{...quote(p),lines:[{...quote(p).lines[0],unit:'米'}]}}},ctx);
+  expect(q(b).lines[0].marginFloor).toMatchObject({family:'fabric',version:1,minMarginPercent:'20'});expect(quotationNeedsApproval(q(b))).toBe(true);
+ });
+ it('a line saved outside both families (trimming) records family null; after the product becomes garment the edit takes the current garment floor',()=>{
+  const {ctx,s}=setup();const p=run(s,{type:'market.product.save',payload:{input:{...garment,category:'trimming' as const}}},ctx).id!;
+  const id=run(s,{type:'market.quotation.save',payload:{input:quote(p)}},ctx).id!;const q=()=>s.market.quotations.find(x=>x.id===id)!;
+  expect(q().lines[0].family).toBeNull();
+  setFloor(s,ctx,'15');run(s,{type:'market.product.save',payload:{id:p,input:garment}},ctx);
+  run(s,{type:'market.quotation.save',payload:{id,input:quote(p)}},ctx);
+  expect(q().lines[0].marginFloor).toMatchObject({family:'garment',version:1,minMarginPercent:'15'});expect(quotationNeedsApproval(q())).toBe(true);
+ });
 });
