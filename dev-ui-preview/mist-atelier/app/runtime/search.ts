@@ -19,6 +19,5 @@ export function moduleSearchRecords(s:MistState):MistSearchRecord[]{
  add('bom','BOM',s.platform?.boms||[],r=>r.name||r.code,r=>r.code||'');
  add('risks','风险',s.platform?.risks||[],r=>r.title,r=>r.state);
  add('claims','索赔',s.platform?.claims||[],r=>r.title||r.code,r=>r.code||'');
- add('hr','人员档案',s.platform?.employees||[],r=>r.name,r=>r.role||r.position||'');
  return records;
 }

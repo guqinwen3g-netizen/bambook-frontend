@@ -210,6 +210,9 @@ export function createAdminRouter(options: AdminRouterOptions) {
         if (!role) {
           return res.status(400).json({ ok: false, error: 'INVALID_ROLE', message: `角色不存在：${roleNameOrId}` });
         }
+        if (isSuperAdminRole(role) && !actorIsOwner(req)) {
+          return res.status(403).json({ ok: false, error: 'FORBIDDEN', message: 'SuperAdmin 角色仅 SuperAdmin(owner) 可授予。' });
+        }
         resolvedRoles.push(role);
       }
 
@@ -417,6 +420,9 @@ export function createAdminRouter(options: AdminRouterOptions) {
       const role = await resolveRoleByNameOrId(options.prisma, roleNameOrId);
       if (!role) {
         return res.status(400).json({ ok: false, error: 'INVALID_ROLE', message: `角色不存在：${roleNameOrId}` });
+      }
+      if (isSuperAdminRole(role) && !actorIsOwner(req)) {
+        return res.status(403).json({ ok: false, error: 'FORBIDDEN', message: 'SuperAdmin 角色仅 SuperAdmin(owner) 可授予。' });
       }
       resolvedApproveRoles.push(role);
     }
