@@ -1,6 +1,7 @@
 /** 条目履约：固定身份信息 → 阶段轨迹（当前步唯一展开）→ 分批与尾数。只读推导，动作回到各自模块。 */
 import React from 'react';
 import { Banner, Button, Facts, Mono, Pill } from '../../../../components/mist';
+import { breakdownSummary, type OrderLineBreakdown } from '../../../../server/src/shared/mistOrderBreakdown';
 import type { MistOrder, MistOrderLine, MistState } from '../../../../server/src/shared/mistWorkspace';
 import type { OrderGovernanceFields } from '../../../../server/src/shared/mistOrderGovernance';
 import { formatOrderQuantity } from './orderAmounts';
@@ -24,7 +25,7 @@ export function OrderLineFulfillment({ state, order, line, go }: { state: MistSt
     <Facts cols={2} items={[
       { label: '订单 · 客户', value: <><Mono>{order.code}</Mono> · {order.customer}</> },
       { label: 'PO / 合同号', value: contract?.kind === 'internal' ? contract.internalPurpose || '内部用途待填' : contract?.poNumber || '待补充' },
-      { label: '规格', value: spec || `${line.style} · ${line.name}` },
+      { label: '规格 / 分色分码', value: <><span>{spec || `${line.style} · ${line.name}`}</span><span className="mist-cell-sub" data-line-breakdown-summary>{breakdownSummary((line as MistOrderLine & { breakdown?: OrderLineBreakdown }).breakdown, unit)}</span></> },
       { label: '订单数量', value: `${q(line.qty)} ${unit}` },
       { label: '履约模式', value: order.type === 'fabric' ? '面料：坯布 / 染整 → 色样 → 检验 → 完工 → 出运' : '成衣：产前样 → 面辅料 → 开裁 → 检验 → 完工 → 出运' },
       { label: '工厂分支', value: factories.length ? factories.join('、') : '尚未开立生产' },

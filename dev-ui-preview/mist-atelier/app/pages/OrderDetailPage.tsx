@@ -11,6 +11,8 @@ import { formatOrderQuantity, orderAmounts, sumOrderMoney } from './orderAmounts
 import {createOrderGovernance,type OrderGovernanceInput,type OrderGovernanceFields,type OrderGovernanceLine} from '../../../../server/src/shared/mistOrderGovernance';
 import { OrderLineFulfillment } from './OrderLineFulfillment';
 import { OrderLineSourceValue } from './orderLineSource';
+import { OrderBreakdownEditor } from './OrderBreakdownEditor';
+import { breakdownDiff, breakdownShort, breakdownTotal, normalizeOrderBreakdown, type OrderLineBreakdown } from '../../../../server/src/shared/mistOrderBreakdown';
 import {orderFundingCoveredAmount} from '../../../../server/src/shared/mistOrderFunding';
 
 function OrderContractDialog({order,open,onClose}:{order:MistOrder&{governance?:OrderGovernanceFields};open:boolean;onClose:()=>void}){
@@ -33,25 +35,26 @@ function OrderContractDialog({order,open,onClose}:{order:MistOrder&{governance?:
 
 function editableLineSnapshot(line:MistOrderLine):OrderGovernanceLine{
  const source=line as MistOrderLine&Partial<OrderGovernanceLine>;
- return{id:line.id,name:line.name,style:line.style,img:line.img,qty:line.qty,unit:line.unit,price:line.price,...(source.sourceProductId?{sourceProductId:source.sourceProductId}:{}),...(source.sourceDevId?{sourceDevId:source.sourceDevId}:{}),...(source.sourceVersionId?{sourceVersionId:source.sourceVersionId}:{})};
+ return{id:line.id,name:line.name,style:line.style,img:line.img,qty:line.qty,unit:line.unit,price:line.price,...(source.sourceProductId?{sourceProductId:source.sourceProductId}:{}),...(source.sourceDevId?{sourceDevId:source.sourceDevId}:{}),...(source.sourceVersionId?{sourceVersionId:source.sourceVersionId}:{}),...(source.breakdown?{breakdown:structuredClone(source.breakdown)}:{})};
 }
 function OrderLineDialog({order,line,lines,onClose}:{order:MistOrder;line:MistOrderLine|null;lines:MistOrderLine[];onClose:()=>void}){
  const workspace=useMistWorkspace(),toast=useToast();
- const [values,setValues]=React.useState({quantity:'',price:'',reason:''}),[failure,setFailure]=React.useState(''),[busy,setBusy]=React.useState(false);
+ const [values,setValues]=React.useState({quantity:'',price:'',reason:''}),[breakdown,setBreakdown]=React.useState<OrderLineBreakdown|undefined>(),[failure,setFailure]=React.useState(''),[busy,setBusy]=React.useState(false);
  const live=React.useRef(true),lock=React.useRef(false),generation=React.useRef(0);
  React.useEffect(()=>{live.current=true;return()=>{live.current=false;generation.current++;};},[]);
- React.useEffect(()=>{generation.current++;const current=order.governance?.changeDraft?.lines.find(item=>item.id===line?.id)||line;setValues({quantity:current?String(current.qty):'',price:current?String(current.price):'',reason:order.governance?.changeDraft?.reason||''});setFailure('');setBusy(false);lock.current=false;},[order.id,line?.id]);
+ React.useEffect(()=>{generation.current++;const current=order.governance?.changeDraft?.lines.find(item=>item.id===line?.id)||line;setValues({quantity:current?String(current.qty):'',price:current?String(current.price):'',reason:order.governance?.changeDraft?.reason||''});setBreakdown((current as Partial<OrderGovernanceLine>|null)?.breakdown?structuredClone((current as Partial<OrderGovernanceLine>).breakdown):undefined);setFailure('');setBusy(false);lock.current=false;},[order.id,line?.id]);
  const approved=order.governance?.status==='approved';
  const disabled=busy||workspace.saving||!!workspace.pending||!!workspace.pendingCreate||order.governance?.status==='pending'||order.governance?.changeDraft?.status==='pending';
  const save=async()=>{
   if(!line||disabled||lock.current)return;
-  const quantity=Number(values.quantity),price=Number(values.price);
-  if(!values.quantity.trim()||!Number.isFinite(quantity)||quantity<=0||!values.price.trim()||!Number.isFinite(price)||price<0){setFailure('请填写大于零的订单数量及有效销售单价');return;}
+  if(breakdown){try{normalizeOrderBreakdown(order.type,breakdown);}catch(error){setFailure(error instanceof Error?error.message:'分色分码填写有误');return;}}
+  const quantity=breakdown?breakdownTotal(breakdown):Number(values.quantity),price=Number(values.price);
+  if((!breakdown&&!values.quantity.trim())||!Number.isFinite(quantity)||quantity<=0||!values.price.trim()||!Number.isFinite(price)||price<0){setFailure('请填写大于零的订单数量及有效销售单价');return;}
   const proposal=order.governance?.changeDraft,baseLines=proposal?.lines||lines.map(editableLineSnapshot);
   if(!baseLines.some(item=>item.id===line.id)){setFailure('当前条目已不可用，请返回订单重新核对');return;}
   const ticket=generation.current;lock.current=true;setBusy(true);setFailure('');
   try{
-   await workspace.run({type:'order.governance.saveDraft',payload:{orderId:order.id,input:proposal?.contract||order.governance?.contract||createOrderGovernance({id:()=>'',now:'',actorName:''}).contract,lines:baseLines.map(item=>item.id===line.id?{...item,qty:quantity,price}:item),...(proposal?{orderPatch:proposal.orderPatch}:{}),...(approved?{reason:values.reason}:{})}});
+   await workspace.run({type:'order.governance.saveDraft',payload:{orderId:order.id,input:proposal?.contract||order.governance?.contract||createOrderGovernance({id:()=>'',now:'',actorName:''}).contract,lines:baseLines.map(item=>{if(item.id!==line.id)return item;const {breakdown:_old,...rest}=item;return {...rest,qty:quantity,price,...(breakdown?{breakdown}:{})};}),...(proposal?{orderPatch:proposal.orderPatch}:{}),...(approved?{reason:values.reason}:{})}});
    if(live.current&&ticket===generation.current){toast(approved?'条目变更草稿已保存，原批准内容继续生效':'订单条目已保存');onClose();}
   }catch(error){if(live.current&&ticket===generation.current)setFailure(error instanceof Error?error.message:'条目未保存，请重试');}
   finally{if(live.current&&ticket===generation.current){lock.current=false;setBusy(false);}}
@@ -59,7 +62,7 @@ function OrderLineDialog({order,line,lines,onClose}:{order:MistOrder;line:MistOr
  return <Dialog open={!!line} onClose={()=>{if(!busy)onClose();}} title="编辑订单条目" description={line?`${order.code} · ${line.style} · ${line.name}`:undefined} footer={<><Button disabled={busy} onClick={onClose}>取消</Button><Button variant="primary" disabled={disabled} loading={busy} onClick={()=>void save()}>保存条目</Button></>}>
   {failure&&<Banner tone="bad" title="条目未保存">{failure}</Banner>}
   {approved&&<p className="mist-note">保存为待审批变更；原批准数量与单价继续生效。</p>}
-  <FormGrid><Field label="订单数量" required hint={line?.unit}><TextInput aria-label="订单数量" type="number" min="0" step="any" value={values.quantity} disabled={disabled} onChange={event=>setValues(current=>({...current,quantity:event.target.value}))}/></Field><Field label="销售单价" required hint={order.currency}><TextInput aria-label="销售单价" type="number" min="0" step="0.01" value={values.price} disabled={disabled} onChange={event=>setValues(current=>({...current,price:event.target.value}))}/></Field>{approved&&<Field label="变更原因" required full><TextArea aria-label="变更原因" value={values.reason} disabled={disabled} onChange={event=>setValues(current=>({...current,reason:event.target.value}))}/></Field>}</FormGrid>
+  <FormGrid><Field label="订单数量" required hint={breakdown?'由分色分码合计':line?.unit}><TextInput aria-label="订单数量" type="number" min="0" step="any" value={breakdown?String(breakdownTotal(breakdown)):values.quantity} disabled={disabled||!!breakdown} onChange={event=>setValues(current=>({...current,quantity:event.target.value}))}/></Field><Field label="销售单价" required hint={order.currency}><TextInput aria-label="销售单价" type="number" min="0" step="0.01" value={values.price} disabled={disabled} onChange={event=>setValues(current=>({...current,price:event.target.value}))}/></Field><div className="mist-field" role="group" aria-label="分色分码" style={{gridColumn:'1 / -1'}}><span className="mist-field-label">分色分码</span><OrderBreakdownEditor type={order.type} unit={line?.unit||''} value={breakdown} disabled={disabled} onChange={setBreakdown}/></div>{approved&&<Field label="变更原因" required full><TextArea aria-label="变更原因" value={values.reason} disabled={disabled} onChange={event=>setValues(current=>({...current,reason:event.target.value}))}/></Field>}</FormGrid>
  </Dialog>;
 }
 
@@ -73,6 +76,7 @@ function orderChangeRows(governance:OrderGovernanceFields|undefined,files:Readon
   const oldLine=before.lines.find(line=>line.id===id),newLine=after.lines.find(line=>line.id===id),label=(newLine||oldLine)!.style||(newLine||oldLine)!.name;
   if(!oldLine||!newLine){const describe=(line:OrderGovernanceLine|undefined,currency:string)=>line?`${line.name} · ${formatOrderQuantity(line.qty)} ${line.unit} × ${price(line.price,currency)}`:'—';add(id,label,describe(oldLine,before.currency),describe(newLine,after.orderPatch.currency));continue;}
   add(id+'-quantity',label+' · 数量',`${formatOrderQuantity(oldLine.qty)} ${oldLine.unit}`,`${formatOrderQuantity(newLine.qty)} ${newLine.unit}`,oldLine.qty!==newLine.qty||oldLine.unit!==newLine.unit);
+  for(const row of breakdownDiff(oldLine.breakdown,newLine.breakdown))add(id+'-cell-'+row.key,label+' · '+row.label,row.before,row.after,true);
   add(id+'-price',label+' · 单价',price(oldLine.price,before.currency),price(newLine.price,after.orderPatch.currency),oldLine.price!==newLine.price||before.currency!==after.orderPatch.currency);
  }
  const oldTotal=orderAmounts(before.lines),newTotal=orderAmounts(after.lines);
@@ -141,7 +145,7 @@ export function OrderDetailPage() {
     try { await run(command);if(alive.current&&activeScope.current===bound)onSuccess?.(); } catch (problem) { if(alive.current&&activeScope.current===bound)setFailure(problem instanceof Error ? problem.message : '保存失败，请重试'); } finally { if(alive.current&&activeScope.current===bound){operation.current=false;setWorking(false);} }
   };
   const columns = [
-    { key: 'n', header: '款式', width: 'minmax(170px,1.6fr)', render: (line: MistOrderLine) => <ObjectCell thumb={<Thumb src={IMG[line.img]} />} name={line.name} meta={<Mono>{line.style}</Mono>} /> },
+    { key: 'n', header: '款式', width: 'minmax(170px,1.6fr)', render: (line: MistOrderLine) => <ObjectCell thumb={<Thumb src={IMG[line.img]} />} name={line.name} meta={<><Mono>{line.style}</Mono> · <span data-line-breakdown={line.id}>{breakdownShort((line as MistOrderLine&{breakdown?:OrderLineBreakdown}).breakdown)}</span></>} /> },
     { key: 'q', header: '数量', width: '80px', align: 'right' as const, hideOnMobile: true, render: (line: MistOrderLine) => <span className="mist-num">{formatOrderQuantity(line.qty)} {line.unit}</span> },
     { key: 'p', header: `单价 ${order?.currency ?? ''}`, width: '76px', align: 'right' as const, hideOnMobile: true, render: (line: MistOrderLine) => <span className="mist-num">{amountLabel(lineAmounts.get(line.id) == null ? null : line.price)}</span> },
     { key: 'g', header: '生产进度', width: 'minmax(110px,1.2fr)', hideOnMobile: true, render: (line: MistOrderLine) => {const progress=lineProgress(line);return <Meter segments={[{ value: progress.qc, tone: 'ok' as const }, { value: Math.max(0, progress.made - progress.qc) }]} caption={`${progress.made}% · 已 QC ${progress.qc}%`} />;} },

@@ -303,3 +303,25 @@ it('shows a quantity-only difference without labelling unchanged unit price or c
   render();const table=getByRole(host,'table',{name:'订单变更前后差异'}),quantity=within(table).getByRole('row',{name:/ROUND-01 · 数量/});
   expect(quantity.textContent).toContain('4 件');expect(quantity.textContent).toContain('5 件');expect(table.textContent).not.toContain('ROUND-01 · 单价');expect(table.textContent).not.toContain('PO / 合同号');expect(table.textContent).not.toContain('交期');
 });
+
+it('BB-ORD-3 edits a colour × size breakdown, applies it to a draft, and lists approved changes cell by cell',async()=>{
+  const actor=lineEditorFixture('draft');render();await openLineEditor();
+  await act(async()=>getByRole(document.body,'button',{name:'按颜色 × 尺码填写数量'}).click());
+  await lineInput('颜色 1','藏青');await lineInput('藏青 · S 数量','4');await lineInput('藏青 · M 数量','6');
+  expect((getByLabelText(document.body,'订单数量') as HTMLInputElement).disabled).toBe(true);
+  expect((getByLabelText(document.body,'订单数量') as HTMLInputElement).value).toBe('10');
+  await act(async()=>getByRole(document.body,'button',{name:'保存条目'}).click());
+  const saved=store.state!.orderLines[0] as unknown as {qty:number;breakdown:{sizes:string[];rows:Array<{color:string;quantities:number[]}>}};
+  expect(saved.qty).toBe(10);expect(saved.breakdown).toEqual({kind:'garment',sizes:['S','M','L','XL'],rows:[{color:'藏青',quantities:[4,6,0,0]}]});
+  expect(host.textContent).toContain('1 色 × 4 码');
+  store.state=applyMistCommand(store.state!,{type:'order.governance.submit',payload:{orderId}},actor).state;
+  store.state=applyMistCommand(store.state!,{type:'order.governance.decide',payload:{id:orderId,decision:'approved',note:'核对'}},{...actor,actorId:'leader'}).state;
+  render();await openLineEditor();
+  await lineInput('藏青 · M 数量','8');await lineInput('变更原因','客户追加 M 码');
+  await act(async()=>getByRole(document.body,'button',{name:'保存条目'}).click());
+  expect(store.state!.orderLines[0].qty).toBe(10);
+  expect(store.state!.orders[0].governance?.changeDraft?.lines[0].qty).toBe(12);
+  const diff=getByRole(host,'table',{name:'订单变更前后差异'});
+  const row=getByRole(diff,'row',{name:/ROUND-01 · 藏青 · M/});
+  expect(row.textContent).toContain('6');expect(row.textContent).toContain('8');
+});
