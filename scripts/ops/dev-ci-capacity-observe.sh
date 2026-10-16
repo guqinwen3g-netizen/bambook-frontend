@@ -3,7 +3,7 @@ python3 - <<'OBSERVE_CAPACITY'
 import datetime,json,pathlib,time
 for n in range(3):
  out={'utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'files':[],'trials':[]}
- for root in pathlib.Path('/var/tmp').glob('bambook-ci-capacity-*'):
+ for root in list(pathlib.Path('/var/tmp').glob('bambook-ci-capacity-*'))+list(pathlib.Path('/var/lib').glob('bambook-ci-capacity-*')):
   if not root.is_dir() or root.is_symlink():continue
   for name in ['source.tar.gz','required-source.tar.gz','source.sha256','transport-probe.bin']+[p.name for p in root.glob('transport-part-*.bin')]:
    p=root/name
