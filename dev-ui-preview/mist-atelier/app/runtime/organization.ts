@@ -22,8 +22,23 @@ export interface AdminRole { id: string; name: string; description: string | nul
 export interface AuditLogRow { id: string; actorId: string; action: string; targetType: string; targetId: string | null; createdAt: string; ip?: string | null }
 export interface OrgPerson { id: string; displayName: string; email: string; status: string; roles: string[]; departmentId: string | null; department: string | null; lastLoginAt: string | null }
 export interface OrgTeam { id: string; name: string; description: string | null; leaderId: string | null; departmentId: string; department: string | null; businessAttributes: BusinessAttribute[]; status: string; memberCount: number; members: Array<{ id: string; userId: string; role: string; leftAt: string | null }> }
-export interface EmployeeProfile { userId: string; employeeNo: string; displayName: string | null; positionId: string | null; position: string | null; hireDate: string | null; regularDate: string | null; contractType: string | null; contractEnd: string | null; employmentStatus: string; phone: string | null; emergencyContact: string | null; workLocation: string | null; notes: string | null }
-export interface OrgPosition { id: string; title: string; departmentId: string | null; department: string | null }
+export interface EmployeeProfile { userId: string; employeeNo: string; displayName: string | null; departmentId?: string | null; department?: string | null; positionId: string | null; position: string | null; hireDate: string | null; regularDate: string | null; contractType: string | null; contractEnd: string | null; employmentStatus: string; phone: string | null; emergencyContact: string | null; workLocation: string | null; notes: string | null }
+export interface OrgPosition { id: string; title: string; departmentId: string | null; department: string | null; headcount?: number; status?: string; description?: string | null }
+export interface EmploymentEvent { id: string; userId: string; type: string; effectiveDate: string; fromDeptId: string | null; toDeptId: string | null; fromPositionId: string | null; toPositionId: string | null; reason: string | null; operatorId: string | null; createdAt: string }
+
+/** 在职变动（与服务端 hrService EVENT_ALLOWED_FROM 同口径；服务端仍是最终校验）。 */
+export const EMPLOYMENT_EVENTS: Array<{ value: string; label: string; from: string[]; terminal?: boolean; position?: boolean }> = [
+  { value: 'Regularize', label: '转正', from: ['Probation'] },
+  { value: 'Transfer', label: '调岗', from: ['Probation', 'Regular'], position: true },
+  { value: 'Promote', label: '晋升', from: ['Probation', 'Regular'], position: true },
+  { value: 'Suspend', label: '停职', from: ['Probation', 'Regular'] },
+  { value: 'Resume', label: '复职', from: ['Suspended'] },
+  { value: 'Resign', label: '离职', from: ['Probation', 'Regular', 'Suspended'], terminal: true },
+  { value: 'Terminate', label: '解除劳动关系', from: ['Probation', 'Regular', 'Suspended'], terminal: true },
+  { value: 'Onboard', label: '返聘', from: ['Resigned', 'Terminated'] },
+];
+export const eventLabel = (type: string) => type === 'Onboard' ? '入职 / 返聘' : EMPLOYMENT_EVENTS.find(e => e.value === type)?.label ?? type;
+export const ACTIVE_EMPLOYMENT = ['Probation', 'Regular', 'Suspended'];
 
 export class OrganizationRequestError extends Error { constructor(message: string, public status: number, public code?: string) { super(message); } }
 
@@ -74,6 +89,12 @@ export const organizationApi = {
     try { return (await call<{ profile: EmployeeProfile }>('/hr/employees/' + id(userId))).profile; }
     catch (error) { if (error instanceof OrganizationRequestError && error.status === 404) return null; throw error; }
   },
+  employees: () => call<{ employees: EmployeeProfile[] }>('/hr/employees'),
+  createPosition: (body: { title: string; departmentId: string; headcount: number; description?: string }) => call<unknown>('/hr/positions', { method: 'POST', body }),
+  updatePosition: (positionId: string, body: { title?: string; departmentId?: string; headcount?: number; description?: string | null; status?: string }) => call<unknown>('/hr/positions/' + id(positionId), { method: 'PATCH', body }),
+  deletePosition: (positionId: string) => call<unknown>('/hr/positions/' + id(positionId), { method: 'DELETE' }),
+  employmentEvents: (userId: string) => call<{ events: EmploymentEvent[] }>('/hr/employment-events?userId=' + id(userId) + '&limit=50'),
+  recordEvent: (body: { userId: string; type: string; effectiveDate: string; fromDeptId?: string | null; fromPositionId?: string | null; toPositionId?: string | null; reason?: string | null }) => call<{ event: EmploymentEvent; accountDisabled?: boolean }>('/hr/employment-events', { method: 'POST', body }),
   saveProfile: (userId: string, body: Partial<Pick<EmployeeProfile, 'positionId' | 'hireDate' | 'regularDate' | 'contractType' | 'contractEnd' | 'phone' | 'emergencyContact' | 'workLocation' | 'notes'>>) => call<{ profile: EmployeeProfile }>('/hr/employees/' + id(userId), { method: 'PUT', body }),
 };
 

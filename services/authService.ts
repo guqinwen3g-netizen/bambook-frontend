@@ -20,6 +20,8 @@ export interface AuthUser {
   permissionCeiling?: string[];
   departmentIds: string[];
   department: string | null;
+  /** 管理员重置密码后为 true：须先修改密码才能继续使用。 */
+  mustChangePassword?: boolean;
 }
 
 export interface AuthState {

@@ -28,6 +28,7 @@ import { SettingsPage } from './pages/SettingsPage';
 import { StatesPage } from './pages/StatesPage';
 import { DesignSystemPage } from './pages/DesignSystemPage';
 import { LoginPage } from './pages/LoginPage';
+import { ForcedPasswordChangePage } from './pages/ChangePassword';
 import { FULFILLMENT_PAGES } from './pages/modules/FulfillmentPages';
 import { MARKET_PAGES } from './pages/modules/MarketPages';
 import { PLATFORM_PAGES } from './pages/modules/PlatformPages';
@@ -219,6 +220,7 @@ function AppInner({ theme, setTheme }: { theme: ThemeMode; setTheme: (theme: The
     };
     return <Nav.Provider value={{ ...nav, go: loginGo }}><LoginPage /></Nav.Provider>;
   }
+  if (!session.localMode && session.user?.mustChangePassword) return <ForcedPasswordChangePage />;
   const base = route.view.split('/')[0], module = getModuleByView(base as View);
   // 空间设置只处理当前空间；不能为此授予系统设置/后台管理权限。
   const permitted = route.view === 'workspace-settings' ? !!workspace.workspace : !module || session.canAccessView(base as View), live = LIVE_VIEWS.has(route.view) || !!FULFILLMENT_PAGES[route.view] || !!MARKET_PAGES[route.view] || !!PLATFORM_PAGES[route.view];

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { agingBucket, buildCustomerSales, buildOrderProgress, buildReceivableAging } from './PlatformReports';
+import { agingBucket, buildCustomerSales, buildOrderMargin, buildOrderProgress, buildReceivableAging } from './PlatformReports';
 
 const order = (id: string, o: Record<string, unknown> = {}) => ({ id, code: 'SO-' + id, customerId: 'c-' + (o.customer ?? 'A'), customer: 'A', currency: 'USD', amount: 100, due: '2026-10-20', progress: 50, state: '生产中', tone: 'neutral', createdAt: '2026-10-01T02:00:00Z', ...o });
 const invoice = (id: string, orderId: string, o: Record<string, unknown> = {}) => ({ id, code: 'INV-' + id, orderId, order: '', customer: 'A', currency: 'USD', amount: 100, open: 100, due: '2026-10-01', ...o });
@@ -24,5 +24,19 @@ describe('报表中心', () => {
   it('lists unfinished orders with overdue first, then due within seven days', () => {
     const rows = buildOrderProgress(state([order('done', { progress: 100, due: '2026-01-01' }), order('ok', { due: '2026-11-30' }), order('soon', { due: '2026-10-22' }), order('late', { due: '2026-10-10' }), order('none', { due: '' })]), '2026-10-15');
     expect(rows.map(r => [r.id, r.status, r.lateDays])).toEqual([['late', 'overdue', 5], ['soon', 'soon', 0], ['ok', 'ontrack', 0], ['none', 'nodue', 0]]);
+  });
+  it('computes contract-basis gross margin per order in the order currency without FX conversion', () => {
+    const purchase = (id: string, orderId: string, o: Record<string, unknown> = {}) => ({ id, code: 'PO-' + id, orderId, state: 'approved', quantity: 10, price: 3.33, currency: 'USD', ...o });
+    const s = { orders: [order('1', { amount: 100 }), order('2', { amount: 80 }), order('3', { amount: 50 }), order('4', { governance: { status: 'pending' } }), order('5', { amount: 40 })],
+      invoices: [],
+      fulfillment: { purchases: [purchase('a', '1'), purchase('b', '1', { quantity: 2, price: 10 }), purchase('c', '1', { state: 'pending' }), purchase('d', '1', { cancellation: { at: 'x' } }), purchase('e', '2', { currency: 'CNY', price: 50 }), purchase('f', '2', { price: 1 }), purchase('g', '4'), purchase('h', '5', { quantity: 1, price: 55 })] },
+      payables: { bills: [{ state: 'open', currency: 'USD', lines: [{ purchaseId: 'a', amount: 20 }] }, { state: 'void', currency: 'USD', lines: [{ purchaseId: 'b', amount: 20 }] }] } } as any;
+    const rows = buildOrderMargin(s);
+    expect(rows.map(r => [r.id, r.status, r.revenue, r.cost, r.margin, r.rate === null ? null : Math.round(r.rate * 1000) / 1000, r.billed, r.pending, r.foreign])).toEqual([
+      ['5', 'ok', 40, 55, -15, -0.375, 0, 0, ''],
+      ['1', 'ok', 100, 53.3, 46.7, 0.467, 20, 1, ''],
+      ['2', 'foreign', 80, 10, null, null, 0, 0, 'CNY 500.00'],
+      ['3', 'nocost', 50, 0, null, null, 0, 0, ''],
+    ]);
   });
 });

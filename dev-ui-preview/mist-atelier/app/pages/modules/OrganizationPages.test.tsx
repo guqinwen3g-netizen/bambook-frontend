@@ -26,6 +26,7 @@ beforeEach(() => {
     'GET /api/hr/teams': () => ({ ok: true, teams: [{ id: 't1', name: '面料一组', description: null, leaderId: null, departmentId: 'd1', department: '面料业务部', businessAttributes: ['fabric_business'], status: 'active', memberCount: 1, members: [{ id: 'm1', userId: 'u3', role: 'member', leftAt: null }] }] }),
     'POST /api/hr/departments': () => ({ ok: true, department: { id: 'd2' } }),
     'GET /api/hr/employees/u3': () => null,
+    'GET /api/hr/employees': () => ({ ok: true, employees: [] }),
   };
   vi.stubGlobal('fetch', vi.fn(async (url: string, init: any) => {
     const method = init?.method ?? 'GET', body = init?.body ? JSON.parse(init.body) : undefined;
@@ -102,6 +103,48 @@ describe('人事管理', () => {
     await click('建立员工档案');
     await click('保存');
     expect(document.body.textContent).toContain('建档须填写入职日期');
+  });
+  it('lists positions with staffing against headcount and creates a position', async () => {
+    const position = { id: 'p1', title: '面料跟单', departmentId: 'd1', department: '面料业务部', headcount: 2, status: 'active', description: null };
+    bridge.routes['GET /api/hr/personnel'] = () => ({ ok: true, departments, positions: [position], personnel: [] });
+    bridge.routes['GET /api/hr/employees'] = () => ({ ok: true, employees: [{ userId: 'u3', employeeNo: 'E001', displayName: '李四', positionId: 'p1', position: '面料跟单', employmentStatus: 'Regular' }, { userId: 'u4', employeeNo: 'E002', displayName: '王五', positionId: 'p1', position: '面料跟单', employmentStatus: 'Resigned' }] });
+    bridge.routes['POST /api/hr/positions'] = () => ({ ok: true });
+    await render(PLATFORM_PAGES.hr, 'hr', 'positions');
+    expect(document.body.textContent).toContain('面料跟单');
+    expect(document.body.textContent).toContain('1 / 2');
+    await click('新建岗位');
+    await type(labelled('岗位名称'), '成衣跟单');
+    await type(labelled('所属部门'), 'd1');
+    await type(labelled('编制人数'), '0');
+    await click('保存');
+    expect(document.body.textContent).toContain('编制人数须为 1–9999 的整数');
+    await type(labelled('编制人数'), '3');
+    await click('保存');
+    expect(bridge.calls.find(c => c.method === 'POST' && c.url === '/api/hr/positions')?.body).toEqual({ title: '成衣跟单', departmentId: 'd1', headcount: 3 });
+  });
+  it('records a resignation only after the account-disable acknowledgement', async () => {
+    const profile = { userId: 'u3', employeeNo: 'E001', displayName: '李四', positionId: null, position: null, hireDate: '2025-01-01', regularDate: '2025-04-01', contractType: null, contractEnd: null, employmentStatus: 'Regular', phone: null, emergencyContact: null, workLocation: null, notes: null };
+    bridge.routes['GET /api/hr/employees/u3'] = () => ({ ok: true, profile });
+    bridge.routes['GET /api/hr/employees'] = () => ({ ok: true, employees: [profile] });
+    bridge.routes['GET /api/hr/employment-events?userId=u3&limit=50'] = () => ({ ok: true, events: [{ id: 'e1', userId: 'u3', type: 'Regularize', effectiveDate: '2025-04-01', fromDeptId: null, toDeptId: null, fromPositionId: null, toPositionId: null, reason: null, operatorId: 'u3', createdAt: '' }] });
+    bridge.routes['POST /api/hr/employment-events'] = () => ({ ok: true, event: { id: 'e2' }, accountDisabled: true });
+    await render(PLATFORM_PAGES.hr, 'hr', 'people');
+    expect(document.body.textContent).toContain('正式');
+    await act(async () => (document.querySelector('[role="row"][tabindex]') as HTMLElement).click());
+    await act(async () => { await new Promise(r => setTimeout(r, 0)); });
+    expect(document.body.textContent).toContain('在职变动记录');
+    expect(document.body.textContent).toContain('转正');
+    await click('办理在职变动');
+    const types = [...(labelled('变动类型') as HTMLSelectElement).options].map(o => o.textContent);
+    expect(types).toEqual(['调岗', '晋升', '停职', '离职', '解除劳动关系']);
+    await type(labelled('变动类型'), 'Resign');
+    await click('确认离职');
+    expect(document.body.textContent).toContain('请先勾选确认');
+    expect(bridge.calls.some(c => c.method === 'POST' && c.url === '/api/hr/employment-events')).toBe(false);
+    const ack = [...document.querySelectorAll('label.mist-check')].find(l => l.textContent?.includes('立即停用'))!.querySelector('input')!;
+    await act(async () => ack.click());
+    await click('确认离职');
+    expect(bridge.calls.find(c => c.method === 'POST' && c.url === '/api/hr/employment-events')?.body).toMatchObject({ userId: 'u3', type: 'Resign', fromDeptId: 'd1', fromPositionId: null });
   });
   it('explains that local workspaces have no company organization and calls nothing', async () => {
     bridge.localMode = true;

@@ -188,6 +188,9 @@ export function createHRRouter(options: HRRouterOptions) {
       if (!(await isAssignableDepartment(departmentId))) {
         return res.status(400).json({ ok: false, error: 'VALIDATION_FAILED', message: '请选择所属部门，不能直接归属公司。' });
       }
+      if (headcount !== undefined && !(Number.isInteger(headcount) && headcount >= 1 && headcount <= 9999)) {
+        return res.status(400).json({ ok: false, error: 'VALIDATION_FAILED', message: '编制人数须为 1–9999 的整数。' });
+      }
       const position = await prisma.jobPosition.create({
         data: {
           id: genId('pos'),
@@ -221,10 +224,19 @@ export function createHRRouter(options: HRRouterOptions) {
       if (departmentId !== undefined && !(await isAssignableDepartment(departmentId))) {
         return res.status(400).json({ ok: false, error: 'VALIDATION_FAILED', message: '请选择所属部门，不能直接归属公司。' });
       }
+      if (title !== undefined && !String(title).trim()) {
+        return res.status(400).json({ ok: false, error: 'VALIDATION_FAILED', message: '岗位名称不能为空。' });
+      }
+      if (headcount !== undefined && !(Number.isInteger(headcount) && headcount >= 1 && headcount <= 9999)) {
+        return res.status(400).json({ ok: false, error: 'VALIDATION_FAILED', message: '编制人数须为 1–9999 的整数。' });
+      }
+      if (status !== undefined && !['active', 'inactive'].includes(status)) {
+        return res.status(400).json({ ok: false, error: 'VALIDATION_FAILED', message: '岗位状态只能是启用或停用。' });
+      }
       const updated = await prisma.jobPosition.update({
         where: { id },
         data: {
-          ...(title !== undefined && { title }),
+          ...(title !== undefined && { title: String(title).trim() }),
           ...(departmentId !== undefined && { departmentId: departmentId || null }),
           ...(description !== undefined && { description }),
           ...(headcount !== undefined && { headcount }),
@@ -251,6 +263,13 @@ export function createHRRouter(options: HRRouterOptions) {
   router.delete('/positions/:id', async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
+      // 仍有在职员工挂在该岗位时不允许删除（否则档案显示一个已删除的岗位）；可改为停用。
+      const inUse = await prisma.employeeProfile.count({
+        where: { positionId: id, deletedAt: null, employmentStatus: { in: ['Probation', 'Regular', 'Suspended'] } },
+      });
+      if (inUse > 0) {
+        return res.status(409).json({ ok: false, error: 'POSITION_IN_USE', message: `该岗位仍有 ${inUse} 名在职员工，请先调岗或改为停用。` });
+      }
       await prisma.jobPosition.update({
         where: { id },
         data: { deletedAt: deletionStamp() },
