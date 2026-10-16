@@ -1,5 +1,5 @@
 /** 审批与放行（菜单外，从我的工作和顶栏进入）：待我审批 / 我发起的 / 已处理。
- *  只展示服务端派生的提交快照；批准、退回都写回原业务命令（采购、报价偏差、订单、付款申请、索赔方案），不另设审批引擎。 */
+ *  只展示服务端派生的提交快照；批准、退回都写回原业务命令（采购、报价偏差、订单、付款申请、索赔方案、风险处置），不另设审批引擎。 */
 import React from 'react';
 import { ArrowUpRight, Check, CornerUpLeft, Forward, Paperclip, RefreshCw } from 'lucide-react';
 import { Banner, Button, Card, DataTable, EmptyState, Facts, Field, KeyValue, MistPage, ObjectCell, PageHeader, Pill, SearchField, Segmented, Tabs, TextArea, Toolbar, type Column, type Tone } from '../../../../components/mist';
@@ -16,7 +16,7 @@ import { ActionBar, DetailBlock, DetailBody, ListDetail } from './modules/pageKi
 export type ApprovalTab = 'mine' | 'sent' | 'done' | 'others';
 type Kind = MistReviewTask['kind'];
 type Row = MistReview & { local?: boolean };
-export const APPROVAL_KIND_LABEL: Record<Kind, string> = { order: '订单审批', quotation: '报价偏差', procurement: '采购审批', payment: '付款申请', claim: '索赔方案' };
+export const APPROVAL_KIND_LABEL: Record<Kind, string> = { order: '订单审批', quotation: '报价偏差', procurement: '采购审批', payment: '付款申请', claim: '索赔方案', risk: '风险处置' };
 const STATUS: Record<MistReviewTask['status'], { tone: Tone; label: string }> = { pending: { tone: 'warn', label: '待审批' }, approved: { tone: 'ok', label: '已批准' }, rejected: { tone: 'bad', label: '已退回' } };
 /** 统一审批尚未覆盖、仍在原业务页按原流程办理的类型（没有服务端放行规则时不在这里假装可审批）。 */
 export const APPROVAL_NOT_CONNECTED = ['生产与出运放行', '受控例外'];
@@ -90,7 +90,7 @@ export function ApprovalsPage() {
     ]} />
   </DetailBody> : <EmptyState title="选择一项审批" description="左侧列表按当前账号的授权显示；选中后核对提交快照再决定。" />;
   return <MistPage>
-    <PageHeader eyebrow="我的事务 · 审批与放行" title="审批与放行" description="订单、报价偏差、采购、付款申请与索赔方案的审批集中在这里；决定写回原业务，原业务页同步更新。" actions={<Button icon={RefreshCw} disabled={reviews.busy} onClick={() => void reviews.refresh()}>刷新</Button>} />
+    <PageHeader eyebrow="我的事务 · 审批与放行" title="审批与放行" description="订单、报价偏差、采购、付款申请、索赔方案与风险处置的审批集中在这里；决定写回原业务，原业务页同步更新。" actions={<Button icon={RefreshCw} disabled={reviews.busy} onClick={() => void reviews.refresh()}>刷新</Button>} />
     {reviews.error && <Banner tone="bad" title={reviews.error} actions={<Button size="sm" onClick={reviews.clearError}>知道了</Button>} />}
     {reviews.intent && <Banner tone="warn" title="有审批结果待核对" actions={<Button size="sm" loading={reviews.busy} onClick={() => void reviews.recover()}>核对原请求</Button>}>上次保存审批决定时没有收到明确结果。核对会查询同一请求编号，不会重复决定。</Banner>}
     <Banner tone="neutral" title={APPROVAL_NOT_CONNECTED.join('、') + '尚未接入统一审批'}>这些事项还没有服务端放行规则，仍在原业务页按原流程办理，不在这里显示。</Banner>

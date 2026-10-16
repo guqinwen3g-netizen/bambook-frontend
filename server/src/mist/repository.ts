@@ -417,8 +417,9 @@ export class MistRepository {
         if(!MIST_LOCAL_PROFILES.some(p=>p.id===task.requesterId))fail('REQUESTER_UNAVAILABLE','本地申请身份无效',409);
         const requester=mistLocalPublicUser(task.requesterId);subject={...requester,userId:requester.id,mistLocal:true} as unknown as TokenPayload;
       }else{const requester=await loadUserWithRoles(db,task.requesterId);if(!requester||requester.status!=='active'||requester.deletedAt)fail('REQUESTER_UNAVAILABLE','申请账号当前不可核验，请联系管理员',409);subject=await buildLoadedAuthTokenPayload(db,requester);}
-      const type=task.kind==='procurement'?'fulfillment.procurement.decide':task.kind==='quotation'?'market.quotation.decide':task.kind==='order'?'order.governance.decide':task.kind==='payment'?'payable.request.decide':'platform.claim.decide';
-      const command={type,payload:{id:task.entityId,decision:input.decision,note:input.note}} as MistCommand;
+      const type=task.kind==='procurement'?'fulfillment.procurement.decide':task.kind==='quotation'?'market.quotation.decide':task.kind==='order'?'order.governance.decide':task.kind==='payment'?'payable.request.decide':task.kind==='risk'?'platform.risk.decide':'platform.claim.decide';
+      // 风险申请：审批结果回到原风险记录（target.id），并精确对应本次申请（entityId）。
+      const command={type,payload:task.kind==='risk'?{id:task.target.id,escalationId:task.entityId,decision:input.decision,note:input.note}:{id:task.entityId,decision:input.decision,note:input.note}} as MistCommand;
       const context=this.context(actor);context.authority=await mistApprovalAuthority(db,subject,type);
       const applied=this.contract.applyMistCommand(structuredClone(row.state),command,context);
       (applied.state as any).reviewerIds=[...new Set(this.reviews(applied.state).flatMap(t=>t.reviewerIds))];

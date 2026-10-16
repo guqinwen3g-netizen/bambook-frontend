@@ -26,6 +26,8 @@ export function seedDemoModules(initial: MistState, context: MistContext): { sta
   const authority: NonNullable<MistContext['authority']> = {
     supplier: Object.fromEntries(['purchase', 'processing', 'finished', 'material'].flatMap(kind => ['garment', 'fabric'].map(domain => [`supplierCommitment.approvers.${kind}.${domain}`, supplierApprovers]))),
     businessReviewerId: 'demo-reviewer', claimReviewerId: 'demo-reviewer', orderReviewerIds: { garment: ['demo-reviewer'], fabric: ['demo-reviewer'] },
+    // 演示叙事中的财务、采购、业务均按已有处理权推进；风险申请由演示主管周敏审批。
+    risk: { all: true, orders: true, customers: true }, riskReviewerIds: ['demo-reviewer'],
   };
   const actor = (actorName: string, actorId: string): MistContext => ({ ...context, actorName, actorId, authority });
   const sales = actor('顾言', 'demo-sales'), buyer = actor('沈禾', 'demo-buyer'), reviewer = actor('周敏', 'demo-reviewer'), inspector = actor('许言', 'demo-qc'), warehouse = actor('陈晓', 'demo-warehouse');
@@ -321,7 +323,7 @@ export function seedDemoModules(initial: MistState, context: MistContext): { sta
   if (holdRisk) {
     run('risk hold ack', { type: 'platform.risk.transition', payload: { id: holdRisk, state: 'Acknowledged', resolution: '财务牵头催收，业务配合' } } as MistCommand, finance);
     run('risk hold plan', { type: 'platform.risk.plan', payload: { id: holdRisk, plan: '①本周内与客户确认付款计划；②已在途订单暂停出运放行，待收到 50% 尾款后恢复；③新报价保持冻结。', planDue: day(7) } } as MistCommand, finance);
-    run('risk hold escalate', { type: 'platform.risk.escalate', payload: { id: holdRisk, approver: '周敏', reason: '客户申请分两期付清，需负责人授权在收到首期后放行一票已备货出运。' } } as MistCommand, finance);
+    run('risk hold escalate', { type: 'platform.risk.escalate', payload: { id: holdRisk, action: 'release', reason: '客户申请分两期付清，需负责人授权在收到首期后放行一票已备货出运。' } } as MistCommand, finance);
   }
   register('risk cert', 'cert-expired:', '沈禾', buyer);
   if (order018) {
@@ -329,7 +331,7 @@ export function seedDemoModules(initial: MistState, context: MistContext): { sta
     if (late) {
       run('risk 018 ack', { type: 'platform.risk.transition', payload: { id: late, state: 'Acknowledged', resolution: '' } } as MistCommand, sales);
       run('risk 018 plan', { type: 'platform.risk.plan', payload: { id: late, plan: '工厂加开夜班追回 3 天；剩余 2 天与客户协商，首批 60% 按期海运。', planDue: day(-2) } } as MistCommand, sales);
-      run('risk 018 escalate', { type: 'platform.risk.escalate', payload: { id: late, approver: '周敏', reason: '夜班加工费 CNY 4,800 超出订单预算。' } } as MistCommand, sales);
+      run('risk 018 escalate', { type: 'platform.risk.escalate', payload: { id: late, action: 'authorize', reason: '夜班加工费 CNY 4,800 超出订单预算。' } } as MistCommand, sales);
       const esc = state.platform?.risks.find(r => r.id === late)?.escalations?.[0];
       if (esc) run('risk 018 decide', { type: 'platform.risk.decide', payload: { id: late, escalationId: esc.id, decision: 'approved', note: '同意加班，费用记入本单成本，交期不再顺延。' } } as MistCommand, reviewer);
       run('risk 018 close', { type: 'platform.risk.transition', payload: { id: late, state: 'Resolved', resolution: '客户书面同意首批 60% 按期、余量顺延 2 天；工厂排期已确认。' } } as MistCommand, sales);
