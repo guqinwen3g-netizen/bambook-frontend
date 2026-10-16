@@ -1,21 +1,23 @@
 /** T10 设置：保留 Mist 分区导航、设置卡与吸底操作栏。 */
 import React from 'react';
-import { Bell, Building2, Laptop, Moon, Palette, Shield, Sun, Trash2, User, RefreshCw } from 'lucide-react';
+import { Bell, Building2, Landmark, Laptop, Moon, Palette, Shield, Sun, Trash2, User, RefreshCw } from 'lucide-react';
 import { Banner, Button, Card, ChoiceCards, Dialog, Field, FormGrid, FormSection, MistPage, PageHeader, Select, SettingRow, Skeleton, Switch, TextInput, VerticalSteps, useToast } from '../../../../components/mist';
-import type { MistSettings } from '../../../../server/src/shared/mistWorkspace';
+import type { MistCompanyProfile, MistSettings } from '../../../../server/src/shared/mistWorkspace';
 import { useMistSession } from '../runtime/auth';
 import { useMistWorkspace } from '../runtime/workspace';
 import { useNav } from '../nav';
 import { WorkspaceMembers } from './WorkspaceMembers';
 import { ChangePasswordRow, LogoutAllRow } from './ChangePassword';
 import { TwoFactorRow } from './TwoFactor';
+import { CompanyProfileSection } from './CompanyProfileSection';
 
 type TextKey = 'workspaceName' | 'profileName' | 'profileEmail' | 'locale';
 type TextValues = Pick<MistSettings, TextKey>;
+type SettingsPatch = Partial<Omit<MistSettings, 'companyProfile'>> & { companyProfile?: Partial<MistCompanyProfile> };
 export function SettingsPage() {
   const workspace = useMistWorkspace(), session = useMistSession(), toast = useToast(), nav = useNav();
   const { state, loading, saving, pending } = workspace;
-  const [sec, setSec] = React.useState(() => ['appearance', 'notify', 'workspace', 'account', 'security'].includes(String(nav?.route?.section)) ? String(nav!.route.section) : 'appearance'), [error, setError] = React.useState('');
+  const [sec, setSec] = React.useState(() => ['appearance', 'notify', 'workspace', 'company', 'account', 'security'].includes(String(nav?.route?.section)) ? String(nav!.route.section) : 'appearance'), [error, setError] = React.useState('');
   const [lifecycle,setLifecycle]=React.useState<{action:'archive'|'restore';id?:string;name:string}|null>(null),[lifecycleBusy,setLifecycleBusy]=React.useState(false);
   const lifecycleLock=React.useRef(false),mounted=React.useRef(true);
   React.useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
@@ -47,7 +49,7 @@ export function SettingsPage() {
     if (!values) return;
     dirty.current[key] = true; setDraft({ scope, values: { workspaceName: values.workspaceName, profileName: values.profileName, profileEmail: values.profileEmail, locale: values.locale, [key]: value } });
   };
-  const save = async (patch: Partial<MistSettings>, success?: string) => {
+  const save = async (patch: SettingsPatch, success?: string) => {
     if (!state || busy || working.current) return false;
     if (patch.workspaceName !== undefined && (!patch.workspaceName.trim() || patch.workspaceName.trim().length > 120)) { setError('工作空间名称须为1至120字'); return false; }
     if (patch.profileEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(patch.profileEmail)) { setError('请输入有效的显示邮箱'); return false; }
@@ -55,7 +57,7 @@ export function SettingsPage() {
     try {
       await workspace.run({ type: 'settings.update', payload: patch });
       if (activeScope.current !== current) return false;
-      for (const key of Object.keys(patch) as Array<keyof MistSettings>) if (key in dirty.current && latest.current?.values[key as TextKey] === patch[key]) delete dirty.current[key as TextKey];
+      for (const key of Object.keys(patch) as Array<keyof SettingsPatch>) if (key in dirty.current && latest.current?.values[key as TextKey] === patch[key]) delete dirty.current[key as TextKey];
       if (success) toast(success);
       return true;
     } catch (failure) {
@@ -70,20 +72,20 @@ export function SettingsPage() {
     for (const key of Object.keys(dirty.current) as TextKey[]) if (dirty.current[key]) patch[key] = values[key].trim();
     if (Object.keys(patch).length) void save(patch, '工作区设置已保存'); else toast('当前设置已同步');
   };
-  const saveCurrency=(defaultCurrency:string)=>{if(!settings)return;void save({companyProfile:{legalName:'',englishName:'',address:'',englishAddress:'',phone:'',email:'',taxId:'',customsCode:'',bankName:'',bankAccount:'',swift:'',...(settings.companyProfile||{}),defaultCurrency}});};
+  const saveCurrency=(defaultCurrency:string)=>{if(!settings)return;void save({companyProfile:{defaultCurrency}});};
   const notify = (key: keyof MistSettings['notifications'], value: boolean) => settings && void save({ notifications: { ...settings.notifications, [key]: value } });
   return (
     <MistPage>
-      <PageHeader eyebrow="平台 · 设置" title="系统设置" description="外观、通知与工作空间。选择项即时保存，文字离开输入框后保存。" />
+      <PageHeader eyebrow="平台 · 设置" title="系统设置" description="外观、通知、工作空间与公司资料。选择项即时保存，文字离开输入框后保存；公司资料点击保存。" />
       {(error || workspace.error) && <Banner tone="bad" title={error || workspace.error} actions={<Button size="sm" icon={RefreshCw} onClick={() => { setError(''); void workspace.refresh(); }}>重新读取</Button>} />}
       {pending && !saving && <Banner tone="warn" title="上一次操作结果待核对" actions={<Button size="sm" disabled={saving} onClick={() => void workspace.recover().catch(failure=>setError(failure instanceof Error?failure.message:'原请求核对失败'))}>核对原请求</Button>} />}
       <div className="mist-wizard">
         <VerticalSteps mode="page" current={sec} onSelect={setSec} steps={[
           { id: 'appearance', label: '外观', icon: Palette }, { id: 'notify', label: '通知', icon: Bell },
-          { id: 'workspace', label: '工作空间', icon: Building2 }, { id: 'account', label: '账号', icon: User }, { id: 'security', label: '安全', icon: Shield }]} />
+          { id: 'workspace', label: '工作空间', icon: Building2 }, { id: 'company', label: '公司资料', icon: Landmark }, { id: 'account', label: '账号', icon: User }, { id: 'security', label: '安全', icon: Shield }]} />
         <Card>
           {!settings || !values ? <FormSection title="正在读取设置"><Skeleton height={120} /></FormSection> : <>
-          {member && sec !== 'workspace' && sec !== 'security' && <Banner tone="neutral" title="空间设置由所有者维护">你是被授权成员，这些设置作用于整个空间，只能查看，不能修改。</Banner>}
+          {member && sec !== 'workspace' && sec !== 'security' && sec !== 'company' && <Banner tone="neutral" title="空间设置由所有者维护">你是被授权成员，这些设置作用于整个空间，只能查看，不能修改。</Banner>}
           {sec === 'appearance' && <FormSection title="外观" description="浅色 = 雾蓝 Light Mist，深色 = 深夜 Deep Night。">
             <ChoiceCards<MistSettings['theme']> ariaLabel="主题" disabled={settingsLocked} value={settings.theme} onChange={value => void save({ theme: value })} options={[{ value: 'light', title: '浅色', description: '雾蓝渐变', icon: Sun }, { value: 'dark', title: '深色', description: '深夜蓝渐变', icon: Moon }, { value: 'system', title: '跟随系统', description: '自动切换', icon: Laptop }]} />
             <div style={{ marginTop: 18 }}>
@@ -102,6 +104,8 @@ export function SettingsPage() {
               <Field label="时区" hint="当前设备时区，只读"><Select disabled options={[Intl.DateTimeFormat().resolvedOptions().timeZone]} /></Field><Field label="单号前缀" hint="由业务命令生成"><TextInput value="自动生成" disabled className="mist-mono" /></Field></FormGrid>
           </FormSection>}
           {sec === 'workspace' && <WorkspaceMembers busy={busy} />}
+          {/* 常驻挂载：在分区间切换不丢公司资料草稿；保存按钮在其自身吸底栏。 */}
+          <div hidden={sec !== 'company'}><CompanyProfileSection member={member} /></div>
           {sec === 'account' && <FormSection title="账号" description="工作区显示资料，不改变登录账号、邮箱或密码。"><FormGrid><Field label="姓名"><TextInput aria-label="显示姓名" value={values.profileName} disabled={settingsLocked} onChange={event => edit('profileName', event.target.value)} onBlur={() => saveField('profileName')} /></Field><Field label="邮箱"><TextInput aria-label="显示邮箱" type="email" value={values.profileEmail} disabled={settingsLocked} onChange={event => edit('profileEmail', event.target.value)} onBlur={() => saveField('profileEmail')} /></Field>
             <Field label="语言偏好" hint="保存偏好，不改变当前页面文案"><Select aria-label="工作区语言" disabled={settingsLocked} value={values.locale} onChange={event => { edit('locale', event.target.value); void save({ locale: event.target.value }); }} options={[{ value: 'zh-CN', label: '简体中文' }, { value: 'en-US', label: 'English' }]} /></Field></FormGrid></FormSection>}
           {sec === 'security' && <FormSection title="安全">
@@ -114,7 +118,7 @@ export function SettingsPage() {
             {!workspace.archivedWorkspaces?.length&&<p className="mist-note">回收站为空。</p>}
           </FormSection>}
           </>}
-          <div className="mist-sticky-foot"><span className="mist-note">{saving ? '正在保存…' : '选择项即时保存，文字离开输入框后保存'}</span><span className="mist-spacer" /><Button variant="primary" disabled={busy || !settings} loading={saving} onClick={finish}>完成</Button></div>
+          {sec !== 'company' && <div className="mist-sticky-foot"><span className="mist-note">{saving ? '正在保存…' : '选择项即时保存，文字离开输入框后保存'}</span><span className="mist-spacer" /><Button variant="primary" disabled={busy || !settings} loading={saving} onClick={finish}>完成</Button></div>}
         </Card>
       </div>
       <Dialog open={!!lifecycle} onClose={()=>{if(!lifecycleBusy)setLifecycle(null);}} title={lifecycle?.action==='archive'?'移入回收站':'恢复工作空间'} footer={<><Button disabled={lifecycleBusy} onClick={()=>setLifecycle(null)}>取消</Button><Button variant={lifecycle?.action==='archive'?'danger':'primary'} disabled={busy} loading={lifecycleBusy} onClick={()=>void confirmLifecycle()}>{lifecycle?.action==='archive'?'确认移入回收站':'确认恢复'}</Button></>}>
