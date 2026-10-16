@@ -115,3 +115,12 @@ it('BB-ORD-5 refuses to plan a shipment for an order line that has been closed a
  const f=setup();terms(f);(f.root.orderLines[0] as unknown as {closure:unknown}).closure={id:'c',status:'closed',quantity:8,ordered:10,min:10,max:10,reason:'客户接受',requesterId:'sales',requesterName:'业务员',requestedAt:f.ctx.now,reviewerIds:[]};
  expect(()=>shipment(f)).toThrow('已结案，不能再建出运');
 });
+it('BB-ORD-6 blocks a shipment above the over-ship cap until an over-ship request is approved',()=>{
+ const f=setup();terms(f);const order=f.root.orders[0],line=f.root.orderLines[0];
+ f.root.productions.push({id:'ready-fixture',code:'PROD-READY',orderId:order.id,lineId:line.id,order:order.code,name:line.name,factory:'已确认工厂',qty:12,due:'2026-11-01',pct:100,img:'coat',col:'done'});
+ expect(()=>shipment(f,12)).toThrow('超出允许溢装，须经理审批');expect(f.root.fulfillment.shipments).toHaveLength(0);
+ (f.root.orderLines[0] as unknown as {overShips:unknown[]}).overShips=[{id:'os',status:'approved',quantity:11,ordered:10,max:10,excess:1,reason:'客户要求多发',requesterId:'business',requesterName:'业务员',requestedAt:f.ctx.now,reviewerIds:['leader']}];
+ expect(()=>shipment(f,12)).toThrow('已批准上限 11');
+ (f.root.orderLines[0] as unknown as {overShips:{quantity:number}[]}).overShips[0].quantity=12;
+ expect(shipment(f,12)).toBeTruthy();
+});

@@ -366,3 +366,13 @@ it.each([[980,'确认结案','closed','已结案（实际 980 / 订单 1000，�
   expect(document.body.querySelector('[data-line-closure]')!.textContent).toBe(label);
   expect((getByRole(document.body,'button',{name:'按实际完工结案'}) as HTMLButtonElement).disabled).toBe(true);
 });
+
+it('BB-ORD-6 shows the approved over-ship allowance and its approval record under 分批与尾数',async()=>{
+  lineEditorFixture('approved',1000,11);const state=store.state!,g=state.orders[0].governance!;
+  for(const contract of [g.contract,g.approvedSnapshot!.contract])Object.assign(contract,{overPercent:3,shortPercent:3});
+  (state.orderLines[0] as unknown as {overShips:unknown[]}).overShips=[{id:'os1',status:'approved',quantity:1050,ordered:1000,max:1030,excess:20,reason:'客户要求多发补损',requesterId:'sales',requesterName:'业务员',requestedAt:context.now,reviewerIds:['leader'],decidedBy:'leader',decidedName:'经理',decidedAt:context.now,note:'同意'}];
+  render();await act(async()=>getByRole(host,'row',{name:/精确金额条目/}).click());
+  expect(document.body.querySelector('[data-line-overship-approved]')!.textContent).toMatch(/累计可出 1,?050 件（超出溢装上限 20）/);
+  const record=getByRole(document.body,'list',{name:'超量出运审批记录'});
+  expect(record.textContent).toContain('已批准：累计可出 1050（溢装上限 1030，超出 20），客户要求多发补损；审批意见：同意');expect(record.textContent).toContain('业务员 → 经理');
+});

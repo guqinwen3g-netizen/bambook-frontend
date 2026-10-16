@@ -1,7 +1,7 @@
 import {describe,it,expect} from 'vitest';
 import {applyMistCommand,createMistState,type MistContext,type MistState} from './mistWorkspace';
 import {createOrderGovernance,applyOrderGovernanceCommand,getOrderGovernanceReviews,type OrderGovernanceInput,type OrderGovernanceCommand} from './mistOrderGovernance';
-import {lineToleranceStatus,toleranceText,TOLERANCE_NONE,assertOrderLineOpen} from './mistOrderClosure';
+import {lineToleranceStatus,toleranceText,TOLERANCE_NONE,assertOrderLineOpen,assertShipmentWithinTolerance,shipmentToleranceCheck,approvedOverShip} from './mistOrderClosure';
 function fixture(){let n=0;const c:MistContext={id:()=>`gov-${++n}`,now:'2026-10-13T08:00:00Z',actorName:'业务员',actorId:'sales',authority:{supplier:{},orderReviewerIds:{garment:['leader','sales'],fabric:['fabric-leader']}}};const state=createMistState(c,'empty');state.customers.push({id:'customer',name:'客户',code:'C',country:'CN',city:'',industry:'',owner:'业务员',grade:'',currency:'USD',terms:'',incoterm:'',categories:'',creditLimit:0,since:''});state.files.push({id:'contract-file',name:'confirmed.pdf',mimeType:'application/pdf',size:10,storageKey:'workspace/contract-file',createdAt:c.now});const contract:OrderGovernanceInput={kind:'external',poNumber:'PO-001',confirmationFileIds:['contract-file'],internalPurpose:'',receiver:'',paymentMethod:'TT',depositPercent:30,paymentNote:'30%定金，余款按合同',incoterm:'FOB',deliveryPlace:'上海'};const order={id:'order',code:'SO-1',type:'garment' as const,customerId:'customer',customer:'客户',season:'AW26',lines:1,qty:10,amount:100,currency:'USD',due:'2026-12-01',progress:0,state:'订单草稿',tone:'neutral' as const,owner:'业务员',img:'coat' as const,checklist:[],handoffAt:null,createdAt:c.now,updatedAt:c.now,governance:createOrderGovernance(c,contract)};state.orders.push(order);state.orderLines.push({id:'line',orderId:order.id,name:'外套',style:'A',img:'coat',qty:10,unit:'件',price:10,made:0,qc:0});const run=(command:OrderGovernanceCommand,actor=c)=>applyOrderGovernanceCommand(state,command,actor);return{state,c,contract,order,run};}
 const leader=(f:ReturnType<typeof fixture>)=>({...f.c,actorId:'leader'});
 /** ±3% 的 1000 件条目，已批准。 */
@@ -68,5 +68,35 @@ describe('BB-ORD-5 over/short tolerance and closing a line at actual quantity',(
   f.run({type:'order.governance.submit',payload:{orderId:'order'}});
   expect(getOrderGovernanceReviews(f.state).find(r=>r.status==='pending')!.details).toContainEqual({label:'溢短装',value:'溢装 +5% / 短装 −3%'});
   f.run({type:'order.governance.decide',payload:{id:'order',decision:'approved',note:'通过'}},leader(f));expect(f.order.governance.contract.overPercent).toBe(5);
+ });
+});
+
+describe('BB-ORD-6 shipments above the over-ship cap need manager approval',()=>{
+ const request=(f:ReturnType<typeof fixture>,quantity:number,actor=f.c)=>f.run({type:'order.governance.requestOverShip',payload:{orderId:'order',lineId:'line',quantity,reason:'客户要求多发补损'}} as OrderGovernanceCommand,actor);
+ const cap=(f:ReturnType<typeof fixture>,cumulative:number)=>assertShipmentWithinTolerance(f.state.orderLines[0],f.order.governance.contract,cumulative);
+ it('±3% of 1000: cumulative 1030 is allowed, 1050 is refused; short shipments are only a hint',()=>{
+  const f=thousand();expect(cap(f,1030).verdict).toBe('within');
+  expect(()=>cap(f,1050)).toThrow('超出允许溢装，须经理审批');
+  expect(shipmentToleranceCheck(f.state.orderLines[0],f.order.governance.contract,900)).toMatchObject({verdict:'short',min:970});expect(cap(f,900).verdict).toBe('short');
+ });
+ it('approved request for 1050 lets 1050 through but 1060 is still refused',()=>{
+  const f=thousand();const res=request(f,1050);expect(res.reviewId).toMatch(/^order-overship:/);
+  const review=getOrderGovernanceReviews(f.state).find(r=>r.id===res.reviewId)!;expect(review).toMatchObject({kind:'order',status:'pending',reviewerIds:['leader'],requesterId:'sales'});
+  expect(review.details).toEqual(expect.arrayContaining([{label:'拟出数量（累计）',value:'1050 件'},{label:'超出量',value:'20 件'},{label:'溢装上限',value:'1030 件'}]));
+  expect(()=>cap(f,1050)).toThrow('超出允许溢装');
+  expect(()=>f.run({type:'order.governance.decide',payload:{id:review.entityId,decision:'approved',note:'自批'}})).toThrow('申请人不能审批自己的超量出运申请');
+  f.run({type:'order.governance.decide',payload:{id:review.entityId,decision:'approved',note:'同意多发'}},leader(f));
+  expect(approvedOverShip(f.state.orderLines[0])).toBe(1050);expect(cap(f,1050).verdict).toBe('within');
+  expect(()=>cap(f,1060)).toThrow('已批准上限 1050');
+  expect(f.state.events.some(e=>e.text.includes('超量出运审批通过'))).toBe(true);expect(f.state.notifications[0].title).toContain('超量出运审批通过');
+ });
+ it('refuses requests that are within the cap, duplicated while pending, or have no other reviewer',()=>{
+  const f=thousand();expect(()=>request(f,1020)).toThrow('无需申请');request(f,1050);expect(()=>request(f,1060)).toThrow('已有待审批');
+  const g=thousand();expect(()=>request(g,1050,{...g.c,authority:{supplier:{},orderReviewerIds:{garment:['sales'],fabric:[]}}})).toThrow('尚未配置除申请人外');
+ });
+ it('a rejected request grants no allowance',()=>{
+  const f=thousand();const res=request(f,1050),review=getOrderGovernanceReviews(f.state).find(r=>r.id===res.reviewId)!;
+  f.run({type:'order.governance.decide',payload:{id:review.entityId,decision:'rejected',note:'不同意'}},leader(f));
+  expect(approvedOverShip(f.state.orderLines[0])).toBe(0);expect(()=>cap(f,1050)).toThrow('溢装上限 1030');
  });
 });

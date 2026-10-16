@@ -5,7 +5,7 @@ import type { MistState, MistContext, MistCommandResult, MistQc, MistTarget, Mis
 import type { MistReviewTask } from './mistReview';
 import { supplierBusinessDay, supplierUnavailableReason } from './mistSupplierStatus';
 import { relationHoldReason } from './mistRelationHold';
-import { assertOrderLineOpen } from './mistOrderClosure';
+import { assertOrderLineOpen, assertShipmentWithinTolerance } from './mistOrderClosure';
 import {applyClaimInventoryCommand,claimInventoryPermission,type ClaimInventoryCommand,type ClaimInventoryWarehouse,type ClaimReturnReceipt,type ClaimReceivedRecord} from './mistClaimInventory';
 export type FulfillmentSource = {
     kind: 'version';
@@ -1307,6 +1307,7 @@ export function applyFulfillmentCommand(root: MistState, command: FulfillmentCom
                 const sourceLine = get(root.orderLines, lineId, '来源条目'), terms = f.shippingTerms.find(t => t.orderId === sourceLine.orderId)!;
                 const total = sum(lines.filter(l => l.lineId === lineId).map(l => l.quantity)), reserved = sum(f.shipments.filter(s => s.id !== old?.id && s.state !== 'cancelled').flatMap(s => s.lines.filter(l => l.lineId === lineId).map(l => l.quantity)));
                 const branches = root.productions.filter(branch => branch.lineId === lineId);
+                assertShipmentWithinTolerance(sourceLine, (root.orders.find(o => o.id === sourceLine.orderId) as any)?.governance?.contract, sum([total, reserved]));
                 if (!terms.partialAllowed) {
                     const finalTotal = sum(branches.map(branch => physicalCapacity(root, { orderId: branch.orderId, lineId, productionId: branch.id, quantity: 0, factoryConfirmedAt: '' })));
                     if (reserved > 0 || total !== finalTotal) fail('来源合同禁止分批，须一票覆盖整条最终已确认数量');

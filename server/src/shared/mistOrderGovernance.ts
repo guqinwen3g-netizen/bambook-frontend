@@ -3,7 +3,7 @@ import {MistCommandError,lineAmount,mistMoneyMinor,type MistContext,type MistSta
 import type {MistReviewTask} from './mistReview';
 import {assertOrderLineSource,normalizeOrderLineSource} from './mistOrderSource';
 import {breakdownSummary,lineQuantityFromBreakdown,type OrderLineBreakdown} from './mistOrderBreakdown';
-import {CLOSE_SETTLEMENT_HINT,closureLabel,lineShipmentFacts,normalizeTolerancePercent,toleranceRange,toleranceText,type ClosableLine,type OrderLineClosure} from './mistOrderClosure';
+import {CLOSE_SETTLEMENT_HINT,closureLabel,lineShipmentFacts,normalizeTolerancePercent,toleranceRange,toleranceText,type ClosableLine,type OrderLineClosure,lineShipLimit,overShipLabel,pendingOverShip,assertOrderLineOpen,type OverShipRequest} from './mistOrderClosure';
 import {assertOrderChangeAllowed,createOrderChangeTasks,orderChangeImpact,orderChangeImpactDetails} from './mistOrderChangeImpact';
 
 export type OrderGovernanceInput={
@@ -22,7 +22,8 @@ export type OrderGovernanceCommand=
  |{type:'order.governance.submit';payload:{orderId:string}}
  |{type:'order.governance.decide';payload:{id:string;decision:'approved'|'rejected';note:string}}
  |{type:'order.governance.discardChange';payload:{orderId:string}}
- |{type:'order.governance.closeLine';payload:{orderId:string;lineId:string;reason:string}};
+ |{type:'order.governance.closeLine';payload:{orderId:string;lineId:string;reason:string}}
+ |{type:'order.governance.requestOverShip';payload:{orderId:string;lineId:string;quantity:number;reason:string}};
 type GovernedOrder=MistOrder&{governance?:OrderGovernanceFields};
 function fail(message:string,code='VALIDATION'):never{throw new MistCommandError(code,message,code==='FORBIDDEN'?403:422);}
 function text(v:unknown,label:string,required=false,max=4000){if(typeof v!=='string'||v.length>max||required&&!v.trim())return fail(label+'未填写或格式无效');return v.trim();}
@@ -36,7 +37,7 @@ function normalize(input:Partial<OrderGovernanceInput>|undefined):OrderGovernanc
  return{kind:i.kind||'external',poNumber:text(i.poNumber||'','PO/合同号'),confirmationFileIds:[...new Set((i.confirmationFileIds||[]).map(id=>text(id,'附件ID',true,200)))],internalPurpose:text(i.internalPurpose||'','内部用途'),receiver:text(i.receiver||'','接收团队或负责人'),paymentMethod:i.paymentMethod||'TT',depositPercent:i.depositPercent??null,paymentNote:text(i.paymentNote||'','付款条款'),incoterm:text(i.incoterm||'','贸易术语'),deliveryPlace:text(i.deliveryPlace||'','指定地点'),...tolerance(i)};
 }
 export function createOrderGovernance(_context:MistContext,input?:Partial<OrderGovernanceInput>):OrderGovernanceFields{return{contract:normalize(input),status:'draft',rounds:[],effectiveVersion:0};}
-export function orderGovernancePermission(command:OrderGovernanceCommand){if(!['order.governance.saveDraft','order.governance.submit','order.governance.decide','order.governance.discardChange','order.governance.closeLine'].includes(command.type))fail('未知订单治理操作');return 'orders:write';}
+export function orderGovernancePermission(command:OrderGovernanceCommand){if(!['order.governance.saveDraft','order.governance.submit','order.governance.decide','order.governance.discardChange','order.governance.closeLine','order.governance.requestOverShip'].includes(command.type))fail('未知订单治理操作');return 'orders:write';}
 function getOrder(root:MistState,id:string):GovernedOrder{return root.orders.find(o=>o.id===id)||fail('订单不存在','NOT_FOUND');}
 function governance(order:GovernedOrder):OrderGovernanceFields{return order.governance||fail('订单合同与审批资料尚未初始化','PRECONDITION');}
 function idsExist(root:MistState,input:OrderGovernanceInput){input.confirmationFileIds.forEach(id=>{if(!root.files.some(f=>f.id===id))fail('合同确认附件不属于当前工作区');});}
@@ -69,10 +70,12 @@ function applySnapshot(root:MistState,order:GovernedOrder,s:OrderGovernanceSnaps
 }
 function event(root:MistState,c:MistContext,order:GovernedOrder,message:string){root.events.unshift({id:c.id(),entityType:'order',entityId:order.id,actor:c.actorName,at:c.now,text:message,fileIds:[]});}
 export function assertOrderApproved(root:MistState,orderId:string){const order=getOrder(root,orderId);if(order.governance?.status!=='approved'||!order.governance.approvedSnapshot)fail('订单主单尚未批准，不能进入采购或履约','PRECONDITION');if(!sameCommercialSnapshot(snapshot(root,order),order.governance.approvedSnapshot))fail('订单生效内容与批准快照不一致，不能进入履约','PRECONDITION');return order;}
-export function getOrderGovernanceReviews(root:MistState):MistReviewTask[]{return [...root.orders.flatMap(source=>{const order=source as GovernedOrder;return(order.governance?.rounds||[]).map(round=>({id:'order:'+round.id,kind:'order' as const,entityId:order.id,title:order.code+(round.kind==='change'?' 订单变更审批':' 订单主单审批'),requesterId:round.requesterId,reviewerIds:round.reviewerIds,status:round.status,submittedAt:round.submittedAt,requiredPermission:'orders:write',target:{view:'orders/detail',id:order.id},fileIds:round.snapshot.contract.confirmationFileIds,details:[{label:'订单用途',value:round.snapshot.contract.kind==='internal'?'内部用途订单':'外部客户订单'},{label:'客户/接收方',value:round.snapshot.contract.kind==='internal'?round.snapshot.contract.receiver:round.snapshot.customer},{label:'合同',value:round.snapshot.contract.kind==='internal'?round.snapshot.contract.internalPurpose:round.snapshot.contract.poNumber},{label:'付款',value:round.snapshot.contract.paymentMethod+' · '+round.snapshot.contract.paymentNote},{label:'交期',value:round.snapshot.due},{label:'贸易条件',value:round.snapshot.contract.incoterm+' '+round.snapshot.contract.deliveryPlace},{label:'溢短装',value:toleranceText(round.snapshot.contract)},...(round.reason?[{label:'变更原因',value:round.reason}]:[]),...(round.kind==='change'&&round.status==='pending'?orderChangeImpactDetails(orderChangeImpact(root,order,round.snapshot.lines)):[]),...round.snapshot.lines.map(l=>({label:l.style+' · '+l.name,value:`${l.qty} ${l.unit} × ${l.price} ${round.snapshot.currency}`+(l.breakdown?`；${breakdownSummary(l.breakdown,l.unit)}`:'')}))]}));}),...closureReviews(root)];}
+export function getOrderGovernanceReviews(root:MistState):MistReviewTask[]{return [...root.orders.flatMap(source=>{const order=source as GovernedOrder;return(order.governance?.rounds||[]).map(round=>({id:'order:'+round.id,kind:'order' as const,entityId:order.id,title:order.code+(round.kind==='change'?' 订单变更审批':' 订单主单审批'),requesterId:round.requesterId,reviewerIds:round.reviewerIds,status:round.status,submittedAt:round.submittedAt,requiredPermission:'orders:write',target:{view:'orders/detail',id:order.id},fileIds:round.snapshot.contract.confirmationFileIds,details:[{label:'订单用途',value:round.snapshot.contract.kind==='internal'?'内部用途订单':'外部客户订单'},{label:'客户/接收方',value:round.snapshot.contract.kind==='internal'?round.snapshot.contract.receiver:round.snapshot.customer},{label:'合同',value:round.snapshot.contract.kind==='internal'?round.snapshot.contract.internalPurpose:round.snapshot.contract.poNumber},{label:'付款',value:round.snapshot.contract.paymentMethod+' · '+round.snapshot.contract.paymentNote},{label:'交期',value:round.snapshot.due},{label:'贸易条件',value:round.snapshot.contract.incoterm+' '+round.snapshot.contract.deliveryPlace},{label:'溢短装',value:toleranceText(round.snapshot.contract)},...(round.reason?[{label:'变更原因',value:round.reason}]:[]),...(round.kind==='change'&&round.status==='pending'?orderChangeImpactDetails(orderChangeImpact(root,order,round.snapshot.lines)):[]),...round.snapshot.lines.map(l=>({label:l.style+' · '+l.name,value:`${l.qty} ${l.unit} × ${l.price} ${round.snapshot.currency}`+(l.breakdown?`；${breakdownSummary(l.breakdown,l.unit)}`:'')}))]}));}),...closureReviews(root),...overShipReviews(root)];}
 export function applyOrderGovernanceCommand(root:MistState,command:OrderGovernanceCommand,context:MistContext):MistCommandResult{
  if(command.type==='order.governance.decide'&&command.payload.id.includes(CLOSE_MARK))return decideClosure(root,command.payload,context);
  if(command.type==='order.governance.closeLine')return closeLine(root,command.payload,context);
+ if(command.type==='order.governance.decide'&&command.payload.id.includes(OVER_MARK))return decideOverShip(root,command.payload,context);
+ if(command.type==='order.governance.requestOverShip')return requestOverShip(root,command.payload,context);
  const id=command.type==='order.governance.decide'?command.payload.id:command.payload.orderId,order=getOrder(root,id);if(!order.governance&&command.type==='order.governance.saveDraft')order.governance=createOrderGovernance(context);const g=governance(order);orderGovernancePermission(command);
  if(command.type==='order.governance.saveDraft'){
   if(g.status==='pending'||g.changeDraft?.status==='pending')fail('审批中订单内容已锁定');const p=command.payload,contract=normalize(p.input);idsExist(root,contract);
@@ -140,4 +143,39 @@ function closureReviews(root:MistState):MistReviewTask[]{
  return (root.orderLines as ClosableLine[]).filter(line=>line.closure&&line.closure.reviewerIds.length).map(line=>{const c=line.closure!,order=root.orders.find(o=>o.id===line.orderId) as GovernedOrder|undefined;
   return{id:'order-close:'+c.id,kind:'order' as const,entityId:closureReviewEntity(line.orderId,line.id),title:`${order?.code||''} 条目结案审批 · ${line.style}`,requesterId:c.requesterId,reviewerIds:c.reviewerIds,status:c.status==='pending'?'pending':c.status==='closed'?'approved':'rejected',submittedAt:c.requestedAt,requiredPermission:'orders:write',target:{view:'orders/detail',id:line.orderId},
    details:[{label:'条目',value:`${line.style} · ${line.name}`},{label:'订单数量',value:`${c.ordered} ${line.unit}`},{label:'溢短装',value:toleranceText(order?.governance?.contract)},{label:'允许范围',value:`${c.min}–${c.max} ${line.unit}`},{label:'实际离港（结案数量）',value:`${c.quantity} ${line.unit}`},{label:'差异',value:`${Math.round((c.quantity-c.ordered)*10000)/10000} ${line.unit}`},{label:'结案原因',value:c.reason},{label:'申请人',value:c.requesterName},{label:'结算',value:CLOSE_SETTLEMENT_HINT},{label:'状态',value:closureLabel(c)}]};});
+}
+
+/* ── BB-ORD-6：超量出运申请 ── */
+const OVER_MARK='#overship:';
+export const overShipReviewEntity=(orderId:string,requestId:string)=>orderId+OVER_MARK+requestId;
+function requestOverShip(root:MistState,p:{orderId:string;lineId:string;quantity:number;reason:string},context:MistContext):MistCommandResult{
+ const order=getOrder(root,p.orderId),g=governance(order),line=closableLine(root,order,p.lineId);
+ if(g.status!=='approved')fail('订单主单尚未批准，不能申请超量出运','PRECONDITION');assertOrderLineOpen(line);
+ if(pendingOverShip(line))fail('该条目已有待审批的超量出运申请','PRECONDITION');
+ const quantity=Number(p.quantity);if(!Number.isFinite(quantity)||quantity<=0)fail('拟出数量须为正数');
+ const reason=text(p.reason,'超量原因',true,500),limit=lineShipLimit(line,g.contract);
+ if(quantity<=limit.limit)fail(`拟出数量未超出当前可出上限 ${limit.limit}，无需申请`);
+ const eligible=reviewers(context,order.type).filter(id=>id!==context.actorId);if(!context.actorId||!eligible.length)fail('超量出运须审批，但尚未配置除申请人外的订单审批负责人','PRECONDITION');
+ const r:OverShipRequest={id:context.id(),status:'pending',quantity:Math.round(quantity*10000)/10000,ordered:line.qty,max:limit.max,excess:Math.round((quantity-limit.max)*10000)/10000,reason,requesterId:context.actorId,requesterName:context.actorName,requestedAt:context.now,reviewerIds:eligible};
+ line.overShips=[...(line.overShips||[]),r];
+ root.tasks.unshift({id:context.id(),title:`审批超量出运 ${order.code} · ${line.style}（拟出 ${r.quantity} / 溢装上限 ${r.max}）`,due:order.due,done:false,kind:'order-overship:'+r.id,target:{view:'orders/detail',id:order.id,orderLineId:line.id}});
+ event(root,context,order,`提交超量出运申请：${line.style} 拟累计出运 ${r.quantity} ${line.unit}（订单 ${line.qty}，溢装上限 ${r.max}，超出 ${r.excess}），${reason}`);order.updatedAt=context.now;
+ return{id:order.id,orderId:order.id,lineId:line.id,reviewId:'order-overship:'+r.id};
+}
+function findOverShip(root:MistState,order:GovernedOrder,requestId:string){for(const line of root.orderLines as ClosableLine[]){if(line.orderId!==order.id)continue;const r=(line.overShips||[]).find(x=>x.id===requestId);if(r)return{line,r};}return fail('超量出运申请不存在','NOT_FOUND');}
+function decideOverShip(root:MistState,p:{id:string;decision:'approved'|'rejected';note:string},context:MistContext):MistCommandResult{
+ const [orderId,requestId]=p.id.split(OVER_MARK),order=getOrder(root,orderId),{line,r}=findOverShip(root,order,requestId);
+ if(r.status!=='pending')fail('没有待决定的超量出运申请');
+ if(!context.actorId||context.actorId===r.requesterId)fail('申请人不能审批自己的超量出运申请','FORBIDDEN');
+ if(!r.reviewerIds.includes(context.actorId)||!reviewers(context,order.type).includes(context.actorId))fail('当前账号不在本次及当前有效审批名单','FORBIDDEN');
+ if(!['approved','rejected'].includes(p.decision))fail('审批决定无效');const note=text(p.note,'审批意见',true);
+ r.status=p.decision==='approved'?'approved':'rejected';r.decidedBy=context.actorId;r.decidedName=context.actorName;r.decidedAt=context.now;r.note=note;
+ root.tasks.filter(t=>t.kind==='order-overship:'+r.id&&!t.done).forEach(t=>t.done=true);
+ event(root,context,order,`超量出运审批${r.status==='approved'?'通过':'退回'}：${line.style} 累计可出 ${r.quantity} ${line.unit}，${note}`);root.notifications.unshift({id:context.id(),title:`${order.code} · ${line.style} 超量出运审批${r.status==='approved'?'通过':'退回'}`,detail:note,at:context.now,readAt:null,target:{view:'orders/detail',id:order.id}});order.updatedAt=context.now;
+ return{id:order.id,orderId:order.id,lineId:line.id,overShip:r.status};
+}
+function overShipReviews(root:MistState):MistReviewTask[]{
+ return (root.orderLines as ClosableLine[]).flatMap(line=>(line.overShips||[]).map(r=>{const order=root.orders.find(o=>o.id===line.orderId) as GovernedOrder|undefined;
+  return{id:'order-overship:'+r.id,kind:'order' as const,entityId:overShipReviewEntity(line.orderId,r.id),title:`${order?.code||''} 超量出运审批 · ${line.style}`,requesterId:r.requesterId,reviewerIds:r.reviewerIds,status:r.status,submittedAt:r.requestedAt,requiredPermission:'orders:write',target:{view:'orders/detail',id:line.orderId},
+   details:[{label:'条目',value:`${line.style} · ${line.name}`},{label:'订单数量',value:`${r.ordered} ${line.unit}`},{label:'溢短装',value:toleranceText(order?.governance?.contract)},{label:'溢装上限',value:`${r.max} ${line.unit}`},{label:'拟出数量（累计）',value:`${r.quantity} ${line.unit}`},{label:'超出量',value:`${r.excess} ${line.unit}`},{label:'超量原因',value:r.reason},{label:'申请人',value:r.requesterName},{label:'状态',value:overShipLabel(r)}]};}));
 }

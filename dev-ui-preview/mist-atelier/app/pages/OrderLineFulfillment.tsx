@@ -2,7 +2,7 @@
 import React from 'react';
 import { Banner, Button, Facts, Mono, Pill } from '../../../../components/mist';
 import { breakdownSummary, type OrderLineBreakdown } from '../../../../server/src/shared/mistOrderBreakdown';
-import { CLOSE_SETTLEMENT_HINT, closureLabel, lineToleranceStatus } from '../../../../server/src/shared/mistOrderClosure';
+import { CLOSE_SETTLEMENT_HINT, approvedOverShip, closureLabel, lineToleranceStatus, overShipLabel, type ClosableLine } from '../../../../server/src/shared/mistOrderClosure';
 import { LineCloseDialog } from './OrderLineClose';
 import type { MistOrder, MistOrderLine, MistState } from '../../../../server/src/shared/mistWorkspace';
 import type { OrderGovernanceFields } from '../../../../server/src/shared/mistOrderGovernance';
@@ -54,7 +54,9 @@ export function OrderLineFulfillment({ state, order, line, go, onCloseLine }: { 
         { label: '允许范围', value: <span data-line-range>{q(tolerance.min)} – {q(tolerance.max)} {unit}</span> },
         { label: '剩余待出', value: `${q(tolerance.remaining)} ${unit}` },
         { label: '范围判断（含已排未离港）', value: <span data-line-verdict={tolerance.verdict} className={tolerance.verdict === 'within' ? undefined : 'mist-tone-warn'}>{!tolerance.planned ? '尚未排出运' : tolerance.verdict === 'within' ? '在允许范围内' : tolerance.verdict === 'over' ? `超出溢装上限 ${q(tolerance.planned - tolerance.max)} ${unit}` : `低于短装下限 ${q(tolerance.min - tolerance.planned)} ${unit}`}</span> },
+        { label: '已批准超量额度', value: <span data-line-overship-approved>{approvedOverShip(line) > tolerance.max ? `累计可出 ${q(approvedOverShip(line))} ${unit}（超出溢装上限 ${q(approvedOverShip(line) - tolerance.max)}）` : '无'}</span> },
       ]} />
+      {((line as ClosableLine).overShips || []).length > 0 && <div className="mist-col" style={{ gap: 4 }} role="list" aria-label="超量出运审批记录">{((line as ClosableLine).overShips || []).map(r => <div key={r.id} role="listitem" data-overship-request={r.status} className="mist-row" style={{ gap: 8, flexWrap: 'wrap' }}><Pill tone={r.status === 'approved' ? 'ok' : r.status === 'pending' ? 'warn' : 'bad'}>超量出运</Pill><span className="mist-muted">{overShipLabel(r)}</span><span className="mist-spacer" /><span className="mist-note">{r.requesterName}{r.decidedName ? ` → ${r.decidedName}` : ''}</span></div>)}</div>}
       {shipping.shipments.length > 0 && <div className="mist-col" style={{ gap: 4 }}>{shipping.shipments.map(row => <div key={row.id} className="mist-row" style={{ gap: 8 }}><Mono>{row.code}</Mono><span className="mist-muted">{SHIP_STATE[row.state] || row.state} · {row.plannedDate || '计划日未定'}</span><span className="mist-spacer" /><span className="mist-num">{q(row.quantity)} {unit}</span></div>)}</div>}
       <div className="mist-row" style={{ gap: 8, flexWrap: 'wrap' }}><Button disabled={!onCloseLine || order.governance?.status !== 'approved' || closure?.status === 'closed' || closure?.status === 'pending' || tolerance.open.length > 0} title={tolerance.open.length ? `还有未离港出运：${tolerance.open.map(s => s.code).join('、')}` : undefined} onClick={() => setClosing(true)}>按实际完工结案</Button><span className="mist-note">以已离港 {q(tolerance.departed)} {unit} 结案，须写原因；超出允许范围需订单审批人批准。{CLOSE_SETTLEMENT_HINT}。</span></div>
       {onCloseLine && <LineCloseDialog open={closing} line={line} status={tolerance} onClose={() => setClosing(false)} onSubmit={onCloseLine} />}
