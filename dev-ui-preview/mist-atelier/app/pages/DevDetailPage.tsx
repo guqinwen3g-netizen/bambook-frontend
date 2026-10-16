@@ -10,6 +10,7 @@ import { useMistWorkspace } from '../runtime/workspace';
 import { useNav } from '../nav';
 import { developmentFactoryOptions, InlineDevelopmentFactoryDialog } from './DevCreatePage';
 import { developmentRoundBlocker } from '../../../../server/src/shared/mistDevelopmentRounds';
+import { DevNoticeCard } from './DevNotices';
 import { DevRoundsCard, NewRoundDialog, RoundRequirementsDialog, versionQcFlag, type NewRoundInput } from './DevRounds';
 import { ToProductDialog, developmentVersionLinks, productConversionBlocker } from './DevVersionLinks';
 
@@ -135,6 +136,20 @@ export function DevDetailPage(){
     try{await run({type:'development.version.syncRequirements',payload:{devId:dev.id,versionId:target.id}});if(live.current)toast(`${target.label} 已同步共同要求`);}
     catch(cause){if(live.current)toast(cause instanceof Error?cause.message:`${target.label} 尚未同步`);}finally{busyRef.current=false;if(live.current)setBusy(false);}
   };
+  const generateNotice=async()=>{
+    if(!dev||!version||busyRef.current)return;busyRef.current=true;setBusy(true);setFailure('');
+    try{await run({type:'development.notice.generate',payload:{devId:dev.id,versionId:version.id}});if(live.current)toast(`${version.label} 通知单已生成，旧版保留`);}
+    catch(cause){if(live.current)toast(cause instanceof Error?cause.message:'通知单尚未生成');}finally{busyRef.current=false;if(live.current)setBusy(false);}
+  };
+  const noticeFile=(fileId:string)=>state?.files.find(file=>file.id===fileId);
+  const downloadNotice=(fileId:string)=>{const file=noticeFile(fileId);if(!file){toast('通知单文件不可用或无权读取');return;}void downloadFile(file).catch(cause=>toast(cause instanceof Error?cause.message:'通知单下载失败'));};
+  /** 打印：取归档原件，在新窗口用浏览器 PDF 预览打开后打印；不重新生成。 */
+  const printNotice=(fileId:string)=>{
+    const file=noticeFile(fileId);if(!file){toast('通知单文件不可用或无权读取');return;}
+    const win=window.open('','_blank');
+    void (async()=>{const response=await fetch(fileUrl(file),{headers:apiService.getAuthHeaders(),credentials:'include'});if(!response.ok){win?.close();throw new Error('通知单文件读取失败');}
+      const url=URL.createObjectURL(new Blob([await response.arrayBuffer()],{type:'application/pdf'}));if(win)win.location.href=url;else window.open(url,'_blank');window.setTimeout(()=>URL.revokeObjectURL(url),60000);})().catch(cause=>toast(cause instanceof Error?cause.message:'通知单打印失败'));
+  };
   const uploadRoundFiles=async(files:File[])=>{
     if(busyRef.current)return [];busyRef.current=true;setBusy(true);setFailure('');const ids:string[]=[];
     try{for(const file of files){if(file.size>50*1024*1024)throw Error(`${file.name} 超过 50MB`);ids.push((await uploadFile(file)).id);}}
@@ -180,6 +195,7 @@ export function DevDetailPage(){
           <CardFooter><span className="mist-note">准确版本独立记录</span><span className="mist-spacer" /><Button size="sm" disabled={!version||busy} icon={PackageCheck} onClick={()=>setDialog('sample')}>登记返样</Button></CardFooter>
         </Card>
         {state&&<DevRoundsCard state={state} dev={dev} versionId={version?.id} busy={busy} onSelect={chooseVersion} onCreate={()=>{setFailure('');setRoundInitial(undefined);setDialog('round');}} onEditRequirements={round=>{setFailure('');setRoundEdit(round);}} onSync={target=>void syncRoundTask(target)}/>}
+        {state&&version&&<DevNoticeCard state={state} dev={dev} version={version} busy={busy} onGenerate={()=>void generateNotice()} onDownload={downloadNotice} onPrint={printNotice}/>}
         {fabricDomain&&<Card><CardHeader title="面料开发目标规格" sub="目标要求，不代表工厂分析或 QC 实测"/><KeyValue items={[{label:'分类',value:dev.values.category||'待核实'},{label:'本版工厂要求',value:version?.note||'待记录'},{label:'目标成分',value:fabricRequirements?.composition||'待工厂分析'},{label:'克重原值',value:`${fabricRequirements?.weightValue||'待分析'} ${fabricRequirements?.weightUnit||''}`},{label:'幅宽原值',value:`${fabricRequirements?.widthValue||'待分析'} ${fabricRequirements?.widthUnit||''}`},{label:'纱支 / 组织',value:`${fabricRequirements?.yarn||'待分析'} / ${fabricRequirements?.weave||'待分析'}`},{label:'用途 / 手感',value:`${fabricRequirements?.usage||'—'} / ${fabricRequirements?.handle||'—'}`},{label:'后整理 / 性能',value:`${fabricRequirements?.finish||'—'} / ${fabricRequirements?.performance||'—'}`}]}/></Card>}
         <Card id="mist-dev-goal"><CardHeader title="开发目标" /><p className="mist-sub" style={{padding:'10px 22px 20px',fontSize:13.5}}>{dev.goal||'尚未填写开发目标'}</p></Card>
         <Card id="mist-dev-sample"><CardHeader title="版本附件" />{files.length?files.map(file=><div className="mist-row" key={file!.id} style={{padding:'10px 22px'}}><FileText className="mist-icon" /><span>{file!.name}</span><span className="mist-spacer" /><TextLink icon={Download} onClick={()=>void downloadFile(file!).catch(cause=>setFailure(String(cause)))}>下载</TextLink></div>):<EmptyState compact title="本版暂无附件" />}</Card>

@@ -6,6 +6,7 @@ import { DevDetailPage } from './DevDetailPage';
 import { newRoundError, previewRoundLabels } from './DevRounds';
 import { applyMistCommand, createMistState, type MistCommand, type MistContext, type MistState } from '../../../../server/src/shared/mistWorkspace';
 import { Nav } from '../nav';
+import { developmentNoticeContent, developmentNoticeFingerprint } from '../../../../server/src/shared/mistDevelopmentNotice';
 
 const bridge=vi.hoisted(()=>({current:null as any}));
 vi.mock('../runtime/workspace',()=>({useMistWorkspace:()=>bridge.current}));
@@ -91,6 +92,36 @@ describe('BB-DEV-3 修改共同要求后逐厂同步',()=>{
     apply({type:'development.recordSample',payload:{devId,versionId:state.versions.find(v=>v.label==='R1-B')!.id,sample:'S',quantity:1,returnedAt:ctx.now}});
     await act(async()=>{bridge.current={...bridge.current,state};render();});
     expect(button('同步 R1-B')!.disabled).toBe(true);expect(taskText('R1-B')).toContain('R1-B 已返样，改要求请开新一轮');expect(button('同步 R1-A')!.disabled).toBe(false);
+  });
+});
+
+describe('BB-DEV-4 试样通知单卡片',()=>{
+  const company={legalName:'杭州竹语服饰有限公司',englishName:'',address:'',englishAddress:'',phone:'',email:'',taxId:'',customsCode:'',bankName:'',bankAccount:'',swift:'',defaultCurrency:'USD'};
+  const notice=(label:string,seq:number)=>{const v=state.versions.find(x=>x.label===label)!,dev=state.devs[0],content=developmentNoticeContent(state,dev,v);
+    const fileId=`notice-${label}-${seq}`;state.files.push({id:fileId,name:`${fileId}.pdf`,mimeType:'application/pdf',size:10,storageKey:fileId,createdAt:ctx.now});
+    v.notices=[...(v.notices||[]),{id:fileId,versionId:v.id,seq,noticeNo:`${dev.code}-${label}-N0${seq}`,fileId,fileName:`${fileId}.pdf`,sha256:'x',bytes:10,templateVersion:1,contentFingerprint:developmentNoticeFingerprint(content),snapshotFingerprint:'x',snapshot:{...content,noticeNo:`${dev.code}-${label}-N0${seq}`,seq,templateVersion:1,generatedAt:ctx.now,generatedBy:'业务员',generatedById:'u'},generatedAt:ctx.now,generatedBy:'业务员',generatedById:'u'}];};
+  const card=()=>document.querySelector('#mist-dev-notice')!;
+  const rerender=async(versionId?:string)=>act(async()=>{bridge.current={...bridge.current,state};render(versionId);});
+  it('requires the company profile, then generates the selected factory notice by devId + versionId only',async()=>{
+    const a=state.versions.find(v=>v.label==='R1-A')!;await rerender(a.id);
+    expect(card().textContent).toContain('服装开发通知单');expect(card().textContent).toContain('R1-A · A厂');
+    const generate=[...card().querySelectorAll('button')].find(b=>b.textContent?.trim()==='生成通知单')!;expect(generate.disabled).toBe(true);expect(card().textContent).toContain('公司抬头');
+    state.settings.companyProfile={...company};await rerender(a.id);
+    await act(async()=>[...card().querySelectorAll('button')].find(b=>b.textContent?.trim()==='生成通知单')!.click());
+    expect(bridge.current.run).toHaveBeenCalledWith({type:'development.notice.generate',payload:{devId,versionId:a.id}});
+  });
+  it('lists the latest notice first with old ones kept, and flags 工厂任务已更新 after a sync until regenerated',async()=>{
+    state.settings.companyProfile={...company};const a=state.versions.find(v=>v.label==='R1-A')!;
+    notice('R1-A',1);await rerender(a.id);
+    expect(card().textContent).not.toContain('工厂任务已更新');expect([...card().querySelectorAll('button')].some(b=>b.textContent?.trim()==='重新生成')).toBe(true);
+    apply({type:'development.round.updateRequirements',payload:{devId,roundId:a.roundId!,requirements:'首轮：袖长 -1cm'}});apply({type:'development.version.syncRequirements',payload:{devId,versionId:a.id}});
+    await rerender(a.id);expect(card().textContent).toContain('工厂任务已更新，可重新生成');
+    notice('R1-A',2);await rerender(a.id);
+    const rows=[...card().querySelectorAll('[data-notice]')].map(r=>r.textContent||'');
+    expect(rows).toHaveLength(2);expect(rows[0]).toContain('最新');expect(rows[0]).toContain('-R1-A-N02');expect(rows[1]).toContain('旧版');expect(rows[1]).toContain('-R1-A-N01');
+    expect(card().textContent).not.toContain('工厂任务已更新');
+    // 另一家工厂的版本只显示自己的通知单
+    await rerender(state.versions.find(v=>v.label==='R1-B')!.id);expect(card().querySelectorAll('[data-notice]')).toHaveLength(0);expect(card().textContent).toContain('R1-B · B厂');
   });
 });
 

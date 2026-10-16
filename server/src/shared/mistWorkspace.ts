@@ -9,6 +9,7 @@ import {seedDemoModules,DEMO_SEED_VERSION} from './mistDemoSeed';
 import {createEmailState,applyEmailCommand,emailCommandPermission,seedEmailExamples,type EmailState,type EmailCommand} from './mistEmail';
 import {createPlatformState,applyPlatformCommand,platformCommandPermission,getPlatformReviews,platformCreditAppliedMinor,getRequiredBusinessNumberPlan as platformBusinessNumberPlan,platformBusinessDate,type PlatformState,type PlatformCommand} from './mistPlatform';
 import type {MistCreditDocumentIssue} from './mistCreditDocuments';
+import {developmentNoticeBlocker,developmentNoticeContent,developmentNoticeFingerprint,developmentNoticeNo,type DevNoticeArtifact,type DevNoticeRecord,type DevNoticeSnapshot} from './mistDevelopmentNotice';
 import type {MistReviewTask} from './mistReview';
 import {createOrderGovernance,applyOrderGovernanceCommand,orderGovernancePermission,getOrderGovernanceReviews,assertOrderApproved,type OrderGovernanceFields,type OrderGovernanceCommand,type OrderGovernanceInput} from './mistOrderGovernance';
 import {createOrderFundingState,applyOrderFundingCommand,orderFundingCommandPermission,assertOrderDepositCovered,assertOrderFundingIntegrity,type OrderFundingState,type OrderFundingCommand} from './mistOrderFunding';
@@ -59,6 +60,8 @@ export type MistVersion = {
   qcDecision?: MistQcDecision;
   /** 本厂在本轮的任务（BB-DEV-3）：建轮时复制的共同要求、差异要求与样品要求。改共同要求后需逐厂同步才更新。 */
   task?: MistFactoryTask;
+  /** 本厂本轮的试样通知单（BB-DEV-4），每次生成追加一份，旧版保留。 */
+  notices?: DevNoticeRecord[];
 };
 export type MistFactoryTask = { commonRequirements: string; extraRequirements: string; sampleForm: string; sampleQuantity: number; sampleUnit: string; dueDate: string; syncedAt: string; syncedBy: string };
 export type MistQcDecisionKind = 'rework' | 'resample' | 'abandon';
@@ -200,6 +203,7 @@ export type MistCommand = FulfillmentCommand | MarketCommand | PlatformCommand |
   | { type: 'development.round.create'; payload: { devId: string; factories: string[]; requirements: string; fileIds?: string[]; referenceVersionIds?: string[]; targetDate: string; /** QC 不通过后“重新打样”：记录来源版本的处理决定 */ resampleFromVersionId?: string; /** 逐厂差异要求、样品形态、数量和单位、要求日期；缺省按开发案计划样品与本轮目标日期 */ factoryTasks?: Array<Partial<FactoryTaskInput> & { factory: string }> } }
   | { type: 'development.round.updateRequirements'; payload: { devId: string; roundId: string; requirements: string } }
   | { type: 'development.version.syncRequirements'; payload: { devId: string; versionId: string } }
+  | { type: 'development.notice.generate'; payload: { devId: string; versionId: string } }
   | { type: 'development.close'; payload: { devId: string; kind: 'archived' | 'cancelled'; reason: string } }
   | { type: 'development.qc.decide'; payload: { devId: string; versionId: string; decision: 'rework' | 'abandon'; note: string } }
   | { type: 'fabric.create'; payload: { name: string; request: string; owner: string; due: string } }
@@ -360,6 +364,15 @@ function files(state: MistState, ids: string[]) {
 function event(state: MistState, context: MistContext, entityType: string, entityId: string, message: string, target?: MistTarget, category:NonNullable<MistNotification['category']>='general') {
   state.events.unshift({id:context.id(),entityType,entityId,actor:context.actorName,at:context.now,text:message,fileIds:[]});
   if (target) state.notifications.unshift({id:context.id(),title:message,detail:context.actorName,at:context.now,readAt:null,target,category});
+}
+/** BB-DEV-4：按当前工厂任务冻结通知单快照（仓储层渲染 PDF 前调用，命令内再次核对）。payload 只能是 devId + versionId。 */
+export function prepareDevelopmentNoticeSnapshot(state: MistState, payload: unknown, context: MistContext): DevNoticeSnapshot {
+  if(!payload||typeof payload!=='object'||Object.keys(payload).some(key=>key!=='devId'&&key!=='versionId'))throw new MistCommandError('VALIDATION','通知单内容只能由服务端按当前工厂任务生成');
+  const p=payload as {devId:string;versionId:string}, [dev,version]=versionOf(state,p.devId,p.versionId);
+  const blocked=developmentNoticeBlocker(state,dev,version);if(blocked)throw new MistCommandError('PRECONDITION',blocked);
+  if(!context.actorId)throw new MistCommandError('VALIDATION','缺少真实生成人');
+  const content=developmentNoticeContent(state,dev,version), seq=(version.notices?.length||0)+1;
+  return {...content,noticeNo:developmentNoticeNo(content,seq),seq,templateVersion:1,generatedAt:context.now,generatedBy:context.actorName,generatedById:context.actorId};
 }
 function versionOf(state: MistState, devId: string, versionId: string): [MistDev, MistVersion] {
   const dev = find(state.devs,devId,'开发案'), version = find(state.versions,versionId,'版本');
@@ -738,6 +751,16 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
       dev.updatedAt=context.now;
       event(state,context,'development',dev.id,v.label+' 已同步第 '+round.number+' 轮共同要求',{view:'development/detail',id:dev.id,versionId:v.id});
       result={devId:dev.id,versionId:v.id};break;
+    }
+    case 'development.notice.generate': {
+      const [dev,v]=versionOf(state,p.devId,p.versionId), snapshot=prepareDevelopmentNoticeSnapshot(state,p,context);
+      const artifact=(context as MistContext&{developmentNotice?:DevNoticeArtifact}).developmentNotice;
+      if(!artifact||artifact.record.versionId!==v.id||artifact.record.snapshotFingerprint!==developmentNoticeFingerprint(snapshot)||developmentNoticeFingerprint(artifact.record.snapshot)!==artifact.record.snapshotFingerprint||artifact.record.contentFingerprint!==developmentNoticeFingerprint(developmentNoticeContent(state,dev,v))||artifact.record.fileId!==artifact.file.id)throw new MistCommandError('PRECONDITION','通知单须由服务端按当前工厂任务生成并归档');
+      const record=artifact.record;
+      if(state.versions.some(row=>row.notices?.some(n=>n.id===record.id||n.fileId===record.fileId))||state.files.some(f=>f.id===artifact.file.id))throw new MistCommandError('CONFLICT','通知单记录或文件已存在',409);
+      state.files.push(structuredClone(artifact.file));v.notices=[...(v.notices||[]),structuredClone(record)];dev.updatedAt=context.now;
+      event(state,context,'development',dev.id,'生成'+snapshot.title+' '+record.noticeNo+'（'+v.factory+'）',{view:'development/detail',id:dev.id,versionId:v.id});
+      result={devId:dev.id,versionId:v.id,noticeId:record.id,fileId:record.fileId};break;
     }
     case 'development.archive': {
       const [dev,v]=versionOf(state,p.devId,p.versionId);
