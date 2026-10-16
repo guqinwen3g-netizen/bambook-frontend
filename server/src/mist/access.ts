@@ -1,6 +1,7 @@
 import type { TokenPayload } from '../auth/service';
 import { hasScope } from '../auth/permissionService';
 import type { PermissionScope } from '../_shared/rolePermissionMatrix';
+import { emailVisibleScope } from '../shared/mistEmail';
 import type { MistState, MistWorkspaceMember, MistWorkspaceMemberLog, MistWorkspaceAccess as SharedAccess } from '../shared/mistWorkspace';
 /**
  * 工作空间访问与读投影。
@@ -74,6 +75,19 @@ export function projectState(state: MistState, actor: TokenPayload, empty: () =>
     next.tasks = (state.tasks || []).filter(task => visibleTarget(task.target));
     next.notifications = (state.notifications || []).filter(item => visibleTarget(item.target));
     next.calendar = (state.calendar || []).filter(item => visibleTarget(item.target));
+  }
+  // 邮箱按用户 ID 隔离：个人邮箱只给本人，共享邮箱给本人与授权成员；不可见邮箱的邮件、草稿、发送记录、处理记录与跟进来源一并移除，附件随引用隐藏。
+  if (next.email && !hidden.some(section => section.key === 'email')) {
+    const scope = emailVisibleScope(next.email, actor.userId), denied = new Set<string>();
+    for (const list of [next.email.accounts, next.email.messages, next.email.drafts, next.email.sends || []] as Array<Array<{ id: string }>>) for (const row of list) if (!scope.entityIds.has(row.id)) denied.add(row.id);
+    if (denied.size) {
+      next.email = { ...next.email, accounts: scope.accounts, messages: scope.messages, drafts: scope.drafts, sends: scope.sends };
+      const allowed = (target?: { view?: string; id?: string }) => !(target?.view === 'emails' && target.id && denied.has(target.id));
+      next.events = (next.events || []).filter(event => !(event.entityType === 'email' && denied.has(event.entityId)));
+      next.tasks = (next.tasks || []).filter(task => allowed(task.target));
+      next.notifications = (next.notifications || []).filter(item => allowed(item.target as { view?: string; id?: string } | undefined));
+      next.calendar = (next.calendar || []).filter(item => allowed(item.target));
+    }
   }
   next.files = visibleFiles(state, next, actor.userId, ownerId);
   return { state: next, hidden };

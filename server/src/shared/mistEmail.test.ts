@@ -10,7 +10,7 @@ function fixture(seed:'demo'|'empty'='demo'){
 
 describe('智能邮箱工作空间切片',()=>{
   it('空白空间没有任何邮箱或邮件，示例空间全部标注示例',()=>{
-    expect(fixture('empty').state.email).toEqual({accounts:[],messages:[],drafts:[]});
+    expect(fixture('empty').state.email).toEqual({accounts:[],messages:[],drafts:[],sends:[]});
     const f=fixture();
     expect(f.state.email.accounts.length).toBe(2);
     expect(f.state.email.accounts.every(a=>a.example)).toBe(true);

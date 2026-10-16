@@ -1,3 +1,4 @@
+import { EMAIL_SERVER_COMMAND } from '../shared/mistEmail';
 import { createHash, randomUUID } from 'node:crypto';
 import type { TokenPayload } from '../auth/service';
 import type { MistState, MistCommand, MistContext } from '../shared/mistWorkspace';
@@ -237,6 +238,7 @@ export class MistRepository {
   async execute(prior: TokenPayload, workspaceId: string, input: MistCommandRequest) {
     if (!input.command || typeof input.command.type !== 'string' || !input.command.payload || typeof input.command.payload !== 'object' || Array.isArray(input.command.payload)) fail('INVALID_COMMAND', '业务命令格式无效', 400);
     if (input.command.type === 'files.add') fail('INVALID_COMMAND', '附件只能通过真实上传接口添加', 400);
+    if (EMAIL_SERVER_COMMAND.test(input.command.type)) fail('INVALID_COMMAND', '收信、发信与连接结果只能由服务端邮件服务写入', 400);
     return this.executeInternal(prior, workspaceId, input, { command: input.command });
   }
   private async executeInternal(prior: TokenPayload, workspaceId: string, input: Omit<MistCommandRequest, 'command'> & { command?: any; claimId?: string }, hashPayload: any, upload?: MistFileInput) {
@@ -431,6 +433,24 @@ export class MistRepository {
       return {receipt:{requestId:input.requestId,...result},replayed:false};
     });
   }
+  /** 邮件服务读取：按当前账号的读投影返回（只含本人/授权成员可见的邮箱、邮件与附件），并要求邮件编辑权限。 */
+  async mailSnapshot(prior: TokenPayload, workspaceId: string) {
+    return this.transact(async db => {
+      const { actor, row } = await this.own(db, prior, workspaceId, 'emails:write');
+      return { actor, revision: row.revision as number, state: projectState(row.state, actor, this.emptyState(actor), row.ownerId).state };
+    });
+  }
+  /** 邮件服务写回真实收发结果：每次读取最新版本作为基线，经同一命令事务（权限、成员、邮箱归属复核）落库。 */
+  async executeMail(prior: TokenPayload, workspaceId: string, command: { type: string; payload: Record<string, unknown> }) {
+    if (!EMAIL_SERVER_COMMAND.test(command.type) && command.type !== 'email.draft.save') fail('INVALID_COMMAND', '邮件服务命令无效', 400);
+    for (let attempt = 1; ; attempt++) {
+      const { revision: current } = await this.mailSnapshot(prior, workspaceId);
+      try { return await this.executeInternal(prior, workspaceId, { requestId: `mail-${randomUUID()}`, expectedRevision: current, command }, { command }); }
+      catch (error: any) { if (error?.code !== 'REVISION_CONFLICT' || attempt >= MIST_MAX_SAVE_ATTEMPTS) throw error; }
+    }
+  }
+  /** 仅供邮件服务在授权读取后使用：私有附件写入、读取与未落库清理。 */
+  mailFiles() { return { write: (workspaceId: string, input: MistFileInput, now: string) => this.files.write(workspaceId, input, now), read: (workspaceId: string, file: MistStoredFile) => this.files.read(workspaceId, file), remove: (workspaceId: string, file: MistStoredFile) => this.files.remove(workspaceId, file) }; }
   async upload(prior: TokenPayload, workspaceId: string, input: MistUploadRequest, file: MistFileInput) {
     const claimId=input.claimId===undefined?undefined:claimIdentifier(input.claimId);
     const meta = validateFileInput(file);
