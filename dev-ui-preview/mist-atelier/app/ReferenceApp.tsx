@@ -1,5 +1,6 @@
 import React from 'react';
-import { Bell, ClipboardList, Component, KeyRound, Layers, LogOut, Moon, Settings2, ShieldCheck, Sparkles, SquareDashed } from 'lucide-react';
+import { Bell, ClipboardList, Component, KeyRound, Layers, LogOut, Moon, Search, Settings2, ShieldCheck, Sparkles, SquareDashed } from 'lucide-react';
+
 import {
   AssistantDrawer, Banner, Button, Card, CardHeader, CommandPalette, Drawer, EmptyState, Field, KeyValue, TextInput, MistAppShell, MistPage, MistRoot, MistSidebarPresentation, MistTopbar, ToastProvider, MistDensityContext, useHotkey, useToast,
   type ChatMessage, type CommandItem, type Crumb, type NavSection, type ThemeMode,
@@ -36,20 +37,22 @@ import { EmailsPage } from './pages/modules/EmailsPage';
 import { MistReviewButton, MistReviewProvider } from './runtime/reviews';
 import { ApprovalsPage } from './pages/ApprovalsPage';
 import { NotificationsPage } from './pages/NotificationsPage';
-import { moduleSearchRecords } from './runtime/search';
+import { workspaceSearchRecords } from './runtime/search';
+import { SearchPage } from './pages/SearchPage';
 import { apiService } from '../../../services/apiService';
 import { platformBusinessDate } from '../../../server/src/shared/mistPlatform';
 import { visibleMistNotifications, mistDailyDigest } from './runtime/notificationPreferences';
+const SEARCH_ICONS: Record<string, typeof Layers> = { 开发案: Layers, 订单: ClipboardList };
 
 const PAGES: Record<string, React.FC> = {
   ...FULFILLMENT_PAGES,...MARKET_PAGES,...PLATFORM_PAGES,
   emails: EmailsPage, cockpit: HomePage, development: DevListPage, 'development/detail': DevDetailPage, 'development/new': DevCreatePage,
   orders: OrderListPage, 'orders/detail': OrderDetailPage, 'orders/new': OrderCreatePage, calendar: CalendarPage, 'payment-vouchers': FinancePage, crm: CustomerPage,
-  'production-board': ProductionPage, 'system-settings': SettingsPage, settings: SettingsPage, 'workspace-settings': SettingsPage, approvals: ApprovalsPage, notifications: NotificationsPage, states: StatesPage, 'design-system': DesignSystemPage,
+  'production-board': ProductionPage, 'system-settings': SettingsPage, settings: SettingsPage, 'workspace-settings': SettingsPage, approvals: ApprovalsPage, notifications: NotificationsPage, search: SearchPage, states: StatesPage, 'design-system': DesignSystemPage,
 };
-const LIVE_VIEWS = new Set(['emails','cockpit','development','development/detail','development/new','orders','orders/detail','orders/new','payment-vouchers','crm','production-board','calendar','system-settings','settings','workspace-settings','approvals','notifications']);
+const LIVE_VIEWS = new Set(['emails','cockpit','development','development/detail','development/new','orders','orders/detail','orders/new','payment-vouchers','crm','production-board','calendar','system-settings','settings','workspace-settings','approvals','notifications','search']);
 const ROUTE_KEYS = ['view','id','versionId','batchId','section','customerId','orderLineId','productionId','detail'] as const;
-const LABELS: Record<string, string> = { 'design-system': '设计系统', states: '空 / 加载 / 错误', 'system-settings': '系统设置', settings: '系统设置', 'workspace-settings': '工作空间设置', approvals: '审批与放行', notifications: '通知中心' };
+const LABELS: Record<string, string> = { 'design-system': '设计系统', states: '空 / 加载 / 错误', 'system-settings': '系统设置', settings: '系统设置', 'workspace-settings': '工作空间设置', approvals: '审批与放行', search: '搜索结果', notifications: '通知中心' };
 const GROUPS: Record<string, string> = { overview: '我的事务', customer: '客户与市场', fulfillment: '订单履约', finance: '财务与成本', platform: '平台' };
 
 export function readMistRoute(): Route {
@@ -87,7 +90,7 @@ function useSections(): NavSection[] {
 function crumbsFor(route: Route, go: (view: string, id?: string) => void, objectLabel?: string, versionLabel?: string): Crumb[] {
   const base = route.view.split('/')[0], mod = getModuleByView(base as View);
   const label = mod?.productLabel ?? LABELS[base] ?? base;
-  const crumbs: Crumb[] = [{ label: mod ? GROUPS[mod.nav.group] : base === 'workspace-settings' || base === 'approvals' || base === 'notifications' ? '我的事务' : '设计系统', hideOnMobile: true }];
+  const crumbs: Crumb[] = [{ label: mod ? GROUPS[mod.nav.group] : base === 'workspace-settings' || base === 'approvals' || base === 'notifications' || base === 'search' ? '我的事务' : '设计系统', hideOnMobile: true }];
   if (route.view.includes('/')) {
     crumbs.push({ label, onClick: () => go(base) });
     crumbs.push(route.view.endsWith('/new') ? { label: base === 'orders' ? '新建订单' : '新建开发案' } : { label: objectLabel || route.id || '未指定对象', mono: true });
@@ -198,17 +201,14 @@ function AppInner({ theme, setTheme }: { theme: ThemeMode; setTheme: (theme: The
   useHotkey('k', () => { if (session.status === 'authenticated') setPalette(value => !value); }, { meta: true });
   useHotkey('j', () => { if (session.status === 'authenticated') openAI(); }, { meta: true });
   const commands: CommandItem[] = [
-    ...((canDevelopment?state?.devs:[])?.map(d=>({id:'dev-'+d.id,group:'开发案',label:d.name,hint:d.code,keywords:d.style,icon:Layers,run:()=>go('development/detail',d.id,{versionId:d.currentVersionId||undefined})}))||[]),
-    ...((canDevelopment?state?.drafts:[])?.map(d=>({id:'draft-'+d.id,group:'草稿',label:d.values.name||'未命名开发案',run:()=>go('development/new',d.id)}))||[]),
-    ...((canOrders?state?.orders:[])?.map(o=>({id:'order-'+o.id,group:'订单',label:o.code,hint:o.customer,icon:ClipboardList,run:()=>go('orders/detail',o.id)}))||[]),
-    ...((canCustomers?state?.customers:[])?.map(c=>({id:'customer-'+c.id,group:'客户',label:c.name,hint:c.code,run:()=>go('crm',c.id,{customerId:c.id})}))||[]),
-    ...(state ? moduleSearchRecords(state).filter(r => session.canAccessView(r.view as View)).map(r => ({ id: r.view + '-' + r.id, group: r.group, label: r.label, hint: r.hint, keywords: r.keywords, run: () => go(r.view, r.id) })) : []),
+    ...(state ? workspaceSearchRecords(state, view => session.canAccessView(view as View)).map(r => ({ id: r.view + '-' + r.id, group: r.group, label: r.label, hint: r.hint, keywords: r.keywords, icon: SEARCH_ICONS[r.group], run: () => go(r.view, r.id, r.target) })) : []),
     ...sections.flatMap(section => section.items.map(item => ({ id: 'go-' + item.id, group: '跳转', label: item.label, hint: section.label, icon: item.icon, run: () => go(item.id) }))),
     ...(canDevelopment?[{id:'new-dev',group:'操作',label:'新建开发案',run:()=>go('development/new')}]:[]),
     { id: 'approvals', group: '操作', label: '审批与放行', keywords: '审批 待我审批 放行 付款申请', icon: ClipboardList, run: () => go('approvals') },
     { id: 'notifications', group: '操作', label: '通知中心', keywords: '通知 提醒 未读 消息', icon: Bell, run: () => go('notifications') },
     { id: 'theme', group: '操作', label: '切换深浅色', icon: Moon, run: toggleTheme },
     { id: 'ai', group: '操作', label: '问小竹', hint: '⌘ J', icon: Sparkles, run: ()=>openAI() },
+    ...(query.trim() ? [{ id: 'search-all', group: '搜索', label: '打开搜索结果页查看全部', keywords: query.trim(), icon: Search, run: () => go('search', undefined, { section: query.trim() }) }] : []),
   ];
   const nav = { route, go, theme, toggleTheme, openPalette: () => setPalette(true), openAI };
   if (session.status === 'loading') return null;

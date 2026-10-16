@@ -1,5 +1,6 @@
 import type {MistState} from '../../../../server/src/shared/mistWorkspace';
-export type MistSearchRecord={view:string;id:string;group:string;label:string;hint:string;keywords:string};
+import type {RouteTarget} from '../nav';
+export type MistSearchRecord={view:string;id:string;group:string;label:string;hint:string;keywords:string;target?:RouteTarget};
 /** Search follows the current workspace only; the caller applies effective view permission. */
 export function moduleSearchRecords(s:MistState):MistSearchRecord[]{
  const records:MistSearchRecord[]=[];
@@ -20,4 +21,27 @@ export function moduleSearchRecords(s:MistState):MistSearchRecord[]{
  add('risks','风险',s.platform?.risks||[],r=>r.title,r=>r.state);
  add('claims','索赔',s.platform?.claims||[],r=>r.title||r.code,r=>r.code||'');
  return records;
+}
+/** 命令面板与搜索结果页共用的记录源：开发案、草稿、订单、客户 + 各模块记录，按当前账号可进入的页面过滤。 */
+export function workspaceSearchRecords(s:MistState,canAccessView:(view:string)=>boolean):MistSearchRecord[]{
+ const can={dev:canAccessView('development'),orders:canAccessView('orders'),crm:canAccessView('crm')};
+ return [
+  ...(can.dev?s.devs:[]).map(d=>({view:'development/detail',id:d.id,group:'开发案',label:d.name,hint:d.code,keywords:[d.style,d.customer].filter(Boolean).join(' '),target:{versionId:d.currentVersionId||undefined}})),
+  ...(can.dev?s.drafts:[]).map(d=>({view:'development/new',id:d.id,group:'草稿',label:d.values.name||'未命名开发案',hint:'',keywords:[d.values.style,d.values.customer].filter(Boolean).join(' ')})),
+  ...(can.orders?s.orders:[]).map(o=>({view:'orders/detail',id:o.id,group:'订单',label:o.code,hint:o.customer,keywords:[o.season,o.owner].filter(Boolean).join(' ')})),
+  ...(can.crm?s.customers:[]).map(c=>({view:'crm',id:c.id,group:'客户',label:c.name,hint:c.code,keywords:[c.country,c.city,c.owner].filter(Boolean).join(' '),target:{customerId:c.id}})),
+  ...moduleSearchRecords(s).filter(r=>canAccessView(r.view)),
+ ];
+}
+export type MistSearchHit=MistSearchRecord&{score:number};
+/** 空格分词，全部命中才算结果；名称完全一致 > 名称开头 > 名称包含 > 编号/摘要 > 其他关键词。 */
+export function rankSearchRecords(records:ReadonlyArray<MistSearchRecord>,query:string):MistSearchHit[]{
+ const q=query.trim().toLowerCase(),tokens=q.split(/\s+/).filter(Boolean);
+ if(!tokens.length)return [];
+ return records.flatMap(r=>{
+  const label=(r.label||'').toLowerCase(),hint=(r.hint||'').toLowerCase(),all=`${label} ${hint} ${(r.keywords||'').toLowerCase()} ${r.group.toLowerCase()}`;
+  if(!tokens.every(t=>all.includes(t)))return [];
+  const score=label===q?100:label.startsWith(q)?80:label.includes(q)?60:hint.includes(q)?40:tokens.every(t=>label.includes(t))?50:20;
+  return [{...r,score}];
+ }).sort((a,b)=>b.score-a.score||a.label.localeCompare(b.label,'zh-CN'));
 }
