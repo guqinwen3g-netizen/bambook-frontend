@@ -1,52 +1,64 @@
-request: 2f55139a38d77d85183482251b572704cc205e7e
-request-sha256: d63ad8cdb04b067d5110fcbec351a74c38eb6a321cde95a5d6d2332de8c86e4c
-exit: 0
-seconds: 4
-finished: 2026-10-16T16:40:16Z
-run: https://github.com/guqinwen3g-netizen/bambook-main/actions/runs/38933744775
+request: 1ba910c0f1703deadea8d02273fcd44fe76bcfec
+request-sha256: 7bd14d327c7d833766ebda4c5819c7ab94b82984a23cdb54ec2fbb23ff8def78
+exit: 1
+seconds: 5
+finished: 2026-10-16T19:19:05Z
+run: https://github.com/guqinwen3g-netizen/bambook-main/actions/runs/38953990437
 ---
-capacity launch diagnostic
-Started bambook-ci-capacity-supervisor-6d3103ab02dc.service - [systemd-run] /usr/bin/python3 /var/tmp/bambook-ci-capacity-6d3103ab02dc37181e2bae1dd22dda6cf5ca46cd/trial.py supervisor 6d3103ab02dc37181e2bae1dd22dda6cf5ca46cd.
-pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1003)
-bambook-ops :  PWD=/ ; USER=root ; COMMAND=/usr/bin/systemd-run --quiet --unit=bambook-ci-capacity-6d3103ab02dc --uid=1003 --gid=1003 -p Type=exec -p RemainAfterExit=yes -p RuntimeMaxSec=900 -p MemoryMax=2048M -p MemoryHigh=1792M -p MemorySwapMax=256M -p CPUQuota=200% -p CPUWeight=20 -p IOWeight=20 -p TasksMax=160 -p OOMPolicy=stop -p Nice=10 -p PrivateTmp=yes -p ProtectHome=yes -p ProtectSystem=strict -p ReadWritePaths=/var/tmp/bambook-ci-capacity-6d3103ab02dc37181e2bae1dd22dda6cf5ca46cd /var/tmp/bambook-ci-capacity-evidence-6d3103ab02dc37181e2bae1dd22dda6cf5ca46cd -p InaccessiblePaths=/srv/bambook-dev /run/postgresql /var/lib/postgresql -p NoNewPrivileges=yes -p RestrictSUIDSGID=yes /usr/bin/env -i PATH=/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8 /usr/bin/python3 /var/tmp/bambook-ci-capacity-6d3103ab02dc37181e2bae1dd22dda6cf5ca46cd/trial.py worker 6d3103ab02dc37181e2bae1dd22dda6cf5ca46cd
-Starting bambook-ci-capacity-6d3103ab02dc.service - [systemd-run] /usr/bin/env -i PATH=/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8 /usr/bin/python3 /var/tmp/bambook-ci-capacity-6d3103ab02dc37181e2bae1dd22dda6cf5ca46cd/trial.py worker 6d3103ab02dc37181e2bae1dd22dda6cf5ca46cd...
-bambook-ci-capacity-6d3103ab02dc.service: Failed to set up mount namespacing: /var/tmp/bambook-ci-capacity-6d3103ab02dc37181e2bae1dd22dda6cf5ca46cd: No such file or directory
-bambook-ci-capacity-6d3103ab02dc.service: Failed at step NAMESPACE spawning /usr/bin/env: No such file or directory
-bambook-ci-capacity-6d3103ab02dc.service: Main process exited, code=exited, status=226/NAMESPACE
-bambook-ci-capacity-6d3103ab02dc.service: Failed with result 'exit-code'.
-Failed to start bambook-ci-capacity-6d3103ab02dc.service - [systemd-run] /usr/bin/env -i PATH=/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8 /usr/bin/python3 /var/tmp/bambook-ci-capacity-6d3103ab02dc37181e2bae1dd22dda6cf5ca46cd/trial.py worker 6d3103ab02dc37181e2bae1dd22dda6cf5ca46cd.
-pam_unix(sudo:session): session closed for user root
-pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1003)
-bambook-ops :  PWD=/ ; USER=root ; COMMAND=/usr/bin/systemctl stop bambook-ci-capacity-6d3103ab02dc
-pam_unix(sudo:session): session closed for user root
-Traceback (most recent call last):
-  File "/var/tmp/bambook-ci-capacity-6d3103ab02dc37181e2bae1dd22dda6cf5ca46cd/trial.py", line 129, in <module>
-    sys.exit(worker() if sys.argv[1]=='worker' else supervisor())
-                                                    ~~~~~~~~~~^^
-  File "/var/tmp/bambook-ci-capacity-6d3103ab02dc37181e2bae1dd22dda6cf5ca46cd/trial.py", line 80, in supervisor
-    subprocess.run(args,check=True)
-    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
-  File "/usr/lib/python3.14/subprocess.py", line 578, in run
-    raise CalledProcessError(retcode, process.args,
-                             output=stdout, stderr=stderr)
-subprocess.CalledProcessError: Command '['sudo', '-n', 'systemd-run', '--quiet', '--unit=bambook-ci-capacity-6d3103ab02dc', '--uid=1003', '--gid=1003', '-p', 'Type=exec', '-p', 'RemainAfterExit=yes', '-p', 'RuntimeMaxSec=900', '-p', 'MemoryMax=2048M', '-p', 'MemoryHigh=1792M', '-p', 'MemorySwapMax=256M', '-p', 'CPUQuota=200%', '-p', 'CPUWeight=20', '-p', 'IOWeight=20', '-p', 'TasksMax=160', '-p', 'OOMPolicy=stop', '-p', 'Nice=10', '-p', 'PrivateTmp=yes', '-p', 'ProtectHome=yes', '-p', 'ProtectSystem=strict', '-p', 'ReadWritePaths=/var/tmp/bambook-ci-capacity-6d3103ab02dc37181e2bae1dd22dda6cf5ca46cd /var/tmp/bambook-ci-capacity-evidence-6d3103ab02dc37181e2bae1dd22dda6cf5ca46cd', '-p', 'InaccessiblePaths=/srv/bambook-dev /run/postgresql /var/lib/postgresql', '-p', 'NoNewPrivileges=yes', '-p', 'RestrictSUIDSGID=yes', '/usr/bin/env', '-i', 'PATH=/usr/local/bin:/usr/bin:/bin', 'LANG=C.UTF-8', '/usr/bin/python3', '/var/tmp/bambook-ci-capacity-6d3103ab02dc37181e2bae1dd22dda6cf5ca46cd/trial.py', 'worker', '6d3103ab02dc37181e2bae1dd22dda6cf5ca46cd']' returned non-zero exit status 1.
-bambook-ci-capacity-supervisor-6d3103ab02dc.service: Main process exited, code=exited, status=1/FAILURE
-bambook-ci-capacity-supervisor-6d3103ab02dc.service: Failed with result 'exit-code'.
-supported runtime and limits
-systemd 259 (259.5-0ubuntu3)
-               total        used        free      shared  buff/cache   available
-Mem:            3718        1144        1729          54        1187        2573
-Swap:           2047         243        1804
-Filesystem     1048576-blocks  Used Available Capacity Mounted on
-/dev/vda3               39675  8802     29145      24% /
-exact prepared source marker
-4f87590ec35c943853a463f506e5340b67f08586b8b1fb86976ae0766c8e455e
-current release
-/srv/bambook-dev/releases/6d3103ab02dc37181e2bae1dd22dda6cf5ca46cd
-Id=bambook-dev.service
-ActiveState=active
-MainPID=560986
-
-Id=bambook-dev-mist.service
-ActiveState=active
-MainPID=560998
+== services
+active active active active
+== listeners (mail)
+127.0.0.1:143 127.0.0.1:25 127.0.0.1:587 127.0.0.1:993
+== dovecot accounts
+sales@sylway.cloud finance@sylway.cloud customer-demo@sylway.cloud factory-demo@sylway.cloud
+bash: line 5: /etc/dovecot/users: Permission denied
+count=
+bash: line 7: /srv/bambook-dev/shared/mail-accounts.txt: Permission denied
+== secret file: exists=yes mode=600 owner=root lines=
+== imap login health (993, self-signed accepted, password never printed)
+sales@sylway.cloud LOGIN_OK INBOX (MESSAGES 1 UIDNEXT 2 UIDVALIDITY 1792083395) folders=5
+finance@sylway.cloud LOGIN_OK INBOX (MESSAGES 0 UIDNEXT 1 UIDVALIDITY 1792178343) folders=5
+customer-demo@sylway.cloud LOGIN_OK INBOX (MESSAGES 1 UIDNEXT 2 UIDVALIDITY 1792083395) folders=5
+factory-demo@sylway.cloud LOGIN_OK INBOX (MESSAGES 0 UIDNEXT 1 UIDVALIDITY 1792178344) folders=5
+== smtp submission 587 EHLO/STARTTLS (no auth)
+587 STARTTLS_OK auth=True
+== runtime layout
+/srv/bambook-dev/releases/1669fed6a6b4a6ed0e94cbcac0d49ddef711a8f2
+v22.22.1
+output
+scripts
+server
+web
+BACKEND_GUIDE.md
+acceptance-tests
+acceptance.vitest.config.ts
+data
+docker-compose.yml
+docs
+e2e-approval-test.mjs
+edge_tts_server.py
+knowledge-base-frontend
+knowledge-base-scripts
+knowledge_api
+logs
+node_modules
+ops-panel
+package-lock.json
+package.json
+prisma
+scaffold-output
+scripts
+sensevoice_server.py
+src
+storage
+tsconfig.json
+tsconfig.mist.json
+vitest.config.ts
+imap-simple=5.1.0 imap=0.8.19 mailparser=3.9.1 nodemailer=7.0.12 tsx=4.21.0 ts-node=10.9.2 typescript=5.9.3 
+User=bambook-deploy
+WorkingDirectory=/srv/bambook-dev/current/server
+EnvironmentFile=/etc/bambook-dev/backend.env
+ExecStart=/usr/bin/node node_modules/tsx/dist/cli.mjs src/mist/standalone.ts
+== github reachability
+301
+/usr/bin/git
