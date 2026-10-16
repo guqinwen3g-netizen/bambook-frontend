@@ -16,3 +16,19 @@ export function fabricRequirementError(input:FabricDevelopmentRequirements):stri
  return null;
 }
 export function validFabricSample(quantity:number,form:string,unit:string):boolean{if(typeof form!=='string'||typeof unit!=='string')return false;const f=form.trim(),u=unit.trim();return Number.isFinite(quantity)&&quantity>0&&!!f&&((f==='米样'&&u==='米')||(f!=='米样'&&u==='份'&&Number.isInteger(quantity)));}
+
+/** BB-DEV-1：开发案发起方。旧记录没有该字段时均为客户开发，按原样读取。 */
+export type DevelopmentInitiator = 'customer' | 'internal';
+export type DevelopmentRequestType = 'replicate' | 'design' | 'other';
+export const DEVELOPMENT_REQUEST_TYPES: Record<DevelopmentRequestType, { label: string; hint: string }> = {
+  replicate: { label: '复刻', hint: '客户有明确来样' },
+  design: { label: '我方设计', hint: '客户给定参数方向' },
+  other: { label: '其他', hint: '须写明具体情况' },
+};
+export const developmentInitiator = (values: { initiator?: DevelopmentInitiator }): DevelopmentInitiator => values.initiator === 'internal' ? 'internal' : 'customer';
+/** 是否收费：未单独填写时按发起方默认（客户要求 = 收费，内部需求 = 不收费）。 */
+export const developmentCharged = (values: { initiator?: DevelopmentInitiator; charged?: boolean }): boolean => typeof values.charged === 'boolean' ? values.charged : developmentInitiator(values) === 'customer';
+export function developmentInitiatorLabel(values: { initiator?: DevelopmentInitiator; requestType?: DevelopmentRequestType; requester?: string }): string {
+  if (developmentInitiator(values) === 'internal') return `内部需求${values.requester ? ' · ' + values.requester : ''}`;
+  return `客户要求${values.requestType ? ' · ' + DEVELOPMENT_REQUEST_TYPES[values.requestType].label : ''}`;
+}

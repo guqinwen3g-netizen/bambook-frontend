@@ -2,10 +2,20 @@
 import React from 'react';
 import { FileText, Layers, Plus } from 'lucide-react';
 import { Banner, Button, Card, CardHeader, Checkbox, Dialog, Field, FormGrid, Mono, Pill, TextArea, TextInput, UploadZone } from '../../../../components/mist';
-import type { MistDev, MistState } from '../../../../server/src/shared/mistWorkspace';
+import type { MistDev, MistState, MistVersion } from '../../../../server/src/shared/mistWorkspace';
 import { caseFactoryLetters, developmentRoundViews, factoryLetterAt, nextRoundNumber, roundVersionLabel } from '../../../../server/src/shared/mistDevelopmentRounds';
 
-export type NewRoundInput = { factories: string[]; requirements: string; fileIds: string[]; referenceVersionIds: string[]; targetDate: string };
+export type NewRoundInput = { factories: string[]; requirements: string; fileIds: string[]; referenceVersionIds: string[]; targetDate: string; resampleFromVersionId?: string };
+
+/** 版本 QC 标记：有保留通过显示“需关注”，不通过及其处理结果分别标出。 */
+export function versionQcFlag(version: Pick<MistVersion, 'qc' | 'qcDecision' | 'qcHistory'>): { tone: 'warn' | 'bad' | 'neutral'; label: string } | null {
+  if (version.qcDecision?.kind === 'abandon') return { tone: 'bad', label: '不采用' };
+  if (version.qcDecision?.kind === 'resample') return { tone: 'neutral', label: '已重新打样' };
+  if (version.qc?.result === 'reject') return { tone: 'bad', label: 'QC 不通过' };
+  if (version.qc?.result === 'conditional') return { tone: 'warn', label: '需关注' };
+  if (!version.qc && version.qcHistory?.length) return { tone: 'warn', label: '整改待复检' };
+  return null;
+}
 type FactoryOption = { name: string; historical: boolean; unavailable: boolean };
 
 /** 预览：本轮将生成的版本号（已参与工厂沿用原字母，新工厂取下一个未用字母）。 */
@@ -32,24 +42,26 @@ export function DevRoundsCard({ state, dev, versionId, busy, onSelect, onCreate 
       <div className="mist-row"><Pill tone={view.round ? 'accent' : 'neutral'}>{view.number ? `R${view.number}` : '未编号'}</Pill>
         <span className="mist-muted" style={{ fontSize: 12.5 }}>{view.round ? `目标 ${view.round.targetDate}${view.round.referenceVersionIds.length ? ` · 参考 ${view.round.referenceVersionIds.map(label).join('、')}` : ''}${view.round.fileIds.length ? ` · 附件 ${view.round.fileIds.length}` : ''}` : '历史记录 · 按原版本号只读展示'}</span></div>
       {view.round && <p className="mist-sub" style={{ fontSize: 13, margin: '6px 0' }}>{view.round.requirements}</p>}
-      <div className="mist-vers" role="group" aria-label={`第 ${view.number} 轮版本`}>{view.versions.map(version => <button key={version.id} type="button" aria-pressed={versionId === version.id} disabled={busy} onClick={() => onSelect(version.id)}><Mono>{version.label}</Mono> · {version.factory}</button>)}</div>
+      <div className="mist-vers" role="group" aria-label={`第 ${view.number} 轮版本`}>{view.versions.map(version => <button key={version.id} type="button" aria-pressed={versionId === version.id} disabled={busy} onClick={() => onSelect(version.id)}><Mono>{version.label}</Mono> · {version.factory}{(flag => flag && <> <Pill tone={flag.tone}>{flag.label}</Pill></>)(versionQcFlag(version))}</button>)}</div>
     </div>) : <p className="mist-note" style={{ padding: '10px 22px 18px' }}>尚未开始打样轮次。</p>}
   </Card>;
 }
 
-export function NewRoundDialog({ open, state, dev, busy, failure, factoryOptions, onClose, onAddFactory, onSubmit, onUpload }: {
-  open: boolean; state: MistState; dev: MistDev; busy: boolean; failure: string; factoryOptions: FactoryOption[];
+export function NewRoundDialog({ open, state, dev, busy, failure, factoryOptions, initial, onClose, onAddFactory, onSubmit, onUpload }: {
+  open: boolean; initial?: Partial<NewRoundInput>; state: MistState; dev: MistDev; busy: boolean; failure: string; factoryOptions: FactoryOption[];
   onClose: () => void; onAddFactory: () => void; onSubmit: (input: NewRoundInput) => void; onUpload: (files: File[]) => Promise<string[]>;
 }) {
   const versions = dev.versionIds.map(id => state.versions.find(version => version.id === id)).filter(version => !!version);
   const [form, setForm] = React.useState<NewRoundInput>({ factories: [], requirements: '', fileIds: [], referenceVersionIds: [], targetDate: dev.due || '' });
-  React.useEffect(() => { if (open) setForm({ factories: [], requirements: '', fileIds: [], referenceVersionIds: [], targetDate: dev.due || '' }); }, [open, dev.id]);
+  React.useEffect(() => { if (open) setForm({ factories: [], requirements: '', fileIds: [], referenceVersionIds: [], targetDate: dev.due || '', ...initial }); }, [open, dev.id]);
+  const source = form.resampleFromVersionId ? state.versions.find(version => version.id === form.resampleFromVersionId) : undefined;
   const toggle = (key: 'factories' | 'referenceVersionIds', value: string, checked: boolean) => setForm(previous => ({ ...previous, [key]: checked ? [...previous[key], value] : previous[key].filter(item => item !== value) }));
   const error = newRoundError(form), preview = previewRoundLabels(state, dev, form.factories);
   return <Dialog open={open} onClose={() => !busy && onClose()} width={720} icon={Layers} title={`开启第 ${nextRoundNumber(state, dev)} 轮`} description="每家参与工厂在本轮形成一个版本；之前各轮记录保持不变。" footer={<>
     <Button variant="quiet" disabled={busy} onClick={onClose}>取消</Button>
     <Button variant="primary" loading={busy} disabled={!!error} onClick={() => onSubmit(form)}>{error ? error : `建立 ${preview.join('、')}`}</Button></>}>
     {failure && <Banner tone="bad" title="本轮尚未建立">{failure}</Banner>}
+    {source && <Banner tone="warn" title={`重新打样 · 来源 ${source.label} QC 不通过`}>QC 意见已带入本轮共同要求，可修改；建立后 {source.label} 标记为已重新打样。</Banner>}
     <FormGrid>
       <div className="mist-field" data-full="true" role="group" aria-label="参考版本"><span className="mist-field-label">参考版本</span>
         {versions.map(version => <Checkbox key={version!.id} checked={form.referenceVersionIds.includes(version!.id)} label={`${version!.label} · ${version!.factory}`} onChange={checked => toggle('referenceVersionIds', version!.id, checked)} />)}
