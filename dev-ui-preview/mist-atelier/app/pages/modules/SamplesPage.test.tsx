@@ -55,3 +55,13 @@ it('opens a quick movement dialog over the ledger instead of replacing the page'
   expect(getByRole(document.body,'dialog',{name:/登记永久寄出/})).toBeTruthy();
   expect(getByRole(host,'table',{name:'样品台账'})).toBeTruthy();
 });
+
+it('links a dispatch movement created on the development version back to that development',()=>{
+  store.state!.devs.push({id:'dev',code:'DEV-6',name:'亚麻平纹'} as any);
+  store.state!.fulfillment.samples.push(fabric('smp-m','米样','米',5,3));
+  store.state!.fulfillment.sampleMovements.push({id:'send',sampleId:'smp-m',kind:'send',quantity:2,person:'客户 Anna',location:'',note:'寄样 DEV-6 R1-A-1；运单 SF123',at:'2026-10-13T09:00:00Z',actor:'业务员',trackingNo:'SF123',development:{devId:'dev',versionId:'ver',dispatchId:'d-1'}});
+  render('smp-m');
+  const link=[...document.body.querySelectorAll('button')].find(button=>button.textContent?.trim()==='查看开发案 DEV-6') as HTMLButtonElement;
+  expect(link).toBeTruthy();act(()=>link.click());
+  expect(go).toHaveBeenCalledWith('development/detail','dev',{versionId:'ver'});
+});

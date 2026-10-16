@@ -4,6 +4,7 @@
  * 工厂字母在本案首次参与时分配，之后固定不变；历史版本号（如 R1-A-1）按原样保留、只读。
  */
 import type { MistDev, MistRound, MistState, MistVersion } from './mistWorkspace';
+import { developmentCharged, developmentDomain, validFabricSample } from './mistDevelopmentDomain';
 
 /** 第 n 个字母（0 → A，25 → Z，26 → AA）。 */
 export function factoryLetterAt(index: number): string {
@@ -71,4 +72,85 @@ export function developmentRoundViews(state: MistState, dev: MistDev): Developme
     views.get(number)!.versions.push(version);
   }
   return [...views.values()].sort((a, b) => a.number - b.number);
+}
+
+/** 开发案级结束状态：手工取消 / 归档，或不收费开发案任一版本获需求方认可即结案（收费开发案的最终结案以财务销账为准）。 */
+export function developmentClosure(state: MistState, dev: MistDev): { kind: 'closed' | 'archived' | 'cancelled'; label: string } | null {
+  if (dev.closure?.kind === 'cancelled') return { kind: 'cancelled', label: '已取消' };
+  if (dev.closure?.kind === 'archived') return { kind: 'archived', label: '已归档' };
+  if (dev.closure?.kind === 'closed') return { kind: 'closed', label: '已结案' };
+  if (!developmentCharged(dev.values) && state.versions.some(version => version.devId === dev.id && version.confirmations.at(-1)?.result === 'approved')) return { kind: 'closed', label: '已结案' };
+  return null;
+}
+/** 开新一轮（含改版、重新打样）的阻断原因；可以开时返回 null。 */
+export function developmentRoundBlocker(state: MistState, dev: MistDev): string | null {
+  const closure = developmentClosure(state, dev);
+  return closure ? `开发案${closure.label}，不能再开新一轮` : null;
+}
+/** 同一轮内工厂重复（去空格后比较）时返回重复的工厂名。 */
+export function duplicateRoundFactories(factories: unknown[]): string[] {
+  const seen = new Set<string>(), duplicated = new Set<string>();
+  for (const item of factories) { const name = typeof item === 'string' ? item.trim() : ''; if (!name) continue; if (seen.has(name)) duplicated.add(name); seen.add(name); }
+  return [...duplicated];
+}
+
+/** BB-DEV-3：开新一轮时逐厂填写的任务（差异要求、样品形态、数量和单位、要求日期）。 */
+export type FactoryTaskInput = { factory: string; extraRequirements: string; sampleForm: string; sampleQuantity: number; sampleUnit: string; dueDate: string };
+/** 逐厂任务默认值：沿用开发案计划样品，要求日期默认本轮目标日期。 */
+export function defaultFactoryTask(dev: MistDev, factory: string, targetDate: string): FactoryTaskInput {
+  const fabric = developmentDomain(dev.values) === 'fabric';
+  return { factory, extraRequirements: '', sampleForm: dev.values.sampleForm || (fabric ? '' : '样衣'), sampleQuantity: dev.values.sampleQuantity || 1, sampleUnit: dev.values.sampleUnit || (fabric ? '' : '件'), dueDate: targetDate };
+}
+/** 逐厂任务校验（页面与服务端共用）；通过返回 null。 */
+export function factoryTaskError(dev: MistDev, task: Pick<FactoryTaskInput, 'factory' | 'sampleForm' | 'sampleQuantity' | 'sampleUnit' | 'dueDate'>): string | null {
+  const name = task.factory;
+  if (developmentDomain(dev.values) === 'fabric') { if (!validFabricSample(task.sampleQuantity, task.sampleForm, task.sampleUnit)) return `${name}：面料样品须写明形态与单位，米样按米，其他剪片类按整数份`; }
+  else {
+    if (!String(task.sampleForm || '').trim()) return `${name}：请填写样品形态`;
+    if (!Number.isInteger(task.sampleQuantity) || task.sampleQuantity <= 0) return `${name}：样品数量须为正整数`;
+    if (!String(task.sampleUnit || '').trim()) return `${name}：请填写样品单位`;
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(task.dueDate || '') || Number.isNaN(new Date(task.dueDate).getTime())) return `${name}：请填写要求日期`;
+  return null;
+}
+/** 版本说明：共同要求 + 本厂差异要求。 */
+export const factoryTaskNote = (common: string, extra: string) => extra.trim() ? `${common}\n本厂差异：${extra.trim()}` : common;
+/** 工厂任务与本轮共同要求是否一致：改共同要求后不自动覆盖，需逐厂同步。没有轮次的历史版本返回 null。 */
+export function factoryTaskSync(state: MistState, version: MistVersion): { round: MistRound; common: string; inSync: boolean } | null {
+  const round = version.roundId ? (state.rounds || []).find(item => item.id === version.roundId) : undefined;
+  if (!round) return null;
+  const common = version.task ? version.task.commonRequirements : version.note;
+  return { round, common, inSync: common === round.requirements };
+}
+/** 同步共同要求的阻断原因；可以同步时返回 null。 */
+export function factoryTaskSyncBlocker(state: MistState, dev: MistDev, version: MistVersion): string | null {
+  const closure = developmentClosure(state, dev);
+  if (closure) return `开发案${closure.label}，不能再改工厂任务`;
+  if (version.minor) return `小版本 ${version.label} 没有单独的工厂任务`;
+  const sync = factoryTaskSync(state, version);
+  if (!sync) return '本版没有所属轮次，无需同步';
+  if (sync.inSync) return '本厂任务已与共同要求一致';
+  if (version.returnedAt) return `${version.label} 已返样，改要求请开新一轮`;
+  return null;
+}
+
+/** BB-DEV-5：服装小版本号 R4-A.1、R4-A.2…（只挂在大版本上）。 */
+export const minorVersionLabel = (parentLabel: string, seq: number) => `${parentLabel}.${seq}`;
+/** 大版本上已记录的小版本，按序号排列。 */
+export const minorVersions = (state: Pick<MistState, 'versions'>, parent: Pick<MistVersion, 'id'>): MistVersion[] =>
+  state.versions.filter(version => version.minor?.parentVersionId === parent.id).sort((a, b) => a.minor!.seq - b.minor!.seq);
+/** 小版本所属的大版本。 */
+export const minorParent = (state: Pick<MistState, 'versions'>, version: Pick<MistVersion, 'minor'>): MistVersion | undefined =>
+  version.minor ? state.versions.find(row => row.id === version.minor!.parentVersionId) : undefined;
+/** 在该版本上“记录小调整”的阻断原因；可以记录时返回 null。面料开发没有小版本。 */
+export function minorVersionBlocker(state: MistState, dev: MistDev, version: MistVersion): string | null {
+  if (developmentDomain(dev.values) === 'fabric') return '面料开发没有小版本，调整请开新一轮';
+  if (version.minor) return `${version.label} 是小版本，请在大版本 ${minorParent(state, version)?.label ?? ''} 上记录小调整`;
+  const closure = developmentClosure(state, dev);
+  if (closure) return `开发案${closure.label}，不能再记录小调整`;
+  if (version.qcDecision) return version.qcDecision.kind === 'abandon' ? '本版已放弃，不能记录小调整' : '本版已重新打样，请在新一轮版本上继续';
+  if (!version.returnedAt) return '大版本须先登记返样实物，才能记录小调整';
+  if (!version.qc || version.qc.result === 'reject') return '大版本 QC 通过或有保留通过后，才能记录小调整';
+  if (version.archivedAt) return '本版已留档，不能再记录小调整';
+  return null;
 }

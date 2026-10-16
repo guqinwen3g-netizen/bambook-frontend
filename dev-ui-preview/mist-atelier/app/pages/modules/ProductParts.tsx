@@ -72,7 +72,7 @@ export function ProductProfile({ product }: { product: MarketProduct }) {
       {product.sourceVersionId ? <ol className="mist-product-chain">
         <li><span>开发案</span><strong>{dev ? <Mono>{dev.code}</Mono> : '开发案已不存在'}</strong>{dev && <small>{dev.name}</small>}</li>
         <li><span>准确版本</span><strong>{version ? version.label : '版本已不存在'}</strong>{version && <small>{version.factory}</small>}</li>
-        <li><span>正式 QC</span><strong>{version?.qc ? (version.qc.result === 'pass' ? '通过' : '未通过') : '无记录'}</strong>{version?.qc && <small>{version.qc.reviewer} · {version.qc.report}</small>}</li>
+        <li><span>QC 结论</span><strong>{version?.qc ? ({ pass: '通过', conditional: '有保留通过 · 需关注', reject: '不通过' } as const)[version.qc.result] : '无记录'}</strong>{version?.qc && <small>{version.qc.reviewer} · {version.qc.report}</small>}{version?.qc?.result === 'conditional' && <small>QC 意见：{version.qc.opinion || '见 QC 报告'}</small>}</li>
         <li><span>数字档案</span><strong><Mono>{product.sku}</Mono></strong><small>{product.createdAt.slice(0, 10)} 建档</small></li>
       </ol> : <EmptyState compact title="手工建档" description="此档案未关联开发版本，规格以档案登记为准。" />}
     </section>

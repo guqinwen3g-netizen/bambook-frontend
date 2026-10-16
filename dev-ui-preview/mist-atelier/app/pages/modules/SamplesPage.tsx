@@ -235,6 +235,7 @@ function SampleDetail({ row, state, day, can, locked, onMove, onEdit, onQc, onAt
   row: LedgerRow; state: MistState; day: string; can: boolean; locked: boolean;
   onMove: (sample: FulfillmentSample, kind: MoveKind) => void; onEdit: (sample: FulfillmentSample) => void; onQc: (sample: FulfillmentSample) => void; onAttach: (sample: FulfillmentSample, ids: string[]) => Promise<unknown>;
 }) {
+  const { go } = useNav();
   const primary = row.primary, status = rowStatus(state, row, day);
   const shipment = state.fulfillment.shipments.find(item => item.id === primary.shipmentId);
   const events = row.samples.flatMap(sample => state.fulfillment.sampleMovements.filter(movement => movement.sampleId === sample.id).map(movement => ({ movement, sample })))
@@ -280,7 +281,7 @@ function SampleDetail({ row, state, day, can, locked, onMove, onEdit, onQc, onAt
       {row.samples.slice(1).filter(sample => sample.fileIds.length).map(sample => <RecordFiles key={sample.id} ids={sample.fileIds} />)}
     </DetailBlock>
     <DetailBlock title="流转记录">
-      {events.length ? <Timeline events={events.map(({ movement, sample }) => ({ who: movement.actor, when: new Date(movement.at).toLocaleString(), text: `${MOVE_LABEL[movement.kind]}${row.samples.length > 1 ? ' · ' + sample.form : ''}${movement.quantity ? ` ${movement.quantity}${sample.unit}` : ''}${movement.person ? ' · ' + movement.person : ''}${movement.location ? ' · ' + movement.location : ''}${movement.expectedReturn ? ` · 预计 ${movement.expectedReturn} 归还` : ''}${movement.note ? ' · ' + movement.note : ''}` }))} />
+      {events.length ? <Timeline events={events.map(({ movement, sample }) => { const line = `${MOVE_LABEL[movement.kind]}${row.samples.length > 1 ? ' · ' + sample.form : ''}${movement.quantity ? ` ${movement.quantity}${sample.unit}` : ''}${movement.person ? ' · ' + movement.person : ''}${movement.location ? ' · ' + movement.location : ''}${movement.expectedReturn ? ` · 预计 ${movement.expectedReturn} 归还` : ''}${movement.note ? ' · ' + movement.note : ''}`, link = movement.development; return ({ who: movement.actor, when: new Date(movement.at).toLocaleString(), text: link ? <>{line} <TextLink onClick={() => go('development/detail', link.devId, { versionId: link.versionId })}>查看开发案 {state.devs.find(dev => dev.id === link.devId)?.code || ''}</TextLink></> : line }); })} />
         : <span className="mist-note">还没有流转记录</span>}
     </DetailBlock>
   </DetailBody>;

@@ -14,6 +14,7 @@ import { MistPrivateFiles, validateFileInput, type MistFileInput, type MistStore
 import { prepareMistBusinessNumbers } from './businessNumbers';
 import { buildIssueArchive, bindIssueArchive, prepareCreditDocumentSnapshot, assertCreditIssuePayload, assertIssuedCreditArchive, type PreparedCreditIssueArchive } from './creditPrint';
 import { buildQuotationDocument, bindQuotationDocument, nextQuotationDocumentSeq, prepareQuotationDocumentSnapshot } from './quotationPrint';
+import { bindDevelopmentNotice, buildDevelopmentNotice, prepareDevelopmentNoticeSnapshot } from './developmentNoticePrint';
 import type { PdfRenderResult } from '../templates/pdf';
 import { canonicalCreditDocument, creditDocumentFingerprint, creditSourceFingerprint, type MistBusinessNumberNeed, type MistCreditPrintSnapshot } from '../shared/mistCreditDocuments';
 /** 演示工作区里指派给演示成员（demo-*）的审批无人能处理，不阻止移入回收站。 */
@@ -286,6 +287,12 @@ export class MistRepository {
           const prepared = await buildQuotationDocument(snapshot, nextQuotationDocumentSeq(row.state, snapshot.quotationId), { renderPdf: this.quotationPdfRenderer });
           stored = await this.files.write(workspaceId, prepared.file, context.now);
           (context as typeof context & { quotationDocument?: unknown }).quotationDocument = bindQuotationDocument(prepared, stored, { id: context.id, workspaceId, requestId: input.requestId });
+        }
+        if (input.command?.type === 'development.notice.generate') {
+          const snapshot = prepareDevelopmentNoticeSnapshot(row.state, input.command.payload || {}, context);
+          const prepared = await buildDevelopmentNotice(snapshot, { renderPdf: this.quotationPdfRenderer });
+          stored = await this.files.write(workspaceId, prepared.file, context.now);
+          (context as typeof context & { developmentNotice?: unknown }).developmentNotice = bindDevelopmentNotice(prepared, stored, { id: context.id, workspaceId, requestId: input.requestId });
         }
         const command = upload ? { type: 'files.add', payload: { file: stored } } : input.command;
         const applied = this.contract.applyMistCommand(structuredClone(row.state), command, context);
