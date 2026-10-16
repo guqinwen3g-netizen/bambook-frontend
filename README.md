@@ -19,7 +19,7 @@ Bambook 是公司内部业务系统，覆盖开发与寻样、报价、订单、
 
 ## 当前工作
 
-近期收口：费用与计费闭环（[PR #114](https://github.com/guqinwen3g-netizen/bambook-main/pull/114)）、风险分级处理权限（[PR #115](https://github.com/guqinwen3g-netizen/bambook-main/pull/115)）、CI 纯文档路径分类修复（[PR #119](https://github.com/guqinwen3g-netizen/bambook-main/pull/119)）已合入；报表汇率与含退税毛利的数据契约调查（[PR #117](https://github.com/guqinwen3g-netizen/bambook-main/pull/117)）已合入，只是调查文档，报表功能尚未完成。开发轮次时间线与多版本对比在 [PR #118](https://github.com/guqinwen3g-netizen/bambook-main/pull/118)，仍由总协调收口。此前一批：开发轮次 / 版本 / 通知单 / 面料多形态与寄样（[PR #112](https://github.com/guqinwen3g-netizen/bambook-main/pull/112)）、订单来源 / 规格数量 / 出运与取消（[PR #108](https://github.com/guqinwen3g-netizen/bambook-main/pull/108)）、并发保存（[PR #111](https://github.com/guqinwen3g-netizen/bambook-main/pull/111)）。准确合入、部署、验证范围和后续事项以各 PR 与 Notion 原总控为准；正式环境未发布，也不代表全公司业务验收完成。
+近期收口：费用与计费闭环（[PR #114](https://github.com/guqinwen3g-netizen/bambook-main/pull/114)）、风险分级处理权限（[PR #115](https://github.com/guqinwen3g-netizen/bambook-main/pull/115)）、CI 纯文档路径分类修复（[PR #119](https://github.com/guqinwen3g-netizen/bambook-main/pull/119)）已合入；报表汇率与含退税毛利的数据契约调查（[PR #117](https://github.com/guqinwen3g-netizen/bambook-main/pull/117)）已合入，只是调查文档，报表功能尚未完成。开发轮次时间线与多版本对比（[PR #118](https://github.com/guqinwen3g-netizen/bambook-main/pull/118)）已合入。此前一批：开发轮次 / 版本 / 通知单 / 面料多形态与寄样（[PR #112](https://github.com/guqinwen3g-netizen/bambook-main/pull/112)）、订单来源 / 规格数量 / 出运与取消（[PR #108](https://github.com/guqinwen3g-netizen/bambook-main/pull/108)）、并发保存（[PR #111](https://github.com/guqinwen3g-netizen/bambook-main/pull/111)）。准确合入、部署、验证范围和后续事项以各 PR 与 Notion 原总控为准；正式环境未发布，也不代表全公司业务验收完成。
 
 > **新 Agent 接手入口**：先读当前版本的 [长期工作与验证规则](AGENTS.md)，再读所认领任务的范围和验收条件。流程规则统一在 AGENTS.md 维护；[交接文档](docs/HANDOFF.md) 保留历史上下文，旧状态、测试覆盖和候选事项须按当前 GitHub 与代码核对。
 
