@@ -15,7 +15,7 @@ describe('Mist workspace domain integrity',()=>{
     const ctx=context(),s=createMistState(ctx),v=s.versions.find(v=>v.label.includes('-B-'))!;
     const result=applyMistCommand(s,{type:'development.revise',payload:{devId:v.devId,versionId:v.id,note:'新一轮比样'}},ctx);
     const next=result.state.versions.find(v=>v.id===result.result.versionId)!;
-    expect(next.factory).toBe(v.factory);expect(next.label).toMatch(/^R\d+-B-1$/);expect(next.returnedAt).toBeNull();expect(next.qc).toBeNull();expect(next.confirmations).toEqual([]);
+    expect(next.factory).toBe(v.factory);expect(next.label).toMatch(/^R\d+-B$/);expect(next.returnedAt).toBeNull();expect(next.qc).toBeNull();expect(next.confirmations).toEqual([]);
   });
   it('locks archived physical and QC facts while allowing a new revision',()=>{
     const ctx=context(),s=createMistState(ctx),v=s.versions.find(v=>v.qc?.result==='pass')!;

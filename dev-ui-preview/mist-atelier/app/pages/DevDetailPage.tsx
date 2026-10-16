@@ -9,6 +9,7 @@ import { IMG, STAGES } from '../data';
 import { useMistWorkspace } from '../runtime/workspace';
 import { useNav } from '../nav';
 import { developmentFactoryOptions, InlineDevelopmentFactoryDialog } from './DevCreatePage';
+import { DevRoundsCard, NewRoundDialog, type NewRoundInput } from './DevRounds';
 
 export function localConfirmationTime(date=new Date()){return Number.isNaN(date.getTime())?'':new Date(date.getTime()-date.getTimezoneOffset()*60_000).toISOString().slice(0,16);}
 export function confirmationFormError(values:{confirmer:string;organization:string;confirmedAt:string;basis:string;originalText:string}){
@@ -45,7 +46,7 @@ export function DevDetailPage(){
   const {go,route}=useNav();const {state,loading,error,run,uploadFile,downloadFile,fileUrl,pending,recover,saving}=useMistWorkspace();const toast=useToast();
   const dev=state?.devs.find(item=>item.id===route.id),versions=state?.versions.filter(version=>version.devId===dev?.id)||[];
   const fabricDomain=!!dev&&developmentDomain(dev.values)==='fabric';
-  const [versionId,setVersionId]=React.useState(route.versionId||''),[form,setForm]=React.useState<Form>(()=>emptyForm()),[dialog,setDialog]=React.useState<'confirm'|'actions'|'revise'|'archive'|'sample'|'qc'|'edit'|null>(null),[busy,setBusy]=React.useState(false),[failure,setFailure]=React.useState('');
+  const [versionId,setVersionId]=React.useState(route.versionId||''),[form,setForm]=React.useState<Form>(()=>emptyForm()),[dialog,setDialog]=React.useState<'confirm'|'actions'|'revise'|'archive'|'sample'|'qc'|'edit'|'round'|null>(null),[busy,setBusy]=React.useState(false),[failure,setFailure]=React.useState('');
   const [note,setNote]=React.useState(''),[sample,setSample]=React.useState({sample:'',quantity:'1',form:'',unit:'',location:'',color:'',returnedAt:localConfirmationTime()}),[qc,setQc]=React.useState<QcForm>(()=>qcForm(null)),[edit,setEdit]=React.useState({goal:'',due:'',factories:''}),[factoryDialog,setFactoryDialog]=React.useState(false);
   const version=versions.find(item=>item.id===(versionId||dev?.currentVersionId)),scope=React.useRef('');scope.current=`${dev?.id||''}:${version?.id||''}`;
   const fabricRequirements=version?.fabricRequirements||dev?.values.fabricRequirements;
@@ -102,6 +103,18 @@ export function DevDetailPage(){
       setFailure(feedback);
     }catch(cause){if(live.current&&scope.current===originalScope)setFailure(String(cause));}finally{busyRef.current=false;if(live.current)setBusy(false);}
   };
+  const createRound=async(input:NewRoundInput)=>{
+    if(!dev||busyRef.current)return;busyRef.current=true;setBusy(true);setFailure('');
+    try{const receipt=await run({type:'development.round.create',payload:{devId:dev.id,...input}});const id=receipt.result.versionId;
+      if(live.current){setDialog(null);toast('新一轮已建立，之前各轮记录保持不变');if(id){setVersionId(id);go('development/detail',dev.id,{versionId:id,...(route.customerId?{customerId:route.customerId}:{})});}}}
+    catch(cause){if(live.current)setFailure(cause instanceof Error?cause.message:'本轮尚未建立，原内容已保留');}finally{busyRef.current=false;if(live.current)setBusy(false);}
+  };
+  const uploadRoundFiles=async(files:File[])=>{
+    if(busyRef.current)return [];busyRef.current=true;setBusy(true);setFailure('');const ids:string[]=[];
+    try{for(const file of files){if(file.size>50*1024*1024)throw Error(`${file.name} 超过 50MB`);ids.push((await uploadFile(file)).id);}}
+    catch(cause){if(live.current)setFailure(cause instanceof Error?cause.message:'附件上传失败');}finally{busyRef.current=false;if(live.current)setBusy(false);}
+    return ids;
+  };
   const backToSource=()=>route.customerId?go('crm',route.customerId,{customerId:route.customerId}):go('development');
   const editFactories=edit.factories.split(/[、,，\n]/).map(value=>value.trim()).filter(Boolean);
   const factoryOptions=developmentFactoryOptions(state,editFactories,dev?developmentDomain(dev.values):'garment');
@@ -129,6 +142,7 @@ export function DevDetailPage(){
           <KeyValue items={[{label:'工厂',value:version?.factory||'待安排'},{label:'样品',value:version?`${version.sample||'未登记'} · ${version.sampleQuantity} ${fabricDomain?version.sampleUnit||dev.values.sampleUnit||'单位待登记':'件'}`:'未建立版本'},...(fabricDomain?[{label:'实物形态',value:version?.sampleForm||dev.values.sampleForm||'待登记'}]:[{label:'尺码',value:version?.size||dev.values.sizeBase}]),{label:'面料',value:version?.fabric||dev.fabric}]} />
           <CardFooter><span className="mist-note">准确版本独立记录</span><span className="mist-spacer" /><Button size="sm" disabled={!version||busy} icon={PackageCheck} onClick={()=>setDialog('sample')}>登记返样</Button></CardFooter>
         </Card>
+        {state&&<DevRoundsCard state={state} dev={dev} versionId={version?.id} busy={busy} onSelect={chooseVersion} onCreate={()=>{setFailure('');setDialog('round');}}/>}
         {fabricDomain&&<Card><CardHeader title="面料开发目标规格" sub="目标要求，不代表工厂分析或 QC 实测"/><KeyValue items={[{label:'分类',value:dev.values.category||'待核实'},{label:'本版工厂要求',value:version?.note||'待记录'},{label:'目标成分',value:fabricRequirements?.composition||'待工厂分析'},{label:'克重原值',value:`${fabricRequirements?.weightValue||'待分析'} ${fabricRequirements?.weightUnit||''}`},{label:'幅宽原值',value:`${fabricRequirements?.widthValue||'待分析'} ${fabricRequirements?.widthUnit||''}`},{label:'纱支 / 组织',value:`${fabricRequirements?.yarn||'待分析'} / ${fabricRequirements?.weave||'待分析'}`},{label:'用途 / 手感',value:`${fabricRequirements?.usage||'—'} / ${fabricRequirements?.handle||'—'}`},{label:'后整理 / 性能',value:`${fabricRequirements?.finish||'—'} / ${fabricRequirements?.performance||'—'}`}]}/></Card>}
         <Card id="mist-dev-goal"><CardHeader title="开发目标" /><p className="mist-sub" style={{padding:'10px 22px 20px',fontSize:13.5}}>{dev.goal||'尚未填写开发目标'}</p></Card>
         <Card id="mist-dev-sample"><CardHeader title="版本附件" />{files.length?files.map(file=><div className="mist-row" key={file!.id} style={{padding:'10px 22px'}}><FileText className="mist-icon" /><span>{file!.name}</span><span className="mist-spacer" /><TextLink icon={Download} onClick={()=>void downloadFile(file!).catch(cause=>setFailure(String(cause)))}>下载</TextLink></div>):<EmptyState compact title="本版暂无附件" />}</Card>
@@ -161,7 +175,8 @@ export function DevDetailPage(){
       </div>
     </div>
     <Dialog open={dialog==='confirm'} onClose={()=>!busy&&setDialog(null)} icon={form.result==='rejected'?X:CircleCheck} tone={form.result==='rejected'?'bad':form.result==='needs_adjustment'?'warn':'ok'} title={`记录 ${version?.label||''}：${resultLabel[form.result]}？`} description="本次决定只记录在当前准确版本；原有报告和历史记录继续保留。" footer={<>{recovery}<Button variant="quiet" disabled={busy} onClick={()=>setDialog(null)}>取消</Button><Button variant={form.result==='rejected'?'danger':'primary'} loading={busy} onClick={()=>void act('confirm')}>确认提交</Button></>}><KeyValue items={[{label:'实际确认人',value:form.confirmer},{label:'组织',value:form.organization},{label:'确认依据',value:form.basis}]} /></Dialog>
-    <Dialog open={dialog==='actions'} onClose={()=>setDialog(null)} title="开发版本操作"><div className="mist-col"><Button disabled={!version} onClick={()=>{setNote('');setDialog('revise');}}>基于本版发起修改</Button><Button disabled={!version||!!version.archivedAt} onClick={()=>setDialog('archive')}>成果留档</Button><Button onClick={openEdit}>编辑开发计划</Button></div></Dialog>
+    <Dialog open={dialog==='actions'} onClose={()=>setDialog(null)} title="开发版本操作"><div className="mist-col"><Button disabled={!version} onClick={()=>{setNote('');setDialog('revise');}}>基于本版发起修改</Button><Button disabled={!version||!!version.archivedAt} onClick={()=>setDialog('archive')}>成果留档</Button><Button onClick={()=>{setFailure('');setDialog('round');}}>开新一轮</Button><Button onClick={openEdit}>编辑开发计划</Button></div></Dialog>
+    {state&&<NewRoundDialog open={dialog==='round'} state={state} dev={dev} busy={busy} failure={failure} factoryOptions={developmentFactoryOptions(state,dev.values.factories,fabricDomain?'fabric':'garment')} onClose={()=>setDialog(null)} onAddFactory={()=>setFactoryDialog(true)} onSubmit={input=>void createRound(input)} onUpload={uploadRoundFiles}/>}
     <Dialog open={dialog==='revise'} onClose={()=>!busy&&setDialog(null)} title={`基于 ${version?.label||''} 发起新一版`} description="原版与其确认、报告继续保留。" footer={<>{recovery}<Button variant="quiet" onClick={()=>setDialog(null)}>取消</Button><Button variant="primary" loading={busy} disabled={!note.trim()} onClick={()=>void act('revise')}>建立新版本</Button></>}><Field label="本次修改要求" required><TextArea value={note} onChange={event=>setNote(event.target.value)} /></Field></Dialog>
     <Dialog open={dialog==='archive'} onClose={()=>!busy&&setDialog(null)} title={`将 ${version?.label||''} 留档？`} description="按当前版本记录保存成果，保留所依据的实物、报告和需求方决定。" footer={<>{recovery}<Button variant="quiet" onClick={()=>setDialog(null)}>取消</Button><Button variant="primary" loading={busy} onClick={()=>void act('archive')}>确认留档</Button></>} />
     <Dialog open={dialog==='sample'} onClose={()=>!busy&&setDialog(null)} title={`登记 ${version?.label||''} 返样实物`} footer={<>{recovery}<Button variant="quiet" onClick={()=>setDialog(null)}>取消</Button><Button variant="primary" loading={busy} onClick={()=>void act('sample')}>保存返样</Button></>}>{failure&&<Banner tone="bad" title="返样尚未保存">{failure}</Banner>}<FormGrid><Field label="实物编号" required><TextInput value={sample.sample} onChange={event=>setSample(previous=>({...previous,sample:event.target.value}))} /></Field><Field label={fabricDomain?"数量 / 长度":"数量"} required><TextInput type="number" min={fabricDomain?"0.0001":"1"} step={fabricDomain?"any":"1"} value={sample.quantity} onChange={event=>setSample(previous=>({...previous,quantity:event.target.value}))} /></Field>{fabricDomain&&<><Field label="实际样品形态" required><TextInput value={sample.form} onChange={e=>setSample(v=>({...v,form:e.target.value,unit:e.target.value.trim()==='米样'?'米':'份'}))}/></Field><Field label="实际单位" required><TextInput readOnly value={sample.unit}/></Field><Field label="实际位置"><TextInput value={sample.location} onChange={e=>setSample(v=>({...v,location:e.target.value}))}/></Field><Field label="实际颜色"><TextInput value={sample.color} onChange={e=>setSample(v=>({...v,color:e.target.value}))}/></Field></>}<Field label="返样时间" required full><TextInput type="datetime-local" value={sample.returnedAt} onChange={event=>setSample(previous=>({...previous,returnedAt:event.target.value}))} /></Field></FormGrid></Dialog>

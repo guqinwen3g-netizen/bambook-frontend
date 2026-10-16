@@ -1,6 +1,7 @@
 import { MIST_FINANCE_SCOPES } from './mistFinancePermissions';
 import {developmentDomain,emptyFabricRequirements,fabricRequirementError,validFabricSample,type DevelopmentDomain,type FabricDevelopmentRequirements} from './mistDevelopmentDomain';
 import { relationHoldReason } from './mistRelationHold';
+import {assignFactoryLetters,nextRoundNumber,roundVersionLabel} from './mistDevelopmentRounds';
 import {createFulfillmentState,applyFulfillmentCommand,fulfillmentCommandPermission,getFulfillmentReviews,assertProductionTransition,type FulfillmentState,type FulfillmentCommand} from './mistFulfillment';
 import {createMarketState,applyMarketCommand,marketCommandPermission,getMarketReviews,type MarketState,type MarketCommand} from './mistMarket';
 import {createCrmState,applyCrmCommand,crmCommandPermission,type CrmState,type CrmCommand} from './mistCrm';
@@ -47,6 +48,14 @@ export type MistVersion = {
   size: string; fabric: string; img: MistImage; fileIds: string[]; returnedAt: string | null;
   qc: MistQc | null; confirmations: MistConfirmation[]; archivedAt: string | null; note: string;
   confirmationDraft?: Omit<MistConfirmation, 'id' | 'recordedAt' | 'recordedBy'>;
+  /** 所属轮次（BB-DEV-2 起建立的版本才有；历史版本按原版本号展示）。 */
+  roundId?: string; factoryLetter?: string;
+};
+/** 开发轮次：一批共同要求，可派给多家工厂；每家工厂在本轮形成一个大版本 R{轮次}-{字母}。 */
+export type MistRound = {
+  id: string; devId: string; number: number; requirements: string; fileIds: string[];
+  referenceVersionIds: string[]; factories: string[]; targetDate: string;
+  createdAt: string; createdBy: string;
 };
 export type MistDev = {
   id: string; code: string; name: string; style: string; owner: string; due: string; dueRel: string;
@@ -54,6 +63,8 @@ export type MistDev = {
   factory: string; sample: string; fabric: string; goal: string; customer: string; customerId: string;
   currentVersionId: string | null; versionIds: string[]; values: DevelopmentValues; fileIds: string[];
   createdAt: string; updatedAt: string;
+  /** 工厂 → 本案固定字母；首次参与时分配，之后不变。 */
+  factoryLetters?: Record<string, string>;
 };
 export type MistFabric = { id: string; code: string; name: string; owner: string; due: string; state: string; tone: MistTone; sub: string; request: string; answer: string; confirmed: boolean; fileIds: string[] };
 export type MistOrderLine = { id: string; orderId: string; name: string; style: string; img: MistImage; qty: number; unit: string; price: number; made: number; qc: number };
@@ -145,7 +156,7 @@ export type MistState = {
   orderFunding?:OrderFundingState;
   payables?:PayablesState;
   workspaceArchive?: {at:string;actorId:string};
-  schemaVersion: 1; devs: MistDev[]; versions: MistVersion[]; drafts: MistDraft[]; fabrics: MistFabric[];
+  schemaVersion: 1; devs: MistDev[]; versions: MistVersion[]; rounds?: MistRound[]; drafts: MistDraft[]; fabrics: MistFabric[];
   orders: MistOrder[]; orderLines: MistOrderLine[]; productions: MistProduction[];
   receipts: MistReceipt[]; invoices: MistInvoice[]; allocations: MistAllocation[]; payments: MistPayment[];
   financeReversals?: MistFinanceReversal[];
@@ -169,6 +180,7 @@ export type MistCommand = FulfillmentCommand | MarketCommand | PlatformCommand |
   | { type: 'development.saveConfirmationDraft'; payload: { devId: string; versionId: string; draft: Omit<MistConfirmation, 'id' | 'recordedAt' | 'recordedBy'> } }
   | { type: 'development.revise'; payload: { devId: string; versionId: string; note: string } }
   | { type: 'development.archive'; payload: { devId: string; versionId: string } }
+  | { type: 'development.round.create'; payload: { devId: string; factories: string[]; requirements: string; fileIds?: string[]; referenceVersionIds?: string[]; targetDate: string } }
   | { type: 'fabric.create'; payload: { name: string; request: string; owner: string; due: string } }
   | { type: 'fabric.answer'; payload: { id: string; answer: string; fileIds: string[] } }
   | { type: 'fabric.confirm'; payload: { id: string; approved: boolean; note: string } }
@@ -324,6 +336,34 @@ function addVersions(state: MistState, dev: MistDev, context: MistContext, round
     if (!dev.currentVersionId) dev.currentVersionId=id;
   });
 }
+type RoundInput = { factories: unknown; requirements: unknown; fileIds?: unknown; referenceVersionIds?: unknown; targetDate: unknown };
+function assertFabricFactories(state: MistState, factories: string[]) {
+  for(const name of factories){const matches=state.market.suppliers.filter(s=>s.name===name);if(matches.length!==1||matches[0].status!=='active'||!/面料|纺织|织造|染整|fabric|textile|weav|dye/i.test(matches[0].type+' '+matches[0].capabilities))throw new MistCommandError('VALIDATION','请选择当前有效且名称唯一的面料工厂');}
+}
+/** 建立新一轮：校验共同要求、参考版本与参与工厂，为首次参与的工厂固定字母，并逐厂建立 R{轮次}-{字母} 大版本。 */
+function createRound(state: MistState, dev: MistDev, input: RoundInput, context: MistContext) {
+  state.rounds ||= [];
+  const factories = strings(input.factories, '参与工厂');
+  if(!factories.length)throw new MistCommandError('VALIDATION','请至少选择一家参与工厂');
+  if(developmentDomain(dev.values)==='fabric')assertFabricFactories(state,factories);
+  const requirements = text(input.requirements, '本轮共同要求'), targetDate = date(input.targetDate, '本轮目标日期');
+  const fileIds = files(state, (input.fileIds ?? []) as string[]);
+  const referenceVersionIds = strings(input.referenceVersionIds ?? [], '参考版本');
+  const references = referenceVersionIds.map(id => { const version = find(state.versions, id, '参考版本'); if(version.devId!==dev.id||!dev.versionIds.includes(id))throw new MistCommandError('VALIDATION','参考版本须属于本开发案'); return version; });
+  const number = nextRoundNumber(state, dev), letters = assignFactoryLetters(state, dev, factories);
+  const round: MistRound = { id: context.id(), devId: dev.id, number, requirements, fileIds, referenceVersionIds, factories, targetDate, createdAt: context.now, createdBy: context.actorName };
+  state.rounds.push(round);
+  const fabric = developmentDomain(dev.values)==='fabric', created: MistVersion[] = [];
+  for(const factory of factories){
+    const base = references.find(version => version.factory===factory) || references[0];
+    const id = context.id(), requirementsCopy = fabric ? (base?.fabricRequirements || dev.values.fabricRequirements) : undefined;
+    const version: MistVersion = {...(requirementsCopy?{fabricRequirements:JSON.parse(JSON.stringify(requirementsCopy))}:{}),id,devId:dev.id,label:roundVersionLabel(number,letters[factory]),factory,sample:'',sampleQuantity:dev.values.sampleQuantity,size:fabric?'':(base?.size??dev.values.sizeBase),fabric:base?.fabric??dev.values.fabric,img:base?.img??dev.img,fileIds:[...new Set([...(base?.fileIds??dev.fileIds),...fileIds])],returnedAt:null,qc:null,confirmations:[],archivedAt:null,note:requirements,roundId:round.id,factoryLetter:letters[factory]};
+    state.versions.push(version); dev.versionIds.push(id); created.push(version);
+  }
+  dev.values.factories = [...new Set([...dev.values.factories, ...factories])];
+  dev.currentVersionId = created[0].id;
+  return { round, versions: created };
+}
 function updateDev(state: MistState, dev: MistDev, context: MistContext) {
   const version=state.versions.find(row=>row.id===dev.currentVersionId);
   dev.fac=dev.values.factories.length; dev.factory=version?.factory || dev.values.factories[0] || '待定';
@@ -366,7 +406,7 @@ function recalculate(state: MistState) {
   }
 }
 export function createMistState(context: MistContext, seed: 'demo'|'empty' = 'demo', onDemoSeedFailures?: (failures: Array<{step:string;message:string}>) => void): MistState {
-  const state={schemaVersion:1,devs:[],versions:[],drafts:[],fabrics:[],orders:[],orderLines:[],productions:[],receipts:[],invoices:[],allocations:[],payments:[],customers:[],contacts:[],files:[],events:[],tasks:[],notifications:[],calendar:[],settings:{theme:'system',density:'default',reducedMotion:false,notifications:{qc:true,shipping:true,suggestions:true,digest:false},workspaceName:'成衣一组',profileName:context.actorName,profileEmail:'',locale:'zh-CN'}} as unknown as MistState;
+  const state={schemaVersion:1,devs:[],versions:[],rounds:[],drafts:[],fabrics:[],orders:[],orderLines:[],productions:[],receipts:[],invoices:[],allocations:[],payments:[],customers:[],contacts:[],files:[],events:[],tasks:[],notifications:[],calendar:[],settings:{theme:'system',density:'default',reducedMotion:false,notifications:{qc:true,shipping:true,suggestions:true,digest:false},workspaceName:'成衣一组',profileName:context.actorName,profileEmail:'',locale:'zh-CN'}} as unknown as MistState;
   normalizeMistState(state,context);
   if(seed==='empty') return state;
   const customers=[...new Set(Seed.ORDERS.map(row=>row.customer))];
@@ -475,7 +515,7 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
       if(!customer)throw new MistCommandError('VALIDATION','请选择已有客户');
       const id=context.id(), code='DEV-'+context.now.slice(0,4)+'-'+String(state.devs.length+1).padStart(4,'0');
       const dev:MistDev={id,code,name:v.name,style:v.style,owner:context.actorName,due:v.due,dueRel:'',stage:0,state:'开发计划',tone:'neutral',ver:'—',fac:v.factories.length,img:developmentDomain(v)==='fabric'?'clay':v.category.includes('西装')?'suit':v.category.includes('Blazer')?'blazer':'coat',factory:v.factories[0]||'待定',sample:'—',fabric:v.fabric,goal:v.goal,customer:customer.name,customerId:customer.id,currentVersionId:null,versionIds:[],values:{...v,customer:customer.name},fileIds,createdAt:context.now,updatedAt:context.now};
-      state.devs.unshift(dev); addVersions(state,dev,context); updateDev(state,dev,context);
+      state.devs.unshift(dev); if(v.factories.length)createRound(state,dev,{factories:v.factories,requirements:v.goal||v.name,targetDate:v.due||context.now.slice(0,10),fileIds:[]},context); updateDev(state,dev,context);
       if(p.draftId)state.drafts=state.drafts.filter(d=>d.id!==p.draftId);
       state.tasks.unshift({id:context.id(),title:'推进 '+dev.name,due:dev.due,done:false,kind:'development',target:{view:'development/detail',id:dev.id}});
       event(state,context,'development',id,'创建开发案 '+code,{view:'development/detail',id}); result={id,devId:id,versionId:dev.currentVersionId||undefined}; break;
@@ -488,7 +528,7 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
       if(!customer)throw new MistCommandError('VALIDATION','请选择已有客户');
       if(developmentDomain(v)!==developmentDomain(dev.values))throw new MistCommandError('PRECONDITION','已有开发案不能改变业务域，请另建案');
       dev.values=v; dev.name=v.name;dev.style=v.style;dev.customer=customer.name;dev.customerId=customer.id;dev.goal=v.goal;dev.fabric=v.fabric;dev.due=v.due;
-      if(!dev.versionIds.length)addVersions(state,dev,context);
+      if(!dev.versionIds.length&&v.factories.length)createRound(state,dev,{factories:v.factories,requirements:v.goal||v.name,targetDate:v.due||context.now.slice(0,10),fileIds:[]},context);
       updateDev(state,dev,context);event(state,context,'development',dev.id,'更新开发计划');result={devId:dev.id,versionId:dev.currentVersionId||undefined};break;
     }
     case 'development.saveConfirmationDraft': {
@@ -547,10 +587,15 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
     }
     case 'development.revise': {
       const [dev,previous]=versionOf(state,p.devId,p.versionId), note=text(p.note,'改版说明');
-      const round=Math.max(...state.versions.filter(v=>v.devId===dev.id).map(v=>Number(v.label.match(/^R(\d+)/)?.[1]||1)))+1;
-      const id=context.id(), version:MistVersion={...previous,id,label:'R'+round+'-'+(previous.label.match(/^R\d+-([A-Z]+)-/)?.[1]||'A')+'-1',sample:'',fileIds:[...previous.fileIds],returnedAt:null,qc:null,confirmations:[],archivedAt:null,note};
-      if(developmentDomain(dev.values)==='fabric')version.sampleQuantity=dev.values.sampleQuantity;delete version.confirmationDraft;delete version.sampleForm;delete version.sampleUnit;delete version.sampleLocation;delete version.sampleColor;state.versions.push(version);dev.versionIds.push(id);dev.currentVersionId=id;updateDev(state,dev,context);
-      event(state,context,'development',dev.id,'创建改版 '+version.label,{view:'development/detail',id:dev.id,versionId:id});result={devId:dev.id,versionId:id};break;
+      const {round,versions}=createRound(state,dev,{factories:[previous.factory],requirements:note,referenceVersionIds:[previous.id],targetDate:dev.due||context.now.slice(0,10),fileIds:[]},context),version=versions[0];
+      updateDev(state,dev,context);
+      event(state,context,'development',dev.id,'创建改版 '+version.label,{view:'development/detail',id:dev.id,versionId:version.id});result={devId:dev.id,versionId:version.id,roundId:round.id};break;
+    }
+    case 'development.round.create': {
+      const dev=find(state.devs,p.devId,'开发案');
+      const {round,versions}=createRound(state,dev,p,context);updateDev(state,dev,context);
+      event(state,context,'development',dev.id,'开启第 '+round.number+' 轮：'+versions.map(v=>v.label).join('、'),{view:'development/detail',id:dev.id,versionId:versions[0].id});
+      result={devId:dev.id,roundId:round.id,versionId:versions[0].id,versionIds:versions.map(v=>v.id)};break;
     }
     case 'development.archive': {
       const [dev,v]=versionOf(state,p.devId,p.versionId);
@@ -810,6 +855,7 @@ export function normalizeMistState(state:MistState,context:MistContext):void {
     'market.attachment.set':'关联业务附件'
   };
   for(const event of state.events||[])if(eventLabels[event.text])event.text=eventLabels[event.text];
+  if(!Array.isArray(state.rounds))state.rounds=[];
   const defaults={fulfillment:createFulfillmentState(context,state),market:createMarketState(context,state),platform:createPlatformState(context,state),email:createEmailState(context,state),crm:createCrmState(context,state),orderFunding:createOrderFundingState(context,state),payables:createPayablesState(context,state)};
   for(const name of ['fulfillment','market','platform','email','crm','orderFunding','payables'] as const){
     if(!state[name]) (state as any)[name]=defaults[name];
