@@ -1,4 +1,4 @@
-# 044635
+# 050732
 echo "current: $(readlink -f /srv/bambook-dev/current)"
 echo "public: $(curl -s -o /dev/null -w %{http_code} https://bambook-dev.sylway.cloud/)"
 set -u
@@ -19,6 +19,9 @@ probe "$T" /api/hr/employees '{ok,employees:(.employees|length)}'
 probe "$T" "/api/hr/employment-events?limit=5" '{ok,events:(.events|length)}'
 probe "$T" /api/hr/personnel '{positions:(.positions|length)}'
 probe "$T" /api/auth/me '{mustChange:(.user.mustChangePassword // false)}'
+probe "$T" /api/auth/mfa '{ok,enabled:.mfa.enabled}'
+probe "$T" /api/admin/users '{n:(.users|length),mfaLeak:([.users[]|.metadata.mfa? // empty]|length),flag:([.users[]|has("mfaEnabled")]|all)}'
+echo "login/mfa garbage -> $(curl -s -X POST -H 'Content-Type: application/json' -d '{"mfaToken":"x","code":"123456"}' "$B/api/auth/login/mfa" | jq -c '{error}')"
 S=$(login 6); echo "sales token: $([ -n "$S" ] && echo ok || echo missing)"
 probe "$S" /api/admin/permissions '{ok,error}'
 L=$(login 9); echo "logistics token A: $([ -n "$L" ] && echo ok || echo missing)"
@@ -30,4 +33,4 @@ sleep 1
 L2=$(login 9); echo "logistics token B: $([ -n "$L2" ] && echo ok || echo missing)"
 probe "$L2" /api/auth/me '{ok,id:(.user.id!=null)}'
 html=$(curl -s "$B/"); js=$(echo "$html" | grep -oE 'src="[^"]+\.js"' | head -3 | sed -E 's/src="([^"]+)"/\1/')
-for j in $js; do curl -s "$B$j" | grep -oE '订单毛利|办理在职变动|请先修改登录密码|退出所有设备|调整权限' | sort -u; done
+for j in $js; do curl -s "$B$j" | grep -oE '调整权限|退出所有设备|两步验证|重置两步验证|验证并登录' | sort -u; done
