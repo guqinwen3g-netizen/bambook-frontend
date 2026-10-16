@@ -28,7 +28,17 @@ export interface MistWorkspaceContext {
   restoreWorkspace?:(id:string)=>Promise<void>;
   /** 所有者授权/撤销其他账号进入当前空间；对方能看到什么仍由其自身岗位权限决定（服务端裁剪）。 */
   changeMember?:(action:'add'|'remove',account:string)=>Promise<void>;
+  /** 智能邮箱真实收发：绑定/断开凭据、同步、发送、重发与核对；凭据只提交到服务端，不进入工作空间状态。 */
+  mail?:(action:MistMailAction)=>Promise<MistMailResult>;
 }
+export type MistMailAction =
+  | { kind: 'bind'; accountId: string; password: string }
+  | { kind: 'disconnect'; accountId: string }
+  | { kind: 'sync'; accountId: string }
+  | { kind: 'send'; requestKey: string; draftId?: string; input?: Record<string, unknown>; forwardOfId?: string }
+  | { kind: 'retry'; sendId: string; confirmUnknown?: boolean }
+  | { kind: 'verify'; sendId: string };
+export interface MistMailResult { sync?: { remaining?: number; failedFolders?: string[]; error?: string | null; [key: string]: unknown }; send?: { id: string; status: string; message?: string; replayed?: boolean } }
 const Context = React.createContext<MistWorkspaceContext | null>(null);
 const BASE = '/api/mist/workspaces';
 const nonempty = (value: unknown): value is string => typeof value === 'string' && !!value.trim();
@@ -304,6 +314,27 @@ export function MistWorkspaceProvider({ children }: { children: React.ReactNode 
       await perform(intent,JSON.stringify({requestId:intent.requestId,expectedRevision:intent.expectedRevision,action:intent.action,account:intent.account}),authority);}
     finally{unlock(token,authority);}
   },[authority.key,authority.userId,authority.status,boundEpoch,boundWorkspaceId,assertSource,lock,perform,unlock]);
+  const mail=React.useCallback(async(action:MistMailAction):Promise<MistMailResult>=>{
+    assertSource(authority,boundEpoch,boundWorkspaceId);
+    if(pendingCreateRef.current)throw new RequestError(createNotice(pendingCreateRef.current));
+    if(pendingRef.current)throw new RequestError('存在待核对的操作，请先核对原请求结果');
+    const ws=encodeURIComponent(boundWorkspaceId!),id=(value:string)=>encodeURIComponent(value);
+    const call:{path:string;method:string;body?:unknown}=action.kind==='bind'?{path:'accounts/'+id(action.accountId)+'/credential',method:'PUT',body:{password:action.password}}
+      :action.kind==='disconnect'?{path:'accounts/'+id(action.accountId)+'/credential',method:'DELETE'}
+      :action.kind==='sync'?{path:'accounts/'+id(action.accountId)+'/sync',method:'POST',body:{}}
+      :action.kind==='send'?{path:'sends',method:'POST',body:{requestKey:action.requestKey,...(action.draftId?{draftId:action.draftId}:{}),...(action.input?{input:action.input}:{}),...(action.forwardOfId?{forwardOfId:action.forwardOfId}:{})}}
+      :action.kind==='retry'?{path:'sends/'+id(action.sendId)+'/retry',method:'POST',body:action.confirmUnknown?{confirmUnknown:true}:{}}
+      :{path:'sends/'+id(action.sendId)+'/verify',method:'POST',body:{}};
+    const token=lock();
+    try{
+      const data=await request(BASE+'/'+ws+'/email/'+call.path,{method:call.method,...(call.body!==undefined?{body:JSON.stringify(call.body)}:{})});
+      assertSource(authority,boundEpoch,boundWorkspaceId);put(envelope(data.workspace,authority.userId!,boundWorkspaceId),authority);
+      return {...(data.sync?{sync:data.sync}:{}),...(data.send?{send:data.send}:{})};
+    }catch(failure){
+      if(live.current.key===authority.key)await load(authority,boundWorkspaceId).catch(()=>undefined);
+      throw failure;
+    }finally{unlock(token,authority);}
+  },[authority.key,authority.userId,authority.status,boundEpoch,boundWorkspaceId,assertSource,lock,load,put,unlock]);
   const run = React.useCallback(async (command: MistCommand) => {
     assertSource(authority, boundEpoch, boundWorkspaceId);
     if (pendingCreateRef.current) throw new RequestError(createNotice(pendingCreateRef.current));
@@ -442,7 +473,7 @@ export function MistWorkspaceProvider({ children }: { children: React.ReactNode 
     if(kind==='archive')assertSource(authority,boundEpoch,boundWorkspaceId);const row=kind==='archive'?snapshot.current:archivedWorkspaces.find(row=>row.id===id);if(!row)throw new RequestError('工作区不存在，请刷新回收站');
     const token=lock();try{await performLifecycle({workspaceId:row.id,expectedRevision:row.revision,requestId:crypto.randomUUID(),actorId:authority.userId,kind},authority);}finally{unlock(token,authority);}
   },[authority.key,authority.userId,authority.status,boundEpoch,boundWorkspaceId,archivedWorkspaces,assertIdentity,assertSource,lock,performLifecycle,unlock]);
-  return <Context.Provider value={{ state: visible?.state ?? null, workspace: visible, workspaces: scopeIsCurrent ? workspaces : [], archivedWorkspaces:scopeIsCurrent?archivedWorkspaces:[],refreshArchived,archiveWorkspace:()=>changeArchive('archive'),restoreWorkspace:id=>changeArchive('restore',id),changeMember,loading: scopeIsCurrent ? loading : session.status !== 'anonymous', error: scopeIsCurrent ? error : '', saving: scopeIsCurrent ? saving : false, pending: scopeIsCurrent ? pending : null, pendingCreate: scopeIsCurrent ? pendingCreate : null, run, uploadFile, downloadFile, prepareCreditDocument, issueCreditDocument, downloadCreditDocument, fileUrl, refresh, recover, switchWorkspace, createWorkspace }}>{children}</Context.Provider>;
+  return <Context.Provider value={{ state: visible?.state ?? null, workspace: visible, workspaces: scopeIsCurrent ? workspaces : [], archivedWorkspaces:scopeIsCurrent?archivedWorkspaces:[],refreshArchived,archiveWorkspace:()=>changeArchive('archive'),restoreWorkspace:id=>changeArchive('restore',id),changeMember,mail,loading: scopeIsCurrent ? loading : session.status !== 'anonymous', error: scopeIsCurrent ? error : '', saving: scopeIsCurrent ? saving : false, pending: scopeIsCurrent ? pending : null, pendingCreate: scopeIsCurrent ? pendingCreate : null, run, uploadFile, downloadFile, prepareCreditDocument, issueCreditDocument, downloadCreditDocument, fileUrl, refresh, recover, switchWorkspace, createWorkspace }}>{children}</Context.Provider>;
 }
 export function useMistWorkspace(): MistWorkspaceContext {
   const context = React.useContext(Context); if (!context) throw new Error('useMistWorkspace must be used inside MistWorkspaceProvider'); return context;

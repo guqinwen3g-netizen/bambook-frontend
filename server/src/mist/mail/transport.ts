@@ -141,5 +141,8 @@ export function describeMailError(error: any, stage: 'imap' | 'smtp'): { code: s
   if (/SELF_SIGNED|CERT|UNABLE_TO_VERIFY|DEPTH_ZERO/i.test(code + ' ' + detail)) return { code: 'MAIL_TLS_UNTRUSTED', message: `${label}证书不受信任，连接已中止` };
   if (code === 'ETIMEDOUT' || /timeout/i.test(text + ' ' + detail)) return { code: 'MAIL_TIMEOUT', message: `${label}连接超时` };
   if (['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ECONNECTION', 'EHOSTUNREACH', 'ECONNRESET'].includes(code)) return { code: 'MAIL_CONNECT_FAILED', message: `无法连接${label}` };
+  const reply = Number(error?.responseCode), said = String(error?.response || detail).replace(/[\u0000-\u001f\u007f]+/g, ' ').trim().slice(0, 160);
+  if (stage === 'smtp' && reply >= 500 && reply < 600) return { code: 'SMTP_REJECTED', message: `发信服务器拒绝（${reply}${said ? `：${said}` : ''}）` };
+  if (stage === 'smtp' && reply >= 400 && reply < 500) return { code: 'SMTP_TEMPORARY_FAILURE', message: `发信服务器暂时拒绝（${reply}${said ? `：${said}` : ''}），可稍后重发` };
   return { code: 'MAIL_PROTOCOL_ERROR', message: `${label}操作失败` };
 }

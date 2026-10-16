@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createMistLocalRuntime } from '../local';
 import { createMistServer } from '../server';
-import { composeMail, classifySmtpError, type MailImapSession, type MailTransport } from './transport';
+import { composeMail, classifySmtpError, describeMailError, type MailImapSession, type MailTransport } from './transport';
 import { pickMailFolders } from './service';
 
 /**
@@ -258,5 +258,8 @@ describe('智能邮箱真实收发（服务端）', () => {
     expect(classifySmtpError({ mailStage: 'send', mailReplied: true, responseCode: 550 })).toBe('failed');
     expect(classifySmtpError({ mailStage: 'send', mailReplied: false, code: 'ETIMEDOUT', command: 'CONN' })).toBe('unknown');
     expect(classifySmtpError({ code: 'ESOCKET' })).toBe('unknown');
+    expect(describeMailError({ responseCode: 550, response: '550 5.1.1 <x@y.test>: Recipient address rejected\r\n' }, 'smtp')).toEqual({ code: 'SMTP_REJECTED', message: '发信服务器拒绝（550：550 5.1.1 <x@y.test>: Recipient address rejected）' });
+    expect(describeMailError({ responseCode: 451, response: '451 try later' }, 'smtp').code).toBe('SMTP_TEMPORARY_FAILURE');
+    expect(describeMailError({ code: 'EAUTH', responseCode: 535 }, 'smtp').code).toBe('MAIL_AUTH_FAILED');
   });
 });

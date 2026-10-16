@@ -1,19 +1,21 @@
-/** 智能邮箱：三栏收件箱（邮箱与文件夹 / 邮件列表 / 阅读区）。只记录标记、关联、跟进与草稿；收信与发信服务尚未接入，不伪造同步或发送结果。 */
+/** 智能邮箱：三栏收件箱（邮箱与文件夹 / 邮件列表 / 阅读区）。真实邮箱经 IMAP 增量同步、SMTP 发送；发送结果分为已接受 / 失败 / 不确定，不确定时不自动重发。示例邮箱只用合成数据。 */
 import React from 'react';
-import { AlertTriangle, Archive, ArchiveRestore, CalendarPlus, Download, Forward, Inbox, Link2, Mail, MailOpen, Paperclip, PenLine, Reply, ReplyAll, RotateCcw, SearchX, Send, Settings2, Sparkles, Star, Trash2, Unlink, Upload } from 'lucide-react';
+import { AlertTriangle, Archive, ArchiveRestore, CalendarPlus, Download, Forward, Inbox, KeyRound, Link2, Mail, MailOpen, Paperclip, PenLine, Plus, Reply, ReplyAll, RotateCcw, SearchCheck, SearchX, Send, Settings2, Sparkles, Star, Trash2, Unlink, Upload } from 'lucide-react';
 import { Banner, Button, Card, Checkbox, DataTable, Dialog, Drawer, Dropdown, EmptyState, Facts, Field, FormGrid, MistPage, PageHeader, Pill, SearchField, Select, TextArea, TextInput, TextLink, Toolbar, useToast, type Column, type Tone } from '../../../../../components/mist';
 import type { MistCommand, MistState } from '../../../../../server/src/shared/mistWorkspace';
-import { EMAIL_LINK_LABEL, emailLinkTarget, type EmailAccount, type EmailDraft, type EmailDraftInput, type EmailLink, type EmailLinkKind, type EmailMessage } from '../../../../../server/src/shared/mistEmail';
-import { useMistWorkspace } from '../../runtime/workspace';
+import { EMAIL_LINK_LABEL, emailLinkTarget, emailSendEffectiveStatus, type EmailAccount, type EmailAccountInput, type EmailDraft, type EmailDraftInput, type EmailLink, type EmailLinkKind, type EmailMessage, type EmailSend, type EmailSendStatus } from '../../../../../server/src/shared/mistEmail';
+import { useMistWorkspace, type MistMailAction, type MistMailResult } from '../../runtime/workspace';
 import { useMistSession } from '../../runtime/auth';
-import { useNav, type RouteTarget } from '../../nav';
+import { useNav } from '../../nav';
 import { Events } from './fulfillmentKit';
 import { ActionBar, DetailBlock, DetailBody, ListDetail, shortWhen, todayIso, type ReasonedAction } from './pageKit';
 
 export type MailFolder = 'inbox' | 'drafts' | 'outbox' | 'sent' | 'archive' | 'trash';
 export type MailView = 'unread' | 'starred' | 'important' | 'followup' | 'unlinked';
 export type MailScope = { kind: 'folder'; value: MailFolder } | { kind: 'view'; value: MailView };
-type Row = { kind: 'message'; id: string; message: EmailMessage } | { kind: 'draft'; id: string; draft: EmailDraft };
+type Row = { kind: 'message'; id: string; message: EmailMessage } | { kind: 'draft'; id: string; draft: EmailDraft } | { kind: 'send'; id: string; send: EmailSend };
+type Mail = (action: MistMailAction) => Promise<MistMailResult>;
+type Compose = { id?: string; input: EmailDraftInput; forwardOfId?: string };
 type Exec = (command: MistCommand, done?: string) => Promise<unknown>;
 const FOLDERS: Array<{ value: MailFolder; label: string; icon: typeof Inbox }> = [
   { value: 'inbox', label: '收件箱', icon: Inbox }, { value: 'drafts', label: '草稿', icon: PenLine }, { value: 'outbox', label: '待发送', icon: Upload },
@@ -21,7 +23,25 @@ const FOLDERS: Array<{ value: MailFolder; label: string; icon: typeof Inbox }> =
 ];
 const VIEWS: Array<{ value: MailView; label: string }> = [{ value: 'unread', label: '未读' }, { value: 'starred', label: '星标' }, { value: 'important', label: '重要' }, { value: 'followup', label: '待跟进' }, { value: 'unlinked', label: '未关联业务' }];
 const FOLDER_FOR_FAILURE: Record<string, MailFolder> = { 收件箱: 'inbox', 已发送: 'sent', 已归档: 'archive', 已删除: 'trash' };
-const SEND_BLOCKED = '该邮箱尚未接入发信服务 · 管理后台 › 邮箱账号';
+const SEND_STATUS: Record<EmailSendStatus, { label: string; tone: Tone }> = { sending: { label: '发送中', tone: 'accent' }, sent: { label: '已发送', tone: 'ok' }, failed: { label: '发送失败', tone: 'bad' }, unknown: { label: '结果不确定', tone: 'warn' } };
+const ATTEMPT_LABEL: Record<EmailSend['attempts'][number]['outcome'], string> = { claimed: '开始投递', accepted: '服务器已接受', failed: '明确失败', unknown: '结果不确定', verified: '已在本邮箱找到', not_found: '本邮箱未找到' };
+const newRequestKey = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`).replace(/[^A-Za-z0-9]/g, '').slice(0, 40);
+/** 真实邮箱（非示例、已有服务器设置）；发送还要求已绑定凭据。 */
+const isReal = (a?: EmailAccount) => !!a && !a.example && !!a.transport;
+export function sendBlocked(a?: EmailAccount): string | false {
+  if (!a) return '请选择发件邮箱';
+  if (a.example) return '示例邮箱只用于演示，不能发送真实邮件';
+  if (!a.transport || !a.credentialSet || a.connection === 'not_connected') return '该邮箱尚未绑定凭据 · 邮箱账号中绑定后可发送';
+  return false;
+}
+export function connectionLabel(a: EmailAccount): { label: string; tone: Tone } {
+  if (a.example || a.connection === 'example') return { label: `示例 · 同步于 ${a.lastSyncAt ? when(a.lastSyncAt) : '—'}`, tone: 'neutral' };
+  if (!a.credentialSet || a.connection === 'not_connected') return { label: '未绑定凭据', tone: 'neutral' };
+  if (a.connection === 'syncing') return { label: '同步中', tone: 'accent' };
+  if (a.connection === 'error') return { label: '连接失败', tone: 'bad' };
+  if (a.connection === 'partial' || a.failedFolders.length) return { label: '部分文件夹失败', tone: 'warn' };
+  return { label: a.lastSyncAt ? `已连接 · 同步于 ${when(a.lastSyncAt)}` : '已连接 · 尚未同步', tone: 'ok' };
+}
 const SOURCE_LABEL: Record<EmailMessage['category']['source'], { label: string; tone: Tone }> = { rule: { label: '规则分类', tone: 'accent' }, ai: { label: 'AI 分类', tone: 'ai' }, none: { label: '未分类', tone: 'neutral' }, failed: { label: '分类失败', tone: 'warn' } };
 export const EMAIL_TEMPLATES: Array<{ value: string; label: string; subject: string; body: string }> = [
   { value: '询价回复', label: '询价回复', subject: '询价回复：【款号 / 品名】', body: '您好，\n\n感谢询价。【款号 / 品名】的报价如下：\n- 单价：【币种 单价 / 计价单位】\n- 起订量：【数量 单位】\n- 交期：【日期】\n报价有效期至【日期】。\n\n如有问题请随时联系。' },
@@ -54,32 +74,39 @@ export function mailMatches(state: MistState, m: EmailMessage, scope: MailScope)
 }
 
 export function EmailsPage() {
-  const { state, run, error, refresh, loading, saving, pending } = useMistWorkspace(), session = useMistSession(), { go, route } = useNav(), toast = useToast();
-  const can = session.hasPermission('emails:write'), locked = saving || !!pending;
-  const email = state?.email || { accounts: [], messages: [], drafts: [] };
+  const { state, run, error, refresh, loading, saving, pending, mail: mailAction, downloadFile } = useMistWorkspace(), session = useMistSession(), { go, route } = useNav(), toast = useToast();
+  const can = session.hasPermission('emails:write'), canAdmin = session.hasPermission('emails:admin'), locked = saving || !!pending;
+  const me = session.user?.id != null ? String(session.user.id) : '';
+  const email = state?.email || { accounts: [], messages: [], drafts: [], sends: [] };
+  const mail: Mail = mailAction || (async () => { throw new Error('邮件收发服务不可用'); });
   const [accountId, setAccountId] = React.useState<string>('all'), [scope, setScope] = React.useState<MailScope>({ kind: 'folder', value: 'inbox' });
   const [query, setQuery] = React.useState(''), [category, setCategory] = React.useState('all');
   const [picked, setPicked] = React.useState<string | null>(route.id || null), [drawer, setDrawer] = React.useState(!!route.id);
-  const [compose, setCompose] = React.useState<{ id?: string; input: EmailDraftInput } | null>(null), [followUp, setFollowUp] = React.useState<EmailMessage | null>(null);
-  const [failure, setFailure] = React.useState('');
+  const [compose, setCompose] = React.useState<Compose | null>(null), [followUp, setFollowUp] = React.useState<EmailMessage | null>(null);
+  const [failure, setFailure] = React.useState(''), [notice, setNotice] = React.useState<{ tone: Tone; title: string; text: string } | null>(null);
+  const [accountsOpen, setAccountsOpen] = React.useState(false), [confirmResend, setConfirmResend] = React.useState<EmailSend | null>(null);
+  const draftKeys = React.useRef(new Map<string, string>());
   const ready = !!state;
   React.useEffect(() => {
     if (!route.id || !state) return;
     const m = state.email?.messages.find(row => row.id === route.id);
     if (m) { setScope({ kind: 'folder', value: m.folder }); setAccountId('all'); } else if (state.email?.drafts.some(row => row.id === route.id)) setScope({ kind: 'folder', value: 'drafts' });
+    else if (state.email?.sends?.some(row => row.id === route.id)) setScope({ kind: 'folder', value: 'outbox' });
     setPicked(route.id); setDrawer(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.id, ready]);
   const accounts = email.accounts, inAccount = (id: string) => accountId === 'all' || id === accountId;
   const messages = email.messages.filter(m => inAccount(m.accountId)), drafts = email.drafts.filter(d => inAccount(d.accountId));
-  const count = (s: MailScope) => s.kind === 'folder' && s.value === 'drafts' ? drafts.length : s.kind === 'folder' && s.value === 'outbox' ? 0 : state ? messages.filter(m => mailMatches(state, m, s)).length : 0;
+  const outbox = (email.sends || []).filter(row => inAccount(row.accountId) && emailSendEffectiveStatus(row) !== 'sent');
+  const count = (s: MailScope) => s.kind === 'folder' && s.value === 'drafts' ? drafts.length : s.kind === 'folder' && s.value === 'outbox' ? outbox.length : state ? messages.filter(m => mailMatches(state, m, s)).length : 0;
   const needle = query.trim().toLowerCase();
   const categories = [...new Set(email.messages.map(m => m.category.label).filter(Boolean))];
   const isDrafts = scope.kind === 'folder' && scope.value === 'drafts', isOutbox = scope.kind === 'folder' && scope.value === 'outbox';
   const scoped: Row[] = isDrafts ? drafts.map(d => ({ kind: 'draft' as const, id: d.id, draft: d }))
-    : isOutbox || !state ? [] : messages.filter(m => mailMatches(state, m, scope)).map(m => ({ kind: 'message' as const, id: m.id, message: m }));
-  const stamp = (row: Row) => row.kind === 'draft' ? row.draft.updatedAt : row.message.at;
+    : isOutbox ? outbox.map(row => ({ kind: 'send' as const, id: row.id, send: row })) : !state ? [] : messages.filter(m => mailMatches(state, m, scope)).map(m => ({ kind: 'message' as const, id: m.id, message: m }));
+  const stamp = (row: Row) => row.kind === 'draft' ? row.draft.updatedAt : row.kind === 'send' ? row.send.updatedAt : row.message.at;
   const rows = scoped.filter(row => {
+    if (row.kind === 'send') return !needle || `${row.send.subject} ${row.send.to} ${row.send.cc} ${row.send.body}`.toLowerCase().includes(needle);
     if (row.kind === 'draft') return !needle || `${row.draft.subject} ${row.draft.to} ${row.draft.body}`.toLowerCase().includes(needle);
     const m = row.message;
     if (category !== 'all' && (category === 'none' ? !!m.category.label : m.category.label !== category)) return false;
@@ -88,7 +115,8 @@ export function EmailsPage() {
   const find = (id: string | null): Row | undefined => {
     if (!id) return undefined;
     const m = email.messages.find(row => row.id === id); if (m) return { kind: 'message', id: m.id, message: m };
-    const d = email.drafts.find(row => row.id === id); return d ? { kind: 'draft', id: d.id, draft: d } : undefined;
+    const d = email.drafts.find(row => row.id === id); if (d) return { kind: 'draft', id: d.id, draft: d };
+    const sent = (email.sends || []).find(row => row.id === id); return sent ? { kind: 'send', id: sent.id, send: sent } : undefined;
   };
   const selected = rows.find(row => row.id === picked) || find(picked);
   const exec: Exec = async (command, done) => { setFailure(''); try { const receipt = await run(command); if (done) toast(done); return receipt; } catch (problem) { setFailure(problemText(problem, '操作未保存，请重试')); return null; } };
@@ -98,6 +126,44 @@ export function EmailsPage() {
   };
   const changeScope = (next: MailScope) => { setScope(next); setPicked(null); setDrawer(false); setCategory('all'); };
   const changeAccount = (id: string) => { setAccountId(id); setPicked(null); setDrawer(false); };
+  /** 调用收发服务：服务端错误原样提示；返回结果供调用方区分已发送 / 失败 / 不确定。 */
+  const callMail = async (action: MistMailAction): Promise<MistMailResult | null> => { setFailure(''); try { return await mail(action); } catch (problem) { setFailure(problemText(problem, '操作未完成，请重试')); return null; } };
+  const reportSend = (result: MistMailResult | null, again = false) => {
+    const sent = result?.send; if (!sent) return false;
+    if (sent.status === 'sent') { setNotice(null); toast(sent.replayed ? '该邮件此前已发送，未重复投递' : again ? '已核对：邮件已在本邮箱中找到' : '邮件已发送，服务器已接受'); return true; }
+    if (sent.status === 'failed') setNotice({ tone: 'bad', title: '发送失败', text: `${sent.message || '服务器拒绝了这封邮件'}。邮件保留在待发送，可修正后重发。` });
+    else if (sent.status === 'unknown') setNotice(again
+      ? { tone: 'warn', title: '仍无法确认是否送达', text: '本邮箱的收件箱、已发送和归档中都没有找到这封邮件。系统不会自动重发；请向收件人确认未收到后，再选择“确认未送达后重发”。' }
+      : { tone: 'warn', title: '发送结果不确定', text: `${sent.message || '连接在投递过程中中断'}。系统不会自动重发；请在待发送中核对，确认未送达后再重发。` });
+    else setNotice({ tone: 'neutral', title: '正在发送', text: '这封邮件正在投递，稍后在待发送或已发送中查看结果。' });
+    return true;
+  };
+  const sendInput = async (input: EmailDraftInput, requestKey: string, draftId?: string, forwardOfId?: string) => {
+    const result = await callMail({ kind: 'send', requestKey, ...(draftId ? { draftId } : {}), input: input as unknown as Record<string, unknown>, ...(forwardOfId ? { forwardOfId } : {}) });
+    if (!result) return false;
+    reportSend(result); if (draftId) draftKeys.current.delete(draftId);
+    if (result.send?.status !== 'sent') changeScope({ kind: 'folder', value: 'outbox' });
+    return true;
+  };
+  const sendDraft = (d: EmailDraft) => {
+    const key = draftKeys.current.get(d.id + d.updatedAt) || newRequestKey(); draftKeys.current.set(d.id + d.updatedAt, key);
+    const { id, createdAt: _c, updatedAt: _u, updatedBy: _b, ...input } = d;
+    void sendInput(input, key, id).then(done => { if (done) { draftKeys.current.delete(d.id + d.updatedAt); setPicked(null); setDrawer(false); } });
+  };
+  const retrySend = async (row: EmailSend, confirmUnknown = false) => { const result = await callMail({ kind: 'retry', sendId: row.id, ...(confirmUnknown ? { confirmUnknown: true } : {}) }); if (result) reportSend(result); setConfirmResend(null); };
+  const verifySend = async (row: EmailSend) => { const result = await callMail({ kind: 'verify', sendId: row.id }); if (result) reportSend(result, true); };
+  const syncable = accounts.filter(a => isReal(a) && a.credentialSet && a.connection !== 'not_connected' && inAccount(a.id));
+  const syncNow = async () => {
+    setNotice(null); const problems: string[] = []; let remaining = 0;
+    for (const a of syncable) {
+      const result = await callMail({ kind: 'sync', accountId: a.id }); if (!result) return;
+      if (result.sync?.error || result.sync?.failedFolders?.length) problems.push(`${a.displayName}：${result.sync.error || `${result.sync.failedFolders!.join('、')}未能同步`}`);
+      remaining += Number(result.sync?.remaining || 0);
+    }
+    if (problems.length) setNotice({ tone: 'warn', title: '部分邮箱未完成同步', text: problems.join('；') });
+    else toast(remaining ? `已同步一批，还有约 ${remaining} 封待同步，可再次同步` : '同步完成');
+  };
+  const downloadAttachment = async (fileId: string) => { const file = state?.files.find(row => row.id === fileId); if (!file) { setFailure('附件文件不可用，请重新同步'); return; } setFailure(''); try { await downloadFile(file); } catch (problem) { setFailure(problemText(problem, '附件下载失败，请重试')); } };
   const blankInput = (account?: EmailAccount): EmailDraftInput => ({ accountId: account?.id || '', from: account?.address || '', to: '', cc: '', bcc: '', subject: '', body: account?.signature ? `\n\n--\n${account.signature}` : '', template: '', links: [], fileIds: [] });
   const defaultAccount = accounts.find(a => a.id === accountId) || accounts.find(a => a.kind === 'personal') || accounts[0];
   const respond = (m: EmailMessage, mode: 'reply' | 'all' | 'forward') => {
@@ -106,21 +172,25 @@ export function EmailsPage() {
     const others = [...m.to, ...m.cc].map(row => row.address).filter(address => !mine.has(address.toLowerCase()) && address !== m.from.address);
     const quoted = `\n\n--\n${account?.signature || ''}\n\n——— 原邮件 ———\n发件人：${addressText([m.from])}\n时间：${when(m.at)}\n主题：${m.subject}\n\n${m.body}`;
     const to = mode === 'forward' ? '' : m.folder === 'sent' ? m.to.map(row => row.address).join(', ') : m.from.address;
-    setCompose({ input: { ...blankInput(account), to, cc: mode === 'all' ? others.join(', ') : '', subject: `${mode === 'forward' ? 'Fwd' : 'Re'}: ${m.subject.replace(/^(Re|Fwd):\s*/i, '')}`, body: quoted, links: m.links, replyToId: m.id } });
+    const forwarded = mode === 'forward' ? m.attachments.map(file => file.fileId).filter((id): id is string => !!id && !!state?.files.some(row => row.id === id)) : [];
+    const base = { ...blankInput(account), to, cc: mode === 'all' ? others.join(', ') : '', subject: `${mode === 'forward' ? 'Fwd' : 'Re'}: ${m.subject.replace(/^(Re|Fwd):\s*/i, '')}`, body: quoted, links: m.links, fileIds: forwarded };
+    setCompose(mode === 'forward' ? { input: base, forwardOfId: m.id } : { input: { ...base, replyToId: m.id } });
   };
   const failedAccounts = accounts.filter(a => a.failedFolders.length && inAccount(a.id));
   const scopeLabel = scope.kind === 'folder' ? FOLDERS.find(f => f.value === scope.value)!.label : VIEWS.find(v => v.value === scope.value)!.label;
   const scopeFailed = scope.kind === 'folder' && failedAccounts.some(a => a.failedFolders.some(name => FOLDER_FOR_FAILURE[name] === scope.value));
-  const toAccounts = () => go('admin-panel', undefined, { section: 'mail-accounts' } as RouteTarget);
+  const toAccounts = () => setAccountsOpen(true);
 
   const columns: Column<Row>[] = [
-    { key: 'from', header: scope.kind === 'folder' && (scope.value === 'sent' || isDrafts) ? '收件人' : '发件人', width: 'minmax(130px,1fr)', hideOnMobile: true, render: row => {
+    { key: 'from', header: scope.kind === 'folder' && (scope.value === 'sent' || isDrafts || isOutbox) ? '收件人' : '发件人', width: 'minmax(130px,1fr)', hideOnMobile: true, render: row => {
+      if (row.kind === 'send') return <div className="mist-col" style={{ gap: 2 }}><span>{row.send.to || row.send.cc || '密送收件人'}</span><small className="mist-muted">{row.send.from}</small></div>;
       if (row.kind === 'draft') return <div className="mist-col" style={{ gap: 2 }}><span>{row.draft.to || '未填写收件人'}</span><small className="mist-muted">草稿 · {row.draft.from}</small></div>;
       const m = row.message, name = m.folder === 'sent' ? addressText(m.to) : m.from.name || m.from.address;
       return <div className="mist-col" style={{ gap: 2 }}><span className="mist-mail-strong" data-unread={!m.read || undefined}>{name}</span><small className="mist-muted">{accounts.find(a => a.id === m.accountId)?.kind === 'shared' ? '共享邮箱' : '个人邮箱'}</small></div>;
     } },
     { key: 'subject', header: '主题', width: 'minmax(200px,2.4fr)', render: row => {
       if (row.kind === 'draft') return <div className="mist-col" style={{ gap: 2 }}><span>{row.draft.subject || '（无主题）'}</span><small className="mist-muted mist-mail-snippet">{row.draft.body.trim().split('\n')[0] || '正文为空'}</small></div>;
+      if (row.kind === 'send') { const status = SEND_STATUS[emailSendEffectiveStatus(row.send)]; return <div className="mist-col" style={{ gap: 3 }}><span>{row.send.subject}</span><span className="mist-row" style={{ gap: 4 }}><Pill tone={status.tone}>{status.label}</Pill><small className="mist-muted mist-mail-snippet">{row.send.attempts[row.send.attempts.length - 1]?.message || ''}</small></span></div>; }
       const m = row.message;
       return <div className="mist-col" style={{ gap: 3 }}>
         <small className="mist-muted mist-mail-mobile-meta">{m.folder === 'sent' ? `致 ${m.to.map(item => item.name || item.address).join('、')}` : m.from.name || m.from.address} · {when(m.at)}</small>
@@ -144,8 +214,8 @@ export function EmailsPage() {
     <div className="mist-mail-navgroup">
       <span className="mist-eyebrow">邮箱</span>
       {navItem('all', accountId === 'all', () => changeAccount('all'), <Mail size={15} />, '全部邮箱', email.messages.filter(m => m.folder === 'inbox' && !m.read).length)}
-      {accounts.map(a => navItem(a.id, accountId === a.id, () => changeAccount(a.id), <span className="mist-mail-dot" data-tone={a.failedFolders.length ? 'warn' : a.connection === 'example' ? 'ok' : 'neutral'} />,
-        <span className="mist-col" style={{ gap: 0, minWidth: 0 }}><span className="mist-mail-ellipsis">{a.displayName}</span><small className="mist-muted mist-mail-ellipsis">{a.connection === 'example' ? `示例 · 同步于 ${a.lastSyncAt ? when(a.lastSyncAt) : '—'}` : '未接入'}</small></span>, undefined, a.address))}
+      {accounts.map(a => { const c = connectionLabel(a); return navItem(a.id, accountId === a.id, () => changeAccount(a.id), <span className="mist-mail-dot" data-tone={c.tone} />,
+        <span className="mist-col" style={{ gap: 0, minWidth: 0 }}><span className="mist-mail-ellipsis">{a.displayName}</span><small className="mist-muted mist-mail-ellipsis">{c.label}</small></span>, undefined, a.address); })}
     </div>
     <div className="mist-mail-navgroup">
       <span className="mist-eyebrow">文件夹</span>
@@ -158,33 +228,37 @@ export function EmailsPage() {
   </Card>;
 
   const emptyList = isOutbox
-    ? <EmptyState icon={Upload} title="没有待发送邮件" description="发信服务尚未接入；写好的邮件保存在草稿中，不会进入待发送。" />
+    ? <EmptyState icon={Upload} title="没有待发送邮件" description="发送失败或结果不确定的邮件会停留在这里，供核对与重发。" />
     : scoped.length ? <EmptyState icon={SearchX} title="没有符合条件的邮件" description="换个关键词或清除分类筛选。" action={<Button onClick={() => { setQuery(''); setCategory('all'); }}>清除筛选</Button>} />
     : <EmptyState icon={isDrafts ? PenLine : Inbox} title={`${scopeLabel}为空`} description={isDrafts ? '写邮件后保存草稿，会出现在这里。' : '当前邮箱在这里没有邮件。'} />;
   const editDraft = (d: EmailDraft) => { const { id, createdAt: _c, updatedAt: _u, updatedBy: _b, ...input } = d; setCompose({ id, input }); };
   const deleteDraft = async (id: string) => { if (await exec({ type: 'email.draft.delete', payload: { id } }, '草稿已删除')) { setPicked(null); setDrawer(false); } };
   const detail = selected && state
     ? selected.kind === 'draft'
-      ? <DraftDetail draft={selected.draft} state={state} can={can} locked={locked} onEdit={() => editDraft(selected.draft)} onDelete={() => void deleteDraft(selected.id)} />
-      : <MessageDetail message={selected.message} state={state} can={can} locked={locked} exec={exec} onOpen={(view, id) => go(view, id)} onRespond={mode => respond(selected.message, mode)} onFollowUp={() => setFollowUp(selected.message)} />
+      ? <DraftDetail draft={selected.draft} state={state} can={can} locked={locked} onEdit={() => editDraft(selected.draft)} onDelete={() => void deleteDraft(selected.id)} onSend={() => sendDraft(selected.draft)} />
+      : selected.kind === 'send'
+        ? <SendDetail send={selected.send} state={state} can={can} me={me} locked={locked} onRetry={row => void retrySend(row)} onVerify={row => void verifySend(row)} onConfirmResend={setConfirmResend} />
+        : <MessageDetail message={selected.message} state={state} can={can} locked={locked} exec={exec} onOpen={(view, id) => go(view, id)} onRespond={mode => respond(selected.message, mode)} onFollowUp={() => setFollowUp(selected.message)} onDownload={id => void downloadAttachment(id)} />
     : <EmptyState icon={MailOpen} title="阅读邮件" description={loading ? '正在读取邮箱' : '从列表选择一封邮件，查看正文、附件、业务关联与跟进'} compact />;
+  const sendCompose = async (input: EmailDraftInput, requestKey: string) => { if (compose && await sendInput(input, requestKey, compose.id, compose.forwardOfId)) setCompose(null); };
   const saveDraft = async (input: EmailDraftInput, id?: string) => { const receipt = await exec({ type: 'email.draft.save', payload: { ...(id ? { id } : {}), input } }, '草稿已保存'); if (receipt) setCompose(null); };
   const createFollowUp = async (owner: string, due: string, note: string) => { if (followUp && await exec({ type: 'email.followUp', payload: { id: followUp.id, owner, due, note } }, '已生成跟进待办，并写入日历')) setFollowUp(null); };
 
   return <MistPage width="wide">
-    <PageHeader eyebrow="我的事务" title="智能邮箱" description="个人与共享邮箱的来往邮件；可标记、关联客户 / 开发案 / 订单 / 发票，生成跟进待办，并把抽取资料提交给业务对象复核。"
+    <PageHeader eyebrow="我的事务" title="智能邮箱" description="个人与共享邮箱的真实收发；可标记、关联客户 / 开发案 / 订单 / 发票，生成跟进待办，并把抽取资料提交给业务对象复核。"
       actions={<>
-        <Button icon={RotateCcw} disabled title="收信服务尚未接入">同步</Button>
+        <Button icon={RotateCcw} disabled={!can || locked || !syncable.length} title={!syncable.length ? '没有已绑定凭据的真实邮箱可同步' : undefined} onClick={() => void syncNow()}>同步</Button>
         <Button icon={Settings2} onClick={toAccounts}>邮箱账号</Button>
         {can && <Button variant="primary" icon={PenLine} disabled={!accounts.length || locked} title={accounts.length ? undefined : '尚未接入任何邮箱'} onClick={() => setCompose({ input: blankInput(defaultAccount) })}>写邮件</Button>}
       </>} />
     {!can && <div className="mist-section"><Banner tone="neutral" title="只读查看">你的账号没有邮件编辑权限，可以阅读邮件与业务关联，不能标记、关联、跟进或写邮件。</Banner></div>}
     {error && <div className="mist-section"><Banner tone="bad" title="邮箱未读取" actions={<Button onClick={() => void refresh()}>重试</Button>}>{error}</Banner></div>}
     {failure && <div className="mist-section"><Banner tone="bad" title="操作未完成">{failure}</Banner></div>}
+    {notice && <div className="mist-section"><Banner tone={notice.tone} title={notice.title} actions={<Button size="sm" onClick={() => setNotice(null)}>知道了</Button>}>{notice.text}</Banner></div>}
     {!loading && state && !accounts.length
-      ? <Card><EmptyState icon={Mail} title="未接入任何邮箱" description="管理员在管理后台 › 邮箱账号中接入个人或共享邮箱后，邮件会出现在这里。本空间目前没有邮件数据。" action={<Button icon={Settings2} onClick={toAccounts}>前往邮箱账号</Button>} /></Card>
+      ? <Card><EmptyState icon={Mail} title="未接入任何邮箱" description="在邮箱账号中接入个人邮箱（共享邮箱需邮件账户管理权限）并绑定凭据后，同步的邮件会出现在这里。本空间目前没有邮件数据。" action={<Button icon={Settings2} onClick={toAccounts}>打开邮箱账号</Button>} /></Card>
       : <>
-        {accounts.some(a => a.example) && <p className="mist-note mist-section">示例邮箱：邮件为示例空间的合成数据，收信与发信服务尚未接入；标记、关联、跟进与草稿会真实保存到工作空间。</p>}
+        {accounts.some(a => a.example) && <p className="mist-note mist-section">示例邮箱：邮件为示例空间的合成数据，不连接邮件服务器、不能发送；标记、关联、跟进与草稿会真实保存到工作空间。</p>}
         {failedAccounts.length > 0 && <div className="mist-section"><Banner tone="warn" icon={AlertTriangle} title={scopeFailed ? `${scopeLabel}同步失败` : '部分文件夹同步失败'}>{failedAccounts.map(a => `${a.displayName}：${a.failedFolders.join('、')}未能同步，显示的是上次同步结果`).join('；')}。</Banner></div>}
         <div className="mist-mail">
           {nav}
@@ -194,21 +268,27 @@ export function EmailsPage() {
               {!isDrafts && <Dropdown<string> label="分类" value={category} onChange={setCategory} options={[{ value: 'all', label: '全部分类' }, ...categories.map(value => ({ value, label: value })), { value: 'none', label: '未分类' }]} />}
             </Toolbar>
             <ListDetail drawerOpen={drawer && !!selected} onDrawerClose={() => setDrawer(false)}
-              drawerTitle={selected ? (selected.kind === 'draft' ? selected.draft.subject || '（无主题草稿）' : selected.message.subject) : '邮件'}
-              drawerSub={selected?.kind === 'message' ? addressText([selected.message.from]) : selected ? '草稿' : undefined}
+              drawerTitle={selected ? (selected.kind === 'draft' ? selected.draft.subject || '（无主题草稿）' : selected.kind === 'send' ? selected.send.subject : selected.message.subject) : '邮件'}
+              drawerSub={selected?.kind === 'message' ? addressText([selected.message.from]) : selected?.kind === 'send' ? '待发送' : selected ? '草稿' : undefined}
               list={<Card><DataTable ariaLabel={`${scopeLabel}邮件`} loading={loading} rows={rows} rowKey={row => row.id} selectedKey={selected?.id} density="comfy" onRowClick={pick} columns={columns} empty={emptyList} /></Card>}
               detail={detail} />
           </div>
         </div>
       </>}
-    {compose && state && <ComposeDrawer key={compose.id || 'new'} state={state} initial={compose} locked={locked} onClose={() => setCompose(null)} onSave={saveDraft} />}
+    {compose && state && <ComposeDrawer key={compose.id || 'new'} state={state} initial={compose} locked={locked} onClose={() => setCompose(null)} onSave={saveDraft} onSend={sendCompose} />}
+    {accountsOpen && state && <AccountsDrawer state={state} me={me} can={can} canAdmin={canAdmin} locked={locked} run={run} mail={mail} onClose={() => setAccountsOpen(false)} />}
+    {confirmResend && <Dialog open onClose={() => setConfirmResend(null)} title="确认未送达后重发" icon={AlertTriangle} tone="warn" description={`「${confirmResend.subject}」上次发送结果不确定。`}
+      footer={<><Button onClick={() => setConfirmResend(null)}>取消</Button><Button variant="primary" disabled={locked} onClick={() => void retrySend(confirmResend, true)}>确认未送达，重新发送</Button></>}>
+      <p className="mist-sub">请先点“核对”在本邮箱的已发送中查找，或向收件人确认未收到。确认后重发若对方其实已收到，会收到两封相同邮件。</p>
+    </Dialog>}
     {followUp && <FollowUpDialog message={followUp} owner={session.user?.displayName || state?.settings.profileName || ''} locked={locked} onClose={() => setFollowUp(null)} onSubmit={createFollowUp} />}
   </MistPage>;
 }
 
-function MessageDetail({ message: m, state, can, locked, exec, onOpen, onRespond, onFollowUp }: {
-  message: EmailMessage; state: MistState; can: boolean; locked: boolean; exec: Exec; onOpen: (view: string, id: string) => void; onRespond: (mode: 'reply' | 'all' | 'forward') => void; onFollowUp: () => void;
+function MessageDetail({ message: m, state, can, locked, exec, onOpen, onRespond, onFollowUp, onDownload }: {
+  message: EmailMessage; state: MistState; can: boolean; locked: boolean; exec: Exec; onOpen: (view: string, id: string) => void; onRespond: (mode: 'reply' | 'all' | 'forward') => void; onFollowUp: () => void; onDownload: (fileId: string) => void;
 }) {
+  const record = m.sendId ? (state.email.sends || []).find(row => row.id === m.sendId) : undefined;
   const account = state.email.accounts.find(a => a.id === m.accountId), suggestion = contactSuggestion(state, m), source = SOURCE_LABEL[m.category.source];
   const noWrite = can ? false : '需要邮件编辑权限';
   const [kind, setKind] = React.useState<EmailLinkKind>('order'), [target, setTarget] = React.useState(''), [submitTo, setSubmitTo] = React.useState('');
@@ -248,11 +328,15 @@ function MessageDetail({ message: m, state, can, locked, exec, onOpen, onRespond
       { label: '发件人', value: <Addresses rows={[m.from]} /> }, { label: '收件人', value: m.to.length ? <Addresses rows={m.to} /> : '—' },
       ...(m.cc.length ? [{ label: '抄送', value: <Addresses rows={m.cc} /> }] : []), { label: '时间', value: when(m.at) },
     ]} />
-    {m.folder === 'sent' && <Banner tone="neutral" title="发送记录">{m.example ? '示例已发送邮件，没有真实投递或回执记录。' : '发信服务尚未接入，没有投递回执。'}</Banner>}
+    {m.folder === 'sent' && <Banner tone={record ? 'ok' : 'neutral'} title="发送记录">{m.example ? '示例已发送邮件，没有真实投递或回执记录。'
+      : record ? `${record.createdBy} 于 ${when(record.updatedAt)} 发送，发件服务器已接受${record.response ? `（${record.response}）` : ''}。“已接受”表示发件服务器收下，不代表对方已阅读。`
+      : '从邮箱服务器的已发送文件夹同步，不是经本系统发出，没有投递回执。'}</Banner>}
     <div className="mist-mail-body">{m.body}</div>
     {m.attachments.length > 0 && <DetailBlock title={`附件（${m.attachments.length}）`}>
-      {m.attachments.map(file => <div key={file.id} className="mist-row mist-mail-attachment"><Paperclip size={14} /><span className="mist-mail-ellipsis">{file.name}</span><small className="mist-muted">{sizeText(file.size)}</small><span className="mist-spacer" /><Button size="sm" icon={Download} disabled title={m.example ? '示例附件没有文件内容' : '附件下载尚未接入'}>下载</Button></div>)}
-      <span className="mist-note">{m.example ? '示例附件无文件，不能下载。' : '附件下载尚未接入。'}</span>
+      {m.attachments.map(file => { const stored = !!file.fileId && state.files.some(row => row.id === file.fileId);
+        return <div key={file.id} className="mist-row mist-mail-attachment"><Paperclip size={14} /><span className="mist-mail-ellipsis">{file.name}</span><small className="mist-muted">{sizeText(file.size)}</small><span className="mist-spacer" />
+          <Button size="sm" icon={Download} disabled={!stored} title={stored ? undefined : m.example ? '示例附件没有文件内容' : file.omitted || '附件内容未保存，请重新同步'} onClick={() => stored && onDownload(file.fileId!)}>下载</Button></div>; })}
+      {m.example ? <span className="mist-note">示例附件无文件，不能下载。</span> : m.attachments.filter(file => file.omitted).map(file => <span key={file.id} className="mist-note">{file.name}：{file.omitted}</span>)}
     </DetailBlock>}
     <DetailBlock title="业务关联">
       {suggestion && <Banner tone="accent" icon={Link2} title="建议关联客户" actions={can ? <Button size="sm" disabled={locked} onClick={() => void link({ kind: 'customer', id: suggestion.customer.id }, `已关联客户 ${suggestion.customer.name}`)}>确认关联</Button> : undefined}>发件人 {m.from.address} 是 {suggestion.customer.name} 的联系人 {suggestion.contact.name}。确认后才会关联。</Banner>}
@@ -290,12 +374,12 @@ function Addresses({ rows }: { rows: Array<{ name: string; address: string }> })
   return <span className="mist-col" style={{ gap: 2 }}>{rows.map(row => <span key={row.address} className="mist-mail-addr">{row.name && <span>{row.name}</span>}<small className="mist-muted">{row.address}</small></span>)}</span>;
 }
 
-function DraftDetail({ draft: d, state, can, locked, onEdit, onDelete }: { draft: EmailDraft; state: MistState; can: boolean; locked: boolean; onEdit: () => void; onDelete: () => void }) {
-  const account = state.email.accounts.find(a => a.id === d.accountId), noWrite = can ? false : '需要邮件编辑权限';
+function DraftDetail({ draft: d, state, can, locked, onEdit, onDelete, onSend }: { draft: EmailDraft; state: MistState; can: boolean; locked: boolean; onEdit: () => void; onDelete: () => void; onSend: () => void }) {
+  const account = state.email.accounts.find(a => a.id === d.accountId), noWrite = can ? false : '需要邮件编辑权限', blocked = sendBlocked(account);
   return <DetailBody data-email-draft={d.id} heading={<div><span className="mist-mono mist-muted">草稿 · {account?.displayName || '邮箱不可用'}</span><div className="mist-h2" style={{ fontSize: 19, marginTop: 4 }}>{d.subject || '（无主题）'}</div></div>}>
     <ActionBar busy={locked} actions={[
       { label: '继续编辑', icon: PenLine, onClick: onEdit, primary: true, reason: noWrite },
-      { label: '发送', icon: Send, onClick: () => undefined, reason: SEND_BLOCKED },
+      { label: '发送', icon: Send, onClick: onSend, reason: noWrite || blocked || (!d.to.trim() && !d.cc.trim() && !d.bcc.trim() ? '请先填写收件人' : false) },
       { label: '删除草稿', icon: Trash2, onClick: onDelete, reason: noWrite },
     ]} />
     <Facts items={[{ label: '发件身份', value: d.from }, { label: '收件人', value: d.to || '未填写' }, ...(d.cc ? [{ label: '抄送', value: d.cc }] : []), ...(d.bcc ? [{ label: '密送', value: d.bcc }] : []), { label: '模板', value: d.template || '未使用' }, { label: '最后保存', value: `${d.updatedBy} · ${when(d.updatedAt)}` }]} />
@@ -307,8 +391,31 @@ function DraftDetail({ draft: d, state, can, locked, onEdit, onDelete }: { draft
   </DetailBody>;
 }
 
-function ComposeDrawer({ state, initial, locked, onClose, onSave }: { state: MistState; initial: { id?: string; input: EmailDraftInput }; locked: boolean; onClose: () => void; onSave: (input: EmailDraftInput, id?: string) => Promise<void> }) {
+function SendDetail({ send: row, state, can, me, locked, onRetry, onVerify, onConfirmResend }: { send: EmailSend; state: MistState; can: boolean; me: string; locked: boolean; onRetry: (row: EmailSend) => void; onVerify: (row: EmailSend) => void; onConfirmResend: (row: EmailSend) => void }) {
+  const account = state.email.accounts.find(a => a.id === row.accountId), status = emailSendEffectiveStatus(row), tone = SEND_STATUS[status];
+  const mine = !me || row.createdById === me, noWrite = !can ? '需要邮件编辑权限' : !mine ? '只有发起人可以重发或核对' : false;
+  const actions: ReasonedAction[] = [
+    { label: '重发', icon: Send, onClick: () => onRetry(row), primary: true, reason: noWrite, hidden: status !== 'failed' },
+    { label: '核对是否已发出', icon: SearchCheck, onClick: () => onVerify(row), primary: true, reason: noWrite, hidden: status !== 'unknown' },
+    { label: '确认未送达后重发', icon: RotateCcw, onClick: () => onConfirmResend(row), reason: noWrite, hidden: status !== 'unknown' },
+  ];
+  return <DetailBody data-email-send={row.id} heading={<div><span className="mist-mono mist-muted">待发送 · {account?.displayName || '邮箱不可用'}</span><div className="mist-h2" style={{ fontSize: 19, marginTop: 4 }}>{row.subject}</div></div>}>
+    <div className="mist-row"><Pill tone={tone.tone}>{tone.label}</Pill></div>
+    {status !== 'sending' && <ActionBar busy={locked} actions={actions} />}
+    {status === 'unknown' && <Banner tone="warn" title="不会自动重发">投递过程中连接中断或没有收到服务器的明确答复，对方可能已经收到。可先核对本邮箱的已发送；仍不确定时请向收件人确认后再重发。</Banner>}
+    {status === 'failed' && <Banner tone="bad" title="服务器明确拒绝或未能连接">{row.response || row.attempts[row.attempts.length - 1]?.message || '发送失败'}。修正邮箱设置或收件人后可重发。</Banner>}
+    {status === 'sending' && <Banner tone="neutral" title="正在发送">稍后刷新查看结果；超过 5 分钟仍无结果会转为“结果不确定”。</Banner>}
+    <Facts items={[{ label: '发件身份', value: row.from }, { label: '收件人', value: row.to || '—' }, ...(row.cc ? [{ label: '抄送', value: row.cc }] : []), ...(row.bcc ? [{ label: '密送', value: row.bcc }] : []), { label: '发起人', value: `${row.createdBy} · ${when(row.createdAt)}` }]} />
+    <div className="mist-mail-body">{row.body || '正文为空'}</div>
+    {row.fileIds.length > 0 && <DetailBlock title={`附件（${row.fileIds.length}）`}>{row.fileIds.map(id => <span key={id} className="mist-sub mist-row" style={{ gap: 4 }}><Paperclip size={12} />{state.files.find(file => file.id === id)?.name || '文件不可用'}</span>)}</DetailBlock>}
+    <DetailBlock title="投递记录">{row.attempts.map((attempt, index) => <div key={index} className="mist-row" style={{ flexWrap: 'wrap' }}><Pill tone={attempt.outcome === 'accepted' || attempt.outcome === 'verified' ? 'ok' : attempt.outcome === 'failed' ? 'bad' : attempt.outcome === 'unknown' || attempt.outcome === 'not_found' ? 'warn' : 'neutral'}>{ATTEMPT_LABEL[attempt.outcome]}</Pill><span className="mist-sub">{attempt.message}</span><span className="mist-spacer" /><small className="mist-muted">{attempt.actor} · {when(attempt.at)}</small></div>)}</DetailBlock>
+  </DetailBody>;
+}
+
+function ComposeDrawer({ state, initial, locked, onClose, onSave, onSend }: { state: MistState; initial: Compose; locked: boolean; onClose: () => void; onSave: (input: EmailDraftInput, id?: string) => Promise<void>; onSend: (input: EmailDraftInput, requestKey: string) => Promise<void> }) {
   const [v, setV] = React.useState<EmailDraftInput>(initial.input), [showCc, setShowCc] = React.useState(!!(initial.input.cc || initial.input.bcc));
+  /** 同一次编辑的发送请求编号保持不变：网络中断后再点发送，服务端按编号识别为同一封，不会重复投递。 */
+  const [requestKey] = React.useState(newRequestKey);
   const set = <K extends keyof EmailDraftInput>(key: K, value: EmailDraftInput[K]) => setV(prev => ({ ...prev, [key]: value }));
   const account = state.email.accounts.find(a => a.id === v.accountId), identities = account ? [account.address, ...account.aliases] : [];
   const contacts = state.contacts.filter(c => c.email).map(c => ({ email: c.email, label: `${c.name} · ${state.customers.find(row => row.id === c.customerId)?.name || ''}` }));
@@ -318,11 +425,13 @@ function ComposeDrawer({ state, initial, locked, onClose, onSave }: { state: Mis
     setV(prev => { const quote = prev.body.indexOf('\n\n——— 原邮件'); return { ...prev, template: value, subject: prev.subject || t.subject, body: `${t.body}${account?.signature ? `\n\n--\n${account.signature}` : ''}${quote >= 0 ? prev.body.slice(quote) : ''}` }; });
   };
   const toggleFile = (id: string, on: boolean) => set('fileIds', on ? [...v.fileIds, id] : v.fileIds.filter(row => row !== id));
-  const title = initial.id ? '编辑草稿' : v.replyToId ? (v.subject.startsWith('Fwd') ? '转发' : '回复') : '写邮件';
+  const title = initial.id ? '编辑草稿' : initial.forwardOfId ? '转发' : v.replyToId ? '回复' : '写邮件';
+  const blocked = sendBlocked(account) || (!v.to.trim() && !v.cc.trim() && !v.bcc.trim() ? '请填写收件人' : false);
+  const files = [...state.files.filter(file => v.fileIds.includes(file.id)), ...state.files.filter(file => !v.fileIds.includes(file.id)).slice(0, 30)];
   return <Drawer open onClose={onClose} title={title} sub={account?.displayName} size="lg"
     footer={<div className="mist-col" style={{ gap: 6, width: '100%' }}>
-      <div className="mist-row" style={{ flexWrap: 'wrap' }}><span className="mist-spacer" /><Button onClick={onClose}>取消</Button><Button icon={PenLine} disabled={locked || !account} onClick={() => void onSave(v, initial.id)}>保存草稿</Button><Button variant="primary" icon={Send} disabled title={SEND_BLOCKED}>发送</Button></div>
-      <span className="mist-note">发送：{SEND_BLOCKED}</span>
+      <div className="mist-row" style={{ flexWrap: 'wrap' }}><span className="mist-spacer" /><Button onClick={onClose}>取消</Button><Button icon={PenLine} disabled={locked || !account} onClick={() => void onSave(v, initial.id)}>保存草稿</Button><Button variant="primary" icon={Send} disabled={locked || !!blocked} title={blocked || undefined} onClick={() => void onSend(v, requestKey)}>发送</Button></div>
+      <span className="mist-note">{blocked ? `发送：${blocked}` : '发送后由发件服务器投递；结果不确定时会留在待发送，不会自动重发。'}</span>
     </div>}>
     <FormGrid>
       <Field label="发件邮箱" required><Select aria-label="发件邮箱" value={v.accountId} onChange={event => { const next = state.email.accounts.find(a => a.id === event.target.value); setV(prev => ({ ...prev, accountId: event.target.value, from: next?.address || '' })); }} options={state.email.accounts.map(a => ({ value: a.id, label: `${a.displayName} · ${a.address}` }))} /></Field>
@@ -339,12 +448,70 @@ function ComposeDrawer({ state, initial, locked, onClose, onSave }: { state: Mis
     <datalist id="mist-mail-contacts">{contacts.map(c => <option key={c.email} value={c.email}>{c.label}</option>)}</datalist>
     <div className="mist-col" style={{ gap: 6, marginTop: 16 }}>
       <span className="mist-eyebrow">附件（来自工作空间文件）</span>
-      {state.files.length ? <div className="mist-col mist-mail-files">{state.files.slice(0, 30).map(file => <Checkbox key={file.id} checked={v.fileIds.includes(file.id)} onChange={on => toggleFile(file.id, on)} label={file.name} />)}</div> : <span className="mist-note">工作空间还没有文件；请先在业务对象中上传。</span>}
+      {files.length ? <div className="mist-col mist-mail-files">{files.map(file => <Checkbox key={file.id} checked={v.fileIds.includes(file.id)} onChange={on => toggleFile(file.id, on)} label={file.name} />)}</div> : <span className="mist-note">工作空间还没有文件；请先在业务对象中上传。</span>}
     </div>
     {v.links.length > 0 && <div className="mist-col" style={{ gap: 6, marginTop: 16 }}>
       <span className="mist-eyebrow">关联业务（随原邮件）</span>
       {v.links.map(row => <span key={linkKey(row)} className="mist-sub">{EMAIL_LINK_LABEL[row.kind]} · {emailLinkTarget(state, row)?.label || '对象已不可用'}</span>)}
     </div>}
+  </Drawer>;
+}
+
+const PORT_ROW: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'minmax(64px, 96px) minmax(0, 1fr)', gap: 8, minWidth: 0 };
+type AccountForm = EmailAccountInput & { password: string; aliasText: string };
+const blankAccount = (): AccountForm => ({ address: '', displayName: '', kind: 'personal', memberIds: [], aliases: [], aliasText: '', signature: '', password: '', transport: { imapHost: '', imapPort: 993, imapSecure: true, smtpHost: '', smtpPort: 587, smtpSecure: false, username: '' } });
+const accountForm = (a: EmailAccount): AccountForm => ({ address: a.address, displayName: a.displayName, kind: a.kind, memberIds: a.memberIds || [], aliases: a.aliases, aliasText: a.aliases.join(', '), signature: a.signature, password: '', transport: a.transport || blankAccount().transport });
+
+/** 邮箱账号：本人接入个人邮箱、有权限者接入共享邮箱并选择成员；密码只提交给服务端校验并加密保存，不回显、不进入工作空间数据。 */
+function AccountsDrawer({ state, me, can, canAdmin, locked, run, mail, onClose }: { state: MistState; me: string; can: boolean; canAdmin: boolean; locked: boolean; run: (command: MistCommand) => Promise<{ result: { id?: string } }>; mail: Mail; onClose: () => void }) {
+  const toast = useToast(), [editing, setEditing] = React.useState<{ id?: string; form: AccountForm } | null>(null), [problem, setProblem] = React.useState(''), [binding, setBinding] = React.useState<{ id: string; password: string } | null>(null);
+  const members = ((state as MistState & { members?: Array<{ userId: string; name: string }> }).members || []).filter(row => row.userId !== me);
+  const attempt = async (work: () => Promise<unknown>, done: string) => { setProblem(''); try { await work(); toast(done); return true; } catch (failure) { setProblem(problemText(failure, '操作未完成，请重试')); return false; } };
+  const save = async () => {
+    if (!editing) return; const { password, aliasText, ...input } = editing.form;
+    const payload = { ...input, aliases: aliasText.split(/[,，\s]+/).map(item => item.trim()).filter(Boolean), memberIds: input.kind === 'shared' ? input.memberIds : [], transport: { ...input.transport, username: input.transport.username.trim() || input.address.trim() } };
+    let id = editing.id;
+    const saved = await attempt(async () => { const receipt = await run({ type: 'email.account.save', payload: { ...(id ? { id } : {}), input: payload } } as MistCommand); id = String(receipt.result.id || id || ''); if (password) await mail({ kind: 'bind', accountId: id, password }); }, password ? '邮箱已保存，凭据验证通过' : '邮箱设置已保存');
+    if (saved) setEditing(null); else if (id && !editing.id) setEditing(prev => prev ? { ...prev, id } : prev);
+  };
+  const set = <K extends keyof AccountForm>(key: K, value: AccountForm[K]) => setEditing(prev => prev ? { ...prev, form: { ...prev.form, [key]: value } } : prev);
+  const setT = <K extends keyof AccountForm['transport']>(key: K, value: AccountForm['transport'][K]) => setEditing(prev => prev ? { ...prev, form: { ...prev.form, transport: { ...prev.form.transport, [key]: value } } } : prev);
+  const f = editing?.form;
+  return <Drawer open onClose={onClose} title={editing ? (editing.id ? '修改邮箱设置' : '接入邮箱') : '邮箱账号'} sub={editing ? undefined : '个人邮箱仅本人可见；共享邮箱对接入人与所选成员可见'} size="lg"
+    footer={editing ? <div className="mist-row" style={{ width: '100%' }}><span className="mist-spacer" /><Button onClick={() => setEditing(null)}>返回</Button><Button variant="primary" disabled={locked || !f!.address.trim() || !f!.displayName.trim() || !f!.transport.imapHost.trim() || !f!.transport.smtpHost.trim() || (!editing.id && !f!.password)} onClick={() => void save()}>{f!.password ? '保存并验证登录' : '保存设置'}</Button></div>
+      : <div className="mist-row" style={{ width: '100%' }}><span className="mist-spacer" /><Button onClick={onClose}>关闭</Button>{can && <Button variant="primary" icon={Plus} disabled={locked} onClick={() => { setProblem(''); setEditing({ form: blankAccount() }); }}>接入邮箱</Button>}</div>}>
+    {problem && <Banner tone="bad" title="未完成">{problem}</Banner>}
+    {editing && f ? <FormGrid>
+      <Field label="邮箱地址" required><TextInput aria-label="邮箱地址" type="email" value={f.address} onChange={event => set('address', event.target.value)} placeholder="name@company.com" /></Field>
+      <Field label="显示名称" required><TextInput aria-label="显示名称" value={f.displayName} onChange={event => set('displayName', event.target.value)} /></Field>
+      <Field label="类型" required hint={canAdmin ? '共享邮箱对所选成员可见' : '接入共享邮箱需要邮件账户管理权限'}><Select aria-label="邮箱类型" value={f.kind} onChange={event => set('kind', event.target.value as AccountForm['kind'])} options={[{ value: 'personal', label: '个人邮箱' }, ...(canAdmin || f.kind === 'shared' ? [{ value: 'shared', label: '共享邮箱' }] : [])]} /></Field>
+      <Field label="别名" hint="可用作发件身份的其他地址，逗号分隔"><TextInput aria-label="别名" value={f.aliasText} onChange={event => set('aliasText', event.target.value)} /></Field>
+      {f.kind === 'shared' && <Field label="共享成员" full hint="只能选择本工作空间已授权的账号">{members.length ? <div className="mist-col">{members.map(row => <Checkbox key={row.userId} checked={f.memberIds.includes(row.userId)} onChange={on => set('memberIds', on ? [...f.memberIds, row.userId] : f.memberIds.filter(id => id !== row.userId))} label={row.name} />)}</div> : <span className="mist-note">本工作空间还没有其他成员。</span>}</Field>}
+      <Field label="收信服务器（IMAP）" required><TextInput aria-label="IMAP 服务器" value={f.transport.imapHost} onChange={event => setT('imapHost', event.target.value)} placeholder="imap.company.com" /></Field>
+      <Field label="IMAP 端口与加密"><span style={PORT_ROW}><TextInput aria-label="IMAP 端口" type="number" value={String(f.transport.imapPort)} onChange={event => setT('imapPort', Number(event.target.value))} /><Select aria-label="IMAP 加密" value={f.transport.imapSecure ? 'ssl' : 'starttls'} onChange={event => setT('imapSecure', event.target.value === 'ssl')} options={[{ value: 'ssl', label: 'SSL/TLS' }, { value: 'starttls', label: 'STARTTLS' }]} /></span></Field>
+      <Field label="发信服务器（SMTP）" required><TextInput aria-label="SMTP 服务器" value={f.transport.smtpHost} onChange={event => setT('smtpHost', event.target.value)} placeholder="smtp.company.com" /></Field>
+      <Field label="SMTP 端口与加密"><span style={PORT_ROW}><TextInput aria-label="SMTP 端口" type="number" value={String(f.transport.smtpPort)} onChange={event => setT('smtpPort', Number(event.target.value))} /><Select aria-label="SMTP 加密" value={f.transport.smtpSecure ? 'ssl' : 'starttls'} onChange={event => setT('smtpSecure', event.target.value === 'ssl')} options={[{ value: 'starttls', label: 'STARTTLS' }, { value: 'ssl', label: 'SSL/TLS' }]} /></span></Field>
+      <Field label="登录用户名" hint="留空则使用邮箱地址"><TextInput aria-label="登录用户名" value={f.transport.username} onChange={event => setT('username', event.target.value)} autoComplete="off" /></Field>
+      <Field label={editing.id ? '密码 / 授权码（重新绑定时填写）' : '密码 / 授权码'} required={!editing.id} hint="保存时先真实登录收信与发信服务器，成功后才保存；不会回显"><TextInput aria-label="密码或授权码" type="password" value={f.password} onChange={event => set('password', event.target.value)} autoComplete="new-password" /></Field>
+      <Field label="签名" full><TextArea aria-label="签名" rows={3} value={f.signature} onChange={event => set('signature', event.target.value)} /></Field>
+    </FormGrid>
+    : state.email.accounts.length ? <div className="mist-col" style={{ gap: 12 }}>{state.email.accounts.map(a => {
+      const c = connectionLabel(a), owner = !a.example && (!me || a.ownerId === me);
+      return <Card key={a.id} className="mist-col" style={{ gap: 8 }} data-email-account={a.id}>
+        <div className="mist-row" style={{ flexWrap: 'wrap' }}><b>{a.displayName}</b><small className="mist-muted">{a.address}</small><span className="mist-spacer" /><Pill>{a.kind === 'shared' ? '共享邮箱' : '个人邮箱'}</Pill><Pill tone={c.tone}>{c.label}</Pill></div>
+        {a.lastError && <span className="mist-note" data-tone="bad">{a.lastError.message}（{when(a.lastError.at)}）</span>}
+        {(a.folders || []).filter(row => row.error).map(row => <span key={row.remote} className="mist-note">{row.remote}：{row.error}</span>)}
+        <small className="mist-muted">{a.example ? '示例空间合成数据，不连接服务器' : `接入人 ${a.ownerName}${a.kind === 'shared' ? ` · 成员 ${a.memberNames.join('、') || '无'}` : ''}${a.transport ? ` · ${a.transport.imapHost}:${a.transport.imapPort} / ${a.transport.smtpHost}:${a.transport.smtpPort}` : ''}`}</small>
+        {owner && can && (binding?.id === a.id
+          ? <div className="mist-row" style={{ flexWrap: 'wrap' }}><TextInput aria-label={`${a.displayName} 密码或授权码`} type="password" autoComplete="new-password" value={binding.password} onChange={event => setBinding({ id: a.id, password: event.target.value })} /><Button onClick={() => setBinding(null)}>取消</Button><Button variant="primary" disabled={locked || !binding.password} onClick={() => void attempt(() => mail({ kind: 'bind', accountId: a.id, password: binding.password }), '凭据验证通过，已绑定').then(ok => { if (ok) setBinding(null); })}>验证并绑定</Button></div>
+          : <div className="mist-row" style={{ flexWrap: 'wrap' }}>
+            <Button size="sm" icon={Settings2} disabled={locked} onClick={() => { setProblem(''); setEditing({ id: a.id, form: accountForm(a) }); }}>修改设置</Button>
+            <Button size="sm" icon={KeyRound} disabled={locked || !a.transport} onClick={() => setBinding({ id: a.id, password: '' })}>{a.credentialSet ? '重新绑定凭据' : '绑定凭据'}</Button>
+            {a.credentialSet && <Button size="sm" icon={Unlink} disabled={locked} onClick={() => void attempt(() => mail({ kind: 'disconnect', accountId: a.id }), '已断开，凭据已删除')}>断开</Button>}
+          </div>)}
+        {!owner && !a.example && <span className="mist-note">由 {a.ownerName} 接入；只有接入人可以修改设置或凭据。</span>}
+      </Card>; })}</div>
+    : <EmptyState icon={Mail} title="还没有邮箱" description={can ? '接入个人邮箱后可以真实收发邮件。' : '你的账号没有邮件编辑权限，不能接入邮箱。'} compact />}
   </Drawer>;
 }
 

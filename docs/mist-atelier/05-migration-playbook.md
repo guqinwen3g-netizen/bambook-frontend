@@ -34,6 +34,14 @@
 - 本批验收 / 云端检查 / main 状态以 PR #8 和实时进度实际回执为准，开发检查点不等于合入完成。
 
 
+## 2026-10-17 智能邮箱真实收发批次（P1）
+
+- **接入与凭据**：页面“邮箱账号”抽屉接入邮箱。个人邮箱 `emails:write` 本人接入、仅本人可见；共享邮箱需 `emails:admin`，可见范围 = 接入人 + 所选工作空间成员（按用户 ID）。只有接入人能改设置 / 凭据；改服务器或用户名后需重新绑定。绑定时先真实登录 IMAP 与 SMTP，成功才保存；凭据存服务端私有目录（`MIST_MAIL_CREDENTIAL_DIR`，默认 `server/private/mist-mail-credentials`，目录 0700 / 文件 0600，可选 `MIST_MAIL_CREDENTIAL_KEY` 做 AES-256-GCM），不进入工作空间数据、不回显、不入库。
+- **收信**：手动“同步”按 账号 + 文件夹 + UIDVALIDITY + UID 增量（每文件夹每次 100 封），只同步 INBOX / 已发送 / 归档；UIDVALIDITY 重置或本系统发出的邮件回到“已发送”时按 Message-ID 合并，不重复。附件存为私有文件（>50 MB 只记录不保存）；部分文件夹失败保留上次结果并显示失败文件夹与原因。
+- **发信**：先持久登记发送记录（requestKey 幂等，同一次编辑重点“发送”不重复投递），再经 SMTP 投递。结果分三种：服务器已接受 → 生成已发送邮件并删草稿；明确失败（连接 / 登录失败或服务器明确拒绝）→ 留在“待发送”可重发；不确定（投递中断、无答复、超过 5 分钟仍在发送）→ 不自动重发，先“核对”（只查发件账号自己的收件箱 / 已发送 / 归档，按 Message-ID），再由人确认未送达后重发。“已接受”只表示发件服务器收下。回复带 In-Reply-To / References，转发可带原附件，密送不写入信头。
+- **边界**：客户端不能调用 `email.server.*` 命令；邮件、草稿、发送记录、附件、相关事件 / 待办 / 通知 / 日历按邮箱可见范围裁剪。核对不读取其他邮箱账号；不以登录收件人邮箱作为发送成功判据。服务器策略：`MIST_MAIL_ALLOWED_HOSTS`（设置后严格白名单，未设置时端口限 143 / 465 / 587 / 993）、`MIST_MAIL_INSECURE_TLS_HOSTS`（仅内部自签证书主机）、`MIST_MAIL_ALLOWED_RECIPIENT_DOMAINS`（设置后限制收件域名，用于内部测试防误发外部）。示例邮箱不连接服务器、不能发送。
+- **未完成 / 待授权**：跨账号真实互发与共享邮箱授权的真实验收，需要用户确认具体测试邮箱与读取授权后再做；状态以对应 PR 为准。
+
 ## 2026-10-16 付款收尾批次
 
 - 基于 main `c63f8f0`（PR #19 已合入），分支 `feat/mist-ap-payments`。`mistPayables.ts`：付款申请与付款增加用途 `settlement`（`settlementId`），命令 `payable.payment.backfill`（历史补登，`backfill: true`）、`payable.payment.plan`（旧付款对应 / 取消对应计划，`planLinked`）、`payable.purchase.cancel`（取消未执行合同并选预付去向）。推导：`settlementAdvancePaidMinor / CreditsMinor / OpenMinor / RoomMinor`、`billAdvanceCreditMinor`（票据未付扣除先付抵扣）、`legacyPaymentPlanOptions`、`backfillBillOptions`、`ADVANCE_INVOICE_REMIND_DAYS = 30`；`supplierPayments(root, today)` 返回 `aheadOpen / aheadOverdue`，汇总增加已付未收票 / 超期 / 待工厂退回。
@@ -202,7 +210,7 @@
 
 业务员持续负责客户主线；领导、QC、后勤、财务在对应节点介入，并保留结果回程。沿项目有效业务裁决核实，不凭演示样板臆造规则。
 
-- 智能邮箱已重新纳入项目（2026-10-13 晚）：页面按 `07-frontend-page-inventory.md` §4.1 与《智能邮箱交付合同》建设；旧演示邮件数据不是实施依据，真实收发接入前不显示已发送。
+- 智能邮箱已重新纳入项目（2026-10-13 晚）：页面按 `07-frontend-page-inventory.md` §4.1 与《智能邮箱交付合同》建设；旧演示邮件数据不是实施依据。真实收发见“2026-10-17 智能邮箱真实收发批次”：只有发件服务器已接受的邮件才显示为已发送。
 - 开发样品无公差自动合格判断，QC 三结论及准确工厂版本分别保留。
 - 生产拖动演示不代替正式业务阶段、权限与质量门禁。
 - 数量/金额/单位、审批冻结、真实回执、原请求恢复及跨模块准确对象都属于接线契约。

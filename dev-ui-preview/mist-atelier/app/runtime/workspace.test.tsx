@@ -662,3 +662,29 @@ it('keeps unknown command recovery attached to its precise missing workspace ins
   expect(api.workspace).toBeNull(); expect(api.pending?.workspaceId).toBe(B); expect(calls.some(call => call.url === BASE + '/default')).toBe(false);
   expect(localStorage.getItem('bambook.mist.selected-workspace:actor-a')).toBe(A);
 });
+
+it('routes mail actions to the server mail endpoints and adopts the returned workspace; failures reload instead of guessing', async () => {
+  await mount();
+  intercept = request => {
+    if (!request.url.includes('/email/')) return undefined;
+    const value = clone(stores.get(A)!); value.revision++; value.state.settings.profileName = 'after-mail'; stores.set(A, value);
+    if (request.url.endsWith('/sends')) return response({ workspace: value, receipt: { requestId: 'mail-1', revision: value.revision, result: {} }, send: { id: 'send-1', status: 'unknown', message: '连接中断' } });
+    if (request.url.endsWith('/credential') && request.method === 'PUT') return failure(422, 'MAIL_AUTH_FAILED');
+    return response({ workspace: value, receipt: { requestId: 'mail-2', revision: value.revision, result: {} }, sync: { remaining: 0 } });
+  };
+  let result: any;
+  await act(async () => { result = await api.mail!({ kind: 'send', requestKey: 'abcdefgh12', input: { accountId: 'acc' } }); });
+  const sent = calls.filter(call => call.url.includes('/email/')).at(-1)!;
+  expect(sent.url).toBe(BASE + '/' + A + '/email/sends');
+  expect(JSON.parse(sent.init.body as string)).toEqual({ requestKey: 'abcdefgh12', input: { accountId: 'acc' } });
+  expect(result).toEqual({ send: { id: 'send-1', status: 'unknown', message: '连接中断' } });
+  expect(api.state?.settings.profileName).toBe('after-mail');
+  await act(async () => { await api.mail!({ kind: 'retry', sendId: 'send 1', confirmUnknown: true }); });
+  const retry = calls.filter(call => call.url.includes('/email/')).at(-1)!;
+  expect(retry.url).toBe(BASE + '/' + A + '/email/sends/send%201/retry');
+  expect(JSON.parse(retry.init.body as string)).toEqual({ confirmUnknown: true });
+  const before = calls.length;
+  await act(async () => { await expect(api.mail!({ kind: 'bind', accountId: 'acc', password: 'pw' })).rejects.toThrow('请求被拒绝'); });
+  expect(calls.slice(before).some(call => call.method === 'GET' && call.url.startsWith(BASE + '/' + A))).toBe(true);
+  expect(api.saving).toBe(false);
+});

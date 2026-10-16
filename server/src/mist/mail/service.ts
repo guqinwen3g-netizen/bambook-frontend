@@ -209,7 +209,7 @@ export class MistMailService {
         outcome = classifySmtpError(error); const reason = describeMailError(error, 'smtp');
         code = outcome === 'failed' ? reason.code : 'SEND_RESULT_UNCERTAIN';
         message = outcome === 'failed' ? `${reason.message}，邮件未发出` : '与发信服务器的连接在投递过程中中断，无法确认对方是否收到；请先核对，勿直接重发';
-        response = String(error?.response || '').slice(0, 300);
+        response = String(error?.response || (error?.responseCode ? error?.message : '') || '').slice(0, 300);
       }
       // 写回失败时记录仍是"发送中"，超时后显示为"结果待核对"，不会被自动重发。
       const result = await finish(outcome, code, message, response);
