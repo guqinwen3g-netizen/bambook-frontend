@@ -67,6 +67,16 @@ describe('BB-DEV-8 dispatch from version detail',()=>{
   // 无需仓库二次确认：没有待处理任务，余额即时扣减。
   expect(f.state.tasks.filter(t=>t.title.includes('寄'))).toHaveLength(0);
  });
+ it('dispatches only from the selected position and preserves the other balance',()=>{
+  const f=fixture();f.record(5,'米样','米');const [metre]=f.samples();
+  metre.location='多个位置';metre.positions=[{location:'架A',available:1},{location:'架B',available:4}];
+  const send=(sourceLocation?:string)=>f.run({type:'development.sample.dispatch',payload:{...f.at,sampleId:metre.id,quantity:2,recipient:'客户',...(sourceLocation===undefined?{}:{sourceLocation})}});
+  f.unchanged(()=>send(),/请选择本次实际出库位置/);
+  f.unchanged(()=>send('架A'),/所选位置的可用数量不足/);
+  send('架B');expect(f.samples()[0].available).toBe(3);
+  expect(f.samples()[0].positions).toEqual([{location:'架A',available:1},{location:'架B',available:2}]);
+  expect(f.state.fulfillment.sampleMovements.at(-1)).toMatchObject({kind:'send',sourceLocation:'架B',quantity:2});
+ });
  it('lets the fee be added later once, without changing quantities',()=>{
   const f=fixture();f.record(5,'米样','米');const [metre]=f.samples();
   const {id}=f.run({type:'development.sample.dispatch',payload:{...f.at,sampleId:metre.id,quantity:1.5,recipient:'客户'}});

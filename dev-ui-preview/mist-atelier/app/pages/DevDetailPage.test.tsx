@@ -221,6 +221,15 @@ describe('BB-DEV-6/8 fabric physical forms and dispatch on the version detail',(
   await fill('寄出数量（米）','2');await fill('运单号','SF123');await click('确认寄出');
   expect(bridge.current.run).toHaveBeenCalledWith({type:'development.sample.dispatch',payload:{devId:'dev-a',versionId:'va',sampleId:'s-m',quantity:2,recipient:'客户 Anna',trackingNo:'SF123',note:'',fee:null}});
  });
+ it('selects the actual source position before dispatching stock stored in multiple places',async()=>{
+  useFabric([{...metre,location:'多个位置',positions:[{location:'架A',available:1},{location:'架B',available:4}]}]);await mount();
+  await click('寄样');await fill('寄出数量（米）','2');await fill('收件方','客户 Anna');
+  const submit=()=>[...document.querySelectorAll('button')].find(b=>b.textContent?.trim()==='确认寄出')!;
+  expect(submit().disabled).toBe(true);
+  await choose('本次出库位置','架A');expect(submit().disabled).toBe(true);expect(document.body.textContent).toContain('所选位置');
+  await choose('本次出库位置','架B');expect(submit().disabled).toBe(false);await click('确认寄出');
+  expect(bridge.current.run).toHaveBeenCalledWith({type:'development.sample.dispatch',payload:{devId:'dev-a',versionId:'va',sampleId:'s-m',quantity:2,recipient:'客户 Anna',trackingNo:'',note:'',fee:null,sourceLocation:'架B'}});
+ });
  it('requires choosing which forms a confirmation covers when the version has several',async()=>{
   useFabric([colour,metre]);await mount();
   await fill('实际确认人','实际客户');await fill('确认依据','邮件');
