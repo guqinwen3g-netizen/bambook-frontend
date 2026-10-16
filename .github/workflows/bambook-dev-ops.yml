@@ -53,15 +53,43 @@ jobs:
           git show "$REQUEST_SHA:ops/request.sh" > "$RUNNER_TEMP/request.sh"
           test -s "$RUNNER_TEMP/request.sh" || { echo '::error::ops/request.sh is empty'; exit 1; }
           echo "sha256=$(sha256sum "$RUNNER_TEMP/request.sh" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          source_sha=$(sed -nE 's/^# capacity-source-main: ([0-9a-f]{40})$/\1/p' "$RUNNER_TEMP/request.sh")
+          if [ -n "$source_sha" ]; then
+            [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
+            test "$source_sha" = "$(git ls-remote origin refs/heads/main | cut -f1)"
+            echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Read exact main source for an isolated capacity trial
+        if: steps.request.outputs.source_sha != ''
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ steps.request.outputs.source_sha }}
+          path: capacity-source
+          persist-credentials: false
+      - name: Transfer source through the existing pinned ops channel
+        if: steps.request.outputs.source_sha != ''
+        env:
+          SOURCE_SHA: ${{ steps.request.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git -C capacity-source rev-parse HEAD)" = "$SOURCE_SHA"
+          # Source only: no credentials, node_modules, build output or running application data.
+          git -C capacity-source archive --format=tar "$SOURCE_SHA" | gzip -1 | \
+            timeout 120 ssh -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts" -i "$RUNNER_TEMP/ops_key" \
+              "$DEV_USER@$DEV_HOST" "umask 077; root=/var/tmp/bambook-ci-capacity-$SOURCE_SHA; test ! -e \$root && mkdir -m 700 \$root && mkdir \$root/source && tar -xzf - -C \$root/source"
       - name: Run request on development server
         id: run
         run: |
           set -uo pipefail
           start=$(date +%s)
+          set +e
           timeout 900 ssh -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts" -i "$RUNNER_TEMP/ops_key" \
             "$DEV_USER@$DEV_HOST" 'bash -s' < "$RUNNER_TEMP/request.sh" > "$RUNNER_TEMP/out.txt" 2>&1
           code=$?
+          set -e
           rm -f "$RUNNER_TEMP/ops_key"
           echo "code=$code" >> "$GITHUB_OUTPUT"
           echo "seconds=$(( $(date +%s) - start ))" >> "$GITHUB_OUTPUT"
