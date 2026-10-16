@@ -15,8 +15,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Pull requests that only touch documentation (docs/**, top-level *.md) skip the full build and only get a
-  # whitespace check. Pushes to main and manual runs always run the full verification (delivery depends on it).
+  # Pull requests that only touch documentation (docs/**, top-level *.md; see scripts/ci/classify-doc-changes.sh)
+  # skip the full build and only get a whitespace check. Pushes to main and manual runs always run the full verification (delivery depends on it).
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -28,24 +28,16 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Self-test change classifier
+        run: bash scripts/ci/classify-doc-changes.test.sh
       - name: Classify changed files
         id: classify
         env:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -euo pipefail
-          docs_only=false
-          if [ "$EVENT" = pull_request ]; then
-            files=$(git diff --name-only "$BASE...$HEAD")
-            echo "changed files:"; echo "$files" | sed 's/^/  /'
-            if [ -n "$files" ] && ! grep -Ev '^(docs/.*|[^/]+\.md)$' <<<"$files" >/dev/null; then
-              docs_only=true
-              git diff --check "$BASE...$HEAD"
-            fi
-          fi
-          echo "docs_only=$docs_only" | tee -a "$GITHUB_OUTPUT"
+        # NUL-separated paths (Chinese / spaces / quotes safe); renames count the old path; whitespace check for docs-only.
+        run: bash scripts/ci/classify-doc-changes.sh "$EVENT" "$BASE" "$HEAD"
   verify:
     needs: [changes]
     if: needs.changes.outputs.docs_only != 'true'
