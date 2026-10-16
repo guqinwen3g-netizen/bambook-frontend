@@ -13,6 +13,8 @@ import { devVersions, developmentRoundBlocker, minorParent, minorVersionBlocker,
 import { DevNoticeCard } from './DevNotices';
 import { DevRoundsCard, NewRoundDialog, RoundRequirementsDialog, versionQcFlag, type NewRoundInput } from './DevRounds';
 import { ToProductDialog, developmentVersionLinks, productConversionBlocker } from './DevVersionLinks';
+import { DevSampleFormsCard } from './DevSampleForms';
+import { confirmationNeedsForms, developmentVersionSamples } from '../../../../server/src/shared/mistDevelopmentSamples';
 
 export function localConfirmationTime(date=new Date()){return Number.isNaN(date.getTime())?'':new Date(date.getTime()-date.getTimezoneOffset()*60_000).toISOString().slice(0,16);}
 export function confirmationFormError(values:{confirmer:string;organization:string;confirmedAt:string;basis:string;originalText:string}){
@@ -57,6 +59,8 @@ export function DevDetailPage(){
   const live=React.useRef(true),busyRef=React.useRef(false);React.useEffect(()=>{live.current=true;return()=>{live.current=false;};},[]);
   React.useEffect(()=>{setVersionId(route.versionId||dev?.currentVersionId||'');},[route.id,route.versionId,dev?.id]);
   React.useEffect(()=>{if(!version){setQc(qcForm(null,state?.settings.profileName||''));return;}const last=version.confirmationDraft||version.confirmations.at(-1);setForm(last?{confirmer:last.confirmer,organization:last.organization,confirmedAt:localConfirmationTime(new Date(last.confirmedAt)),basis:last.basis,originalText:last.originalText,result:last.result}:dev&&developmentInitiator(dev.values)==='internal'?emptyForm('内部需求方',dev.values.requester||''):emptyForm(dev?.customer));setSample({sample:version.sample==='—'?'':version.sample,quantity:String(version.sampleQuantity||1),form:version.sampleForm||dev?.values.sampleForm||'',unit:version.sampleUnit||dev?.values.sampleUnit||'',location:version.sampleLocation||'',color:version.sampleColor||dev?.values.color||'',returnedAt:localConfirmationTime()});setQc(qcForm(version.qc,state?.settings.profileName||''));setFailure('');},[version?.id]);
+  const [confirmSampleIds,setConfirmSampleIds]=React.useState<string[]>([]);React.useEffect(()=>{setConfirmSampleIds([]);},[version?.id]);
+  const versionSamples=state&&version?developmentVersionSamples(state,version):[],needsForms=!!(state&&dev&&version&&confirmationNeedsForms(state,dev,version));
   const set=<K extends keyof Form>(key:K,value:Form[K])=>setForm(previous=>({...previous,[key]:value}));
   const chooseVersion=(id:string)=>{if(busy||!dev)return;setVersionId(id);setDialog(null);go('development/detail',dev.id,{versionId:id,...(route.customerId?{customerId:route.customerId}:{})});};
   const finish=(message:string)=>{setDialog(null);setFailure('');toast(message);};
@@ -66,7 +70,8 @@ export function DevDetailPage(){
       if(kind==='draft'){await run({type:'development.saveConfirmationDraft',payload:{devId:dev.id,versionId:version!.id,draft:{...form,confirmedAt:form.confirmedAt&&!Number.isNaN(new Date(form.confirmedAt).getTime())?new Date(form.confirmedAt).toISOString():''}}});}
       else if(kind==='confirm'){
         const invalid=confirmationFormError(form);if(invalid)throw Error(invalid);
-        await run({type:'development.confirm',payload:{devId:dev.id,versionId:version!.id,...form,confirmedAt:new Date(form.confirmedAt).toISOString()}});
+        if(needsForms&&!confirmSampleIds.length)throw Error('本版有多种实物形态，请选择本次确认针对的形态');
+        await run({type:'development.confirm',payload:{devId:dev.id,versionId:version!.id,...form,confirmedAt:new Date(form.confirmedAt).toISOString(),...(confirmSampleIds.length?{sampleIds:confirmSampleIds}:{})}});
       }else if(kind==='revise'){
         if(!note.trim())throw Error('请填写本次修改要求');
         const receipt=await run({type:'development.revise',payload:{devId:dev.id,versionId:version!.id,note}});
@@ -167,7 +172,7 @@ export function DevDetailPage(){
   if(!dev)return <MistPage><BackLink onClick={backToSource}>{route.customerId?'返回客户档案':'开发与寻样'}</BackLink><Card><EmptyState icon={Layers} title={loading?'正在读取开发案':'未找到开发案'} description={error||'请从开发列表选择一个已保存的开发案。'} /></Card></MistPage>;
   const currentImage=version?.img||dev.img,files=(version?.fileIds||dev.fileIds).map(id=>state?.files.find(file=>file.id===id)).filter(file=>!!file),last=version?.confirmations.at(-1),steps=developmentStepStates(dev,version),history=(state?.events||[]).filter(event=>event.entityId===dev.id||event.entityId===version?.id).slice().sort((a,b)=>b.at.localeCompare(a.at));
   const openEdit=()=>{setEdit({goal:dev.goal,due:dev.due,factories:dev.values.factories.join('、')});setDialog('edit');};
-  const currentFormError=confirmationFormError(form);
+  const currentFormError=confirmationFormError(form)||(needsForms&&!confirmSampleIds.length?'请选择本次确认针对的形态':null);
   const sameConfirmation=last&&last.result===form.result&&last.confirmer===form.confirmer&&last.organization===form.organization&&last.basis===form.basis&&last.originalText===form.originalText&&new Date(last.confirmedAt).getTime()===new Date(form.confirmedAt).getTime();
   const measurements=version?.qc?.measurements||[],measureStats=measurements.reduce((counts,row)=>{const difference=Math.abs(row.actual-row.standard),epsilon=row.tolerance===0?0:Number.EPSILON*Math.max(1,row.actual,row.standard,row.tolerance)*4;return{within:counts.within+(difference<=row.tolerance+epsilon?1:0),attention:counts.attention+(difference>row.tolerance*.5+epsilon?1:0)};},{within:0,attention:0});
   const links=developmentVersionLinks(state,version),productBlocker=productConversionBlocker(version);
@@ -203,6 +208,7 @@ export function DevDetailPage(){
           {!!childMinors.length&&<p className="mist-note" style={{padding:'0 22px 12px'}}>本版小调整：{childMinors.map(item=>`${item.label}（${item.minor!.change}）`).join('；')}</p>}
         </Card>
         {state&&<DevRoundsCard state={state} dev={dev} versionId={version?.id} busy={busy} onSelect={chooseVersion} onCreate={()=>{setFailure('');setRoundInitial(undefined);setDialog('round');}} onEditRequirements={round=>{setFailure('');setRoundEdit(round);}} onSync={target=>void syncRoundTask(target)}/>}
+        {state&&version&&<DevSampleFormsCard state={state} dev={dev} version={version} disabled={busy||!!pending} run={run}/>}
         {state&&version&&!version.minor&&<DevNoticeCard state={state} dev={dev} version={version} busy={busy} onGenerate={()=>void generateNotice()} onDownload={downloadNotice} onPrint={printNotice}/>}
         {fabricDomain&&<Card><CardHeader title="面料开发目标规格" sub="目标要求，不代表工厂分析或 QC 实测"/><KeyValue items={[{label:'分类',value:dev.values.category||'待核实'},{label:'本版工厂要求',value:version?.note||'待记录'},{label:'目标成分',value:fabricRequirements?.composition||'待工厂分析'},{label:'克重原值',value:`${fabricRequirements?.weightValue||'待分析'} ${fabricRequirements?.weightUnit||''}`},{label:'幅宽原值',value:`${fabricRequirements?.widthValue||'待分析'} ${fabricRequirements?.widthUnit||''}`},{label:'纱支 / 组织',value:`${fabricRequirements?.yarn||'待分析'} / ${fabricRequirements?.weave||'待分析'}`},{label:'用途 / 手感',value:`${fabricRequirements?.usage||'—'} / ${fabricRequirements?.handle||'—'}`},{label:'后整理 / 性能',value:`${fabricRequirements?.finish||'—'} / ${fabricRequirements?.performance||'—'}`}]}/></Card>}
         <Card id="mist-dev-goal"><CardHeader title="开发目标" /><p className="mist-sub" style={{padding:'10px 22px 20px',fontSize:13.5}}>{dev.goal||'尚未填写开发目标'}</p></Card>
@@ -218,6 +224,7 @@ export function DevDetailPage(){
             <Field label="所属组织"><TextInput icon={Building2} value={form.organization} onChange={event=>set('organization',event.target.value)} /></Field>
             <Field label="确认时间" required><TextInput icon={Clock} type="datetime-local" value={form.confirmedAt} onChange={event=>set('confirmedAt',event.target.value)} /></Field>
             <Field label="确认依据" required hint="填写实际沟通来源与凭证说明"><TextInput icon={Paperclip} value={form.basis} onChange={event=>set('basis',event.target.value)} /></Field>
+            {needsForms&&<div className="mist-field" data-full="true" role="group" aria-label="确认针对的形态"><span className="mist-field-label">确认针对的形态 <span className="mist-muted">（必选）</span></span>{versionSamples.map(item=><Checkbox key={item.id} checked={confirmSampleIds.includes(item.id)} label={`${item.form} · ${item.code} · ${item.quantity} ${item.unit}`} onChange={checked=>setConfirmSampleIds(previous=>checked?[...previous.filter(id=>id!==item.id),item.id]:previous.filter(id=>id!==item.id))} />)}</div>}
             <Field label="需求方原文" full><TextArea value={form.originalText} onChange={event=>set('originalText',event.target.value)} placeholder="记录认可意见、修改要求或不采用原因" /></Field>
           </FormGrid></div>
           <CardFooter><span className="mist-note"><ShieldCheck className="mist-icon" data-size="xs" />{state?.settings.profileName}登记 · 对应本版实物与报告</span><span className="mist-spacer" /><Button variant="quiet" disabled={!version||busy} onClick={()=>void act('draft')}>存为草稿</Button><Button variant="primary" iconRight={ArrowRight} disabled={!version||busy||!qcAllowsConfirm||!!currentFormError||!!sameConfirmation} onClick={()=>setDialog('confirm')}>{sameConfirmation?'本版已记录':'保存确认'}</Button></CardFooter>
@@ -233,7 +240,7 @@ export function DevDetailPage(){
       </div>
       <div className="mist-detail-rail">
         <Card><CardHeader title="动态" tools={<IconButton icon={History} label="定位动态记录" size="sm" onClick={()=>document.getElementById('mist-dev-history')?.scrollIntoView({behavior:'smooth'})} />} /><div id="mist-dev-history">{history.length?<Timeline events={history.map(event=>({who:event.actor,when:new Date(event.at).toLocaleString(),text:event.text}))} />:<EmptyState compact title="暂无业务动态" />}</div></Card>
-        <Card><CardHeader title="确认记录" />{version?.confirmations.length?<Timeline events={version.confirmations.slice().reverse().map(item=>({who:item.confirmer,when:new Date(item.confirmedAt).toLocaleString(),text:`${resultLabel[item.result]} · ${item.organization}\n${item.basis}${item.originalText?`\n${item.originalText}`:''}`}))} />:<EmptyState compact title="本版暂无确认记录" />}</Card>
+        <Card><CardHeader title="确认记录" />{version?.confirmations.length?<Timeline events={version.confirmations.slice().reverse().map(item=>({who:item.confirmer,when:new Date(item.confirmedAt).toLocaleString(),text:`${resultLabel[item.result]} · ${item.organization}${item.samples?.length?`\n针对形态：${item.samples.map(ref=>`${ref.form} ${ref.code}`).join('、')}`:''}\n${item.basis}${item.originalText?`\n${item.originalText}`:''}`}))} />:<EmptyState compact title="本版暂无确认记录" />}</Card>
         <Card id="mist-dev-archive"><CardHeader title="关联" /><RelatedList items={[
             ...(links.product?[{icon:Archive,title:links.product.sku,sub:`产品档案 · ${links.product.name}`,onClick:()=>go('products',links.product!.id)}]:[]),
             ...links.samples.map(sample=>({icon:PackageCheck,title:sample.code,sub:`本版实物样品 · ${sample.name}`,onClick:()=>go('samples',sample.id)})),

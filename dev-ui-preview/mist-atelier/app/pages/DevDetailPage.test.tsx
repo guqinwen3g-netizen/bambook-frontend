@@ -203,3 +203,37 @@ describe('BB-DEV-10 version links and product conversion',()=>{
     await act(async()=>[...host.querySelectorAll('button')].find(item=>item.textContent?.trim()==='GA-2711')!.click());expect(go).toHaveBeenCalledWith('products','prod-1');
   });
 });
+
+describe('BB-DEV-6/8 fabric physical forms and dispatch on the version detail',()=>{
+ const metre={id:'s-m',code:'SMP-0002',name:'测试',category:'面料',form:'米样',unit:'米',quantity:5,available:5,location:'架B',size:'',color:'',source:{kind:'version',devId:'dev-a',versionId:'va'},fileIds:[],note:'',createdAt:'2026-10-12T00:00:00Z'};
+ const colour={...metre,id:'s-c',code:'SMP-0001',form:'色样',unit:'份',quantity:3,available:3,location:'架A'};
+ const useFabric=(samples:object[])=>{const st=bridge.current.state;st.devs=[{...record,img:'clay',values:{...record.values,domain:'fabric',category:'斜纹',sizeBase:'',sampleForm:'色样',sampleUnit:'份'}}];st.versions[0]={...st.versions[0],sample:'R1-A-实物',size:''};st.fulfillment={samples,sampleMovements:[],qcTasks:[]};};
+ async function choose(label:string,value:string){const field=[...document.querySelectorAll('label')].find(item=>item.querySelector('.mist-field-label')?.textContent?.replace('*','')===label);const select=field?.querySelector('select') as HTMLSelectElement;expect(select,label).toBeTruthy();await act(async()=>{Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value')!.set!.call(select,value);select.dispatchEvent(new Event('change',{bubbles:true}));});}
+ it('lists every form with its own balance and appends a metre sample to the same version',async()=>{
+  useFabric([colour]);await mount();expect(host.textContent).toContain('本版实物与寄样');expect(host.textContent).toContain('3 / 3 份');
+  await click('追加形态');await choose('实物形态','米样');await fill('数量（米）','2');await fill('存放位置','架B');await click('保存形态');
+  expect(bridge.current.run).toHaveBeenCalledWith({type:'development.version.addSampleForm',payload:{devId:'dev-a',versionId:'va',form:'米样',quantity:2,unit:'米',location:'架B',color:''}});
+ });
+ it('dispatches the exact selected sample within its available balance, fee optional',async()=>{
+  useFabric([colour,metre]);await mount();expect(host.textContent).toContain('5 / 5 米');
+  await click('寄样');await choose('寄出实物','s-m');await fill('寄出数量（米）','6');await fill('收件方','客户 Anna');
+  expect(document.body.textContent).toContain('超过可用余额 5 米');expect([...document.querySelectorAll('button')].find(b=>b.textContent?.trim()==='确认寄出')!.disabled).toBe(true);
+  await fill('寄出数量（米）','2');await fill('运单号','SF123');await click('确认寄出');
+  expect(bridge.current.run).toHaveBeenCalledWith({type:'development.sample.dispatch',payload:{devId:'dev-a',versionId:'va',sampleId:'s-m',quantity:2,recipient:'客户 Anna',trackingNo:'SF123',note:'',fee:null}});
+ });
+ it('requires choosing which forms a confirmation covers when the version has several',async()=>{
+  useFabric([colour,metre]);await mount();
+  await fill('实际确认人','实际客户');await fill('确认依据','邮件');
+  const save=()=>[...document.querySelectorAll('button')].find(b=>b.textContent?.trim()==='保存确认')!;
+  expect(save().disabled).toBe(true);
+  const box=[...document.querySelectorAll('label.mist-check')].find(item=>item.textContent?.includes('米样 · SMP-0002'))!.querySelector('input')!;
+  await act(async()=>box.click());expect(save().disabled).toBe(false);
+  await click('保存确认');await click('确认提交');
+  expect(bridge.current.run).toHaveBeenCalledWith(expect.objectContaining({type:'development.confirm',payload:expect.objectContaining({versionId:'va',sampleIds:['s-m']})}));
+ });
+ it('lets a missing dispatch fee be added later',async()=>{
+  useFabric([{...metre,available:3}]);bridge.current.state.versions[0].dispatches=[{id:'d-1',sampleId:'s-m',sampleCode:'SMP-0002',form:'米样',unit:'米',quantity:2,recipient:'客户 Anna',trackingNo:'SF123',fee:null,note:'',movementId:'m-1',recordedAt:'2026-10-16T00:00:00Z',recordedBy:'业务员'}];
+  await mount();expect(host.textContent).toContain('SF123');await click('补登费用');await fill('寄样费','28.50');await click('保存费用');
+  expect(bridge.current.run).toHaveBeenCalledWith({type:'development.sample.dispatchFee',payload:{devId:'dev-a',versionId:'va',dispatchId:'d-1',fee:{amount:28.5,currency:'CNY'}}});
+ });
+});

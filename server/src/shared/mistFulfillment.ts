@@ -65,6 +65,9 @@ export type SampleMovement = {
     loanId?: string;
     expectedReturn?: string;
     sourceLocation?: string;
+    /** BB-DEV-8：由开发案版本详情寄样生成的寄出流水，回链准确开发案、版本与寄样记录。 */
+    development?: { devId: string; versionId: string; dispatchId: string };
+    trackingNo?: string;
 };
 export type FulfillmentQcTask = {
     id: string;
