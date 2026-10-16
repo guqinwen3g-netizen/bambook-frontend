@@ -17,7 +17,7 @@ export function normalizeOrderLineSource(row:OrderLineSource):OrderLineSource{
 
 /** 返回第一个不满足的原因；满足返回 null。label 用于在多条目时指出是哪一条。 */
 export function orderLineSourceProblem(state:MistState,scope:OrderSourceScope,source:OrderLineSource,label:string):string|null{
-  const s=normalizeOrderLineSource(source);const at=`条目「${label}」`;
+  let s=normalizeOrderLineSource(source);const at=`条目「${label}」`;
   if(s.sourceProductId){
     const product=(state.market?.products||[]).find(row=>row.id===s.sourceProductId);
     if(!product)return `${at}引用的产品档案不存在`;
@@ -26,7 +26,9 @@ export function orderLineSourceProblem(state:MistState,scope:OrderSourceScope,so
     // 产品档案自带的开发来源只能原样携带，不能改写成其他开发案或版本
     if(s.sourceDevId&&s.sourceDevId!==(product.sourceDevId||''))return `${at}的来源开发案与产品档案记录不一致`;
     if(s.sourceVersionId&&s.sourceVersionId!==(product.sourceVersionId||''))return `${at}的来源版本与产品档案记录不一致`;
-    return null;
+    // 产品档案不能成为绕过开发版本认可、客户和板块校验的通道。
+    // 无开发来源的通用目录产品仍允许直接使用；有来源时以档案记载为准继续校验。
+    s=normalizeOrderLineSource({sourceDevId:product.sourceDevId,sourceVersionId:product.sourceVersionId});
   }
   if(!s.sourceDevId&&!s.sourceVersionId)return null;
   if(!s.sourceVersionId)return `${at}只写了来源开发案，请同时选择已认可的来源版本`;
