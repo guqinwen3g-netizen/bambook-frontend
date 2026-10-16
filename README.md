@@ -19,18 +19,18 @@ Bambook 是公司内部业务系统，覆盖开发与寻样、报价、订单、
 
 ## 当前工作
 
-本批交付：开发轮次 / 版本 / 通知单 / 面料多形态与寄样（[PR #112](https://github.com/guqinwen3g-netizen/bambook-main/pull/112)）、订单来源 / 规格数量 / 出运与取消（[PR #108](https://github.com/guqinwen3g-netizen/bambook-main/pull/108)）已完成隔离本地页面与接口复核；并发保存（[PR #111](https://github.com/guqinwen3g-netizen/bambook-main/pull/111)）已交付。准确合入、验证范围和后续事项以各 PR 与 Notion 原总控为准；不代表正式环境发布或全公司业务验收完成。
+近期收口：费用与计费闭环（[PR #114](https://github.com/guqinwen3g-netizen/bambook-main/pull/114)）、风险分级处理权限（[PR #115](https://github.com/guqinwen3g-netizen/bambook-main/pull/115)）、CI 纯文档路径分类修复（[PR #119](https://github.com/guqinwen3g-netizen/bambook-main/pull/119)）已合入；报表汇率与含退税毛利的数据契约调查（[PR #117](https://github.com/guqinwen3g-netizen/bambook-main/pull/117)）已合入，只是调查文档，报表功能尚未完成。开发轮次时间线与多版本对比在 [PR #118](https://github.com/guqinwen3g-netizen/bambook-main/pull/118)，仍由总协调收口。此前一批：开发轮次 / 版本 / 通知单 / 面料多形态与寄样（[PR #112](https://github.com/guqinwen3g-netizen/bambook-main/pull/112)）、订单来源 / 规格数量 / 出运与取消（[PR #108](https://github.com/guqinwen3g-netizen/bambook-main/pull/108)）、并发保存（[PR #111](https://github.com/guqinwen3g-netizen/bambook-main/pull/111)）。准确合入、部署、验证范围和后续事项以各 PR 与 Notion 原总控为准；正式环境未发布，也不代表全公司业务验收完成。
 
 > **新 Agent 接手入口**：先读当前版本的 [长期工作与验证规则](AGENTS.md)，再读所认领任务的范围和验收条件。流程规则统一在 AGENTS.md 维护；[交接文档](docs/HANDOFF.md) 保留历史上下文，旧状态、测试覆盖和候选事项须按当前 GitHub 与代码核对。
 
-**现行开工方式（用户 2026-10-16 确认）**：完整任务包全部做完、本地自测通过后，一次性提交一个 PR 并交接，实施 Agent 随即结束本批工作，不主动查询、不检查、不等待或轮询 CI 结果；系统自动跑 CI，后续独立复核、失败处理和合入由总协调接手。本轮 Agent 已全部停止，以下分工统一生效；下一轮只向用户确认空闲且有额度的 Agent 派发完整任务包。旧任务单、交接或模板中让实施 Agent 等待 CI、验收或合入的冲突要求不再执行。详细分工与合入门槛见 [AGENTS.md](AGENTS.md)。
+**现行开工方式（用户 2026-10-16 确认）**：完整任务包全部做完、本地自测通过后，一次性提交一个 PR 并交接，实施 Agent 随即结束本批工作，不主动查询、不检查、不等待或轮询 CI 结果；系统自动跑 CI，后续独立复核、失败处理和合入由总协调接手。总协调按用户已确认的 Agent 可用性和最新真实回执派发完整任务包，实时执行位见 Notion 原总控。旧任务单、交接或模板中让实施 Agent 等待 CI、验收或合入的冲突要求不再执行。详细分工与合入门槛见 [AGENTS.md](AGENTS.md)。
 
 以下为已有工作的状态记录；开始或接续任务时须核对最新分支 / PR：
 
 1. 审批与放行页面 `approvals` + 付款申请审批：已合入（[PR #27](https://github.com/guqinwen3g-netizen/bambook-main/pull/27)）。生产与出运放行、受控例外尚无服务端规则，页面明示未接入。
 2. 我的工作待办来源补齐 + 通知中心 `notifications`：已合入（[PR #29](https://github.com/guqinwen3g-netizen/bambook-main/pull/29)）。主管按团队视角未做（缺团队组织数据）。
 3. 财务剩余缺口：已合入。(a) 核销冲回 / 付款冲回（[PR #32](https://github.com/guqinwen3g-netizen/bambook-main/pull/32)）；(b) 银行账户 / 期初 / 逐笔归属（[PR #34](https://github.com/guqinwen3g-netizen/bambook-main/pull/34)）；(c) 锁汇 / 结汇记录（[PR #35](https://github.com/guqinwen3g-netizen/bambook-main/pull/35)）。未做：汇兑损益 / 敞口报表、附件、导入时直接指定账户、账户停用。
-4. 智能邮箱真实收发：开发服务器已自建 `sylway.cloud` 邮箱（Postfix + Dovecot，只在本机回环监听，4 个测试邮箱，密码只在服务器 root 文件），站内互发已实测，安装脚本与说明已入库（[PR #40](https://github.com/guqinwen3g-netizen/bambook-main/pull/40)）；对外收发待 Cloudflare DNS、腾讯云 25 端口解封 / 反向解析 / 安全组。应用接 IMAP/SMTP 未开始。
+4. 智能邮箱真实收发：开发服务器已自建 `sylway.cloud` 邮箱（Postfix + Dovecot，只在本机回环监听，4 个测试邮箱，密码只在服务器 root 文件），站内互发已实测，安装脚本与说明已入库（[PR #40](https://github.com/guqinwen3g-netizen/bambook-main/pull/40)）；对外收发待 Cloudflare DNS、腾讯云 25 端口解封 / 反向解析 / 安全组。应用接入内部 IMAP/SMTP 已安排真实接线，真实收发尚未验收接通；外网 DNS / 25 端口只限制对外收发，不妨碍应用接内部服务器，外部真实收发仍不可用。
 5. 平台类模块：已合入。(a) 管理后台账号 / 角色 / 注册审批 / 审计日志 + 人事组织架构（[PR #45](https://github.com/guqinwen3g-netizen/bambook-main/pull/45)）；(b) 统一搜索结果页（[PR #46](https://github.com/guqinwen3g-netizen/bambook-main/pull/46)）；(c) 报表中心客户销售额 / 应收账龄 / 订单进度与逾期 + 业务全景 + 数据中心（[PR #47](https://github.com/guqinwen3g-netizen/bambook-main/pull/47)）；(d) 设置 · 安全修改登录密码 + 业务工具换算（[PR #48](https://github.com/guqinwen3g-netizen/bambook-main/pull/48)）；(e) 人事岗位维护、在职变动记录（转正 / 调岗 / 晋升 / 停职 / 复职 / 离职 / 返聘）、报表中心「订单毛利」（合同口径：已审批订单收入 − 已审批采购，外币采购不折算只标注）、管理员重置密码后强制改密（[PR #50](https://github.com/guqinwen3g-netizen/bambook-main/pull/50)）；(f) 退出所有设备、老板可在角色页调整权限（[PR #51](https://github.com/guqinwen3g-netizen/bambook-main/pull/51)）；(g) 两步验证（验证器动态码 + 恢复码，管理员可重置）与老板账号防线（非老板不能改 / 重置 / 停用老板账号）（[PR #52](https://github.com/guqinwen3g-netizen/bambook-main/pull/52)）；(h) 本人改密后其他设备自动退出、当前设备换发新令牌；调岗到其他部门的岗位时部门随岗位调整并退出原小组（[PR #53](https://github.com/guqinwen3g-netizen/bambook-main/pull/53)）。(a)–(f) 已部署开发服务器并接口冒烟（含退出所有设备真实账号实测：旧令牌 401、重新登录正常）；(g) 已部署并实测两步验证完整流程；(h) 随 `2ea11fd` 交付。界面未用真实账号人工走查。未做：毛利不含退税 / 费用、不做汇率折算；自定义角色新建 / 删除；外部邮箱（搁置）。
 6. 工作助手：P1 只读委托已合入（[PR #25](https://github.com/guqinwen3g-netizen/bambook-main/pull/25)，用户账号真实模型只读验收通过；桌面窗口与 host 重启重连未验）。不可读类型如实说明、不提出没有的起草能力已修（[PR #42](https://github.com/guqinwen3g-netizen/bambook-main/pull/42)，真实模型复测通过）。P2–P4 未开始。
 
