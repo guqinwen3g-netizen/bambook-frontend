@@ -137,6 +137,7 @@ function closeLine(root:MistState,p:{orderId:string;lineId:string;reason:string}
 }
 function decideClosure(root:MistState,p:{id:string;decision:'approved'|'rejected';note:string},context:MistContext):MistCommandResult{
  const [orderId,lineId]=p.id.split(CLOSE_MARK),order=getOrder(root,orderId),line=closableLine(root,order,lineId),c=line.closure;
+ assertOrderWritable(order);
  if(!c||c.status!=='pending')fail('没有待决定的结案申请');
  if(!context.actorId||context.actorId===c!.requesterId)fail('申请人不能审批自己的结案申请','FORBIDDEN');
  if(!c!.reviewerIds.includes(context.actorId)||!reviewers(context,order.type).includes(context.actorId))fail('当前账号不在本次及当前有效审批名单','FORBIDDEN');
@@ -173,6 +174,7 @@ function requestOverShip(root:MistState,p:{orderId:string;lineId:string;quantity
 function findOverShip(root:MistState,order:GovernedOrder,requestId:string){for(const line of root.orderLines as ClosableLine[]){if(line.orderId!==order.id)continue;const r=(line.overShips||[]).find(x=>x.id===requestId);if(r)return{line,r};}return fail('超量出运申请不存在','NOT_FOUND');}
 function decideOverShip(root:MistState,p:{id:string;decision:'approved'|'rejected';note:string},context:MistContext):MistCommandResult{
  const [orderId,requestId]=p.id.split(OVER_MARK),order=getOrder(root,orderId),{line,r}=findOverShip(root,order,requestId);
+ assertOrderWritable(order);
  if(r.status!=='pending')fail('没有待决定的超量出运申请');
  if(!context.actorId||context.actorId===r.requesterId)fail('申请人不能审批自己的超量出运申请','FORBIDDEN');
  if(!r.reviewerIds.includes(context.actorId)||!reviewers(context,order.type).includes(context.actorId))fail('当前账号不在本次及当前有效审批名单','FORBIDDEN');

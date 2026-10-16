@@ -59,3 +59,18 @@ describe('BB-ORD-7 void drafts and cancel approved orders',()=>{
   expect(()=>requestCancel(f)).toThrow('不能整单取消，请改用条目结案');
  });
 });
+
+
+it.each([
+ ['closure','pending'],['closure','cancelled'],['overship','pending'],['overship','cancelled'],
+])('keeps a %s decision from changing an order whose cancellation is %s',(kind,status)=>{
+ const f=approved();
+ if(kind==='closure')f.run({type:'order.governance.closeLine',payload:{orderId:'order',lineId:'line',reason:'按实际结案'}});
+ else f.run({type:'order.governance.requestOverShip',payload:{orderId:'order',lineId:'line',quantity:11,reason:'客户要求多出一件'}});
+ const review=getOrderGovernanceReviews(f.state).find(r=>r.id.startsWith(kind==='closure'?'order-close:':'order-overship:'))!;
+ requestCancel(f);
+ if(status==='cancelled')f.run({type:'order.governance.decide',payload:{id:cancelId(f),decision:'approved',note:'同意取消'}},leader(f));
+ const before=structuredClone(f.state);
+ expect(()=>f.run({type:'order.governance.decide',payload:{id:review.entityId,decision:'approved',note:'不应改变已锁定订单'}},leader(f))).toThrow(status==='pending'?'取消审批中':'订单已取消');
+ expect(f.state).toEqual(before);
+});
