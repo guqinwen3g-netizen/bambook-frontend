@@ -3,11 +3,12 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../../../components/mist';
-import { ChangePasswordRow, ForcedPasswordChangePage } from './ChangePassword';
+import { ChangePasswordRow, ForcedPasswordChangePage, LogoutAllRow } from './ChangePassword';
 
 const change = vi.hoisted(() => vi.fn());
+const logoutAll = vi.hoisted(() => vi.fn());
 const session = vi.hoisted(() => ({ user: { email: 'a@x.test', mustChangePassword: false } as any, refresh: vi.fn(), logout: vi.fn() }));
-vi.mock('../../../../services/authService', () => ({ changePassword: change }));
+vi.mock('../../../../services/authService', () => ({ changePassword: change, logoutAllSessions: logoutAll }));
 vi.mock('../runtime/auth', () => ({ useMistSession: () => session }));
 let root: Root, host: HTMLDivElement;
 beforeEach(async () => { (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true; change.mockReset(); session.refresh.mockReset(); session.logout.mockReset(); host = document.createElement('div'); document.body.appendChild(host); root = createRoot(host); await act(async () => root.render(<ToastProvider><ChangePasswordRow /></ToastProvider>)); });
@@ -51,4 +52,16 @@ it('forces a password change after an admin reset and reloads the session once c
   expect(session.refresh).toHaveBeenCalledTimes(1);
   await act(async () => button('退出登录').click());
   expect(session.logout).toHaveBeenCalled();
+});
+it('logs out every device only after confirmation, then ends the local session', async () => {
+  logoutAll.mockReset();
+  await act(async () => root.render(<ToastProvider><LogoutAllRow /></ToastProvider>));
+  await act(async () => button('退出所有设备').click());
+  expect(logoutAll).not.toHaveBeenCalled();
+  logoutAll.mockRejectedValueOnce(new Error('HTTP 500'));
+  await act(async () => button('确认退出').click());
+  expect(document.body.textContent).toContain('未能退出所有设备'); expect(session.logout).not.toHaveBeenCalled();
+  logoutAll.mockResolvedValueOnce(undefined);
+  await act(async () => button('确认退出').click());
+  expect(logoutAll).toHaveBeenCalledTimes(2); expect(session.logout).toHaveBeenCalledTimes(1);
 });

@@ -15,13 +15,21 @@
  */
 import { Request, Response, NextFunction } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { extractActorFromRequest } from './middleware';
+import jwt from 'jsonwebtoken';
+import { extractActorFromRequest, pickRequestToken } from './middleware';
+import { sessionRevokedBeforeSec } from './sessionRevocation';
 import { logger } from '../lib/logger';
 
 const CACHE_TTL_MS = 30_000;
 const CACHE_MAX_ENTRIES = 5_000;
 
-type CacheEntry = { blocked: boolean; checkedAt: number };
+type CacheEntry = { blocked: boolean; revokedBeforeSec: number; mustChangePassword: boolean; checkedAt: number };
+type AccountGate = Omit<CacheEntry, 'checkedAt'>;
+const OPEN: AccountGate = { blocked: false, revokedBeforeSec: 0, mustChangePassword: false };
+
+/** 待强制改密的账号仍可读与使用 /auth/*（登录、改密、退出），其它写操作须先改密。 */
+const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const AUTH_PATH = /^(?:\/bambook)?\/api\/auth(?:\/|$)/;
 const statusCache = new Map<string, CacheEntry>();
 
 /** 停用/软删/交接路径调用：同进程缓存即时失效（跨进程由 30s TTL 兜底） */
@@ -29,27 +37,31 @@ export function invalidateAccountStatusCache(userId: string): void {
   if (userId) statusCache.delete(userId);
 }
 
-async function isAccountBlocked(prisma: PrismaClient, userId: string): Promise<boolean> {
+async function accountGate(prisma: PrismaClient, userId: string): Promise<AccountGate> {
   const now = Date.now();
   const cached = statusCache.get(userId);
-  if (cached && now - cached.checkedAt < CACHE_TTL_MS) return cached.blocked;
+  if (cached && now - cached.checkedAt < CACHE_TTL_MS) return cached;
 
-  let blocked = false;
+  let gate: AccountGate = OPEN;
   try {
     const user = await prisma.userAccount.findUnique({
       where: { id: userId },
-      select: { status: true, deletedAt: true },
+      select: { status: true, deletedAt: true, metadata: true },
     });
     // fail-open：用户不存在（遗留 token / 测试造数）→ 放行，交由下游 scope 校验
-    blocked = !!user && (user.status === 'disabled' || user.deletedAt != null);
+    if (user) gate = {
+      blocked: user.status === 'disabled' || user.deletedAt != null,
+      revokedBeforeSec: sessionRevokedBeforeSec((user as any).metadata),
+      mustChangePassword: (user as any).metadata?.forceChangePassword === true,
+    };
   } catch (e) {
     logger.warn('[accountStatusGuard] status query failed (fail-open)', { error: (e as Error).message });
-    return false;
+    return OPEN;
   }
 
   if (statusCache.size > CACHE_MAX_ENTRIES) statusCache.clear();
-  statusCache.set(userId, { blocked, checkedAt: now });
-  return blocked;
+  statusCache.set(userId, { ...gate, checkedAt: now });
+  return gate;
 }
 
 /**
@@ -61,9 +73,20 @@ export function createAccountStatusGuard(prisma: PrismaClient) {
     try {
       const actor = extractActorFromRequest(req);
       if (!actor?.userId) return next();
-      if (await isAccountBlocked(prisma, actor.userId)) {
+      const gate = await accountGate(prisma, actor.userId);
+      if (gate.blocked) {
         res.clearCookie('bambook_token');
         return res.status(401).json({ error: 'ACCOUNT_DISABLED', message: '账号已被停用，访问已终止。' });
+      }
+      if (gate.revokedBeforeSec > 0) {
+        const token = pickRequestToken(req), iat = token ? (jwt.decode(token) as any)?.iat : undefined;
+        if (typeof iat === 'number' && iat < gate.revokedBeforeSec) {
+          res.clearCookie('bambook_token');
+          return res.status(401).json({ error: 'SESSION_REVOKED', message: '登录已在所有设备退出，请重新登录。' });
+        }
+      }
+      if (gate.mustChangePassword && WRITE_METHODS.has(req.method) && !AUTH_PATH.test(req.originalUrl || req.url || '')) {
+        return res.status(403).json({ error: 'PASSWORD_CHANGE_REQUIRED', message: '管理员已重置你的密码，请先修改登录密码。' });
       }
       return next();
     } catch {

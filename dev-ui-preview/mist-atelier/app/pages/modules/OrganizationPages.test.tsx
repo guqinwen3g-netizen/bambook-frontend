@@ -73,6 +73,30 @@ describe('管理后台 · 账号', () => {
     expect(document.body.textContent).toContain('你不是「空间」的所有者');
     expect(button('AI 模型订阅')).toBeUndefined();
   });
+  it('lets the owner adjust a role permission set after reviewing the diff, and keeps 老板 fixed', async () => {
+    bridge.routes['GET /api/admin/permissions'] = () => ({ ok: true, permissions: [{ id: 'p1', scope: 'order:read', description: null }, { id: 'p2', scope: 'reports:read', description: null }, { id: 'p3', scope: 'zz:custom', description: '自定义' }] });
+    bridge.routes['PATCH /api/admin/roles/role-sales/permissions'] = () => ({ ok: true });
+    await render(AdminPanelPage, 'admin-panel', 'roles');
+    expect(document.body.textContent).toContain('不可调整');
+    await click('调整权限');
+    await act(async () => { await new Promise(r => setTimeout(r, 0)); });
+    const reports = [...document.querySelectorAll('label.mist-check')].find(l => l.textContent?.includes('reports:read'))!.querySelector('input')!;
+    const orders = [...document.querySelectorAll('label.mist-check')].find(l => l.textContent?.includes('order:read'))!.querySelector('input')!;
+    expect(orders.checked).toBe(true);
+    await act(async () => reports.click());
+    await act(async () => orders.click());
+    await click('保存（新增 1 · 移除 1）');
+    expect(document.body.textContent).toContain('报表中心查看与运行');
+    expect(bridge.calls.some(c => c.method === 'PATCH')).toBe(false);
+    await click('确认调整');
+    expect(bridge.calls.find(c => c.method === 'PATCH')?.body).toEqual({ addPermissions: ['reports:read'], removePermissions: ['order:read'] });
+  });
+  it('keeps role permissions read-only for administrators who are not the owner', async () => {
+    bridge.roles = ['admin'];
+    await render(AdminPanelPage, 'admin-panel', 'roles');
+    expect(document.body.textContent).toContain('只有老板可以调整');
+    expect(button('调整权限')).toBeUndefined();
+  });
   it('shows only the exporter profile to non-managers', async () => {
     bridge.roles = []; bridge.perms = [];
     await render(AdminPanelPage, 'admin-panel', 'accounts');

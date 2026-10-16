@@ -1,6 +1,7 @@
-/** 管理后台 · 账号：公司成员身份只在这里新建或经注册审批产生（2026-10-08 决定），角色只读展示，审计只读。 */
+/** 管理后台 · 账号：公司成员身份只在这里新建或经注册审批产生（2026-10-08 决定）；角色权限仅老板可调整（2026-10-16 起），审计只读。 */
 import React from 'react';
-import { KeyRound, RefreshCw, UserPlus } from 'lucide-react';
+import { KeyRound, RefreshCw, ShieldCheck, UserPlus } from 'lucide-react';
+import { PERMISSION_SCOPES } from '../../../../../lib/rolePermissionMatrix';
 import { Banner, Button, Card, CardHeader, Checkbox, DataTable, Dialog, Drawer, EmptyState, Field, FormGrid, KeyValue, Mono, Pill, Select, TextArea, TextInput, Toolbar, useToast, type Column } from '../../../../../components/mist';
 import { useMistSession } from '../../runtime/auth';
 import { useMistWorkspace } from '../../runtime/workspace';
@@ -153,17 +154,72 @@ export function AdminAccounts() {
   </>;
 }
 
+const SCOPE_LABEL = PERMISSION_SCOPES as Record<string, string>;
+const scopeLabel = (scope: string, description?: string | null) => SCOPE_LABEL[scope] ?? description ?? scope;
+const DOMAIN_LABEL: Record<string, string> = { dashboard: '经营总览', cockpit: '经营驾驶舱', customers: '客户', relations: '客户关系', marketing: '营销', emails: '邮件', quotations: '报价', orders: '订单', production: '生产', shipments: '物流', customs: '单证报关', inventory: '库存', suppliers: '供应商', products: '开发与产品', bom: '成本核算', pricing: '定价', invoices: '发票', vouchers: '收付款', finance: '财务', tax: '退税', risk: '风险', aftersales: '售后', approvals: '审批', reports: '报表', knowledge: '资料中心', hr: '人事', users: '账号', audit: '审计', settings: '设置', dictionary: '数据字典', data: '数据导入导出', tools: '业务工具', ai: 'AI 助手', seasons: '季节', development: '开发' };
+const domainOf = (scope: string) => scope.split(':')[0];
+
+/** 角色权限：老板可调整非老板角色包含的权限（服务器同样只许老板改老板角色、并记审计）。 */
 export function AdminRoles() {
+  const session = useMistSession(), toast = useToast(), owner = session.hasRole('owner');
   const { data, loading, error, load } = useDirectory();
+  const [catalog, setCatalog] = React.useState<Array<{ scope: string; description: string | null }> | null>(null), [catalogError, setCatalogError] = React.useState('');
+  const [editing, setEditing] = React.useState<{ role: AdminRole; next: string[] } | null>(null), [filter, setFilter] = React.useState('');
+  const [confirming, setConfirming] = React.useState(false), [busy, setBusy] = React.useState(false), [saveError, setSaveError] = React.useState('');
   const counts = (roleId: string) => (data?.users ?? []).filter(u => u.status === 'active' && u.roleIds.includes(roleId)).length;
+  const openEditor = async (role: AdminRole) => {
+    setFilter(''); setSaveError(''); setEditing({ role, next: [...role.permissions] });
+    if (catalog) return;
+    try { setCatalogError(''); setCatalog((await organizationApi.listPermissions()).permissions ?? []); }
+    catch (e) { setCatalogError(message(e, '权限目录读取失败')); }
+  };
+  const added = editing ? editing.next.filter(p => !editing.role.permissions.includes(p)) : [];
+  const removed = editing ? editing.role.permissions.filter(p => !editing.next.includes(p)) : [];
+  const describe = (scope: string) => scopeLabel(scope, catalog?.find(c => c.scope === scope)?.description);
+  const scopes = catalog ? [...new Set([...catalog.map(c => c.scope), ...(editing?.role.permissions ?? [])])].filter(sc => sc !== '*').sort() : [];
+  const q = filter.trim().toLowerCase();
+  const visible = scopes.filter(sc => !q || sc.toLowerCase().includes(q) || describe(sc).toLowerCase().includes(q) || (DOMAIN_LABEL[domainOf(sc)] ?? '').includes(q));
+  const groups = [...new Set(visible.map(domainOf))].map(d => ({ domain: d, scopes: visible.filter(sc => domainOf(sc) === d) }));
+  const save = async () => {
+    if (!editing || busy) return;
+    setBusy(true); setSaveError('');
+    try {
+      await organizationApi.updateRolePermissions(editing.role.id, { addPermissions: added, removePermissions: removed });
+      toast(`已调整「${editing.role.name}」的权限`); setConfirming(false); setEditing(null); await load();
+    } catch (e) { setSaveError(message(e, '权限未保存')); setConfirming(false); }
+    finally { setBusy(false); }
+  };
   return <>
     {error && <Banner tone="bad" title="角色读取失败" actions={<Button size="sm" icon={RefreshCw} onClick={() => void load()}>重试</Button>}>{error}</Banner>}
-    <Banner tone="neutral" title="角色权限当前只读">修改角色包含的权限属于关键权限变更，本版只展示；给账号分配角色在“账号”中办理。</Banner>
-    <Card><DataTable ariaLabel="角色" rows={data?.roles ?? []} rowKey={r => r.id} loading={loading && !data} columns={[
+    <Banner tone="neutral" title={owner ? '角色权限由老板调整' : '角色权限只读'}>{owner ? '调整后对拥有该角色的所有账号生效，并记入审计；“老板”角色固定拥有全部权限，不可调整。给账号分配角色在“账号”中办理。' : '只有老板可以调整角色包含的权限；给账号分配角色在“账号”中办理。'}</Banner>
+    <Card><DataTable ariaLabel="角色" rows={data?.roles ?? []} rowKey={r => r.id} loading={loading && !data} onRowClick={owner ? r => { if (!isSuperAdmin(r)) void openEditor(r); } : undefined} columns={[
       { key: 'name', header: '角色', width: 'minmax(160px,1fr)', render: r => <><b>{r.name}</b>{r.isSystem && <> <Pill plain>系统</Pill></>}{r.description && <div className="mist-note">{r.description}</div>}</> },
       { key: 'users', header: '启用账号', width: '96px', align: 'right', render: r => counts(r.id) },
-      { key: 'permissions', header: '权限', width: 'minmax(260px,3fr)', render: r => r.permissions.length ? <span className="mist-note">{r.permissions.join('、')}</span> : <span className="mist-note">无</span> },
+      { key: 'permissions', header: '权限', width: 'minmax(260px,3fr)', render: r => r.permissions.includes('*') ? <span className="mist-note">全部权限</span> : r.permissions.length ? <span className="mist-note">{r.permissions.length} 项：{r.permissions.slice(0, 6).map(sc => scopeLabel(sc)).join('、')}{r.permissions.length > 6 ? ' 等' : ''}</span> : <span className="mist-note">无</span> },
+      ...(owner ? [{ key: 'edit', header: '', width: '110px', render: (r: AdminRole) => isSuperAdmin(r) ? <span className="mist-note">不可调整</span> : <Button size="sm" icon={ShieldCheck} onClick={() => void openEditor(r)}>调整权限</Button> }] : []),
     ]} empty={<EmptyState title="没有角色" />} /></Card>
+
+    <Drawer open={!!editing} onClose={() => !busy && setEditing(null)} title={editing ? `调整「${editing.role.name}」的权限` : ''} sub={editing ? `${counts(editing.role.id)} 个启用账号使用此角色` : undefined}
+      footer={<div className="mist-row"><Button variant="primary" disabled={!catalog || (!added.length && !removed.length)} onClick={() => setConfirming(true)}>保存（新增 {added.length} · 移除 {removed.length}）</Button><Button disabled={busy} onClick={() => setEditing(null)}>取消</Button></div>}>
+      {editing && <>
+        {saveError && <Banner tone="bad" title="未保存">{saveError}</Banner>}
+        {catalogError ? <Banner tone="bad" title="权限目录读取失败">{catalogError}</Banner> : !catalog ? <p className="mist-note">读取权限目录…</p> : <>
+          <Field label="筛选"><TextInput aria-label="筛选权限" placeholder="模块、权限名称或代码" value={filter} onChange={e => setFilter(e.target.value)} /></Field>
+          {groups.map(g => <div key={g.domain} className="mist-section">
+            <CardHeader title={DOMAIN_LABEL[g.domain] ?? g.domain} sub={`${g.scopes.filter(sc => editing.next.includes(sc)).length} / ${g.scopes.length}`} />
+            <div className="mist-col">{g.scopes.map(sc => <Checkbox key={sc} label={`${describe(sc)}（${sc}）`} checked={editing.next.includes(sc)} disabled={busy}
+              onChange={on => setEditing({ ...editing, next: on ? [...editing.next, sc] : editing.next.filter(x => x !== sc) })} />)}</div>
+          </div>)}
+          {!groups.length && <EmptyState compact title="没有符合筛选的权限" />}
+        </>}
+      </>}
+    </Drawer>
+    <Dialog open={confirming} onClose={() => !busy && setConfirming(false)} tone="warn" title={editing ? `确认调整「${editing.role.name}」的权限` : ''}
+      description={editing ? `将影响 ${counts(editing.role.id)} 个启用账号；服务器按新权限即时判定，对方刷新页面后界面随之更新。此操作记入审计。` : undefined}
+      footer={<div className="mist-row"><Button variant="primary" loading={busy} onClick={() => void save()}>确认调整</Button><Button disabled={busy} onClick={() => setConfirming(false)}>返回修改</Button></div>}>
+      {added.length > 0 && <><b>新增</b><ul>{added.map(sc => <li key={sc}>{describe(sc)}（{sc}）</li>)}</ul></>}
+      {removed.length > 0 && <><b>移除</b><ul>{removed.map(sc => <li key={sc}>{describe(sc)}（{sc}）</li>)}</ul></>}
+    </Dialog>
   </>;
 }
 

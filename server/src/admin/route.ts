@@ -298,9 +298,12 @@ export function createAdminRouter(options: AdminRouterOptions) {
           ...(target.metadata as any || {}),
           forceChangePassword: true,
           passwordResetAt: new Date().toISOString(),
+          // 重置即视为账号可能外泄：该账号已登录的所有会话随之失效。
+          sessionsRevokedAt: new Date().toISOString(),
         },
       },
     });
+    invalidateAccountStatusCache(id);
     const actor = (req as any).actor;
     await options.prisma.auditLog.create({
       data: { id: `alog_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, actorId: actor?.userId || 'system', action: 'reset_password', targetType: 'UserAccount', targetId: id, ip: req.ip },

@@ -33,3 +33,12 @@ it('当前密码错误时不改任何字段；无重置标记时只更新密码'
   const ok = await request(app()).post('/auth/change-password').set('Authorization', `Bearer ${token()}`).send({ currentPassword: 'Temp-pass-1', newPassword: 'New-pass-22' });
   expect(ok.status).toBe(200); expect(Object.keys(updates[0])).toEqual(['passwordHash']);
 });
+it('退出所有设备：写入 sessionsRevokedAt、保留其余 metadata 并清除 cookie', async () => {
+  const res = await request(app()).post('/auth/logout-all').set('Authorization', `Bearer ${token()}`);
+  expect(res.status).toBe(200);
+  expect(updates).toHaveLength(1);
+  expect(updates[0].metadata).toMatchObject({ forceChangePassword: true, note: 'keep' });
+  expect(Date.parse(updates[0].metadata.sessionsRevokedAt)).toBeGreaterThan(0);
+  expect(String(res.headers['set-cookie'] ?? '')).toContain('Expires=Thu, 01 Jan 1970');
+  expect((await request(app()).post('/auth/logout-all')).status).toBe(401);
+});

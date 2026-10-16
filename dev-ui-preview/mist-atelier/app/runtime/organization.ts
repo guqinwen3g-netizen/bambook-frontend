@@ -62,6 +62,8 @@ export const organizationApi = {
   // 管理后台（owner / admin）
   listAccounts: () => call<{ users: AdminAccount[]; departments: OrgDepartment[] }>('/admin/users'),
   listRoles: () => call<{ roles: AdminRole[] }>('/admin/roles'),
+  listPermissions: () => call<{ permissions: Array<{ id: string; scope: string; description: string | null }> }>('/admin/permissions'),
+  updateRolePermissions: (roleId: string, body: { addPermissions: string[]; removePermissions: string[] }) => call<{ ok: true }>('/admin/roles/' + id(roleId) + '/permissions', { method: 'PATCH', body }),
   createAccount: (body: { displayName: string; email: string; password: string; roles: string[]; departmentId: string }) => call<{ userId: string; reactivated: boolean }>('/admin/users', { method: 'POST', body }),
   updateAccount: (userId: string, body: { displayName?: string; email?: string; departmentId?: string; status?: string }) => call<{ ok: true }>('/admin/users/' + id(userId), { method: 'PATCH', body }),
   setRoles: (userId: string, roles: string[], departmentId: string | null) => call<{ ok: true }>('/admin/users/' + id(userId) + '/roles', { method: 'PATCH', body: { roles, departmentId } }),

@@ -1,8 +1,8 @@
 /** 设置 · 安全：修改当前账号登录密码（服务器 /auth/change-password 校验当前密码）；管理员重置密码后的强制改密页。 */
 import React from 'react';
-import { KeyRound, LogOut } from 'lucide-react';
+import { KeyRound, LogOut, MonitorSmartphone } from 'lucide-react';
 import { Banner, Button, Card, CardHeader, Dialog, Field, FormGrid, MistPage, SettingRow, TextInput, useToast } from '../../../../components/mist';
-import { changePassword } from '../../../../services/authService';
+import { changePassword, logoutAllSessions } from '../../../../services/authService';
 import { useMistSession } from '../runtime/auth';
 
 const MIN = 8;
@@ -57,10 +57,30 @@ export function ChangePasswordRow() {
   const { busy, error, reset, submit, fields } = usePasswordForm(async () => { toast('登录密码已修改，下次登录请使用新密码'); setOpen(false); if (session.user?.mustChangePassword) await session.refresh(); });
   return <>
     <SettingRow title="登录密码" description="修改当前账号的登录密码；管理员重置给你的临时密码请尽快在这里改掉。" control={<Button size="sm" icon={KeyRound} onClick={() => { reset(); setOpen(true); }}>修改密码</Button>} />
-    <Dialog open={open} onClose={() => !busy && setOpen(false)} title="修改登录密码" description="需要先验证当前密码；修改后其他已登录设备的会话不会自动退出。"
+    <Dialog open={open} onClose={() => !busy && setOpen(false)} title="修改登录密码" description="需要先验证当前密码；修改后其他已登录设备不会自动退出，如有需要请再用“退出所有设备”。"
       footer={<div className="mist-row"><Button variant="primary" loading={busy} onClick={() => void submit()}>确认修改</Button><Button disabled={busy} onClick={() => setOpen(false)}>取消</Button></div>}>
       {error && <Banner tone="bad" title="未修改">{error}</Banner>}
       {fields}
+    </Dialog>
+  </>;
+}
+
+/** 设置 · 安全：退出所有设备（含当前设备），用于设备丢失或怀疑密码外泄。 */
+export function LogoutAllRow() {
+  const session = useMistSession();
+  const [open, setOpen] = React.useState(false), [busy, setBusy] = React.useState(false), [error, setError] = React.useState('');
+  const submit = async () => {
+    if (busy) return;
+    setBusy(true); setError('');
+    try { await logoutAllSessions(); setOpen(false); await session.logout(); }
+    catch (e) { setError(explain(e) === '密码未修改，请重试' ? '未能退出所有设备，请重试' : explain(e)); }
+    finally { setBusy(false); }
+  };
+  return <>
+    <SettingRow title="退出所有设备" description="电脑、手机等所有已登录的会话立即失效，包括当前这台；之后需要重新登录。" control={<Button size="sm" icon={MonitorSmartphone} onClick={() => { setError(''); setOpen(true); }}>退出所有设备</Button>} />
+    <Dialog open={open} onClose={() => !busy && setOpen(false)} tone="bad" title="退出所有设备" description="确认后所有设备上的登录立即失效，当前设备也会回到登录页。如怀疑密码外泄，请重新登录后立即修改密码。"
+      footer={<div className="mist-row"><Button variant="primary" loading={busy} onClick={() => void submit()}>确认退出</Button><Button disabled={busy} onClick={() => setOpen(false)}>取消</Button></div>}>
+      {error && <Banner tone="bad" title="未完成">{error}</Banner>}
     </Dialog>
   </>;
 }
