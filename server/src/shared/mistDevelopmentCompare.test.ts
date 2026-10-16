@@ -1,7 +1,7 @@
 import {describe,it,expect} from 'vitest';
 import {applyMistCommand,createMistState,type DevelopmentValues,type MistContext,type MistCommand} from './mistWorkspace';
 import {emptyFabricRequirements} from './mistDevelopmentDomain';
-import {developmentVersionComparison,versionSource,versionTimelineStatus} from './mistDevelopmentCompare';
+import {developmentBusinessDateTime,developmentVersionComparison,versionSource,versionTimelineStatus} from './mistDevelopmentCompare';
 
 /** 隔离合成数据：成衣案（3 厂 2 轮）与面料案（2 厂 2 轮），覆盖未返样、QC 中、需关注、认可、不采用。 */
 function fixture(){
@@ -72,5 +72,39 @@ describe('BB-DEV-11 多版本对比',()=>{
     expect(row('status').values).toEqual(['待确认 · 需关注','不采用','待返样']);
     expect(row('form').values).toEqual(['米样 / 蓝灰','米样 / 蓝灰','未记录']);
     expect(c.rows.some(r=>r.key==='size')).toBe(false);
+  });
+});
+
+describe('BB-DEV-11 对比时间按上海业务时区显示（回修 PR118）',()=>{
+  /** 合成数据：返样跨 UTC 日界，QC 评审跨月，需求方确认跨年；三处时间均来自对比 helper。 */
+  function timed(){
+    let n=0;const ctx:MistContext={id:()=>`tz-${++n}`,now:'2027-01-05T09:00:00Z',actorName:'测试业务员'};let state=createMistState(ctx,'empty');
+    state.customers.push({id:'c',name:'合成客户',code:'C',country:'',city:'',industry:'',owner:'',grade:'',currency:'EUR',terms:'',incoterm:'',categories:'',creditLimit:0,since:''});
+    const run=(command:MistCommand)=>{const r=applyMistCommand(state,command,ctx);state=r.state;return r.result as Record<string,any>;};
+    const devId=run({type:'development.submit',payload:{values:{name:'时区合成',customer:'c',style:'TZ-1',season:'AW',category:'大衣',kind:'new',fabric:'羊毛',color:'灰',target:'',sizeBase:'M',goal:'时区',factories:['A厂','B厂'],due:'2026-12-30',collaborators:[],sampleQuantity:1} as DevelopmentValues,fileIds:[]}}).devId as string;
+    const id=(label:string)=>state.versions.find(x=>x.devId===devId&&x.label===label)!.id;
+    run({type:'development.recordSample',payload:{devId,versionId:id('R1-A'),sample:'S-TZ',quantity:1,returnedAt:'2026-10-15T23:30:00.000Z'}});
+    run({type:'development.recordQc',payload:{devId,versionId:id('R1-A'),qc:{result:'pass',reviewer:'许言',reviewedAt:'2026-10-31T16:05:00.000Z',report:'QC-TZ',opinion:'合格',measurements:[]}}});
+    run({type:'development.confirm',payload:{devId,versionId:id('R1-A'),result:'approved',confirmer:'Anna',organization:'合成客户',confirmedAt:'2026-12-31T20:00:00.000Z',basis:'邮件',originalText:'OK'}});
+    return{get state(){return state;},dev:()=>state.devs.find(d=>d.id===devId)!,id};
+  }
+  it(`shows returnedAt / reviewedAt / confirmedAt as Shanghai date + HH:mm and leaves stored instants untouched (TZ=${process.env.TZ||'host'})`,()=>{
+    const f=timed(),before=structuredClone(f.state.versions);
+    const c=developmentVersionComparison(f.state,f.dev(),[f.id('R1-A'),f.id('R1-B')]),row=(key:string)=>c.rows.find(r=>r.key===key)!.values;
+    expect(row('sample')[0]).toBe('S-TZ · 1 件 · 2026-10-16 07:30');          // UTC 10-15 23:30 → 上海次日
+    expect(row('qcReview')[0]).toBe('许言 · 2026-11-01 00:05');               // 跨月
+    expect(row('confirmResult')[0]).toBe('认可 · Anna（合成客户） · 2027-01-01 04:00'); // 跨年跨月
+    expect(row('sample')[1]).toBe('未返样');expect(row('qcReview')[1]).toBe('未记录');expect(row('confirmResult')[1]).toBe('尚无确认');
+    expect(f.state.versions).toEqual(before);
+    const a=f.state.versions.find(v=>v.id===f.id('R1-A'))!;
+    expect(a.returnedAt).toBe('2026-10-15T23:30:00.000Z');expect(a.qc!.reviewedAt).toBe('2026-10-31T16:05:00.000Z');expect(a.confirmations[0].confirmedAt).toBe('2026-12-31T20:00:00.000Z');
+  });
+  it('never invents a date for missing or unparseable values',()=>{
+    expect(developmentBusinessDateTime(undefined)).toBe('');expect(developmentBusinessDateTime('')).toBe('');expect(developmentBusinessDateTime('not-a-date')).toBe('时间无效');
+    expect(developmentBusinessDateTime('2026-10-15T16:00:00.000Z')).toBe('2026-10-16 00:00'); // 午夜为 00 而非 24
+    const f=timed(),state=structuredClone(f.state),a=state.versions.find(v=>v.id===f.id('R1-A'))!;
+    a.qc!.reviewedAt='';a.confirmations[0].confirmedAt='bad';
+    const c=developmentVersionComparison(state,state.devs.find(d=>d.id===f.dev().id)!,[a.id]),row=(key:string)=>c.rows.find(r=>r.key===key)!.values[0];
+    expect(row('qcReview')).toBe('许言');expect(row('confirmResult')).toBe('认可 · Anna（合成客户） · 时间无效');
   });
 });

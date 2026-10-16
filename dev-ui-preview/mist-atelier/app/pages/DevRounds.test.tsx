@@ -210,7 +210,7 @@ describe('BB-DEV-11 round timeline and multi-version comparison',()=>{
     expect(heads[0]).toContain('R1-A · A厂');expect(heads[0]).toContain('第 1 轮');expect(heads[2]).toContain('R1-C · C厂');
     expect(cells('qcResult')).toEqual(['通过','有保留通过','未返样，无 QC']);
     expect(cells('qcOpinion')[1]).toBe('袖长偏长 0.8cm，可接受');
-    expect(cells('confirmResult')[0]).toContain('认可 · Anna');expect(cells('confirmResult')[1]).toContain('不采用');expect(cells('confirmResult')[2]).toBe('尚无确认');
+    expect(cells('confirmResult')[0]).toContain('认可 · Anna');expect(cells('confirmResult')[0]).toContain('2026-10-16 16:00');expect(cells('sample')[0]).toContain('2026-10-15 16:00');expect(cells('qcReview')[0]).toBe('许言 · 2026-10-15 17:00'); // 上海业务时间expect(cells('confirmResult')[1]).toContain('不采用');expect(cells('confirmResult')[2]).toBe('尚无确认');
     expect(cells('confirmText')).toEqual(['面料手感 OK','颜色偏暗，不采用','未记录']);
     expect(document.querySelector('#mist-dev-compare tr[data-row="confirmText"] td:nth-child(4)')!.hasAttribute('data-missing')).toBe(true);
     expect(cells('qcFacts')[0]).toBe('1 个测量点 · 超出公差 0');

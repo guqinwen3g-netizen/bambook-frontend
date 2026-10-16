@@ -47,7 +47,19 @@ export type ComparisonRow = { key: string; group: ComparisonGroup; label: string
 export type DevelopmentComparison = { versions: MistVersion[]; rows: ComparisonRow[]; rejected: string[] };
 
 export const COMPARISON_MISSING = '未记录';
-const time = (value: string | null | undefined) => value ? value.slice(0, 16).replace('T', ' ') : '';
+/** 业务时区：与审批 / 风险等业务日期同口径（显式 Asia/Shanghai，不依赖宿主时区）。 */
+export const DEVELOPMENT_BUSINESS_TIME_ZONE = 'Asia/Shanghai';
+export const COMPARISON_INVALID_TIME = '时间无效';
+const businessDateTimeFormat = new Intl.DateTimeFormat('en-CA', { timeZone: DEVELOPMENT_BUSINESS_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+/** 只读显示：存储的 ISO 时间戳 → 上海业务日期与时分 `YYYY-MM-DD HH:mm`。缺失返回空串（由调用方显示“未记录”），无法解析返回“时间无效”，不伪造日期；不改写原值。 */
+export function developmentBusinessDateTime(value: string | null | undefined): string {
+  if (typeof value !== 'string' || !value.trim()) return '';
+  const instant = new Date(value);
+  if (!Number.isFinite(instant.getTime())) return COMPARISON_INVALID_TIME;
+  const parts = businessDateTimeFormat.formatToParts(instant), part = (type: Intl.DateTimeFormatPartTypes) => parts.find(item => item.type === type)?.value || '';
+  return `${part('year')}-${part('month')}-${part('day')} ${part('hour')}:${part('minute')}`;
+}
+const time = developmentBusinessDateTime;
 const unitValue = (value: string | undefined, unit: string | undefined) => value?.trim() ? `${value.trim()} ${unit || ''}`.trim() : '';
 
 /** 同案多版本对比。只取属于本开发案的版本；其他开发案或不存在的 id 记入 rejected，不参与对比。 */
@@ -71,9 +83,9 @@ export function developmentVersionComparison(state: MistState, dev: MistDev, ver
     row('factory', '来源', '工厂', version => source(version).factory),
     row('label', '来源', '版本', version => version.label + (version.minor ? `（小版本，沿用 ${source(version).parentLabel || '大版本'} 实物与 QC）` : '')),
     row('status', '来源', '当前状态', version => { const status = versionTimelineStatus(version); return [status.label, ...status.flags.map(flag => flag.label)].join(' · '); }),
-    row('sample', '实物', '返样', version => version.returnedAt ? `${version.sample || '未登记编号'} · ${version.sampleQuantity} ${fabric ? version.sampleUnit || '单位未登记' : '件'} · ${time(version.returnedAt)}` : '未返样'),
+    row('sample', '实物', '返样', version => version.returnedAt ? [version.sample || '未登记编号', `${version.sampleQuantity} ${fabric ? version.sampleUnit || '单位未登记' : '件'}`, time(version.returnedAt)].filter(Boolean).join(' · ') : '未返样'),
     row('qcResult', 'QC', 'QC 结论', version => version.qc ? QC_RESULT_LABEL[version.qc.result] : !version.returnedAt ? '未返样，无 QC' : version.qcHistory?.length ? '整改待复检' : 'QC 待评审'),
-    row('qcReview', 'QC', '评审人 / 时间', version => version.qc ? `${version.qc.reviewer} · ${time(version.qc.reviewedAt)}` : ''),
+    row('qcReview', 'QC', '评审人 / 时间', version => version.qc ? [version.qc.reviewer, time(version.qc.reviewedAt)].filter(Boolean).join(' · ') : ''),
     row('qcReport', 'QC', '报告', version => version.qc?.report ? file(version.qc.report) : ''),
     row('qcOpinion', 'QC', 'QC 意见', version => version.qc?.opinion || ''),
     fabric
@@ -84,7 +96,7 @@ export function developmentVersionComparison(state: MistState, dev: MistDev, ver
         return `${rows.length} 个测量点 · 超出公差 ${out.length}${out.length ? `（${out.map(item => item.point).join('、')}）` : ''}`;
       }),
     row('qcHistory', 'QC', '历次 QC', version => version.qcHistory?.length ? `${version.qcHistory.length} 次，旧报告保留` : '无'),
-    row('confirmResult', '客户意见', '最新确认', version => { const item = latest(version); return item ? `${CONFIRMATION_RESULT_LABEL[item.result]} · ${item.confirmer}${item.organization ? `（${item.organization}）` : ''} · ${time(item.confirmedAt)}` : '尚无确认'; }),
+    row('confirmResult', '客户意见', '最新确认', version => { const item = latest(version); return item ? [CONFIRMATION_RESULT_LABEL[item.result], `${item.confirmer}${item.organization ? `（${item.organization}）` : ''}`, time(item.confirmedAt)].filter(Boolean).join(' · ') : '尚无确认'; }),
     row('confirmText', '客户意见', '需求方原文', version => latest(version)?.originalText || ''),
     row('confirmBasis', '客户意见', '确认依据', version => latest(version)?.basis || ''),
     row('confirmCount', '客户意见', '确认记录', version => `${version.confirmations.length} 条`),
