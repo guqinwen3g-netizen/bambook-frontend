@@ -19,10 +19,9 @@
 
 import { Router, Request, Response, NextFunction } from 'express';
 import { safeRouteError } from '../shared/routeError';
-import { requireRole, extractActorFromRequest } from '../auth/middleware';
+import { extractActorFromRequest } from '../auth/middleware';
 import { createModuleAuthGuard } from '../auth/moduleGuard';
 import { requirePermission } from '../auth/permissionGuard';
-import type { AgentRole } from '../agent/types';
 import { PrismaClient } from '@prisma/client';
 import imaps from 'imap-simple';
 import { simpleParser } from 'mailparser';
@@ -137,9 +136,8 @@ export function createEmailRouter(options: EmailRouterOptions) {
   // W-C 批三-F（族 C）：S1 日常写端点（sync/outbox send）已从 legacy requireRole 切换到
   // requirePermission('emails:write')——矩阵真源授权 SALES/SALES_MANAGER（业务员发邮件是 S1 主链日常），
   // §6.6 ADMIN 业务域只读属预期收紧，SuperAdmin(owner) 经 hasPermission 特判照常全通。
-  // HIGH_RISK_ROLES 仅保留给批量维护面端点（backfill-links / classify-backfill）：
+  // 批量维护面端点（backfill-links / classify-backfill）走 emails:maintenance:write（原 owner/admin/manager 角色组）：
   // 批量回填非日常写且 emails:admin 未授予任何业务角色，挂矩阵会只剩 SuperAdmin 可用（预期外收紧）。
-  const HIGH_RISK_ROLES: AgentRole[] = ['owner', 'admin', 'manager'];
 
   // IMAP GET 端点（/attachment、/image）涉及邮箱凭证查询，必须 JWT 强制（API-Key 不足）
   // P0-2 收口：/attachment 已升级 requirePermission('emails:read')；/image 保持 requireJwt
@@ -160,7 +158,7 @@ export function createEmailRouter(options: EmailRouterOptions) {
   // ══════════════════════════════════════════════════════════════
 
   /** Local development mail-server ingress. Never connects to or sends through an external provider. */
-  router.post('/simulate-inbound', requireRole('owner'), async (req: Request, res: Response) => {
+  router.post('/simulate-inbound', requirePermission('emails:admin'), async (req: Request, res: Response) => {
     if (!isDevelopmentMailSimulatorEnabled()) return res.status(404).json({ ok: false, error: 'Not found' });
     const actorId = mailboxOwnerId(req);
     if (!actorId) return res.status(401).json({ ok: false, error: 'Authenticated employee required' });
@@ -325,7 +323,7 @@ export function createEmailRouter(options: EmailRouterOptions) {
    * 有源码契约测试锁定（__tests__/routeAuthGuardRestoration.test.ts）。保留待业务方确认：
    * 若确认无运维使用场景 → 删并同步移除测试；若保留 → 属运维端点，登记为"有端点无 UI"。
    */
-  router.post('/backfill-links', requireRole(...HIGH_RISK_ROLES), async (req: Request, res: Response) => {
+  router.post('/backfill-links', requirePermission('emails:maintenance:write'), async (req: Request, res: Response) => {
     try {
       const limit = Number((req.body || {}).limit) || undefined;
       const result = await backfillEmailLinks(prisma, { limit, actorId: actorIdFromRequest(req) });
@@ -402,7 +400,7 @@ export function createEmailRouter(options: EmailRouterOptions) {
    * [B4 零散收敛 2026-09-15] ⚠️ 前端与 Agent 均零消费（运维批量补数面）。
    * 有 HTTP 契约测试锁定（email/__tests__/emailC8Route.test.ts）。与 backfill-links 同批处置。
    */
-  router.post('/classify-backfill', requireRole(...HIGH_RISK_ROLES), async (req: Request, res: Response) => {
+  router.post('/classify-backfill', requirePermission('emails:maintenance:write'), async (req: Request, res: Response) => {
     try {
       const actorId = actorIdFromRequest(req);
       const { limit, mailbox, withAi = false, autoFollowUp = true } = req.body || {};

@@ -1,7 +1,8 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { DEFAULT_AGENT_ROLES, DEFAULT_AGENT_TOOLS } from './defaults';
-import { extractActorFromRequest, requireRole } from '../auth/middleware';
+import { extractActorFromRequest } from '../auth/middleware';
+import { requirePermission } from '../auth/permissionGuard';
 import { createModuleAuthGuard, ModuleAuthGuardOptions } from '../auth/moduleGuard';
 import { TokenPayload } from '../auth/service';
 import { RuntimeDataSource } from '../dataSource';
@@ -388,7 +389,7 @@ export function createAgentRouter(options: AgentStatusOptions) {
     });
   }));
 
-  router.post('/approvals/:id/resolve', guard, requireRole('owner', 'admin', 'manager'), asyncHandler(async (req, res) => {
+  router.post('/approvals/:id/resolve', guard, requirePermission('agent:approvals:approve'), asyncHandler(async (req, res) => {
     const actor = await resolveMcpActor(req);
     const decision = normalizeApprovalDecision(req.body?.decision);
     if (!decision) return res.status(400).json({ ok: false, error: 'VALIDATION_FAILED', message: 'decision must be approved, rejected, or modified.' });

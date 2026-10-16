@@ -24,7 +24,7 @@ function fixture() {
   let grant = true;
   const p: any = f.prisma;
   p.userAccount.findUnique.mockImplementation(async ({where}: any) => ({ id: where.id, status: 'active', deletedAt: null,
-    roles: [{ role: { id: 'synthetic-grant', permissions: grant ? [{ permission: { scope: 'emails:write' } }] : [] } }] }));
+    roles: [{ role: { id: 'synthetic-grant', permissions: grant ? [{ permission: { scope: 'emails:write' } }, { permission: { scope: 'agent:approvals:approve' } }] : [] } }] }));
   p.userAccount.findFirst = vi.fn(async ({where}: any) => ({ id: where.id || 'u1', primaryDeptId: null }));
   p.userAccount.count = vi.fn(async () => 2);
   p.userRole = { findMany: vi.fn(async ({where}: any) => where.userId === 'reviewer'
@@ -56,7 +56,7 @@ function fixture() {
   app.use('/api/agent', createAgentRouter({ prisma: p, requireAuth: true, apiKeys: new Set(),
     dataSource: {kind:'local-dev',runtimeEnv:'test',database:'postgresql',host:'localhost',name:'synthetic',isBusinessTruth:false,warning:'Synthetic only'},
     getRuntimeMetrics:()=>({}) }));
-  const token = (userId: string) => createAuthService().signToken({ userId, roles:['admin'], departmentIds:[], permissions:['emails:write'], authorizationLoaded:true });
+  const token = (userId: string) => createAuthService().signToken({ userId, roles:['admin'], departmentIds:[], permissions:['emails:write', 'agent:approvals:approve'], authorizationLoaded:true });
   async function draft() {
     const result: any = await executeAgentTool({prisma:p,actor,toolId:'email.send',
       toolInput:{emailId:'E-agent',credentials:{user:'synthetic@bambook.local',pass:'synthetic-password'}}});

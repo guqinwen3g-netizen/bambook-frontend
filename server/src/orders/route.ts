@@ -7,10 +7,9 @@ import { orderTradeTermsError, orderLineDeliveryError, normalizeOrderTradePatch 
 import { authorizeOrderLineWrite, currentOrderLineWriteActor, freshOrderLineScope, orderLineWriteFailure } from './orderLineWriteAccess';
 import {refreshOrderQuantityHeader} from '../shared/orderQuantityProjection';
 import { Router, Request, Response } from 'express';
-import { requireRole, extractActorFromRequest } from '../auth/middleware';
+import { extractActorFromRequest } from '../auth/middleware';
 import { requirePermission } from '../auth/permissionGuard';
 import { createModuleAuthGuard, requireJwtForWrite } from '../auth/moduleGuard';
-import type { AgentRole } from '../agent/types';
 import { writeRouteAuditLog, actorIdFromRequest } from '../audit/routeAudit';
 import { deleteOrder, transitionOrderStatus, VALID_ORDER_STATUSES as LIFECYCLE_VALID_STATUSES, ORDER_LIFECYCLE_ERROR_HTTP_STATUS } from './orderLifecycleService';
 import { directCancelPendingOrder, DIRECT_CANCEL_ERROR_HTTP_STATUS } from '../orderChanges/orderChangeRequestService';
@@ -73,7 +72,6 @@ export function createOrdersRouter(opts: OrdersRouterOptions): Router {
   const guard = createModuleAuthGuard({ requireAuth, apiKeys });
   router.use(guard);
 
-  const HIGH_RISK_ROLES: AgentRole[] = ['owner', 'admin', 'manager'];
   const requireWrite = requireJwtForWrite({ requireAuth, apiKeys });
   const orderMainApproval = createOrderMainApprovalService(opts.prisma);
 
@@ -742,7 +740,7 @@ export function createOrdersRouter(opts: OrdersRouterOptions): Router {
   });
 
   // task ERP-P1: DELETE /:id 调 lifecycleService（事务+audit+EntityLink inactive）
-  router.delete('/:id', requireWrite, requireRole(...HIGH_RISK_ROLES), async (req: Request, res: Response) => {
+  router.delete('/:id', requireWrite, requirePermission('business:delete'), async (req: Request, res: Response) => {
     const id = req.params.id;
     if (!id) return res.status(400).json({ ok: false, error: { code: 'BAD_ID', message: 'order id required' } });
     try {

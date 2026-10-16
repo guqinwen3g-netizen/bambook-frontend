@@ -138,11 +138,14 @@ export const PERMISSION_SCOPES = {
   'emails:read': '业务邮件查看',
   'emails:write': '邮件发送/草稿编辑',
   'emails:admin': '邮件账户绑定/全局分类规则配置',
+  'emails:maintenance:write': '邮件历史维护（关联回填/分类回填）',
 
   // --- 订单履约域 ---
   'orders:read': '订单管理查看',
   'orders:write': '订单创建/编辑（Draft/Confirmed阶段）',
   'orders:delete': '订单删除',
+  'business:delete': '业务记录删除（订单、货运单及分配、关系档案；原 owner/admin/manager 角色组）',
+  'agent:approvals:approve': 'Agent 待批工具调用的批准/驳回',
   'orders:approve:change_delivery': '订单变更-交期（≤7天由SM，>7天总监）审批',
   'orders:approve:change_qty': '订单变更-数量（±10%内SM，超总监）审批',
   'orders:approve:change_price': '订单变更-价格 双签（FinMan+SM）审批',
@@ -471,6 +474,10 @@ const SALES_BASE: RolePermissionMatrix = {
 
 const SALES_MANAGER_BASE: RolePermissionMatrix = {
   ...SALES_BASE, // 继承业务员所有权限
+  // 原 requireRole(owner/admin/manager) 端点迁到权限点后的等价授予（行为不变）
+  'business:delete': true,
+  'emails:maintenance:write': true,
+  'agent:approvals:approve': true,
   // 额外：变更审批（SM 级审批权）
   'orders:approve:change_delivery': true,
   'orders:approve:change_qty': true,
@@ -574,6 +581,10 @@ const FINANCE_BASE: RolePermissionMatrix = {
 };
 
 const ADMIN_BASE: RolePermissionMatrix = {
+  // 原 requireRole(owner/admin/manager) 端点迁到权限点后的等价授予（行为不变）
+  'business:delete': true,
+  'emails:maintenance:write': true,
+  'agent:approvals:approve': true,
   // 配置后台 + 用户管理
   'settings:system:read': true,
   'users:read': true,

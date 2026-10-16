@@ -92,8 +92,13 @@ describe.each(actions)('$name strict current write authorization', action => {
 it('MES production grant belongs to the configured current user, independent of any built-in role mapping', async () => {
   const f = fixture(); f.setUser(currentUser(['production:write'], 'custom-test-production-role')); const response = await send(f, actions[3], token({ roles: [], permissions: [] })); expect(response.status).toBe(201); expect(f.prisma.auditLog.create.mock.calls[0][0].data.actorId).toBe(userId);
 });
-it.each(actions.slice(0, 3))('current settings scope alone cannot replace documented company/market owner-admin role: $name', async action => {
-  const f = fixture(); f.setUser(currentUser(['dictionary:write'], 'custom-test-settings-role')); const response = await send(f, action, token()); expect(response.status).toBe(403); noWrite(f);
+// Role gates moved to permission scopes: dictionary:write (held by ADMIN/SUPER_ADMIN in the
+// matrix) is now the whole gate, so a custom role carrying it may configure company/market.
+it.each(actions.slice(0, 3))('current dictionary:write grant on a custom role authorizes company/market configuration: $name', async action => {
+  const f = fixture(); f.setUser(currentUser(['dictionary:write'], 'custom-test-settings-role')); const response = await send(f, action, token()); expect(response.status).toBe(action.status);
+});
+it.each(actions.slice(0, 3))('custom role without dictionary:write stays denied for company/market configuration: $name', async action => {
+  const f = fixture(); f.setUser(currentUser(['production:write'], 'custom-test-settings-role')); const response = await send(f, action, token()); expect(response.status).toBe(403); noWrite(f);
 });
 it('MES anonymous pay-row read remains denied; write hardening does not grant salary visibility', async () => {
   const f = fixture(); const response = await request(f.app).get('/mes/piece-rate-records'); expect(response.status).toBe(403); noWrite(f);

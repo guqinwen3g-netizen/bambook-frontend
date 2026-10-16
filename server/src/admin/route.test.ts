@@ -9,7 +9,7 @@ function adminToken() {
     userId: 'owner-1',
     displayName: 'Owner',
     roles: ['owner'],
-    permissions: ['users:read', 'users:write', 'users:delete', 'roles:read', 'roles:write'],
+    permissions: ['users:read', 'users:write', 'users:admin', 'users:delete', 'roles:read', 'roles:write'],
     departmentIds: [],
   });
 }
@@ -20,7 +20,7 @@ function plainAdminToken() {
     userId: 'admin-1',
     displayName: 'Admin',
     roles: ['admin'],
-    permissions: ['users:read', 'users:write', 'roles:read', 'roles:write'],
+    permissions: ['users:read', 'users:write', 'users:admin', 'roles:read', 'roles:write'],
     departmentIds: [],
   });
 }

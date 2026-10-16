@@ -32,7 +32,7 @@
 
 import { Router, Request, Response } from 'express';
 import type { PrismaClient } from '@prisma/client';
-import { requireAuth, requireRole, extractActorFromRequest } from '../auth/middleware';
+import { requireAuth, extractActorFromRequest } from '../auth/middleware';
 import { createCurrentWriteActor } from '../auth/currentWriteActor';
 import { requirePermission } from '../auth/permissionGuard';
 import { logger } from '../lib/logger';
@@ -118,7 +118,7 @@ export function createMarketQuoteRouter(options: MarketQuoteRouterOptions): Rout
   const authMw = requireAuthEnabled ? [requireAuth] : [];
   // System configuration uses the current SystemSettings.write module contract,
   // plus the existing owner/admin rule; requireAuth=false affects reads only.
-  const writeMw = [createCurrentWriteActor(prisma), requireRole('owner', 'admin'), requirePermission('dictionary:write')];
+  const writeMw = [createCurrentWriteActor(prisma), requirePermission('dictionary:write')];
   const svc = () => getSystemConfigService(prisma);
 
   // ── 读当前报价（自动同步值 + 来源/时间 + 应急覆盖标记）──

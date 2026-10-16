@@ -112,7 +112,6 @@ const EXEMPT: ReadonlyArray<{ scope: string; reason: Reason; note: string }> = [
   // ── *:admin 系列：只出现在 permissionGuard 的 WRITE_SCOPE_EXACT 高危分类集 ──
   { scope: 'reports:admin', reason: 'no-scope-enforcement', note: '仅在 permissionGuard.WRITE_SCOPE_EXACT（高危分类），无业务强制点' },
   { scope: 'relations:admin', reason: 'no-scope-enforcement', note: '同上' },
-  { scope: 'emails:admin', reason: 'no-scope-enforcement', note: '同上' },
   { scope: 'customs:admin', reason: 'no-scope-enforcement', note: '同上（单证模板/签章配置实际未按本码把关）' },
   { scope: 'pricing:admin', reason: 'no-scope-enforcement', note: '同上' },
 

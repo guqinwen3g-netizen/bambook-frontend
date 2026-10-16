@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createAuthService } from '../auth/service';
 import { createAdminRouter } from './route';
 
-const token = (userId: string, roles: string[]) => createAuthService().signToken({ userId, displayName: userId, roles, permissions: ['users:read', 'users:write'], departmentIds: [] } as any);
+const token = (userId: string, roles: string[]) => createAuthService().signToken({ userId, displayName: userId, roles, permissions: ['users:read', 'users:write', 'users:admin'], departmentIds: [] } as any);
 function makeApp(targetRoles: Array<{ id: string; name: string }>) {
   const prisma: any = {
     userRole: { findMany: vi.fn(async () => targetRoles.map(role => ({ role }))) },

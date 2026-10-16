@@ -277,7 +277,9 @@ describe('GET /sessions（历史会话搜索与游标分页）', () => {
 
 describe('POST /approvals/:id/resolve（Agent 工具审批决策）', () => {
   const sign = (userId: string, roles: TokenPayload['roles']) =>
-    createAuthService().signToken({ userId, displayName: userId, roles, permissions: ['*'], departmentIds: ['company'] });
+    createAuthService().signToken({ userId, displayName: userId, roles, departmentIds: ['company'],
+      // Matrix grant: agent:approvals:approve is held by the former owner/admin/manager role group.
+      permissions: ['*', ...((roles ?? []).some(role => ['owner', 'admin', 'manager'].includes(role)) ? ['agent:approvals:approve'] : [])] });
 
   function makeResolvePrisma(approval: any) {
     const updates: any[] = [];

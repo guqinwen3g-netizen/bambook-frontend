@@ -5,14 +5,12 @@ import { expandRelation, getRelation, queryRelations } from './query';
 import { actorIdFromRequest, writeRouteAuditLog } from '../audit/routeAudit';
 import { createRelation, updateRelation, deleteRelation } from './relationMutationService';
 import { syncOrganizationPrimaryContact } from './contactSync';
-import { requireRole } from '../auth/middleware';
 // ★ 未预期异常不再把原始错误（Prisma 原文/表名列名）返回前端；业务错误（code+statusCode）仍透传。
 //   安全前提（已核对 2026-09-17）：`relations/*.ts` 全域 **`throw new Error(` 为 0 处**
 //   ⇒ 本文件各 catch 只接**未预期异常**，不存在「业务文案被吞」的风险。
 import { safeRouteError } from '../shared/routeError';
 import { requirePermission } from '../auth/permissionGuard';
 import { createModuleAuthGuard, requireJwtForWrite } from '../auth/moduleGuard';
-import type { AgentRole } from '../agent/types';
 import { logger } from '../lib/logger';
 
 // task_mqy2aqkz: category 7 选 1 合法枚举（与 Agent relation.create 对齐）
@@ -32,7 +30,6 @@ export function createRelationsRouter(opts: RelationsRouterOptions): Router {
   const guard = createModuleAuthGuard({ requireAuth: opts.requireAuth, apiKeys: opts.apiKeys });
   router.use(guard);
 
-  const HIGH_RISK_ROLES: AgentRole[] = ['owner', 'admin', 'manager'];
 
   // 写操作需要 JWT 认证（API key 仅用于只读）
   const requireWrite = requireJwtForWrite({ requireAuth: opts.requireAuth, apiKeys: opts.apiKeys });
@@ -295,7 +292,7 @@ export function createRelationsRouter(opts: RelationsRouterOptions): Router {
     return res.json({ ok: true, relation: serializeRelation(saved) });
   });
 
-  router.delete('/:id', requireWrite, requireRole(...HIGH_RISK_ROLES), async (req, res) => {
+  router.delete('/:id', requireWrite, requirePermission('business:delete'), async (req, res) => {
     const result = await deleteRelation({
       prisma: opts.prisma,
       relationId: req.params.id,
