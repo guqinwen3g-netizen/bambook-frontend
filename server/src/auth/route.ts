@@ -10,6 +10,7 @@ import { buildLoadedAuthTokenPayload, loadUserWithRoles, serializeAuthUser } fro
 import { createLoginRateLimiter } from './loginRateLimiter';
 import { pickRequestToken } from './middleware';
 import { invalidateAccountStatusCache } from './accountStatusGuard';
+import { generateRecoveryCodes, generateTotpSecret, hashRecoveryCode, mfaOf, openSecret, otpauthUri, sealSecret, verifyTotp, type MfaState } from './totp';
 
 type AuthRouterOptions = {
   prisma: PrismaClient;
@@ -116,6 +117,14 @@ export function createAuthRouter(options: AuthRouterOptions) {
     // 登录成功：清除该 IP+账号的失败计数
     loginRateLimiter?.reset(rateLimitKey);
 
+    // 已开启两步验证：密码正确后只发 5 分钟有效的第二步凭据（不含 userId，不能当会话令牌用）。
+    if (mfaOf(user.metadata).enabled) {
+      return res.json({ ok: true, mfaRequired: true, mfaToken: auth.signPurposeToken('mfa-login', user.id, 300) });
+    }
+    return issueSession(req, res, user);
+  });
+
+  async function issueSession(req: Request, res: Response, user: any, extra: Record<string, unknown> = {}) {
     let tokenPayload;
     try {
       tokenPayload = await buildLoadedAuthTokenPayload(options.prisma, user);
@@ -148,7 +157,101 @@ export function createAuthRouter(options: AuthRouterOptions) {
       ok: true,
       user: serializeAuthUser(user, roles, permissions, departmentIds, { newRoleIds, authorizationLoaded: tokenPayload.authorizationLoaded }),
       token,
+      ...extra,
     });
+  }
+
+  const USER_WITH_ROLES = { roles: { include: { role: { include: { permissions: { include: { permission: true } } } } } }, primaryDepartment: true } as const;
+  const auditId = () => `alog_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const saveMfa = (user: any, mfa: MfaState) => {
+    const metadata = (user.metadata && typeof user.metadata === 'object' && !Array.isArray(user.metadata)) ? user.metadata : {};
+    return options.prisma.userAccount.update({ where: { id: user.id }, data: { metadata: { ...metadata, mfa } as any } });
+  };
+  /** 校验动态码或一次性恢复码；成功返回更新后的 mfa 状态（推进防重放计数 / 消耗恢复码）。 */
+  function checkSecondFactor(mfa: MfaState, code: unknown): { next: MfaState; recovery: boolean } | null {
+    if (!mfa.enabled || !mfa.secret) return null;
+    const counter = verifyTotp(openSecret(mfa.secret), code, Date.now(), typeof mfa.lastCounter === 'number' ? mfa.lastCounter : -1);
+    if (counter !== null) return { next: { ...mfa, lastCounter: counter }, recovery: false };
+    if (typeof code === 'string' && /^[0-9a-f]{5}-?[0-9a-f]{5}$/i.test(code.trim())) {
+      const normalized = code.trim().toLowerCase().replace(/^([0-9a-f]{5})-?([0-9a-f]{5})$/, '$1-$2');
+      const hash = hashRecoveryCode(normalized), list = mfa.recovery ?? [];
+      if (list.includes(hash)) return { next: { ...mfa, recovery: list.filter(h => h !== hash) }, recovery: true };
+    }
+    return null;
+  }
+
+  router.post('/login/mfa', async (req: Request, res: Response) => {
+    const { mfaToken, code } = req.body || {};
+    const userId = typeof mfaToken === 'string' ? auth.verifyPurposeToken(mfaToken, 'mfa-login') : null;
+    if (!userId) return res.status(401).json({ ok: false, error: 'MFA_EXPIRED', message: '验证已过期，请重新输入密码登录。' });
+    const key = `mfa|${userId}`;
+    if (loginRateLimiter) {
+      const verdict = loginRateLimiter.check(key);
+      if (verdict.blocked) return res.status(429).json({ ok: false, error: 'RATE_LIMITED', message: '验证码错误次数过多，请稍后重试。', retryAfterMs: verdict.retryAfterMs });
+    }
+    const user = await options.prisma.userAccount.findFirst({ where: { id: userId, deletedAt: null }, include: USER_WITH_ROLES });
+    if (!user || user.status !== 'active') return res.status(403).json({ ok: false, error: 'INACTIVE', message: '账号当前不可用。' });
+    let result: ReturnType<typeof checkSecondFactor> = null;
+    try { result = checkSecondFactor(mfaOf(user.metadata), code); } catch (err) { logger.error('[auth] mfa secret unreadable', { userId, error: (err as Error).message }); }
+    if (!result) {
+      loginRateLimiter?.recordFailure(key);
+      return res.status(401).json({ ok: false, error: 'MFA_INVALID', message: '验证码不正确或已使用。' });
+    }
+    loginRateLimiter?.reset(key);
+    await saveMfa(user, result.next);
+    if (result.recovery) await options.prisma.auditLog.create({ data: { id: auditId(), actorId: user.id, action: 'login_mfa_recovery', targetType: 'UserAccount', targetId: user.id, ip: req.ip } }).catch(() => undefined);
+    return issueSession(req, res, { ...user, metadata: { ...(user.metadata as any || {}), mfa: result.next } }, result.recovery ? { recoveryRemaining: result.next.recovery?.length ?? 0 } : {});
+  });
+
+  async function sessionUser(req: Request, res: Response) {
+    const token = pickRequestToken(req);
+    let userId: string | undefined;
+    try { userId = token ? auth.verifyToken(token).userId : undefined; } catch { userId = undefined; }
+    if (!userId) { res.status(401).json({ ok: false, error: 'UNAUTHORIZED', message: 'Not logged in.' }); return null; }
+    const user = await options.prisma.userAccount.findUnique({ where: { id: userId } });
+    if (!user) { res.status(404).json({ ok: false, error: 'NOT_FOUND', message: 'User not found.' }); return null; }
+    return user as any;
+  }
+  const mfaView = (mfa: MfaState) => ({ enabled: mfa.enabled, enabledAt: mfa.enabled ? mfa.enabledAt ?? null : null, recoveryRemaining: mfa.enabled ? (mfa.recovery ?? []).length : 0 });
+
+  router.get('/mfa', async (req: Request, res: Response) => {
+    const user = await sessionUser(req, res); if (!user) return;
+    return res.json({ ok: true, mfa: mfaView(mfaOf(user.metadata)) });
+  });
+
+  // 开启第一步：验证登录密码后生成密钥（尚未生效，须用验证器上的动态码确认）。
+  router.post('/mfa/setup', async (req: Request, res: Response) => {
+    const user = await sessionUser(req, res); if (!user) return;
+    const mfa = mfaOf(user.metadata);
+    if (mfa.enabled) return res.status(409).json({ ok: false, error: 'MFA_ALREADY_ENABLED', message: '两步验证已开启。' });
+    if (!user.passwordHash || !(await auth.verifyPassword(String(req.body?.password ?? ''), user.passwordHash))) return res.status(401).json({ ok: false, error: 'INVALID_CREDENTIALS', message: '登录密码不正确。' });
+    const secret = generateTotpSecret();
+    await saveMfa(user, { enabled: false, pendingSecret: sealSecret(secret), pendingAt: new Date().toISOString() });
+    return res.json({ ok: true, secret, otpauthUri: otpauthUri(secret, user.email || user.displayName || user.id) });
+  });
+
+  router.post('/mfa/enable', async (req: Request, res: Response) => {
+    const user = await sessionUser(req, res); if (!user) return;
+    const mfa = mfaOf(user.metadata);
+    if (mfa.enabled) return res.status(409).json({ ok: false, error: 'MFA_ALREADY_ENABLED', message: '两步验证已开启。' });
+    if (!mfa.pendingSecret || !mfa.pendingAt || Date.now() - Date.parse(mfa.pendingAt) > 15 * 60_000) return res.status(409).json({ ok: false, error: 'MFA_SETUP_EXPIRED', message: '绑定已过期，请重新开始。' });
+    const counter = verifyTotp(openSecret(mfa.pendingSecret), req.body?.code);
+    if (counter === null) return res.status(400).json({ ok: false, error: 'MFA_INVALID', message: '验证码不正确，请核对验证器上的 6 位数字。' });
+    const codes = generateRecoveryCodes();
+    await saveMfa(user, { enabled: true, secret: mfa.pendingSecret, enabledAt: new Date().toISOString(), lastCounter: counter, recovery: codes.map(hashRecoveryCode) });
+    await options.prisma.auditLog.create({ data: { id: auditId(), actorId: user.id, action: 'enable_mfa', targetType: 'UserAccount', targetId: user.id, ip: req.ip } });
+    return res.json({ ok: true, recoveryCodes: codes });
+  });
+
+  router.post('/mfa/disable', async (req: Request, res: Response) => {
+    const user = await sessionUser(req, res); if (!user) return;
+    const mfa = mfaOf(user.metadata);
+    if (!mfa.enabled) return res.status(409).json({ ok: false, error: 'MFA_NOT_ENABLED', message: '两步验证未开启。' });
+    if (!user.passwordHash || !(await auth.verifyPassword(String(req.body?.password ?? ''), user.passwordHash))) return res.status(401).json({ ok: false, error: 'INVALID_CREDENTIALS', message: '登录密码不正确。' });
+    if (!checkSecondFactor(mfa, req.body?.code)) return res.status(400).json({ ok: false, error: 'MFA_INVALID', message: '验证码不正确或已使用。' });
+    await saveMfa(user, { enabled: false, disabledAt: new Date().toISOString() } as MfaState);
+    await options.prisma.auditLog.create({ data: { id: auditId(), actorId: user.id, action: 'disable_mfa', targetType: 'UserAccount', targetId: user.id, ip: req.ip } });
+    return res.json({ ok: true });
   });
 
   router.post('/send-code', async (req: Request, res: Response) => {

@@ -3,13 +3,13 @@ import {
   canAccessView as authCanAccessView, checkAuth, getAuthApiBase, getAuthState,
   hasPermission as authHasPermission, hasRole as authHasRole,
   login as authLogin, logout as authLogout, mapAuthErrorMessage, subscribe,
-  type AgentRole, type AuthState, type AuthUser,
+  type AgentRole, type AuthState, type AuthUser, type MfaLoginStep,
 } from '../../../../services/authService';
 import type { View } from '../../../../types';
 import { getViewPermissionDefinition } from '../../../../lib/modulePermissions';
 
 export type MistSessionStatus = 'loading' | 'authenticated' | 'anonymous';
-export type MistLoginOptions = { remember?: boolean };
+export type MistLoginOptions = { remember?: boolean; mfa?: MfaLoginStep };
 export interface MistSession {
   status: MistSessionStatus;
   user: AuthUser | null;
@@ -140,7 +140,7 @@ function ProductionMistSessionProvider({ children }: { children: React.ReactNode
     const sequence = ++commandSequence.current;
     setError(''); setSigningIn(true); setSigningOut(false);
     try {
-      const user = await authLogin(identifier.trim(), password);
+      const user = await authLogin(identifier.trim(), password, options.mfa);
       if (!user || typeof user.id !== 'string' || !user.id.trim()) throw new Error('登录响应未包含有效账号，请重新登录');
       if (!mounted.current || sequence !== commandSequence.current) throw new Error('登录操作已被新的会话操作替代');
       // The existing service writes both stores. Unchecked keeps the same token
@@ -152,7 +152,7 @@ function ProductionMistSessionProvider({ children }: { children: React.ReactNode
       publish(getAuthState());
       return user;
     } catch (failure) {
-      if (mounted.current && sequence === commandSequence.current) setError(mapAuthErrorMessage(failure, '登录失败，请稍后重试'));
+      if (mounted.current && sequence === commandSequence.current && (failure as { code?: unknown })?.code !== 'MFA_REQUIRED') setError(mapAuthErrorMessage(failure, '登录失败，请稍后重试'));
       throw failure;
     } finally {
       if (mounted.current && sequence === commandSequence.current) setSigningIn(false);

@@ -295,7 +295,10 @@ export async function register(input: RegisterInput): Promise<{ message: string;
   return { message: data.message, userId: data.user?.id };
 }
 
-export async function login(identifier: string, password: string): Promise<AuthUser> {
+/** 两步验证第二步：密码已通过后服务器给的短期凭据 + 验证器动态码或恢复码。 */
+export interface MfaLoginStep { mfaToken: string; code: string }
+
+export async function login(identifier: string, password: string, mfa?: MfaLoginStep): Promise<AuthUser> {
   const epoch = ++authMutationEpoch;
   const base = getAuthApiBase();
   const initialToken = getStoredAuthToken();
@@ -304,11 +307,11 @@ export async function login(identifier: string, password: string): Promise<AuthU
   let res: Response;
   let data: any;
   try {
-    res = await fetchAuth('/auth/login', {
+    res = await fetchAuth(mfa ? '/auth/login/mfa' : '/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ email: identifier, identifier, password }),
+      body: JSON.stringify(mfa ? { mfaToken: mfa.mfaToken, code: mfa.code.trim() } : { email: identifier, identifier, password }),
     }, { fallbackToOmitCredentials: true });
     data = await readJsonResponse(res);
   } catch (error) {
@@ -321,6 +324,13 @@ export async function login(identifier: string, password: string): Promise<AuthU
     err.code = data.error;
     // 429 防爆破限流：透传后端算好的冷却时长，供登录页做倒计时
     if (typeof data.retryAfterMs === 'number') err.retryAfterMs = data.retryAfterMs;
+    throw err;
+  }
+  if (data.mfaRequired && typeof data.mfaToken === 'string') {
+    // 密码正确但账号开启了两步验证：不写任何会话，交由登录页收集动态码。
+    const err: any = new Error('请输入两步验证码');
+    err.code = 'MFA_REQUIRED';
+    err.mfaToken = data.mfaToken;
     throw err;
   }
   if (data.token) {
@@ -413,6 +423,40 @@ export async function logoutAllSessions(): Promise<void> {
   }, { fallbackToOmitCredentials: true });
   const data = await readJsonResponse(res);
   if (!res.ok) throw new Error(data.message || data.error || `Logout-all failed (HTTP ${res.status})`);
+}
+
+export interface MfaStatus { enabled: boolean; enabledAt: string | null; recoveryRemaining: number }
+
+async function postAuthJson(path: string, body: unknown, fallback: string): Promise<any> {
+  const res = await fetchAuth(path, {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    credentials: 'include',
+    body: JSON.stringify(body ?? {}),
+  }, { fallbackToOmitCredentials: true });
+  const data = await readJsonResponse(res);
+  if (!res.ok) { const err: any = new Error(data.message || data.error || `${fallback}（HTTP ${res.status}）`); err.code = data.error; throw err; }
+  return data;
+}
+
+export async function getMfaStatus(): Promise<MfaStatus> {
+  const res = await fetchAuth('/auth/mfa', { method: 'GET', headers: authHeaders(), credentials: 'include' }, { fallbackToOmitCredentials: true });
+  const data = await readJsonResponse(res);
+  if (!res.ok) throw new Error(data.message || data.error || `两步验证状态读取失败（HTTP ${res.status}）`);
+  return { enabled: !!data.mfa?.enabled, enabledAt: data.mfa?.enabledAt ?? null, recoveryRemaining: Number(data.mfa?.recoveryRemaining) || 0 };
+}
+/** 开启第一步：校验登录密码，返回待确认的密钥（尚未生效）。 */
+export async function startMfaSetup(password: string): Promise<{ secret: string; otpauthUri: string }> {
+  const data = await postAuthJson('/auth/mfa/setup', { password }, '两步验证设置失败');
+  return { secret: String(data.secret || ''), otpauthUri: String(data.otpauthUri || '') };
+}
+/** 开启第二步：用验证器动态码确认，返回只显示一次的恢复码。 */
+export async function enableMfa(code: string): Promise<string[]> {
+  const data = await postAuthJson('/auth/mfa/enable', { code: code.trim() }, '两步验证开启失败');
+  return Array.isArray(data.recoveryCodes) ? data.recoveryCodes.map(String) : [];
+}
+export async function disableMfa(password: string, code: string): Promise<void> {
+  await postAuthJson('/auth/mfa/disable', { password, code: code.trim() }, '两步验证关闭失败');
 }
 
 export async function updateMyProfile(input: { avatarUrl?: string | null; displayName?: string }): Promise<AuthUser> {

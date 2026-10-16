@@ -50,8 +50,8 @@ describe('落点普查 · 不许留第二份顺序', () => {
     expect(routeSrc.match(/req\.cookies\?\.\[COOKIE_NAME\] \|\| bearer/g)?.length ?? 0).toBe(0);
   });
 
-  it('原三处及 refresh 读凭证都调用同一份实现', () => {
-    expect(routeSrc.match(/pickRequestToken\(req\)/g)?.length ?? 0).toBe(4);
+  it('原三处、refresh、退出所有设备与两步验证会话读凭证都调用同一份实现', () => {
+    expect(routeSrc.match(/pickRequestToken\(req\)/g)?.length ?? 0).toBe(6);
   });
 
   it('中间件自己也住在这份实现里（规则不再散在两个文件）', () => {

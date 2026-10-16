@@ -8,6 +8,7 @@ import { useMistWorkspace } from '../runtime/workspace';
 import { useNav } from '../nav';
 import { WorkspaceMembers } from './WorkspaceMembers';
 import { ChangePasswordRow, LogoutAllRow } from './ChangePassword';
+import { TwoFactorRow } from './TwoFactor';
 
 type TextKey = 'workspaceName' | 'profileName' | 'profileEmail' | 'locale';
 type TextValues = Pick<MistSettings, TextKey>;
@@ -104,7 +105,7 @@ export function SettingsPage() {
           {sec === 'account' && <FormSection title="账号" description="工作区显示资料，不改变登录账号、邮箱或密码。"><FormGrid><Field label="姓名"><TextInput aria-label="显示姓名" value={values.profileName} disabled={settingsLocked} onChange={event => edit('profileName', event.target.value)} onBlur={() => saveField('profileName')} /></Field><Field label="邮箱"><TextInput aria-label="显示邮箱" type="email" value={values.profileEmail} disabled={settingsLocked} onChange={event => edit('profileEmail', event.target.value)} onBlur={() => saveField('profileEmail')} /></Field>
             <Field label="语言偏好" hint="保存偏好，不改变当前页面文案"><Select aria-label="工作区语言" disabled={settingsLocked} value={values.locale} onChange={event => { edit('locale', event.target.value); void save({ locale: event.target.value }); }} options={[{ value: 'zh-CN', label: '简体中文' }, { value: 'en-US', label: 'English' }]} /></Field></FormGrid></FormSection>}
           {sec === 'security' && <FormSection title="安全">
-            {!session.localMode && <><ChangePasswordRow /><LogoutAllRow /></>}
+            {!session.localMode && <><ChangePasswordRow /><TwoFactorRow /><LogoutAllRow /></>}
             <SettingRow title="两步验证" description={session.localMode?'本地工作身份不使用密码，两步验证不适用':'当前工作区尚未接入认证 MFA 设置'} control={<Switch ariaLabel="两步验证" checked={false} disabled onChange={() => undefined} />} />
             <SettingRow title="退出所有设备" description={session.localMode?'本地身份由本机服务提供，设备会话管理不适用':'暂未提供批量撤销认证会话的接口'} control={<Button size="sm" disabled>{session.localMode?'不适用':'未接入'}</Button>} />
             <SettingRow title="移入回收站" description="保留所有记录与附件；待审批事项须先处理。移入后切换到其他可用工作空间。" control={<Button size="sm" variant="danger" icon={Trash2} disabled={busy||!workspace.archiveWorkspace||workspace.workspace?.ownerId!==session.user?.id} onClick={()=>setLifecycle({action:'archive',name:workspace.workspace?.name||settings.workspaceName})}>移入回收站</Button>} />
