@@ -3,8 +3,8 @@
 import json, os, pathlib, shutil, subprocess, sys, time
 SHA = sys.argv[2]
 assert len(SHA) == 40 and all(c in '0123456789abcdef' for c in SHA)
-ROOT = pathlib.Path('/var/tmp/bambook-ci-capacity-' + SHA)
-EVIDENCE = pathlib.Path('/var/tmp/bambook-ci-capacity-evidence-' + SHA)
+ROOT = pathlib.Path('/var/lib/bambook-ci-capacity-' + SHA)
+EVIDENCE = pathlib.Path('/var/lib/bambook-ci-capacity-evidence-' + SHA)
 UNIT = 'bambook-ci-capacity-' + SHA[:12]
 
 def save(name, value):
@@ -69,7 +69,7 @@ def supervisor():
         return 2
     uid=str(os.getuid()); gid=str(os.getgid())
     args=['sudo','-n','systemd-run','--quiet','--unit='+UNIT,'--uid='+uid,'--gid='+gid,
-        '-p','Type=exec','-p','RemainAfterExit=yes','-p','RuntimeMaxSec=900','-p','MemoryMax=2048M',
+        '-p','Type=exec','-p','RemainAfterExit=yes','-p','RuntimeMaxSec=780','-p','MemoryMax=2048M',
         '-p','MemoryHigh=1792M','-p','MemorySwapMax=256M','-p','CPUQuota=200%',
         '-p','CPUWeight=20','-p','IOWeight=20','-p','TasksMax=160','-p','OOMPolicy=stop',
         '-p','Nice=10','-p','PrivateTmp=yes','-p','ProtectHome=yes','-p','ProtectSystem=strict',
@@ -99,7 +99,7 @@ def supervisor():
             elif max_swap > 256*1024**2: reason='system swap growth above 256 MiB'
             elif disk.free < 10*1024**3 or max_growth>7*1024**3: reason='disk headroom boundary'
             elif bad>=2: reason='existing service health/latency degraded on two probes'
-            elif elapsed>920: reason='trial total timeout'
+            elif elapsed>800: reason='trial total timeout'
             if reason:
                 subprocess.run(['sudo','-n','systemctl','stop',UNIT],check=False)
                 break
@@ -118,7 +118,7 @@ def supervisor():
         'evidence':str(EVIDENCE),'cleanup':'pending'}
     save('summary.json',summary)
     # Only this exact throwaway source/home/cache and scratch directory are removed.
-    if ROOT.parent==pathlib.Path('/var/tmp') and not ROOT.is_symlink():
+    if ROOT.parent==pathlib.Path('/var/lib') and not ROOT.is_symlink():
         shutil.rmtree(ROOT)
         summary['cleanup']='removed temporary source, npm cache, home, build outputs and scripts; private evidence retained'
         save('summary.json',summary)
