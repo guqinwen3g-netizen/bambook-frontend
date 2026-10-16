@@ -383,3 +383,20 @@ describe('one Mist entry with real authentication and workspace state', () => {
   });
 
 });
+
+it('shows the signed-in member identity instead of the shared workspace owner nickname',async()=>{
+  await signIn('finance-member');
+  const shared=currentContext('finance-member');
+  shared.workspace!.ownerId='another-owner';
+  shared.state!.settings.profileName='空间所有者昵称';
+  await mount();await waitFor(()=>expect(probes.home).toHaveBeenCalled());
+  expect(queryByRole(host!,'button',{name:/空间所有者昵称/})).toBeNull();
+  expect(getByRole(host!,'button',{name:/finance-member.*业务员/})).toBeTruthy();
+});
+
+it('keeps the owner custom workspace nickname on the owner account',async()=>{
+  await signIn('owner-member');
+  currentContext('owner-member').state!.settings.profileName='本人的显示名';
+  await mount();await waitFor(()=>expect(probes.home).toHaveBeenCalled());
+  expect(getByRole(host!,'button',{name:/本人的显示名.*业务员/})).toBeTruthy();
+});
