@@ -13,6 +13,8 @@ import { buildLoadedAuthTokenPayload, loadUserWithRoles } from '../auth/tokenHel
 import { MistPrivateFiles, validateFileInput, type MistFileInput, type MistStoredFile } from './files';
 import { prepareMistBusinessNumbers } from './businessNumbers';
 import { buildIssueArchive, bindIssueArchive, prepareCreditDocumentSnapshot, assertCreditIssuePayload, assertIssuedCreditArchive, type PreparedCreditIssueArchive } from './creditPrint';
+import { buildQuotationDocument, bindQuotationDocument, nextQuotationDocumentSeq, prepareQuotationDocumentSnapshot } from './quotationPrint';
+import type { PdfRenderResult } from '../templates/pdf';
 import { canonicalCreditDocument, creditDocumentFingerprint, creditSourceFingerprint, type MistBusinessNumberNeed, type MistCreditPrintSnapshot } from '../shared/mistCreditDocuments';
 /** 演示工作区里指派给演示成员（demo-*）的审批无人能处理，不阻止移入回收站。 */
 const demoOnlyReview=(task:{reviewerIds:string[]})=>task.reviewerIds.length>0&&task.reviewerIds.every(id=>id.startsWith('demo-'));
@@ -52,7 +54,7 @@ export function publicWorkspace(row: MistWorkspaceRow) { return { id: row.id, ow
 const archived=(row:MistWorkspaceRow)=>!!row.state.workspaceArchive;
 const localMode=(actor:TokenPayload)=>(actor as any).mistLocal===true&&process.env.MIST_LOCAL_WORKSPACE==='1'&&process.env.NODE_ENV!=='production';
 export class MistRepository {
-  constructor(private readonly prisma: any, private readonly contract: MistContract, private readonly files: MistPrivateFiles, private readonly authorize: FreshAuthority = freshMistAuthority, private readonly now = () => new Date(), private readonly creditArchiveBuilder: (snapshot: MistCreditPrintSnapshot, options?: {draft?: boolean}) => Promise<PreparedCreditIssueArchive> = buildIssueArchive) {}
+  constructor(private readonly prisma: any, private readonly contract: MistContract, private readonly files: MistPrivateFiles, private readonly authorize: FreshAuthority = freshMistAuthority, private readonly now = () => new Date(), private readonly creditArchiveBuilder: (snapshot: MistCreditPrintSnapshot, options?: {draft?: boolean}) => Promise<PreparedCreditIssueArchive> = buildIssueArchive, private readonly quotationPdfRenderer?: (html: string) => Promise<PdfRenderResult>) {}
   private context(actor: TokenPayload): MistContext { return { id: randomUUID, now: this.now().toISOString(), actorName: actor.displayName || actor.userId, actorId:actor.userId }; }
   private async authorizeCompoundCommand(db: any, prior: TokenPayload, command?: MistCommand) {
     if (command?.type.startsWith('payable.')) for (const scope of payablesCommandPermissions(command as any).slice(1)) await this.authorize(db, prior, scope);
@@ -221,6 +223,12 @@ export class MistRepository {
         const prepared = await this.creditArchiveBuilder(printSnapshot);
         stored = await this.files.write(workspaceId, prepared.file, context.now);
         context.creditDocumentIssue = bindIssueArchive(prepared, stored, { id: context.id, workspaceId, requestId: input.requestId });
+      }
+      if (input.command?.type === 'market.quotation.document') {
+        const snapshot = prepareQuotationDocumentSnapshot(row.state, input.command.payload || {}, context);
+        const prepared = await buildQuotationDocument(snapshot, nextQuotationDocumentSeq(row.state, snapshot.quotationId), { renderPdf: this.quotationPdfRenderer });
+        stored = await this.files.write(workspaceId, prepared.file, context.now);
+        (context as typeof context & { quotationDocument?: unknown }).quotationDocument = bindQuotationDocument(prepared, stored, { id: context.id, workspaceId, requestId: input.requestId });
       }
       const command = upload ? { type: 'files.add', payload: { file: stored } } : input.command;
       const applied = this.contract.applyMistCommand(structuredClone(row.state), command, context);

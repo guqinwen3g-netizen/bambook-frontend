@@ -1,6 +1,6 @@
 /** 报价管理：成衣 / 面料两个板块分开；阶段流水线 + 报价单详情（版本链、审批、发送与客户反馈、转订单）。所有对外事实都登记真实依据。 */
 import React from 'react';
-import { Ban, CheckCircle2, CopyPlus, Download, FileText, Pencil, Plus, SearchX, Send, ShoppingBag, ThumbsDown, ThumbsUp, TimerOff, Undo2 } from 'lucide-react';
+import { Ban, CheckCircle2, CopyPlus, Download, FileText, Printer, Pencil, Plus, SearchX, Send, ShoppingBag, ThumbsDown, ThumbsUp, TimerOff, Undo2 } from 'lucide-react';
 import { Banner, Button, Card, Checklist, DataTable, Dropdown, EmptyState, Facts, MistPage, Mono, ObjectCell, PageHeader, Pill, Pipeline, SearchField, Segmented, Timeline, Toolbar, type Column, type Tone } from '../../../../../components/mist';
 import type { MistState } from '../../../../../server/src/shared/mistWorkspace';
 import { developmentDomain } from '../../../../../server/src/shared/mistDevelopmentDomain';
@@ -8,6 +8,8 @@ import { marketBusinessDate, quotationConversionBlockerText, quotationConversion
 import { quoteMoqStatus, quoteSpecItems } from '../../../../../server/src/shared/mistQuotationSpecs';
 import { lineBelowMarginFloor } from '../../../../../server/src/shared/mistQuotationMarginFloor';
 import { quotationConversionComplete, quotationConversionProgress, quotationConversionStarted, quotationConvertedOrders, quotationPendingLines, quoteLineConversionStatus, quoteLineConversionText } from '../../../../../server/src/shared/mistQuotationLineConversion';
+import { quotationDocumentBlocker, quotationDocuments, quotationFormalDocumentBlocker } from '../../../../../server/src/shared/mistQuotationDocument';
+import { apiService } from '../../../../../services/apiService';
 import { useMistWorkspace } from '../../runtime/workspace';
 import { useMistSession } from '../../runtime/auth';
 import { useNav } from '../../nav';
@@ -65,7 +67,7 @@ export type QuotationWorkbenchProps = {
 };
 
 export function QuotationWorkbench({ onCreate, onEdit, onRevise, attachments, history }: QuotationWorkbenchProps) {
-  const { state, run, error, refresh, loading, saving, pending } = useMistWorkspace(), session = useMistSession(), { go, route } = useNav();
+  const { state, run, error, refresh, loading, saving, pending, downloadFile, fileUrl } = useMistWorkspace(), session = useMistSession(), { go, route } = useNav();
   const [domainChoice, setDomainChoice] = React.useState<QuoteDomain | null>(null), [stageFilter, setStageFilter] = React.useState<StageFilter>('all'), [flagFilter, setFlagFilter] = React.useState<FlagFilter>('all'), [query, setQuery] = React.useState('');
   const [picked, setPicked] = React.useState<string | null>(route.id || null), [drawer, setDrawer] = React.useState(!!route.id);
   const [dialog, setDialog] = useRouteDraft<ModuleEditorSpec | null>(null), [failure, setFailure] = useRouteDraft('');
@@ -135,6 +137,21 @@ export function QuotationWorkbench({ onCreate, onEdit, onRevise, attachments, hi
     ],
     submit: async v => { const lineIds = checkedLines(v); if (!lineIds.length) throw new Error('请至少勾选一个条目'); await run({ type: 'market.quotation.skipLines', payload: { id: q.id, lineIds, reason: String(v.reason ?? '') } }); },
   });
+  const generateDocument = (q: MarketQuotation, draft: boolean) => void act(() => run({ type: 'market.quotation.document', payload: { id: q.id, draft } }));
+  const docFile = (fileId: string) => state?.files.find(f => f.id === fileId);
+  const downloadDocument = (fileId: string) => { const file = docFile(fileId); if (!file) { setFailure('报价单文件不可用或无权读取'); return; } void act(() => downloadFile(file)); };
+  /** 重新打印：取归档原件，在新窗口用浏览器 PDF 预览打开后打印；不重新生成。 */
+  const printDocument = (fileId: string) => {
+    const file = docFile(fileId); if (!file) { setFailure('报价单文件不可用或无权读取'); return; }
+    const win = window.open('', '_blank');
+    void act(async () => {
+      const response = await fetch(fileUrl(file), { headers: apiService.getAuthHeaders(), credentials: 'include' });
+      if (!response.ok) { win?.close(); throw new Error('报价单文件读取失败'); }
+      const url = URL.createObjectURL(new Blob([await response.arrayBuffer()], { type: 'application/pdf' }));
+      if (win) win.location.href = url; else window.open(url, '_blank');
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+    });
+  };
   const exportQuote = (q: MarketQuotation) => downloadModuleCsv(`${q.code}.csv`, ['产品', '款号 / 编码', '规格', '数量', '单位', '单价', '金额', '币种'], q.lines.map(l => [l.name, l.style, l.specification, l.qty, l.unit, l.price, l.amount, q.currency]));
   const columns: Column<MarketQuotation>[] = [
     { key: 'code', header: '报价 / 客户', width: 'minmax(150px,1.1fr)', render: q => <ObjectCell name={<><Mono>{q.code.replace(/-V\d+$/, '')}</Mono> <Pill tone={q.revision ? 'accent' : 'neutral'}>{version(q)}</Pill></>} meta={customerName(q.customerId)} /> },
@@ -149,7 +166,7 @@ export function QuotationWorkbench({ onCreate, onEdit, onRevise, attachments, hi
   const detail = selected && state
     ? <QuotationDetail q={selected} state={state} all={all} day={day} me={me} can={can} canOrder={canOrder} canApprove={canApprove} locked={locked} customer={customerName(selected.customerId)}
         onEdit={() => onEdit(selected)} onRevise={() => onRevise(selected)} onSubmit={() => void act(() => run({ type: 'market.quotation.submit', payload: { id: selected.id } }))}
-        onDecide={d => setDialog(decideSpec(selected, d))} onStatus={s => setDialog(evidenceSpec(selected, s))} onConvert={() => setDialog(convertSpec(selected))} onSkip={() => setDialog(skipSpec(selected))}
+        onDecide={d => setDialog(decideSpec(selected, d))} onStatus={s => setDialog(evidenceSpec(selected, s))} onConvert={() => setDialog(convertSpec(selected))} onSkip={() => setDialog(skipSpec(selected))} onDocument={draft => generateDocument(selected, draft)} onDownloadDocument={downloadDocument} onPrintDocument={printDocument}
         onExport={() => exportQuote(selected)} onOpen={(view, id, extra) => go(view, id, extra)} attachments={attachments(selected, !can || selected.status !== 'Draft' || selected.approval?.status === 'pending')} history={history(selected.id)} />
     : <EmptyState icon={FileText} title="报价单详情" description="从左侧列表选择一份报价，查看条目、版本、审批与客户反馈。" compact />;
   return <MistPage>
@@ -181,9 +198,10 @@ export function QuotationWorkbench({ onCreate, onEdit, onRevise, attachments, hi
   </MistPage>;
 }
 
-function QuotationDetail({ q, state, all, day, me, can, canOrder, canApprove, locked, customer, onEdit, onRevise, onSubmit, onDecide, onStatus, onConvert, onSkip, onExport, onOpen, attachments, history }: {
+function QuotationDetail({ q, state, all, day, me, can, canOrder, canApprove, locked, customer, onEdit, onRevise, onSubmit, onDecide, onStatus, onConvert, onSkip, onDocument, onDownloadDocument, onPrintDocument, onExport, onOpen, attachments, history }: {
   q: MarketQuotation; state: MistState; all: MarketQuotation[]; day: string; me: string; can: boolean; canOrder: boolean; canApprove: boolean; locked: boolean; customer: string;
   onEdit: () => void; onRevise: () => void; onSubmit: () => void; onDecide: (d: 'approved' | 'rejected') => void; onStatus: (s: MarketQuotation['status']) => void; onConvert: () => void; onSkip: () => void; onExport: () => void;
+  onDocument: (draft: boolean) => void; onDownloadDocument: (fileId: string) => void; onPrintDocument: (fileId: string) => void;
   onOpen: (view: string, id?: string, extra?: Record<string, string | undefined>) => void; attachments: React.ReactNode; history: React.ReactNode;
 }) {
   const stage = quotationStage(q), flags = quotationFlags(all, q, day), versions = quotationVersions(state.market, q), next = all.find(x => x.previousId === q.id);
@@ -196,6 +214,9 @@ function QuotationDetail({ q, state, all, day, me, can, canOrder, canApprove, lo
   const allBlocked = blockers.length > 0 && blockers.length >= pending.length;
   const convertReason = !canOrder ? '没有订单写权限' : allBlocked ? `${quotationConversionBlockerText(blockers[0])}${blockers.length > 1 ? `，另有 ${blockers.length - 1} 个条目同样未认可` : ''}` : false;
   const decideReason = !canApprove ? '没有审批权限' : !reviewer ? '仅本次指定的业务审批人可决定，可在审批中心处理' : false;
+  const docBase = writeReason || quotationDocumentBlocker({ issuer: state.settings.companyProfile, customerFound: state.customers.some(c => c.id === q.customerId), lineCount: q.lines.length }) || false;
+  const formalDocReason = docBase || quotationFormalDocumentBlocker(q, needsApproval) || false;
+  const documents = quotationDocuments(q);
   const reviseReason = writeReason || (next ? `已有新版本 ${next.code}，请在最新版本上修改` : q.convertedOrderId ? '已转订单的报价不再出新版本' : false);
   const banner: { tone: Tone; title: string; text: string } =
     stage === 'pending' ? { tone: 'warn', title: '待业务审批', text: `${shortWhen(q.approval!.submittedAt)} 提交；审批通过前不能发送给客户。` }
@@ -235,6 +256,8 @@ function QuotationDetail({ q, state, all, day, me, can, canOrder, canApprove, lo
       { label: '标记条目不再转', icon: Ban, onClick: onSkip, reason: !canOrder ? '没有订单写权限' : false, hidden: stage !== 'accepted' },
       { label: orders.length > 1 ? `打开订单 ${orders[0].code}` : '打开订单', icon: ShoppingBag, onClick: () => onOpen('orders/detail', orders[0].id), primary: stage === 'converted', hidden: !orders.length },
       { label: '新建版本', icon: CopyPlus, onClick: onRevise, reason: reviseReason, hidden: stage === 'draft' || stage === 'pending' || stage === 'converted' },
+      { label: '生成正式报价单', icon: FileText, onClick: () => onDocument(false), reason: formalDocReason },
+      { label: '生成草稿水印版', icon: FileText, onClick: () => onDocument(true), reason: docBase },
       { label: '导出条目', icon: Download, onClick: onExport },
     ]} />
     <Facts items={[
@@ -268,6 +291,16 @@ function QuotationDetail({ q, state, all, day, me, can, canOrder, canApprove, lo
     {!!(q.approvalHistory?.length || q.approval) && <DetailBlock title="审批记录">
       <Timeline events={[...(q.approvalHistory || []), ...(q.approval ? [q.approval] : [])].reverse().map(a => ({ who: a.status === 'pending' ? '等待审批' : a.status === 'approved' ? '已批准' : '已退回', when: new Date(a.decidedAt || a.submittedAt).toLocaleString(), text: <>{a.note || (a.status === 'pending' ? '已提交，待指定审批人决定' : '—')}<br /><span className="mist-note">{a.details.filter(d => d.label === '金额' || d.label === '有效期').map(d => d.label + ' ' + d.value).join(' · ')}</span></> }))} />
     </DetailBlock>}
+    <DetailBlock title="报价单文件">
+      <div className="mist-col" style={{ gap: 0 }} data-quote-documents role="list" aria-label={`${q.code} 报价单文件`}>{documents.length ? documents.map(d => <div key={d.id} role="listitem" className="mist-row" style={{ gap: 8, flexWrap: 'wrap', padding: '8px 0' }} data-quote-document={d.draft ? 'draft' : 'formal'}>
+        <Pill tone={d.draft ? 'warn' : 'ok'}>{d.draft ? '草稿水印版' : '正式版'}</Pill><Pill tone="accent">{'V' + d.revision}</Pill>
+        <span className="mist-col" style={{ gap: 0, minWidth: 0 }}><span style={{ overflowWrap: 'anywhere' }}>{d.fileName}</span><small className="mist-muted">{d.generatedBy} · {shortWhen(d.generatedAt)}</small></span>
+        <span className="mist-spacer" />
+        <Button variant="quiet" icon={Download} onClick={() => onDownloadDocument(d.fileId)}>下载</Button>
+        <Button variant="quiet" icon={Printer} onClick={() => onPrintDocument(d.fileId)}>打印</Button>
+      </div>) : <span className="mist-muted">尚未生成报价单。</span>}</div>
+      <span className="mist-note">每次生成都保存一份不可覆盖的 PDF（时间、生成人、报价版本）；修改报价后请重新生成。{formalDocReason && formalDocReason !== docBase ? `正式版：${formalDocReason}。` : ''}</span>
+    </DetailBlock>
     <DetailBlock title="附件">{attachments}</DetailBlock>
     <DetailBlock title="处理记录">{history}</DetailBlock>
   </DetailBody>;
