@@ -27,7 +27,7 @@ export function CustomerPage() {
   const devs = (state?.devs ?? []).filter(item => item.customerId === customer?.id);
   const contacts = (state?.contacts ?? []).filter(item => item.customerId === customer?.id);
   const invoices = (state?.invoices ?? []).filter(invoice => orders.some(order => order.id === invoice.orderId));
-  const active = orders.filter(order => !['已出运', '已完成', '已取消', '待收尾款'].includes(order.state));
+  const active = orders.filter(order => !['已出运', '履约完成', '已完成', '已取消', '待收尾款'].includes(order.state));
   const events = (state?.events ?? []).filter(event => event.entityId === customer?.id || orders.some(order => order.id === event.entityId) || devs.some(dev => dev.id === event.entityId) || contacts.some(contact => contact.id === event.entityId)).sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
   const fileIds = new Set([...devs.flatMap(dev => dev.fileIds), ...events.flatMap(event => event.fileIds)]);
   const files = (state?.files ?? []).filter(file => fileIds.has(file.id));

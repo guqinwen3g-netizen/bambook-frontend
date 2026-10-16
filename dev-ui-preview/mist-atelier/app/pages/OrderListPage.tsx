@@ -53,9 +53,9 @@ export function OrderListPage() {
   const rows = family.filter(order => (approvalFilter==='all'||approvalOf(order)===approvalFilter) && (status === 'all' || order.state === status) && (!q || `${order.code} ${order.customer} ${order.season}`.toLowerCase().includes(q.toLowerCase())));
   React.useEffect(() => setPage(1), [tab, q, status, customerId,approvalFilter]);
   const pages = Math.max(1, Math.ceil(rows.length / 20)), currentPage = Math.min(page, pages);
-  const active = family.filter(order => approvalOf(order)==='approved' && !['已出运', '已完成', '已取消', '待收尾款'].includes(order.state));
+  const active = family.filter(order => approvalOf(order)==='approved' && !['已出运', '履约完成', '已完成', '已取消', '待收尾款'].includes(order.state));
   const amounts = [...new Set(active.map(order => order.currency))].map(currency => ({ currency, amount: active.filter(order => order.currency === currency).reduce((sum, order) => sum + order.amount, 0) }));
-  const shipped = family.filter(order => ['已出运', '待收尾款'].includes(order.state));
+  const shipped = family.filter(order => ['已出运', '履约完成', '待收尾款'].includes(order.state));
   const unitTotals = new Map<string, number>();
   for (const line of state?.orderLines ?? []) if (active.some(order => order.id === line.orderId)) unitTotals.set(line.unit, (unitTotals.get(line.unit) ?? 0) + line.qty);
   const dayStart=new Date();dayStart.setHours(0,0,0,0);

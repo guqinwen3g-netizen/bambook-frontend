@@ -5,6 +5,7 @@ import type { MistState, MistContext, MistCommandResult, MistQc, MistTarget, Mis
 import type { MistReviewTask } from './mistReview';
 import { supplierBusinessDay, supplierUnavailableReason } from './mistSupplierStatus';
 import { relationHoldReason } from './mistRelationHold';
+import { assertOrderLineOpen } from './mistOrderClosure';
 import {applyClaimInventoryCommand,claimInventoryPermission,type ClaimInventoryCommand,type ClaimInventoryWarehouse,type ClaimReturnReceipt,type ClaimReceivedRecord} from './mistClaimInventory';
 export type FulfillmentSource = {
     kind: 'version';
@@ -1294,7 +1295,7 @@ export function applyFulfillmentCommand(root: MistState, command: FulfillmentCom
                 fail('请先在来源订单登记合同收货方与分批条款');
             if (p.consignee !== firstTerms!.consignee || p.mode !== firstTerms!.mode)
                 fail('收货方或运输方式与来源合同不符');
-            const lines: ShipmentLine[] = p.lines.map((l: any) => { source(root, { kind: 'orderLine', orderId: l.orderId, lineId: l.lineId, productionId: l.productionId }); const order = assertMistOrderApproved(root, l.orderId), line = get(root.orderLines, l.lineId, '条目'), branches = root.productions.filter(job => job.lineId === line.id); const productionId = l.productionId || (branches.length === 1 ? branches[0].id : undefined); if (!productionId)
+            const lines: ShipmentLine[] = p.lines.map((l: any) => { source(root, { kind: 'orderLine', orderId: l.orderId, lineId: l.lineId, productionId: l.productionId }); const order = assertMistOrderApproved(root, l.orderId), line = get(root.orderLines, l.lineId, '条目'), branches = root.productions.filter(job => job.lineId === line.id); assertOrderLineOpen(line); const productionId = l.productionId || (branches.length === 1 ? branches[0].id : undefined); if (!productionId)
                 fail('请先建立并选择准确生产分支'); if (order.customerId !== first.customerId || order.type !== first.type)
                 fail('不同客户或业务域不能合票'); const terms = f.shippingTerms.find(t => t.orderId === order.id); if (!terms || terms.consignee !== firstTerms!.consignee || terms.mode !== firstTerms!.mode)
                 fail('合票条目的合同收货方或运输方式不同'); if (!order.handoffAt)

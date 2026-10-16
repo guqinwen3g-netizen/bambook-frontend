@@ -12,6 +12,7 @@ import type {MistCreditDocumentIssue} from './mistCreditDocuments';
 import type {MistReviewTask} from './mistReview';
 import {assertOrderLineSource,type OrderLineSource} from './mistOrderSource';
 import {lineQuantityFromBreakdown,type OrderLineBreakdown} from './mistOrderBreakdown';
+import {isLineClosed} from './mistOrderClosure';
 import {createOrderGovernance,applyOrderGovernanceCommand,orderGovernancePermission,getOrderGovernanceReviews,assertOrderApproved,type OrderGovernanceFields,type OrderGovernanceCommand,type OrderGovernanceInput} from './mistOrderGovernance';
 import {createOrderFundingState,applyOrderFundingCommand,orderFundingCommandPermission,assertOrderDepositCovered,assertOrderFundingIntegrity,type OrderFundingState,type OrderFundingCommand} from './mistOrderFunding';
 import {createPayablesState,applyPayablesCommand,payablesCommandPermission,getPayableReviews,type PayablesState,type PayablesCommand} from './mistPayables';
@@ -442,9 +443,10 @@ function recalculate(state: MistState) {
     if(order.governance&&order.governance.status!=='approved'){
       order.state=order.governance.status==='pending'?'待主单审批':order.governance.status==='rejected'?'主单已退回':'订单草稿';order.tone=order.governance.status==='pending'?'warn':order.governance.status==='rejected'?'bad':'neutral';
     }else if(departed.length){
-      const complete=rows.every(line=>departed.reduce((sum,s)=>sum+s.lines.filter(item=>item.lineId===line.id).reduce((n,item)=>n+Math.round(item.quantity*10000),0),0)>=Math.round(line.qty*10000));
+      const complete=rows.every(line=>isLineClosed(line)||departed.reduce((sum,s)=>sum+s.lines.filter(item=>item.lineId===line.id).reduce((n,item)=>n+Math.round(item.quantity*10000),0),0)>=Math.round(line.qty*10000));
       const unpaid=state.invoices.some(invoice=>invoice.orderId===order.id&&invoice.open>0);
-      order.state=complete?(unpaid?'待收尾款':'已出运'):'部分出运';order.tone=complete?(unpaid?'warn':'ok'):'accent';
+      // BB-ORD-5：所有条目已出足或已结案 → 履约完成（应收仍有余额时保留"待收尾款"提示，财务不在此自动变更）
+      order.state=complete?(unpaid?'待收尾款':'履约完成'):'部分出运';order.tone=complete?(unpaid?'warn':'ok'):'accent';
     }else if(shipments.length){order.state='出运准备中';order.tone='accent';}
     else if(jobs.some(job=>job.sourcePurchaseId)){
       order.state=jobs.every(job=>job.col==='done')?'待出运':jobs.some(job=>job.col==='qc')?'待终期 QC':'生产中';order.tone='accent';

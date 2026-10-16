@@ -110,3 +110,8 @@ it.each(['receipt','claim'] as const)('keeps the original void guard when a CI a
  expect(()=>applyMistCommand(state,{type:'fulfillment.documents.void',payload:{id:documentId,reason:'不能绕过下游事实'}},f.ctx)).toThrow('CI已有收款、索赔或贷项事实');
  expect(state).toEqual(before);expect(state.invoices.find(i=>i.id===invoiceId)?.voidedAt).toBeUndefined();expect(state.invoices.find(i=>i.id===invoiceId)?.amount).toBe(120);
 });
+
+it('BB-ORD-5 refuses to plan a shipment for an order line that has been closed at actual quantity',()=>{
+ const f=setup();terms(f);(f.root.orderLines[0] as unknown as {closure:unknown}).closure={id:'c',status:'closed',quantity:8,ordered:10,min:10,max:10,reason:'客户接受',requesterId:'sales',requesterName:'业务员',requestedAt:f.ctx.now,reviewerIds:[]};
+ expect(()=>shipment(f)).toThrow('已结案，不能再建出运');
+});

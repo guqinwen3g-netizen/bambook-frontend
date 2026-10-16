@@ -348,3 +348,21 @@ it('BB-ORD-4 lets a started order change quantity, shows the floor and an impact
   await act(async()=>within(impact).getByRole('button',{name:/出运 SH-1/}).click());
   expect(go).toHaveBeenLastCalledWith('shipments','sh');
 });
+
+it.each([[980,'确认结案','closed','已结案（实际 980 / 订单 1000，客户接受实际数量）'],[950,'提交结案审批','pending','结案待审批（实际 950 / 订单 1000，客户接受实际数量）']] as const)('BB-ORD-5 closes a ±3%% line with %i departed (%s) via the line fulfillment panel',async(departed,submitLabel,status,label)=>{
+  lineEditorFixture('approved',1000,11);const state=store.state!,lineId=state.orderLines[0].id,g=state.orders[0].governance!;
+  for(const contract of [g.contract,g.approvedSnapshot!.contract])Object.assign(contract,{overPercent:3,shortPercent:3});
+  state.fulfillment.shipments.push({id:'sh',code:'SH-1',customerId:'customer-a',customer:'客户甲',domain:'garment',consignee:'客户甲',mode:'sea',portOfLoading:'上海',portOfDischarge:'汉堡',incoterm:'FOB',plannedDate:'2026-11-25',booking:'',lines:[{lineId,orderId,quantity:departed,factoryConfirmedAt:context.now}],note:'',fileIds:[],state:'departed',requestedBy:'单证',requesterId:'docs',createdAt:context.now} as never);
+  render();await act(async()=>getByRole(host,'row',{name:/精确金额条目/}).click());
+  expect(document.body.querySelector('[data-line-tolerance]')!.textContent).toBe('溢装 +3% / 短装 −3%');
+  expect(document.body.querySelector('[data-line-range]')!.textContent).toMatch(/970.*1,?030/);
+  expect(document.body.querySelector('[data-line-verdict]')!.getAttribute('data-line-verdict')).toBe(departed===980?'within':'short');
+  await act(async()=>getByRole(document.body,'button',{name:'按实际完工结案'}).click());
+  await act(async()=>getByRole(document.body,'button',{name:submitLabel}).click());
+  expect(document.body.textContent).toContain('请写明结案原因');
+  await lineInput('结案原因','客户接受实际数量');
+  await act(async()=>getByRole(document.body,'button',{name:submitLabel}).click());
+  expect((store.state!.orderLines[0] as unknown as {closure:{status:string}}).closure.status).toBe(status);
+  expect(document.body.querySelector('[data-line-closure]')!.textContent).toBe(label);
+  expect((getByRole(document.body,'button',{name:'按实际完工结案'}) as HTMLButtonElement).disabled).toBe(true);
+});
