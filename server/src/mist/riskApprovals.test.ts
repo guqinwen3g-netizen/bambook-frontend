@@ -91,4 +91,27 @@ describe('风险分级权限经仓储与统一审批全链路',()=>{
   auth.users.get('owner')!.permissions=auth.users.get('owner')!.permissions.filter(p=>p!=='orders:write');
   await expect(f.run({type:'platform.risk.plan',payload:{id,plan:'改方案'}})).rejects.toMatchObject({code:'FORBIDDEN'});
  });
+ it('同名不同账号：合法成员把显示名改成来源负责人姓名，仍不能登记或处理其订单风险；负责人本人照常办理',async()=>{
+  const f=await fixture(),orderId=await f.order('owner','RISK-PO-TWIN');
+  // other 是合法空间成员，只有风险读、订单写、客户档案写，没有风险写。
+  auth.users.set('other',{active:true,permissions:['risk:read','orders:write','relations:write']});
+  const row=db.workspaces.get(f.workspace.id)!;row.state.memberIds=['other'];row.state.members=[{userId:'other',name:'other',addedBy:'owner',addedByName:'owner',addedAt:'2026-10-13T08:00:00Z'}];
+  const as=(displayName:string)=>({...testActor('other'),displayName,roles:[]});
+  let n=0;const exec=(actor:any,command:any)=>repo.execute(actor,f.workspace.id,{requestId:'twin-'+(++n),expectedRevision:f.revision(),command}).then(next=>{f.setRevision(next.workspace.revision);return next;});
+  const before=f.revision();
+  await expect(exec(as('other'),risk(orderId,'other','warning'))).rejects.toMatchObject({code:'FORBIDDEN'});
+  await expect(exec(as('owner'),risk(orderId,'owner','warning'))).rejects.toMatchObject({code:'FORBIDDEN'});
+  expect(f.revision()).toBe(before);
+  // 负责人本人登记后，同名账号也不能接手或推进。
+  const id=(await f.run(risk(orderId,'owner','warning'))).receipt.result.id as string;
+  await expect(exec(as('owner'),{type:'platform.risk.transition',payload:{id,state:'Acknowledged',resolution:''}})).rejects.toMatchObject({code:'FORBIDDEN'});
+  await f.run({type:'platform.risk.transition',payload:{id,state:'Acknowledged',resolution:'我来跟'}});
+  await expect(exec(as('owner'),{type:'platform.risk.plan',payload:{id,plan:'冒名方案'}})).rejects.toMatchObject({code:'FORBIDDEN'});
+  await expect(exec(as('owner'),{type:'platform.risk.transition',payload:{id,state:'Resolved',resolution:'冒名关闭'}})).rejects.toMatchObject({code:'FORBIDDEN'});
+  await f.run({type:'platform.risk.plan',payload:{id,plan:'本周与客户确认'}});
+  await f.run({type:'platform.risk.transition',payload:{id,state:'Resolved',resolution:'客户已确认'}});
+  const saved=db.workspaces.get(f.workspace.id)!.state;
+  expect(saved.orders.find((o:any)=>o.id===orderId)).toMatchObject({owner:'owner',ownerId:'owner'});
+  expect(saved.platform.risks.find((r:any)=>r.id===id)).toMatchObject({state:'Resolved',closedBy:'owner'});
+ });
 });

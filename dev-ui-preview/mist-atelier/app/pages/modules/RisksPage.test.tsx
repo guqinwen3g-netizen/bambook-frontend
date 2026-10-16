@@ -28,8 +28,9 @@ const row = (text: string) => [...host.querySelectorAll<HTMLElement>('[role="row
 
 const detail = (id: string) => host.querySelector(`[data-risk-detail="${id}"]`)!;
 /** 直接放一条订单来源的风险（不经种子），用于分级与负责人场景。 */
-function orderRisk(patch: Partial<RiskRecord>, owner?: string): RiskRecord {
-  const o = state.orders[0]; if (owner) o.owner = owner;
+/** owner 为来源订单负责人姓名；ownerId 为服务端绑定的负责人账号（缺省为空，即旧资料未绑定）。 */
+function orderRisk(patch: Partial<RiskRecord>, owner?: string, ownerId?: string): RiskRecord {
+  const o = state.orders[0]; if (owner) o.owner = owner; if (ownerId) o.ownerId = ownerId; else if (owner) delete o.ownerId;
   const r: RiskRecord = { id: 'risk-x', orderId: o.id, title: '订单交期风险', level: 'warning', basis: '工厂回复晚 3 天', owner: o.owner, state: 'InProgress', resolution: '', createdAt: '2026-10-13T02:00:00.000Z', type: 'delivery', source: { kind: 'order', id: o.id, label: o.code }, createdBy: o.owner, acknowledgedAt: '2026-10-13T03:00:00.000Z', plan: '夜班追回', escalations: [], ...patch };
   state.platform!.risks.unshift(r); return r;
 }
@@ -108,13 +109,22 @@ describe('风险管理与合规', () => {
   });
   it('业务员（订单写、无风险写）：只能处理本人订单上的风险', async () => {
     bridge.perms = ['risk:read', 'orders:write'];
-    const mine = orderRisk({ id: 'risk-mine', state: 'Open', plan: undefined }, '沈禾');
+    const mine = orderRisk({ id: 'risk-mine', state: 'Open', plan: undefined }, '沈禾', 'demo-buyer');
     await mount(mine.id);
     expect(host.textContent).toContain('按负责人处理');
     expect(button('接手', detail(mine.id))!.disabled).toBe(false);
     expect(button('手工登记')!.disabled).toBe(false);
     await act(async () => root!.unmount()); host.remove();
-    state.orders[0].owner = '顾言'; await mount(mine.id);
+    // 同显示名（沈禾）但负责人绑定的是另一个账号：不能处理，也不能把该订单当作本人订单登记。
+    state.orders[0].ownerId = 'demo-buyer-2'; state.orders.slice(1).forEach(o => { delete o.ownerId; }); await mount(mine.id);
+    expect(button('接手', detail(mine.id))!.disabled).toBe(true); expect(detail(mine.id).textContent).toContain('只有来源负责人（沈禾）本人');
+    expect(button('手工登记')!.disabled).toBe(true);
+    await act(async () => root!.unmount()); host.remove();
+    // 旧资料：负责人只有姓名、未绑定账号，即使与我同名也不按姓名认定。
+    delete state.orders[0].ownerId; await mount(mine.id);
+    expect(button('接手', detail(mine.id))!.disabled).toBe(true); expect(detail(mine.id).textContent).toContain('尚未绑定账号');
+    await act(async () => root!.unmount()); host.remove();
+    state.orders[0].owner = '顾言'; state.orders[0].ownerId = 'demo-sales'; await mount(mine.id);
     expect(button('接手', detail(mine.id))!.disabled).toBe(true); expect(detail(mine.id).textContent).toContain('只有来源负责人（顾言）');
     const cert = state.platform!.risks.find(r => r.source?.kind === 'supplier')!; await act(async () => root!.unmount()); host.remove(); await mount(cert.id);
     expect(detail(cert.id).textContent).toContain('供应商来源的风险需要风险处理权限');
@@ -123,5 +133,19 @@ describe('风险管理与合规', () => {
     bridge.perms = ['risk:read']; const r = risk('Open'); await mount(r.id);
     expect(button('接手', detail(r.id))!.disabled).toBe(true);
     expect(button('手工登记')).toBeUndefined(); expect(host.textContent).toContain('只读查看');
+  });
+});
+
+describe('风险审批与操作记录的日期口径', () => {
+  it('同一审批事件跨 UTC 日界：风险详情、审批记录、操作记录都按北京时间显示同一天', async () => {
+    // 北京时间 2026-10-17 01:30 = UTC 2026-10-16 17:30。
+    const at = '2026-10-16T17:30:00.000Z';
+    const r = orderRisk({ id: 'risk-tz', state: 'InProgress', acknowledgedAt: at, escalations: [{ id: 'esc-tz', approver: '部门主管', reason: '夜班加工费', requestedBy: '沈禾', requestedAt: at, decision: 'approved', decisionNote: '同意', decidedBy: '周敏', decidedAt: at, action: 'authorize', requesterId: 'demo-buyer', reviewerIds: ['demo-reviewer'] }] }, '沈禾', 'demo-buyer');
+    state.events.unshift({ id: 'ev-tz', entityType: 'risk', entityId: r.id, at, actor: '周敏', text: '批准受控授权申请：同意', fileIds: [] });
+    await mount(r.id);
+    const text = detail(r.id).textContent!;
+    expect(text).toContain('周敏 · 10/17'); expect(text).toContain('沈禾 · 10/17');
+    expect(text).not.toContain('10/16');
+    expect(text).toContain('2026/10/17');
   });
 });

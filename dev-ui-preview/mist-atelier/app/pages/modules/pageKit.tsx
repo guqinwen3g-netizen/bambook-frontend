@@ -62,4 +62,17 @@ export function DetailBlock({ title, aside, children }: { title: React.ReactNode
 
 export const isoDay = (value: string) => (value || '').slice(0, 10);
 export const todayIso = () => new Date().toISOString().slice(0, 10);
-export const shortWhen = (value: string) => { const day = isoDay(value); return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day.slice(5).replace('-', '/') : '—'; };
+/** 应用业务时区（与服务端 BUSINESS_TIME_ZONE、platformBusinessDate、审批中心同口径）。 */
+export const BUSINESS_TZ = 'Asia/Shanghai';
+/** 时刻（ISO 时间戳）所在的业务日；纯日期原样返回。不能直接截取 UTC 字符串，否则北京时间 0–8 点会落到前一天。 */
+export const businessDay = (value: string) => {
+  const raw = value || '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw) || !/^\d{4}-\d{2}-\d{2}T/.test(raw)) return isoDay(raw);
+  const at = new Date(raw); if (!Number.isFinite(at.getTime())) return isoDay(raw);
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: BUSINESS_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(at);
+  const get = (k: string) => parts.find(p => p.type === k)?.value || '';
+  return get('year') + '-' + get('month') + '-' + get('day');
+};
+/** 完整时刻，按业务时区显示（操作记录等）。 */
+export const businessWhen = (value: string) => { const at = new Date(value); return Number.isFinite(at.getTime()) ? at.toLocaleString('zh-CN', { timeZone: BUSINESS_TZ }) : '—'; };
+export const shortWhen = (value: string) => { const day = businessDay(value); return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day.slice(5).replace('-', '/') : '—'; };

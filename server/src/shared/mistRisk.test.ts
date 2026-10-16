@@ -48,9 +48,11 @@ describe('风险登记与处理闭环', () => {
 });
 
 /** 演示订单：负责人即业务员；另一位业务员不负责该订单。 */
+/** 合成订单：负责人已绑定稳定账号（服务端在负责人本人建单 / 改为本人时绑定，见 bindSourceOwners）。 */
 function owned() {
   const { state } = demo(); const order = state.orders.find(o => o.owner)!; const owner = order.owner, other = '另一业务员';
   expect(order).toBeTruthy(); expect(state.orders.some(o => o.owner === other)).toBe(false);
+  order.ownerId = 'id-' + owner;
   return { state, order, owner, other };
 }
 const save = (orderId: string, owner: string, level = 'warning') => ({ type: 'platform.risk.save', payload: { orderId, title: level === 'critical' ? '尾款逾期严重' : '交期风险', level, basis: '厂方回复延误', owner, type: 'delivery' } });
@@ -82,7 +84,7 @@ describe('风险分级权限：业务员只管理本人客户 / 订单的风险'
     expect(s.platform!.risks[0].owner).toBe(owner);
   });
   it('客户来源按客户负责人判断，需要客户档案写权限', () => {
-    const { state } = demo(); const cu = state.customers.find(x => x.owner)!;
+    const { state } = demo(); const cu = state.customers.find(x => x.owner)!; cu.ownerId = 'id-' + cu.owner;
     const cmd = { type: 'platform.risk.save', payload: { title: '客户信用', level: 'warning', basis: 'x', owner: cu.owner, type: 'credit', source: { kind: 'customer', id: cu.id } } };
     expect(run(state, cmd, sales(cu.owner)).state.platform!.risks[0].source).toMatchObject({ kind: 'customer', id: cu.id });
     expect(() => run(state, cmd, sales(cu.owner, { customers: false }))).toThrow(/本人负责/);
@@ -174,5 +176,71 @@ describe('权限', () => {
   it('没有服务端重建的处理权时一律拒绝', () => {
     const { state, order, owner } = owned(); const bare = { ...sales(owner), authority: { supplier: {} } } as MistContext;
     expect(() => run(state, save(order.id, owner), bare)).toThrow(/本人负责/);
+  });
+});
+
+describe('来源负责人按稳定账号判断，不按显示姓名', () => {
+  /** 与来源负责人同显示名、但是另一个账号；仅有订单写 / 客户档案写，没有风险写。 */
+  const twin = (name: string, access: Access = {}) => ({ ...sales(name, access), actorId: 'id-twin-' + name });
+  it('同名不同账号：登记、接手、方案、关闭、申请都在服务端拒绝；来源负责人本人仍可办理', () => {
+    const { state, order, owner } = owned(), me = sales(owner), impostor = twin(owner);
+    expect(impostor.actorName).toBe(me.actorName); expect(impostor.actorId).not.toBe(me.actorId);
+    expect(() => run(state, save(order.id, owner), impostor)).toThrow(/本人负责/);
+    let s = run(state, save(order.id, owner), ctx('周经理')).state; const id = s.platform!.risks[0].id;
+    const tryAll = (st: MistState) => [
+      { type: 'platform.risk.transition', payload: { id, state: 'Acknowledged', resolution: '' } },
+      { type: 'platform.risk.plan', payload: { id, plan: 'x' } },
+      { type: 'platform.risk.transition', payload: { id, state: 'Resolved', resolution: 'x' } },
+      { type: 'platform.risk.escalate', payload: { id, action: 'waive', reason: 'x' } },
+    ].forEach(cmd => expect(() => run(st, cmd, impostor)).toThrow(/本人负责/));
+    tryAll(s);
+    s = inProgress(s, id, me); tryAll(s);
+    expect(s.platform!.risks[0]).toMatchObject({ owner, state: 'InProgress' });
+    // 本人账号：低风险直接关闭不受影响。
+    s = run(s, { type: 'platform.risk.transition', payload: { id, state: 'Resolved', resolution: '客户确认' } }, me).state;
+    expect(s.platform!.risks[0]).toMatchObject({ state: 'Resolved', closedBy: owner });
+  });
+  it('同名不同账号不能撤回本人的审批申请；客户来源同样按账号判断', () => {
+    const { state, order, owner } = owned(), me = sales(owner), impostor = twin(owner);
+    let s = run(state, save(order.id, owner, 'critical'), me).state; const id = s.platform!.risks[0].id;
+    s = inProgress(s, id, me); s = run(s, { type: 'platform.risk.escalate', payload: { id, action: 'close', reason: '已付清' } }, me).state;
+    const escalationId = pendingEscalation(s.platform!.risks[0])!.id;
+    expect(() => run(s, { type: 'platform.risk.withdraw', payload: { id, escalationId } }, impostor)).toThrow(/只有申请人/);
+    const cu = state.customers.find(x => x.owner)!; cu.ownerId = 'id-' + cu.owner;
+    const cmd = { type: 'platform.risk.save', payload: { title: '客户信用', level: 'warning', basis: 'x', owner: cu.owner, type: 'credit', source: { kind: 'customer', id: cu.id } } };
+    expect(() => run(state, cmd, twin(cu.owner))).toThrow(/本人负责/);
+    expect(run(state, cmd, sales(cu.owner)).state.platform!.risks[0].owner).toBe(cu.owner);
+  });
+  it('旧资料负责人未绑定账号：即使姓名一致也拒绝并说明原因，不按姓名猜测；持风险写权限的主管仍可办理', () => {
+    const { state, order, owner } = owned(); delete order.ownerId;
+    expect(() => run(state, save(order.id, owner), sales(owner))).toThrow(/尚未绑定账号/);
+    expect(run(state, save(order.id, owner), ctx('周经理')).state.platform!.risks).toHaveLength(state.platform!.risks.length + 1);
+  });
+  it('失去来源写权限后，本人账号也被拒绝', () => {
+    const { state, order, owner } = owned(), me = sales(owner);
+    let s = run(state, save(order.id, owner), me).state; const id = s.platform!.risks[0].id;
+    expect(() => run(s, { type: 'platform.risk.transition', payload: { id, state: 'Acknowledged', resolution: '' } }, sales(owner, { orders: false }))).toThrow(/需要订单写权限/);
+    s = inProgress(s, id, me);
+    expect(() => run(s, { type: 'platform.risk.plan', payload: { id, plan: 'y' } }, sales(owner, { orders: false }))).toThrow(/本人负责/);
+  });
+  it('负责人绑定只由服务端写：本人建单绑定；改派他人解除；请求体带 ownerId 无效；改回本人重新绑定', () => {
+    const c0 = ctx('顾言'), base = createMistState(c0, 'empty');
+    const boss = ctx('周经理'), me = sales('业务甲'), impostor = twin('业务甲');
+    let s = run(base, { type: 'market.customer.create', payload: { input: { name: '合成客户', country: '', city: '', industry: '', owner: '业务甲', grade: '', currency: 'USD', terms: '', incoterm: '', categories: '', creditLimit: 0, since: '2026-10-14' } } }, me).state;
+    const cu = s.customers.find(x => x.name === '合成客户')!; expect(cu.ownerId).toBe('id-业务甲');
+    // 主管把客户改派给“业务乙”：只有姓名文本，不能确认账号 → 解除绑定。
+    s = run(s, { type: 'market.customer.update', payload: { id: cu.id, patch: { owner: '业务乙' } } }, boss).state;
+    expect(s.customers.find(x => x.id === cu.id)!.ownerId).toBeUndefined();
+    // 请求体想直接写入 ownerId：被忽略。
+    s = run(s, { type: 'market.customer.update', payload: { id: cu.id, patch: { city: '杭州', ownerId: 'id-业务甲' } as any } }, boss).state;
+    expect(s.customers.find(x => x.id === cu.id)!.ownerId).toBeUndefined();
+    // 同名账号把负责人填回“业务甲”：绑定的是执行人自己的账号，不会冒用原负责人账号。
+    const t = run(s, { type: 'market.customer.update', payload: { id: cu.id, patch: { owner: '业务甲' } } }, impostor).state;
+    expect(t.customers.find(x => x.id === cu.id)!.ownerId).toBe('id-twin-业务甲');
+    s = run(s, { type: 'market.customer.update', payload: { id: cu.id, patch: { owner: '业务甲' } } }, me).state;
+    expect(s.customers.find(x => x.id === cu.id)!.ownerId).toBe('id-业务甲');
+    // 负责人不变的其他修改保留原绑定。
+    s = run(s, { type: 'market.customer.update', payload: { id: cu.id, patch: { city: '苏州' } } }, impostor).state;
+    expect(s.customers.find(x => x.id === cu.id)!.ownerId).toBe('id-业务甲');
   });
 });

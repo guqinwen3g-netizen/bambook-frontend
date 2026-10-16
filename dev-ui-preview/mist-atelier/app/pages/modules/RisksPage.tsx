@@ -8,13 +8,13 @@ import { AlertTriangle, ArrowUpRight, Check, Download, FileText, Gavel, Plus, Sh
 import { Banner, Button, Card, Checklist, DataTable, EmptyState, Facts, MistPage, ObjectCell, PageHeader, Pill, Segmented, SummaryBar, Timeline, type Column, type Tone } from '../../../../../components/mist';
 import type { MistState } from '../../../../../server/src/shared/mistWorkspace';
 import { platformBusinessDate } from '../../../../../server/src/shared/mistPlatform';
-import { RISK_ACTIONS, RISK_ACTION_LABEL, RISK_STATE_LABEL, isHighRisk, isReviewedEscalation, pendingEscalation, riskBusinessOwner, riskEffectiveLevel, riskSignals, riskSource, riskType, type RiskEscalation, type RiskRecord, type RiskRequestAction, type RiskSignal, type RiskSourceKind, type RiskType } from '../../../../../server/src/shared/mistRisk';
+import { RISK_ACTIONS, RISK_ACTION_LABEL, RISK_STATE_LABEL, isHighRisk, isReviewedEscalation, pendingEscalation, riskBusinessOwner, riskEffectiveLevel, riskOwnRefusal, riskSignals, riskSource, riskType, type RiskEscalation, type RiskRecord, type RiskRequestAction, type RiskSignal, type RiskSourceKind, type RiskType } from '../../../../../server/src/shared/mistRisk';
 import { useMistWorkspace } from '../../runtime/workspace';
 import { useMistSession } from '../../runtime/auth';
 import { useNav } from '../../nav';
 import { ModuleEditorDialog, downloadModuleCsv, type ModuleEditorSpec } from './ModuleWorkbench';
 import { useRouteDraft } from './useRouteDraft';
-import { ActionBar, DetailBlock, DetailBody, ListDetail, shortWhen } from './pageKit';
+import { ActionBar, DetailBlock, DetailBody, ListDetail, businessWhen, shortWhen } from './pageKit';
 
 type Tab = 'signals' | 'ledger';
 type LedgerFilter = 'open' | 'escalated' | 'closed' | 'all';
@@ -59,13 +59,11 @@ export function RisksPage() {
     if (canAll) return false;
     const b = riskBusinessOwner(state, kind, id);
     if (!b.domain) return '供应商来源的风险需要风险处理权限';
-    if (!b.owner || b.owner !== me) return `只有来源负责人（${b.owner || '未指定'}）或持风险处理权限的同事可以处理`;
-    if (b.domain === 'orders' && !canOrders) return '需要订单写权限';
-    if (b.domain === 'customers' && !canCustomers) return '需要客户档案写权限';
-    return false;
+    // 只认来源负责人的绑定账号，不按显示姓名判断本人（重名、改名都不能获得处理权）。
+    return riskOwnRefusal(b, meId, { orders: canOrders, customers: canCustomers });
   };
   const riskReason = (r: RiskRecord) => { const src = riskSource(state, r); return src ? handleReason(src.kind, src.id) : '来源未记录，需要风险处理权限'; };
-  const ownOrders = (state?.orders || []).filter(o => canAll || (canOrders && o.owner === me));
+  const ownOrders = (state?.orders || []).filter(o => canAll || (canOrders && !!meId && o.ownerId === meId));
   const switchTab = (t: Tab) => { setTab(t); setPicked(null); setDrawer(false); go('risks', undefined, { section: t }); };
   const openRisk = (id: string) => { setTab('ledger'); if (risks.find(r => r.id === id)?.state === 'Resolved') setLedgerFilter('all'); setPicked(id); setDrawer(true); go('risks', id, { section: 'ledger' }); };
   const pick = (id: string) => { setPicked(id); setDrawer(true); go('risks', id, { section: tab }); };
@@ -128,7 +126,7 @@ export function RisksPage() {
 
   return <MistPage>
     <PageHeader eyebrow="财务与成本 · 风险" title="风险管理与合规" description="预警来自逾期应收、往来冻结、供应商认证与状态、QC 与生产交期；登记后由一位负责人推进到关闭。"
-      actions={<><Button icon={Download} onClick={exportRows}>导出</Button>{(canAll || canOrders) && <Button variant="primary" icon={Plus} disabled={locked || !ownOrders.length} title={ownOrders.length ? undefined : canAll ? '还没有订单' : '你还没有负责的订单'} onClick={() => setDialog(registerSpec())}>手工登记</Button>}</>} />
+      actions={<><Button icon={Download} onClick={exportRows}>导出</Button>{(canAll || canOrders) && <Button variant="primary" icon={Plus} disabled={locked || !ownOrders.length} title={ownOrders.length ? undefined : canAll ? '还没有订单' : '没有负责人绑定为你账号的订单'} onClick={() => setDialog(registerSpec())}>手工登记</Button>}</>} />
     {!can && <div className="mist-section"><Banner tone="neutral" title="只读查看">你的账号没有风险处理权限，可查看预警与台账，不能登记或推进。</Banner></div>}
     {can && !canAll && <div className="mist-section"><Banner tone="neutral" title="按负责人处理">你可以登记和推进本人负责的客户 / 订单上的风险，并直接关闭提示、警告级风险；严重风险的关闭、豁免与带风险放行需提交部门主管审批。</Banner></div>}
     {error && <div className="mist-section"><Banner tone="bad" title="数据未加载" actions={<Button onClick={() => void refresh()}>重试</Button>}>{error}</Banner></div>}
@@ -208,7 +206,7 @@ function RiskDetail({ r, state, day, me, meId, canDecide, locked, writeReason, o
       <div className="mist-row" style={{ gap: 8 }}><Pill tone={e.decision === 'approved' ? 'ok' : 'neutral'}>{isReviewedEscalation(e) ? DECISION_LABEL[e.decision] : e.decision === 'approved' ? '已授权' : DECISION_LABEL[e.decision]}</Pill>{e.action && <Pill>{RISK_ACTION_LABEL[e.action]}</Pill>}<span className="mist-muted">{e.requestedBy} → {e.decidedBy} · {shortWhen(e.decidedAt)}</span></div>
       <small className="mist-muted">申请：{e.reason}</small>{e.decisionNote && <small>{e.decision === 'withdrawn' ? '撤回原因' : '意见'}：{e.decisionNote}</small>}</div>)}</div></DetailBlock>}
     {done && <DetailBlock title={r.disposition === 'waived' ? '豁免依据' : '关闭依据'}><p className="mist-sub" style={{ whiteSpace: 'pre-line' }}>{r.resolution}</p></DetailBlock>}
-    <DetailBlock title="操作记录">{events.length ? <Timeline events={events.map(e => ({ who: e.actor, when: new Date(e.at).toLocaleString('zh-CN'), text: e.text }))} /> : <span className="mist-muted">暂无记录。</span>}</DetailBlock>
+    <DetailBlock title="操作记录">{events.length ? <Timeline events={events.map(e => ({ who: e.actor, when: businessWhen(e.at), text: e.text }))} /> : <span className="mist-muted">暂无记录。</span>}</DetailBlock>
     {!r.type && <span className="mist-note"><AlertTriangle size={12} /> 早期登记的风险，未记录类型与来源类别，按订单来源显示。</span>}
   </DetailBody>;
 }

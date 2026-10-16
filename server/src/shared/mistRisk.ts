@@ -70,18 +70,33 @@ export function riskEffectiveLevel(state: MistState | null, r: RiskRecord, day: 
  * 来源记录的业务负责人：订单 / 发票 / 生产分支取所属订单负责人；客户取客户负责人；组织取所关联客户的负责人；
  * 供应商没有客户主线负责人。domain 指业务员处理该风险还需持有的现有岗位写权限（订单写 / 客户档案写）。
  */
-export function riskBusinessOwner(state: MistState | null, kind: RiskSourceKind, id: string): { owner: string; domain: 'orders' | 'customers' | null } {
-  if (!state) return { owner: '', domain: null };
-  const orderOwner = (orderId: string) => state.orders.find(o => o.id === orderId)?.owner || '';
-  const customerOwner = (customerId: string) => state.customers.find(c => c.id === customerId)?.owner || '';
+export type RiskBusinessOwner = { owner: string; /** 负责人的稳定账号；旧资料或指派给他人时为空，不能按姓名认定本人。 */ ownerId: string; domain: 'orders' | 'customers' | null };
+export function riskBusinessOwner(state: MistState | null, kind: RiskSourceKind, id: string): RiskBusinessOwner {
+  const none = { owner: '', ownerId: '' };
+  if (!state) return { ...none, domain: null };
+  const of = (row?: { owner: string; ownerId?: string }) => row ? { owner: row.owner || '', ownerId: row.ownerId || '' } : none;
+  const order = (orderId: string) => of(state.orders.find(o => o.id === orderId));
+  const customer = (customerId: string) => of(state.customers.find(c => c.id === customerId));
   switch (kind) {
-    case 'order': return { owner: orderOwner(id), domain: 'orders' };
-    case 'invoice': { const i = state.invoices.find(x => x.id === id); return { owner: i ? orderOwner(i.orderId) : '', domain: 'orders' }; }
-    case 'production': { const p = state.productions.find(x => x.id === id); return { owner: p ? orderOwner(p.orderId) : '', domain: 'orders' }; }
-    case 'customer': return { owner: customerOwner(id), domain: 'customers' };
-    case 'relation': { const r = (state.market?.relations || []).find(x => x.id === id); return { owner: r?.customerId ? customerOwner(r.customerId) : '', domain: 'customers' }; }
-    default: return { owner: '', domain: null };
+    case 'order': return { ...order(id), domain: 'orders' };
+    case 'invoice': { const i = state.invoices.find(x => x.id === id); return { ...(i ? order(i.orderId) : none), domain: 'orders' }; }
+    case 'production': { const p = state.productions.find(x => x.id === id); return { ...(p ? order(p.orderId) : none), domain: 'orders' }; }
+    case 'customer': return { ...customer(id), domain: 'customers' };
+    case 'relation': { const r = (state.market?.relations || []).find(x => x.id === id); return { ...(r?.customerId ? customer(r.customerId) : none), domain: 'customers' }; }
+    default: return { ...none, domain: null };
   }
+}
+/**
+ * 业务员处理本人来源风险的判定（服务端与界面共用）：来源负责人须已绑定账号且就是当前账号，并持有对应现有写权限。
+ * 只比对稳定账号，不比对显示姓名；负责人未绑定账号（旧资料、指派给他人）时明确拒绝，由持风险处理权限的同事办理。
+ */
+export function riskOwnRefusal(b: RiskBusinessOwner, actorId: string | undefined, rights: { orders: boolean; customers: boolean }): string | false {
+  if (!b.domain) return '此来源没有客户或订单负责人，请交持风险处理权限的同事处理';
+  if (!b.owner) return '来源记录未指定负责人，请交持风险处理权限的同事处理';
+  if (!b.ownerId) return `来源负责人（${b.owner}）尚未绑定账号，无法确认是否为本人；请交持风险处理权限的同事处理，或由负责人本人重新确认订单 / 客户负责人`;
+  if (!actorId || b.ownerId !== actorId) return `只有来源负责人（${b.owner}）本人或持风险处理权限的同事可以处理`;
+  if (!(b.domain === 'orders' ? rights.orders : rights.customers)) return b.domain === 'orders' ? '需要订单写权限' : '需要客户档案写权限';
+  return false;
 }
 
 /** 当前预警。day = 业务日（上海）。只读，不写入任何记录。 */
@@ -95,7 +110,7 @@ export function riskSignals(state: MistState | null, day: string): RiskSignal[] 
   }
   for (const r of state.market?.relations || []) {
     if (!r.hold || r.status === 'archived') continue;
-    out.push({ key: 'relation-hold:' + r.id, type: 'credit', level: 'warning', title: `${r.name} 往来已冻结`, basis: `冻结原因：${r.hold.reason}（${r.hold.actor} · ${r.hold.at.slice(0, 10)}）。新报价、订单与采购会被拦截，已有业务需逐项确认。`, source: { kind: 'relation', id: r.id, label: r.name }, orderId: '', since: r.hold.at.slice(0, 10) });
+    out.push({ key: 'relation-hold:' + r.id, type: 'credit', level: 'warning', title: `${r.name} 往来已冻结`, basis: `冻结原因：${r.hold.reason}（${r.hold.actor} · ${riskBusinessDay(r.hold.at)}）。新报价、订单与采购会被拦截，已有业务需逐项确认。`, source: { kind: 'relation', id: r.id, label: r.name }, orderId: '', since: riskBusinessDay(r.hold.at) });
   }
   for (const s of state.market?.suppliers || []) {
     for (const c of s.certificates || []) {
@@ -126,13 +141,13 @@ function text(v: unknown, label: string, required = true, max = 4000) { if (type
 function optionalDay(v: unknown, label: string) { if (v === undefined || v === '') return ''; const s = text(v, label); if (!/^\d{4}-\d{2}-\d{2}$/.test(s) || new Date(s + 'T00:00:00Z').toISOString().slice(0, 10) !== s) fail(label + '无效'); return s; }
 function find(rows: RiskRecord[], id: string) { const r = rows.find(x => x.id === id); if (!r) fail('风险不存在', 'NOT_FOUND'); return r!; }
 /** 处理权：持风险写权限者（主管、财务等）不限来源；其他账号只能处理来源为本人客户 / 订单、且持有对应现有写权限的风险。 */
-function canHandle(root: MistState, c: MistContext, kind: RiskSourceKind, id: string) {
-  const a = c.authority?.risk; if (!a) return false; if (a.all) return true;
-  const b = riskBusinessOwner(root, kind, id);
-  return !!b.owner && b.owner === c.actorName && (b.domain === 'orders' ? a.orders : b.domain === 'customers' ? a.customers : false);
+function handleRefusal(root: MistState, c: MistContext, kind: RiskSourceKind, id: string): string | false {
+  const a = c.authority?.risk; if (!a) return '当前账号没有风险处理权限'; if (a.all) return false;
+  return riskOwnRefusal(riskBusinessOwner(root, kind, id), c.actorId, a);
 }
 function assertHandle(root: MistState, c: MistContext, row: RiskRecord) {
-  const src = riskSource(root, row); if (!src || !canHandle(root, c, src.kind, src.id)) fail('只能处理本人负责的客户或订单上的风险；其他风险由其负责人或持风险处理权限的同事办理', 'FORBIDDEN');
+  const src = riskSource(root, row), why = src ? handleRefusal(root, c, src.kind, src.id) : '风险来源未记录';
+  if (why) fail('只能处理本人负责的客户或订单上的风险；其他风险由其负责人或持风险处理权限的同事办理。' + why, 'FORBIDDEN');
 }
 function emit(root: MistState, c: MistContext, id: string, message: string) { root.events.unshift({ id: c.id(), entityType: 'risk', entityId: id, at: c.now, actor: c.actorName, text: message, fileIds: [] }); }
 function sourceOf(root: MistState, kind: RiskSourceKind, id: string): { label: string; orderId: string } {
@@ -184,7 +199,8 @@ export function applyRiskCommand(root: MistState, risks: RiskRecord[], command: 
       if (v.source) { if (!RISK_SOURCE_KINDS.includes(v.source.kind)) fail('来源类型无效'); const s = sourceOf(root, v.source.kind, text(v.source.id, '来源')); src = { kind: v.source.kind, id: v.source.id, label: s.label }; orderId = s.orderId; }
       else { if (!v.orderId) fail('请选择风险来源记录'); sourceOf(root, 'order', text(v.orderId, '来源订单')); orderId = v.orderId; }
       const kind: RiskSourceKind = src ? src.kind : 'order', sourceId = src ? src.id : orderId;
-      if (!canHandle(root, c, kind, sourceId)) fail('只能登记本人负责的客户或订单上的风险；其他来源请交其负责人或持风险处理权限的同事登记', 'FORBIDDEN');
+      const why = handleRefusal(root, c, kind, sourceId);
+      if (why) fail('只能登记本人负责的客户或订单上的风险；其他来源请交其负责人或持风险处理权限的同事登记。' + why, 'FORBIDDEN');
       const owner = text(v.owner, '负责人', true, 100);
       if (!c.authority?.risk?.all && owner !== c.actorName) fail('登记本人客户或订单的风险时，负责人须为本人；需要交给他人请由主管转交', 'FORBIDDEN');
       const signalKey = v.signalKey === undefined ? undefined : text(v.signalKey, '预警标识', true, 200);
