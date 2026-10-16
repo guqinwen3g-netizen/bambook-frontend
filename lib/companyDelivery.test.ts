@@ -21,9 +21,10 @@ describe('User-approved company V1 delivery entries', () => {
   });
   it('keeps current MVP personal overview entries and reports in platform', () => {
     const modules = getPrimaryNavigationModules({ isAdmin: true, canAccessView: () => true });
+    expect(getPrimaryNavigationModules({ isAdmin: false, canAccessView: view => view !== View.Emails }).some(module => module.view === View.Emails)).toBe(false);
     expect(modules.some(module => module.view === View.Dashboard)).toBe(false);
     expect(modules.find(module => module.view === COMPANY_HOME_VIEW)?.productLabel).toBe('我的工作');
-    expect(modules.filter(module => module.nav.group === 'overview').map(module => module.view)).toEqual([View.Cockpit, View.Calendar]);
+    expect(modules.filter(module => module.nav.group === 'overview').map(module => module.view)).toEqual([View.Cockpit, View.Calendar, View.Emails]);
     expect(modules.find(module => module.view === View.Reports)?.nav.group).toBe('platform');
   });
   it('marks precisely the two requested development entries, with an actual pure placeholder', () => {

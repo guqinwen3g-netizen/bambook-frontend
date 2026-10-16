@@ -3,7 +3,9 @@ import { apiService } from '../../../../services/apiService';
 import { useMistSession } from './auth';
 import type { MistCommand, MistFile, MistRunReceipt, MistState, MistWorkspaceEnvelope } from '../../../../server/src/shared/mistWorkspace';
 
-type Pending = { workspaceId: string; requestId: string; expectedRevision: number; kind: 'command' | 'upload' | 'archive' | 'restore' | 'member'; command?: MistCommand; file?: { name: string; size: number; sha256?: string }; actorId?: string; claimId?: string; action?: 'add' | 'remove'; account?: string };
+type Pending = { workspaceId: string; requestId: string; expectedRevision: number; kind: 'command' | 'upload' | 'archive' | 'restore' | 'member' | 'mail-send'; command?: MistCommand; file?: { name: string; size: number; sha256?: string }; actorId?: string; claimId?: string; action?: 'add' | 'remove'; account?: string;
+  /** 邮件发送意图：发出前存本机，丢失回执后用同一 requestKey 核对；凭据类动作绝不写入。 */
+  mail?: { requestKey: string; draftId?: string; forwardOfId?: string; input: Record<string, unknown> } };
 export type MistUploadOptions={claimId:string};
 export type ArchivedMistWorkspace={id:string;name:string;revision:number;archivedAt:string};
 export type MistPendingCreate = { actorId: string; slug: string; name: string; seed: 'demo' | 'empty' };
@@ -43,6 +45,7 @@ const Context = React.createContext<MistWorkspaceContext | null>(null);
 const BASE = '/api/mist/workspaces';
 const nonempty = (value: unknown): value is string => typeof value === 'string' && !!value.trim();
 const object = (value: unknown): value is Record<string, any> => !!value && typeof value === 'object' && !Array.isArray(value);
+const mailRequestKey = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{8,80}$/.test(value);
 const claimIdentifier=(value:unknown):value is string=>typeof value==='string'&&value.length<=120&&/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
 async function creditPdfBytes(blob: Blob): Promise<Uint8Array> {
   const buffer = typeof blob.arrayBuffer === 'function' ? await blob.arrayBuffer() : await new Promise<ArrayBuffer>((resolve, reject) => {
@@ -88,10 +91,20 @@ function validateReceiptState(value: MistWorkspaceEnvelope, acknowledged: MistRu
     if (acknowledged.result.claimId!==intent.claimId || !nonempty(fileId) || !file || file.size !== intent.file?.size || file.name !== intent.file?.name || file.storageKey !== `${intent.workspaceId}/${file.id}`) throw new RequestError('上传回执没有对应当前工作区及原案件目标的原附件');
   }
 }
+/** 发送回执须指向当前空间中由同一 requestKey 登记的发送记录，才算原意图已有结果。 */
+function mailSendAcknowledged(data: any, value: MistWorkspaceEnvelope, intent: Pending) {
+  const id = data?.send?.id, sends = (value.state as any).email?.sends;
+  if (!nonempty(id) || !Array.isArray(sends) || !sends.some((row: any) => row?.id === id && row.requestKey === intent.requestId)) throw new RequestError('发送回执与原请求不符；发送结果尚未确认，请核对原请求');
+}
+const mailSendBody = (intent: Pending) => JSON.stringify({ requestKey: intent.mail!.requestKey, ...(intent.mail!.draftId ? { draftId: intent.mail!.draftId } : {}), input: intent.mail!.input, ...(intent.mail!.forwardOfId ? { forwardOfId: intent.mail!.forwardOfId } : {}) });
+const mailSendSettled = (failure: unknown) => failure instanceof RequestError && failure.status >= 400 && failure.status < 500 && ![408, 429].includes(failure.status) && failure.code !== 'MAIL_BUSY';
 function readPending(raw: string, actorId: string): Pending {
   const value = JSON.parse(raw) as Pending;
   if (!object(value) || !nonempty(value.workspaceId) || !nonempty(value.requestId) || !Number.isSafeInteger(value.expectedRevision) || value.expectedRevision < 0
-    || value.actorId && value.actorId !== actorId || !['command', 'upload','archive','restore','member'].includes(value.kind)
+    || value.actorId && value.actorId !== actorId || !['command', 'upload','archive','restore','member','mail-send'].includes(value.kind)
+    || value.kind === 'mail-send' && (!object(value.mail) || !mailRequestKey(value.mail.requestKey) || value.mail.requestKey !== value.requestId || !object(value.mail.input) || !nonempty(value.mail.input.accountId)
+      || value.mail.draftId !== undefined && !nonempty(value.mail.draftId) || value.mail.forwardOfId !== undefined && !nonempty(value.mail.forwardOfId))
+    || value.mail !== undefined && value.kind !== 'mail-send'
     || value.kind === 'member' && (!['add', 'remove'].includes(value.action!) || !nonempty(value.account) || value.account.length > 200)
     || value.claimId!==undefined&&(value.kind!=='upload'||!claimIdentifier(value.claimId))
     || value.kind === 'command' && (!object(value.command) || !nonempty(value.command.type) || !object(value.command.payload))
@@ -325,16 +338,26 @@ export function MistWorkspaceProvider({ children }: { children: React.ReactNode 
       :action.kind==='send'?{path:'sends',method:'POST',body:{requestKey:action.requestKey,...(action.draftId?{draftId:action.draftId}:{}),...(action.input?{input:action.input}:{}),...(action.forwardOfId?{forwardOfId:action.forwardOfId}:{})}}
       :action.kind==='retry'?{path:'sends/'+id(action.sendId)+'/retry',method:'POST',body:action.confirmUnknown?{confirmUnknown:true}:{}}
       :{path:'sends/'+id(action.sendId)+'/verify',method:'POST',body:{}};
+    if(action.kind==='send'&&(!mailRequestKey(action.requestKey)||!object(action.input)||!nonempty(action.input.accountId)))throw new RequestError('发送内容不完整，请重新核对后发送');
     const token=lock();
+    // 只有发送意图会存本机（收件人/正文属于本人待发内容）；绑定密码等凭据动作从不持久。
+    const intent:Pending|null=action.kind==='send'?{workspaceId:boundWorkspaceId!,requestId:action.requestKey,expectedRevision:snapshot.current!.revision,actorId:authority.userId,kind:'mail-send',mail:JSON.parse(JSON.stringify({requestKey:action.requestKey,...(action.draftId?{draftId:action.draftId}:{}),...(action.forwardOfId?{forwardOfId:action.forwardOfId}:{}),input:action.input}))}:null;
     try{
+      if(intent)persist(intent,authority);
       const data=await request(BASE+'/'+ws+'/email/'+call.path,{method:call.method,...(call.body!==undefined?{body:JSON.stringify(call.body)}:{})});
-      assertSource(authority,boundEpoch,boundWorkspaceId);put(envelope(data.workspace,authority.userId!,boundWorkspaceId),authority);
+      assertSource(authority,boundEpoch,boundWorkspaceId);const value=envelope(data.workspace,authority.userId!,boundWorkspaceId);
+      if(intent)mailSendAcknowledged(data,value,intent);
+      put(value,authority);if(intent)clearPending(authority);
       return {...(data.sync?{sync:data.sync}:{}),...(data.send?{send:data.send}:{})};
     }catch(failure){
+      if(intent&&(pendingRef.current as Pending|null)?.requestId===intent.requestId&&mounted.current&&live.current.key===authority.key&&live.current.userId===authority.userId){
+        if(mailSendSettled(failure))clearPending(authority);
+        else{const message=(failure instanceof Error?failure.message:'发送未完成');const unsure=message.includes('发送结果尚未确认')?message:message+'；发送结果尚未确认，请核对原请求';if(live.current.key===authority.key)await load(authority,boundWorkspaceId).catch(()=>undefined);throw new RequestError(unsure,failure instanceof RequestError?failure.status:0,failure instanceof RequestError?failure.code:undefined);}
+      }
       if(live.current.key===authority.key)await load(authority,boundWorkspaceId).catch(()=>undefined);
       throw failure;
     }finally{unlock(token,authority);}
-  },[authority.key,authority.userId,authority.status,boundEpoch,boundWorkspaceId,assertSource,lock,load,put,unlock]);
+  },[authority.key,authority.userId,authority.status,boundEpoch,boundWorkspaceId,assertSource,lock,load,put,unlock,persist,clearPending]);
   const run = React.useCallback(async (command: MistCommand) => {
     assertSource(authority, boundEpoch, boundWorkspaceId);
     if (pendingCreateRef.current) throw new RequestError(createNotice(pendingCreateRef.current));
@@ -413,6 +436,24 @@ export function MistWorkspaceProvider({ children }: { children: React.ReactNode 
     }
     assertSource(authority, boundEpoch, boundWorkspaceId);
     if (intent.workspaceId !== boundWorkspaceId || intent.actorId && intent.actorId !== authority.userId) throw new RequestError('待核对请求属于其他账号或工作区');
+    if (intent.kind === 'mail-send') {
+      // 用原 requestKey 与原内容重放：服务端已登记则只返回原记录、不重复投递；从未收到则按已确认的原内容发送一次。
+      const token = lock(); setError('');
+      try {
+        const data = await request(BASE + '/' + encodeURIComponent(intent.workspaceId) + '/email/sends', { method: 'POST', body: mailSendBody(intent) });
+        assertSource(authority, boundEpoch, boundWorkspaceId);
+        const value = envelope(data.workspace, authority.userId!, intent.workspaceId); mailSendAcknowledged(data, value, intent);
+        put(value, authority); clearPending(authority);
+        return { requestId: intent.requestId, revision: value.revision, result: { send: data.send } } as unknown as MistRunReceipt;
+      } catch (failure) {
+        if (mounted.current && live.current.key === authority.key && live.current.userId === authority.userId && live.current.status === 'authenticated') {
+          if (mailSendSettled(failure) && pendingRef.current?.requestId === intent.requestId) clearPending(authority);
+        }
+        // 由调用页面展示（邮箱页有专门的核对横幅）；不写入全局读取错误，避免误报“邮箱未读取”。
+        const message = failure instanceof Error ? failure.message : '发送结果仍待核对';
+        throw mailSendSettled(failure) || message.includes('发送结果尚未确认') ? failure : new RequestError(message + '；发送结果尚未确认，请稍后再核对', failure instanceof RequestError ? failure.status : 0, failure instanceof RequestError ? failure.code : undefined);
+      } finally { unlock(token, authority); }
+    }
     const token = lock(); setError('');
     try {
       let data: any;

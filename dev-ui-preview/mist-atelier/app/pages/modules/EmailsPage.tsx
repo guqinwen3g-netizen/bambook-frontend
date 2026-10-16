@@ -80,7 +80,7 @@ export function mailMatches(state: MistState, m: EmailMessage, scope: MailScope)
 }
 
 export function EmailsPage() {
-  const { state, run, error, refresh, loading, saving, pending, mail: mailAction, downloadFile } = useMistWorkspace(), session = useMistSession(), { go, route } = useNav(), toast = useToast();
+  const { state, run, error, refresh, recover, loading, saving, pending, mail: mailAction, downloadFile } = useMistWorkspace(), session = useMistSession(), { go, route } = useNav(), toast = useToast();
   const can = session.hasPermission('emails:write'), canAdmin = session.hasPermission('emails:admin'), locked = saving || !!pending;
   const me = session.user?.id != null ? String(session.user.id) : '';
   const email = state?.email || { accounts: [], messages: [], drafts: [], sends: [] };
@@ -168,10 +168,13 @@ export function EmailsPage() {
     if (result.send?.status !== 'sent' && !result.send?.replayed) changeScope({ kind: 'folder', value: 'outbox' });
     return result;
   };
+  /** 上次发送未收到回执时，写信抽屉保持打开；核对出结果后再关闭对应写信。 */
+  const unsettledCompose = React.useRef<string | null>(null);
   const confirmSend = async () => {
     const p = pendingSend; if (!p) return;
     const result = await sendInput(p.input, p.requestKey, p.draftId, p.forwardOfId);
     setPendingSend(null);
+    if (!result && p.source === 'compose') unsettledCompose.current = p.requestKey;
     // 服务端拒绝（如意图冲突）时保留写信内容与草稿，便于修改后再发。
     if (!result) return;
     if (p.source === 'compose') setCompose(null);
@@ -181,6 +184,18 @@ export function EmailsPage() {
   const sendDraft = (d: EmailDraft) => {
     const { id, createdAt: _c, updatedAt: _u, updatedBy: _b, ...input } = d;
     setPendingSend({ input, requestKey: draftRequestKey(d), draftId: id, source: 'draft' });
+  };
+  /** 丢失回执的发送意图：用本机保存的原 requestKey 与原内容核对；服务端已登记只回原记录，不重复投递。 */
+  const mailPending = pending?.kind === 'mail-send' && pending.mail ? pending.mail : null;
+  const checkPendingSend = async () => {
+    const key = mailPending?.requestKey; setFailure('');
+    try {
+      const receipt = await recover(); const sent = (receipt?.result as { send?: NonNullable<MistMailResult['send']> } | undefined)?.send;
+      if (!sent) return;
+      if (key && unsettledCompose.current === key) { unsettledCompose.current = null; setCompose(null); }
+      reportSend({ send: sent });
+      if (sent.status !== 'sent' && !sent.replayed) openSend(sent.id);
+    } catch (problem) { setFailure(problemText(problem, '发送结果仍待核对，请稍后再试')); }
   };
   const retrySend = async (row: EmailSend, confirmUnknown = false) => { const result = await callMail({ kind: 'retry', sendId: row.id, ...(confirmUnknown ? { confirmUnknown: true } : {}) }); if (result) reportSend(result); setConfirmResend(null); };
   const verifySend = async (row: EmailSend) => { const result = await callMail({ kind: 'verify', sendId: row.id }); if (result) reportSend(result, true); };
@@ -285,6 +300,9 @@ export function EmailsPage() {
       </>} />
     {!can && <div className="mist-section"><Banner tone="neutral" title="只读查看">你的账号没有邮件编辑权限，可以阅读邮件与业务关联，不能标记、关联、跟进或写邮件。</Banner></div>}
     {error && <div className="mist-section"><Banner tone="bad" title="邮箱未读取" actions={<Button onClick={() => void refresh()}>重试</Button>}>{error}</Banner></div>}
+    {mailPending && <div className="mist-section"><Banner tone="warn" icon={AlertTriangle} title={`上次发送「${String(mailPending.input.subject || '（无主题）')}」未收到服务器回执`} actions={<Button size="sm" variant="primary" loading={saving} disabled={saving} onClick={() => void checkPendingSend()}>核对发送结果</Button>}>
+      收件人：{[mailPending.input.to, mailPending.input.cc, mailPending.input.bcc].map(value => String(value || '').trim()).filter(Boolean).join('；') || '未填写'}。邮件可能已发出，也可能没有到达服务器。核对时使用原发送请求：已登记的只显示原记录、不会重复投递；服务器从未收到时才按原内容发送一次。核对完成前不能发起其他邮件操作。
+    </Banner></div>}
     {failure && <div className="mist-section"><Banner tone="bad" title="操作未完成">{failure}</Banner></div>}
     {notice && <div className="mist-section"><Banner tone={notice.tone} title={notice.title} actions={<Button size="sm" onClick={() => setNotice(null)}>知道了</Button>}>{notice.text}</Banner></div>}
     {!loading && state && !accounts.length

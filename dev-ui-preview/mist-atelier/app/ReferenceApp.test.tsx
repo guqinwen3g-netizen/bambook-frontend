@@ -335,6 +335,24 @@ describe('one Mist entry with real authentication and workspace state', () => {
     expect((getByRole(host!, 'textbox', { name: '本批次草稿' }) as HTMLInputElement).value).toBe('');
     expect(requests.filter(request => request.path.endsWith('/auth/logout'))).toHaveLength(1);
   });
+  it('lists 智能邮箱 after 日历 in 我的事务 for mailbox readers only; the route still refuses others', async () => {
+    const navLabels = () => [...host!.querySelectorAll('nav button, nav a')].map(node => node.textContent?.trim() || '');
+    await signIn('mail-reader', ['emails:read']); await mount(); await waitFor(() => expect(probes.home).toHaveBeenCalled());
+    await waitFor(() => expect(navLabels()).toContain('智能邮箱'));
+    const labels = navLabels(); expect(labels.indexOf('智能邮箱')).toBeGreaterThan(labels.indexOf('日历'));
+    await click([...host!.querySelectorAll('nav button, nav a')].find(node => node.textContent?.trim() === '智能邮箱') as HTMLElement);
+    expect(new URLSearchParams(location.search).get('view')).toBe('emails');
+    await waitFor(() => expect(host!.querySelector('h1')?.textContent).toContain('智能邮箱')); expect(host!.textContent).not.toContain('没有查看权限');
+    act(() => root!.unmount()); host!.remove(); root = undefined; host = undefined;
+    await act(async () => auth.logout()); history.replaceState(null, '', '/?intro=0&theme=light');
+    await signIn('no-mail'); await mount(); await waitFor(() => expect(probes.home).toHaveBeenCalled());
+    expect(navLabels()).not.toContain('智能邮箱');
+    await openSearch(); input(searchInput(), '智能邮箱');
+    expect(queryByRole(getByRole(host!, 'dialog', { name: '搜索' }), 'button', { name: /智能邮箱/ })).toBeNull();
+    act(() => root!.unmount()); host!.remove(); root = undefined; host = undefined;
+    history.replaceState(null, '', '/?intro=0&theme=light&view=emails'); await mount();
+    await waitFor(() => expect(host!.textContent).toContain('没有查看权限'));
+  });
   it('opens approvals outside the menu from global search and restores it from a direct link', async () => {
     await signIn(); await mount(); await waitFor(() => expect(probes.home).toHaveBeenCalled());
     await openSearch(); input(searchInput(), '审批与放行');

@@ -5,7 +5,7 @@ import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import {MistRoot,ToastProvider} from '../../../../../components/mist';
 import {createMistState,type MistState} from '../../../../../server/src/shared/mistWorkspace';
 import {Nav} from '../../nav';
-const store=vi.hoisted(()=>({state:null as MistState|null,loading:false,error:'',saving:false,pending:null,run:vi.fn(),refresh:vi.fn(),uploadFile:vi.fn(),downloadFile:vi.fn(),mail:vi.fn()}));
+const store=vi.hoisted(()=>({state:null as MistState|null,loading:false,error:'',saving:false,pending:null as any,run:vi.fn(),refresh:vi.fn(),recover:vi.fn(),uploadFile:vi.fn(),downloadFile:vi.fn(),mail:vi.fn()}));
 const session=vi.hoisted(()=>({denied:new Set<string>()}));
 vi.mock('../../runtime/workspace',()=>({useMistWorkspace:()=>store}));
 vi.mock('../../runtime/auth',()=>({useMistSession:()=>({user:{id:'sales',displayName:'顾言'},sessionKey:'s',hasPermission:(p:string)=>!session.denied.has(p),canAccessView:()=>true})}));
@@ -16,7 +16,7 @@ const ctx={id:()=>'id-'+(++n),now:'2026-10-14T02:00:00Z',actorName:'顾言'} as 
 function render(id?:string){act(()=>root.render(<MistRoot><ToastProvider><Nav.Provider value={{route:{view:'emails',id},go,theme:'light',toggleTheme:vi.fn(),openPalette:vi.fn(),openAI:vi.fn()}}><EmailsPage/></Nav.Provider></ToastProvider></MistRoot>));}
 const button=(label:string)=>[...document.querySelectorAll('button')].find(b=>b.textContent?.trim()===label) as HTMLButtonElement|undefined;
 async function click(node:HTMLElement){await act(async()=>node.click());}
-beforeEach(()=>{session.denied=new Set();store.state=createMistState(ctx,'demo');store.run.mockReset();store.run.mockResolvedValue({result:{}});store.mail.mockReset();store.downloadFile.mockReset();go.mockReset();host=document.createElement('div');document.body.append(host);root=createRoot(host);});
+beforeEach(()=>{session.denied=new Set();store.state=createMistState(ctx,'demo');store.run.mockReset();store.run.mockResolvedValue({result:{}});store.mail.mockReset();store.recover.mockReset();store.pending=null;store.saving=false;store.downloadFile.mockReset();go.mockReset();host=document.createElement('div');document.body.append(host);root=createRoot(host);});
 afterEach(()=>{act(()=>root.unmount());host.remove();});
 
 it('shows an honest empty state when no mailbox is connected',()=>{
@@ -233,4 +233,37 @@ it('only the connecting user can change a mailbox; examples cannot send',()=>{
   act(()=>button('邮箱账号')!.click());
   expect(document.body.textContent).toContain('只有接入人可以修改设置或凭据');
   expect(button('绑定凭据')).toBeUndefined();expect(button('修改设置')).toBeUndefined();
+});
+
+const mailPending=(requestKey:string,input:Record<string,unknown>,extra:Record<string,unknown>={})=>({workspaceId:'w',requestId:requestKey,expectedRevision:0,kind:'mail-send',mail:{requestKey,input,...extra}});
+it('a reply whose receipt was lost stays open, blocks other mail work and is checked with the original request instead of resent',async()=>{
+  store.state=realState();render('mail-real-1');
+  await click(button('回复')!);
+  store.mail.mockRejectedValueOnce(new Error('连接断开；发送结果尚未确认，请核对原请求'));
+  await click([...document.querySelectorAll('button')].filter(b=>b.textContent?.trim()==='发送').at(-1)!);await click(button('确认发送')!);
+  const sent=store.mail.mock.calls[0][0];expect(sent.input.replyToId).toBe('mail-real-1');
+  expect(host.textContent).toContain('发送结果尚未确认');
+  // 运行时已把原意图存本机：页面显示专门的核对横幅，写信内容仍在
+  store.pending=mailPending(sent.requestKey,sent.input);render('mail-real-1');
+  expect(host.textContent).toContain(`上次发送「${sent.input.subject}」未收到服务器回执`);expect(host.textContent).toContain('收件人：buyer@partner.test');
+  expect(document.querySelector('[aria-label="收件人"]')).not.toBeNull();
+  expect(button('写邮件')!.disabled).toBe(true);
+  store.recover.mockImplementation(async()=>{store.pending=null;return {requestId:sent.requestKey,revision:1,result:{send:{id:'send-new',status:'sent',replayed:true}}};});
+  await click(button('核对发送结果')!);render('mail-real-1');
+  expect(store.recover).toHaveBeenCalledTimes(1);expect(store.mail).toHaveBeenCalledTimes(1);
+  expect(document.body.textContent).toContain('该邮件此前已发送，未重复投递');
+  expect(button('核对发送结果')).toBeUndefined();expect(document.querySelector('[aria-label="收件人"]')).toBeNull();
+});
+
+it('a restored draft or forward intent reports an uncertain recovered result and keeps a failed check visible',async()=>{
+  const s=realState() as any;s.email.sends.push({...s.email.sends[0],id:'send-new',requestKey:'draft-d1-1',subject:'草稿报价',status:'unknown'});store.state=s;
+  store.pending=mailPending('draft-d1-1',{accountId:'acc-real',to:'buyer@partner.test',cc:'boss@partner.test',subject:'草稿报价'},{draftId:'d1'});render();
+  expect(host.textContent).toContain('上次发送「草稿报价」未收到服务器回执');expect(host.textContent).toContain('buyer@partner.test；boss@partner.test');
+  store.recover.mockRejectedValueOnce(new Error('网络仍不可用；发送结果尚未确认，请稍后再核对'));
+  await click(button('核对发送结果')!);
+  expect(host.textContent).toContain('网络仍不可用');expect(button('核对发送结果')).toBeDefined();
+  store.recover.mockImplementation(async()=>{store.pending=null;return {requestId:'draft-d1-1',revision:1,result:{send:{id:'send-new',status:'unknown',message:'连接在投递过程中中断'}}};});
+  await click(button('核对发送结果')!);render();
+  expect(document.body.textContent).toContain('发送结果不确定');expect(document.body.textContent).toContain('系统不会自动重发');
+  expect(host.textContent).toContain('草稿报价');
 });

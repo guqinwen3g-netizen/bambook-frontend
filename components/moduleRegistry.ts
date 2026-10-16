@@ -680,7 +680,8 @@ export const BAMBOOK_MODULES: readonly BambookModuleDefinition[] = [
     productLabel: '智能邮箱',
     internalName: 'Emails',
     icon: Mail,
-    nav: { primary: false, order: 13, group: 'overview' },
+    // D1（07-frontend-page-inventory §7）：放在“我的事务”，日历之后；按 emails:read 过滤。
+    nav: { primary: true, order: 17, group: 'overview' },
     permissions: getViewPermissionDefinition(View.Emails),
     compiler: compiler('emails', 'provisional'),
     runtime: desktopRuntime,
