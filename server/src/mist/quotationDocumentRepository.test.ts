@@ -60,3 +60,12 @@ it('blocks generation without company profile and rolls back when rendering or f
  renderPdf.mockRejectedValueOnce(new Error('synthetic renderer failure'));await expect(repo.execute(testActor(),workspaceId,doc('render-fail',0))).rejects.toMatchObject({code:'QUOTATION_PDF_UNAVAILABLE',status:422});expect(state()).toEqual(before);expect(await names()).toHaveLength(0);
  vi.spyOn(files,'write').mockRejectedValueOnce(new Error('private file unavailable'));await expect(repo.execute(testActor(),workspaceId,doc('write-fail',0))).rejects.toThrow('private file unavailable');expect(state()).toEqual(before);expect(quote().documents).toBeUndefined();
 });
+
+it('uses the company profile saved through settings.update for new documents while earlier snapshots stay frozen',async()=>{
+ await repo.execute(testActor(),workspaceId,doc('before-edit',0));const first=structuredClone(quote().documents![0]);
+ const saved=await repo.execute(testActor(),workspaceId,{requestId:'edit-company',expectedRevision:1,command:{type:'settings.update',payload:{companyProfile:{legalName:'示例更新后公司',defaultCurrency:'EUR'}}} as never});
+ expect(state().settings.companyProfile).toEqual({...company,legalName:'示例更新后公司',defaultCurrency:'EUR'});
+ await repo.execute(testActor(),workspaceId,doc('after-edit',saved.workspace.revision));const [old,next]=quote().documents!;
+ expect(old).toEqual(first);expect(old.snapshot.issuer.legalName).toBe(company.legalName);
+ expect(next.snapshot.issuer).toMatchObject({legalName:'示例更新后公司',englishName:company.englishName,bankName:company.bankName});expect(renderPdf.mock.calls[1][0]).toContain('示例更新后公司');
+});

@@ -241,7 +241,7 @@ export type MistCommand = FulfillmentCommand | MarketCommand | PlatformCommand |
   | { type: 'customer.update'; payload: { id: string; patch: Partial<Omit<MistCustomer, 'id'>> } }
   | { type: 'contact.save'; payload: { id?: string; customerId: string; name: string; role: string; email: string; phone: string } }
   | { type: 'contact.delete'; payload: { id: string } }
-  | { type: 'settings.update'; payload: Partial<MistSettings> }
+  | { type: 'settings.update'; payload: Partial<Omit<MistSettings,'companyProfile'>> & { companyProfile?: Partial<MistCompanyProfile> } }
   | { type: 'notification.read'; payload: { id: string } }
   | { type: 'notification.readAll'; payload: Record<string, never> }
   | { type: 'task.complete'; payload: { id: string; done: boolean } }
@@ -1052,9 +1052,9 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
         const input=patch.companyProfile;if(!input||typeof input!=='object'||Array.isArray(input))throw new MistCommandError('VALIDATION','公司资料格式无效');
         const fields=['legalName','englishName','address','englishAddress','phone','email','taxId','customsCode','bankName','bankAccount','swift','defaultCurrency'] as const;
         if(Object.keys(input).some(k=>!fields.includes(k as any)))throw new MistCommandError('VALIDATION','公司资料含未知字段');
-        const value={} as MistCompanyProfile;for(const key of fields)value[key]=text(input[key]??'',key,false,500);
-        if(value.email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.email))throw new MistCommandError('VALIDATION','公司邮箱格式无效');
-        if(value.defaultCurrency&&!/^[A-Z]{3}$/.test(value.defaultCurrency))throw new MistCommandError('VALIDATION','币种须使用三位大写代码');
+        const previous=state.settings.companyProfile,value={} as MistCompanyProfile;for(const key of fields)value[key]=text(input[key]??previous?.[key]??'',key,false,500);
+        if(value.email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.email))throw new MistCommandError('VALIDATION','公司邮箱格式无效，请填写如 name@example.com 的完整地址');
+        if(value.defaultCurrency&&!/^[A-Z]{3}$/.test(value.defaultCurrency))throw new MistCommandError('VALIDATION','币种须使用三位大写代码，如 USD、CNY、EUR');
         state.settings.companyProfile=value;
       }
       if(patch.theme!==undefined&&!['light','dark','system'].includes(patch.theme))throw new MistCommandError('VALIDATION','主题无效');

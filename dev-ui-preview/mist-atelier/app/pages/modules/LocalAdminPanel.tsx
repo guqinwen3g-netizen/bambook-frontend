@@ -5,52 +5,19 @@ import {
   Banner, Button, Card, EmptyState, Field, FormGrid, FormSection, KeyValue, MistPage,
   PageHeader, Pill, Skeleton, TextInput, VerticalSteps, useToast,
 } from '../../../../../components/mist';
-import type { MistSettings } from '../../../../../server/src/shared/mistWorkspace';
+import type { MistCompanyProfile, MistSettings } from '../../../../../server/src/shared/mistWorkspace';
+import { COMPANY_FIELDS, EMPTY_COMPANY, EXPORT_FIELDS } from '../CompanyProfileSection';
 import { useMistSession } from '../../runtime/auth';
 import { useMistWorkspace } from '../../runtime/workspace';
 import { AiSubscriptionPanel } from './AiSubscriptionPanel';
 
-export type LocalCompanyProfile = {
-  legalName: string;
-  englishName: string;
-  address: string;
-  englishAddress: string;
-  phone: string;
-  email: string;
-  taxId: string;
-  customsCode: string;
-  bankName: string;
-  bankAccount: string;
-  swift: string;
-  defaultCurrency: string;
-};
+/** 与系统设置共用同一份 Mist 公司资料字段定义。 */
+export type LocalCompanyProfile = MistCompanyProfile;
 
 type LocalSettings = MistSettings & { companyProfile?: LocalCompanyProfile };
 type WorkspaceDetails = Pick<MistSettings, 'workspaceName' | 'profileName' | 'profileEmail'>;
 type DraftValues = WorkspaceDetails & LocalCompanyProfile;
 type DraftKey = keyof DraftValues;
-type ProfileField = { key: keyof LocalCompanyProfile; label: string; type?: React.HTMLInputTypeAttribute; hint?: string };
-
-const COMPANY_FIELDS: ProfileField[] = [
-  { key: 'legalName', label: '公司中文抬头' },
-  { key: 'englishName', label: '公司英文抬头' },
-  { key: 'address', label: '中文地址' },
-  { key: 'englishAddress', label: '英文地址' },
-  { key: 'phone', label: '联系电话', type: 'tel' },
-  { key: 'email', label: '公司联系邮箱', type: 'email' },
-];
-const EXPORT_FIELDS: ProfileField[] = [
-  { key: 'taxId', label: '税务登记编号' },
-  { key: 'customsCode', label: '海关登记编码' },
-  { key: 'bankName', label: '收款银行名称' },
-  { key: 'bankAccount', label: '收款账号' },
-  { key: 'swift', label: 'SWIFT / BIC' },
-  { key: 'defaultCurrency', label: '常用结算币种', hint: '填写三位币种代码，例如 USD。业务单据仍逐单确认币种。' },
-];
-const EMPTY_COMPANY: LocalCompanyProfile = {
-  legalName: '', englishName: '', address: '', englishAddress: '', phone: '', email: '',
-  taxId: '', customsCode: '', bankName: '', bankAccount: '', swift: '', defaultCurrency: '',
-};
 
 function readDraft(settings?: LocalSettings): DraftValues {
   return {

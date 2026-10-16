@@ -68,4 +68,15 @@ describe('BB-QUO-6 生成报价单', () => {
     expect(win.location.href).toBe('blob:pdf');
     open.mockRestore(); vi.unstubAllGlobals();
   });
+  it('缺公司抬头时所有者可直达系统设置的公司资料并带回本报价；成员只看到由所有者维护的说明', async () => {
+    setup({}, false); await mount();
+    expect(document.body.querySelector('[data-quote-company-missing]')?.textContent).toContain('缺少公司抬头');
+    expect(button('生成正式报价单')!.disabled).toBe(true); expect(button('生成草稿水印版')!.disabled).toBe(true);
+    await click(button('去维护公司资料')!); expect(go).toHaveBeenCalledWith('settings', 'qt-q6', { section: 'company' });
+    await act(async () => root!.unmount()); root = undefined; document.body.innerHTML = '';
+    setup({}, false); bridge.current.workspace = { id: 'w', name: '空间', access: { role: 'member' } }; await mount();
+    expect(button('去维护公司资料')).toBeUndefined(); expect(document.body.textContent).toContain('公司资料由空间所有者维护');
+    await act(async () => root!.unmount()); root = undefined; document.body.innerHTML = '';
+    setup(); await mount(); expect(document.body.querySelector('[data-quote-company-missing]')).toBeNull(); expect(button('生成正式报价单')!.disabled).toBe(false);
+  });
 });
