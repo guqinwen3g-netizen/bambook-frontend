@@ -1,12 +1,15 @@
 /** 报价管理：成衣 / 面料两个板块分开；阶段流水线 + 报价单详情（版本链、审批、发送与客户反馈、转订单）。所有对外事实都登记真实依据。 */
 import React from 'react';
-import { CheckCircle2, CopyPlus, Download, FileText, Pencil, Plus, SearchX, Send, ShoppingBag, ThumbsDown, ThumbsUp, TimerOff, Undo2 } from 'lucide-react';
+import { Ban, CheckCircle2, CopyPlus, Download, FileText, Printer, Pencil, Plus, SearchX, Send, ShoppingBag, ThumbsDown, ThumbsUp, TimerOff, Undo2 } from 'lucide-react';
 import { Banner, Button, Card, Checklist, DataTable, Dropdown, EmptyState, Facts, MistPage, Mono, ObjectCell, PageHeader, Pill, Pipeline, SearchField, Segmented, Timeline, Toolbar, type Column, type Tone } from '../../../../../components/mist';
 import type { MistState } from '../../../../../server/src/shared/mistWorkspace';
 import { developmentDomain } from '../../../../../server/src/shared/mistDevelopmentDomain';
 import { marketBusinessDate, quotationConversionBlockerText, quotationConversionBlockers, quotationNeedsApproval, quoteLineFamily, quotationVersions, type MarketQuotation } from '../../../../../server/src/shared/mistMarket';
 import { quoteMoqStatus, quoteSpecItems } from '../../../../../server/src/shared/mistQuotationSpecs';
 import { lineBelowMarginFloor } from '../../../../../server/src/shared/mistQuotationMarginFloor';
+import { quotationConversionComplete, quotationConversionProgress, quotationConversionStarted, quotationConvertedOrders, quotationPendingLines, quoteLineConversionStatus, quoteLineConversionText } from '../../../../../server/src/shared/mistQuotationLineConversion';
+import { quotationDocumentBlocker, quotationDocuments, quotationFormalDocumentBlocker } from '../../../../../server/src/shared/mistQuotationDocument';
+import { apiService } from '../../../../../services/apiService';
 import { useMistWorkspace } from '../../runtime/workspace';
 import { useMistSession } from '../../runtime/auth';
 import { useNav } from '../../nav';
@@ -33,7 +36,7 @@ export function quotationDomain(state: MistState | null, q: MarketQuotation): Qu
   return 'garment';
 }
 export function quotationStage(q: MarketQuotation): QuoteStage {
-  if (q.convertedOrderId) return 'converted';
+  if (quotationConversionComplete(q)) return 'converted';
   if (q.status === 'Accepted') return 'accepted';
   if (q.status === 'Sent') return 'sent';
   if (q.status === 'Rejected' || q.status === 'Expired') return 'closed';
@@ -64,7 +67,7 @@ export type QuotationWorkbenchProps = {
 };
 
 export function QuotationWorkbench({ onCreate, onEdit, onRevise, attachments, history }: QuotationWorkbenchProps) {
-  const { state, run, error, refresh, loading, saving, pending } = useMistWorkspace(), session = useMistSession(), { go, route } = useNav();
+  const { state, run, error, refresh, loading, saving, pending, downloadFile, fileUrl } = useMistWorkspace(), session = useMistSession(), { go, route } = useNav();
   const [domainChoice, setDomainChoice] = React.useState<QuoteDomain | null>(null), [stageFilter, setStageFilter] = React.useState<StageFilter>('all'), [flagFilter, setFlagFilter] = React.useState<FlagFilter>('all'), [query, setQuery] = React.useState('');
   const [picked, setPicked] = React.useState<string | null>(route.id || null), [drawer, setDrawer] = React.useState(!!route.id);
   const [dialog, setDialog] = useRouteDraft<ModuleEditorSpec | null>(null), [failure, setFailure] = useRouteDraft('');
@@ -100,17 +103,55 @@ export function QuotationWorkbench({ onCreate, onEdit, onRevise, attachments, hi
     initialValues: { note: '' }, fields: [{ key: 'note', label: '审批意见', type: 'textarea', required: true }],
     submit: v => run({ type: 'market.quotation.decide', payload: { id: q.id, decision, note: String(v.note ?? '') } }),
   });
-  const convertSpec = (q: MarketQuotation): ModuleEditorSpec => ({
-    title: `从 ${q.code} 创建订单`, submitLabel: '创建订单草稿',
-    description: '只使用客户已接受的这一版报价；条目的数量、单位与单价原样带入订单草稿。',
-    initialValues: { type: domainOf(q), due: '', owner: state?.settings.profileName || session.user?.displayName || '' },
+  /** BB-QUO-5 按条目转单：只列未处理条目；未获认可的开发版本条目不可勾选。 */
+  const lineChoices = (q: MarketQuotation) => {
+    const blocked = state ? quotationConversionBlockers(state, { lines: quotationPendingLines(q) }) : [];
+    return quotationPendingLines(q).map(l => {
+      const b = blocked.find(x => x.lineId === l.id), family = state?.market ? quoteLineFamily(state, state.market, l) : undefined;
+      return { line: l, family, blocked: b ? quotationConversionBlockerText(b) : '' };
+    });
+  };
+  const checkedLines = (v: Record<string, unknown>) => Object.keys(v).filter(k => k.startsWith('line:') && v[k]).map(k => k.slice(5));
+  const convertSpec = (q: MarketQuotation): ModuleEditorSpec => {
+    const choices = lineChoices(q), domain = domainOf(q);
+    return {
+      title: `从 ${q.code} 创建订单`, submitLabel: '创建订单草稿',
+      description: '只使用客户已接受的这一版报价；勾选本次转单的条目（须同一板块），数量、单位与单价原样带入订单草稿。未勾选的条目之后可再转另一张订单，或标记不再转。',
+      initialValues: { type: domain, due: '', owner: state?.settings.profileName || session.user?.displayName || '', ...Object.fromEntries(choices.map(c => ['line:' + c.line.id, !c.blocked && (!c.family || c.family === domain)])) },
+      fields: [
+        ...choices.map(c => ({ key: 'line:' + c.line.id, label: `转入：${c.line.name} · ${c.line.qty} ${c.line.unit} × ${c.line.price}`, type: 'checkbox' as const, readonly: !!c.blocked, hint: c.blocked || (c.family ? (c.family === 'fabric' ? '面料条目' : '成衣条目') : undefined) })),
+        { key: 'type', label: '订单类型', type: 'select', required: true, options: [{ value: 'garment', label: '成衣订单' }, { value: 'fabric', label: '面料订单' }] },
+        { key: 'due', label: '本次订单交期', type: 'date', required: true },
+        { key: 'owner', label: '业务负责人', required: true },
+      ],
+      submit: async v => { const lineIds = checkedLines(v); if (!lineIds.length) throw new Error('请至少勾选一个条目'); const r = await run({ type: 'market.quotation.convert', payload: { id: q.id, type: v.type as QuoteDomain, due: String(v.due ?? ''), owner: String(v.owner ?? ''), lineIds } }); go('orders/detail', String((r.result as { orderId?: string }).orderId)); },
+    };
+  };
+  const skipSpec = (q: MarketQuotation): ModuleEditorSpec => ({
+    title: `${q.code} 条目标记不再转`, submitLabel: '标记不再转',
+    description: '客户只接受部分条目时，把不再转单的条目标记出来并写明原因；标记后不能再转单，全部条目处理完报价显示“已转单”。',
+    initialValues: { reason: '', ...Object.fromEntries(quotationPendingLines(q).map(l => ['line:' + l.id, false])) },
     fields: [
-      { key: 'type', label: '订单类型', type: 'select', required: true, options: [{ value: 'garment', label: '成衣订单' }, { value: 'fabric', label: '面料订单' }] },
-      { key: 'due', label: '本次订单交期', type: 'date', required: true },
-      { key: 'owner', label: '业务负责人', required: true },
+      ...quotationPendingLines(q).map(l => ({ key: 'line:' + l.id, label: `不再转：${l.name} · ${l.qty} ${l.unit}`, type: 'checkbox' as const })),
+      { key: 'reason', label: '不再转原因', type: 'textarea', required: true, hint: '例如客户取消该色、改由其它报价下单。' },
     ],
-    submit: async v => { const r = await run({ type: 'market.quotation.convert', payload: { id: q.id, type: v.type as QuoteDomain, due: String(v.due ?? ''), owner: String(v.owner ?? '') } }); go('orders/detail', String((r.result as { orderId?: string }).orderId)); },
+    submit: async v => { const lineIds = checkedLines(v); if (!lineIds.length) throw new Error('请至少勾选一个条目'); await run({ type: 'market.quotation.skipLines', payload: { id: q.id, lineIds, reason: String(v.reason ?? '') } }); },
   });
+  const generateDocument = (q: MarketQuotation, draft: boolean) => void act(() => run({ type: 'market.quotation.document', payload: { id: q.id, draft } }));
+  const docFile = (fileId: string) => state?.files.find(f => f.id === fileId);
+  const downloadDocument = (fileId: string) => { const file = docFile(fileId); if (!file) { setFailure('报价单文件不可用或无权读取'); return; } void act(() => downloadFile(file)); };
+  /** 重新打印：取归档原件，在新窗口用浏览器 PDF 预览打开后打印；不重新生成。 */
+  const printDocument = (fileId: string) => {
+    const file = docFile(fileId); if (!file) { setFailure('报价单文件不可用或无权读取'); return; }
+    const win = window.open('', '_blank');
+    void act(async () => {
+      const response = await fetch(fileUrl(file), { headers: apiService.getAuthHeaders(), credentials: 'include' });
+      if (!response.ok) { win?.close(); throw new Error('报价单文件读取失败'); }
+      const url = URL.createObjectURL(new Blob([await response.arrayBuffer()], { type: 'application/pdf' }));
+      if (win) win.location.href = url; else window.open(url, '_blank');
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+    });
+  };
   const exportQuote = (q: MarketQuotation) => downloadModuleCsv(`${q.code}.csv`, ['产品', '款号 / 编码', '规格', '数量', '单位', '单价', '金额', '币种'], q.lines.map(l => [l.name, l.style, l.specification, l.qty, l.unit, l.price, l.amount, q.currency]));
   const columns: Column<MarketQuotation>[] = [
     { key: 'code', header: '报价 / 客户', width: 'minmax(150px,1.1fr)', render: q => <ObjectCell name={<><Mono>{q.code.replace(/-V\d+$/, '')}</Mono> <Pill tone={q.revision ? 'accent' : 'neutral'}>{version(q)}</Pill></>} meta={customerName(q.customerId)} /> },
@@ -125,7 +166,7 @@ export function QuotationWorkbench({ onCreate, onEdit, onRevise, attachments, hi
   const detail = selected && state
     ? <QuotationDetail q={selected} state={state} all={all} day={day} me={me} can={can} canOrder={canOrder} canApprove={canApprove} locked={locked} customer={customerName(selected.customerId)}
         onEdit={() => onEdit(selected)} onRevise={() => onRevise(selected)} onSubmit={() => void act(() => run({ type: 'market.quotation.submit', payload: { id: selected.id } }))}
-        onDecide={d => setDialog(decideSpec(selected, d))} onStatus={s => setDialog(evidenceSpec(selected, s))} onConvert={() => setDialog(convertSpec(selected))}
+        onDecide={d => setDialog(decideSpec(selected, d))} onStatus={s => setDialog(evidenceSpec(selected, s))} onConvert={() => setDialog(convertSpec(selected))} onSkip={() => setDialog(skipSpec(selected))} onDocument={draft => generateDocument(selected, draft)} onDownloadDocument={downloadDocument} onPrintDocument={printDocument}
         onExport={() => exportQuote(selected)} onOpen={(view, id, extra) => go(view, id, extra)} attachments={attachments(selected, !can || selected.status !== 'Draft' || selected.approval?.status === 'pending')} history={history(selected.id)} />
     : <EmptyState icon={FileText} title="报价单详情" description="从左侧列表选择一份报价，查看条目、版本、审批与客户反馈。" compact />;
   return <MistPage>
@@ -157,9 +198,10 @@ export function QuotationWorkbench({ onCreate, onEdit, onRevise, attachments, hi
   </MistPage>;
 }
 
-function QuotationDetail({ q, state, all, day, me, can, canOrder, canApprove, locked, customer, onEdit, onRevise, onSubmit, onDecide, onStatus, onConvert, onExport, onOpen, attachments, history }: {
+function QuotationDetail({ q, state, all, day, me, can, canOrder, canApprove, locked, customer, onEdit, onRevise, onSubmit, onDecide, onStatus, onConvert, onSkip, onDocument, onDownloadDocument, onPrintDocument, onExport, onOpen, attachments, history }: {
   q: MarketQuotation; state: MistState; all: MarketQuotation[]; day: string; me: string; can: boolean; canOrder: boolean; canApprove: boolean; locked: boolean; customer: string;
-  onEdit: () => void; onRevise: () => void; onSubmit: () => void; onDecide: (d: 'approved' | 'rejected') => void; onStatus: (s: MarketQuotation['status']) => void; onConvert: () => void; onExport: () => void;
+  onEdit: () => void; onRevise: () => void; onSubmit: () => void; onDecide: (d: 'approved' | 'rejected') => void; onStatus: (s: MarketQuotation['status']) => void; onConvert: () => void; onSkip: () => void; onExport: () => void;
+  onDocument: (draft: boolean) => void; onDownloadDocument: (fileId: string) => void; onPrintDocument: (fileId: string) => void;
   onOpen: (view: string, id?: string, extra?: Record<string, string | undefined>) => void; attachments: React.ReactNode; history: React.ReactNode;
 }) {
   const stage = quotationStage(q), flags = quotationFlags(all, q, day), versions = quotationVersions(state.market, q), next = all.find(x => x.previousId === q.id);
@@ -167,9 +209,14 @@ function QuotationDetail({ q, state, all, day, me, can, canOrder, canApprove, lo
   const writeReason = !can ? '没有报价写权限' : false;
   const sendReason = writeReason || (q.approval?.status === 'pending' ? '审批中，等待业务负责人决定' : needsApproval && !approved ? '低于成本、低于最低毛利率或成本待核，须先取得业务审批' : expired ? '已过有效期，请修改有效期后再发送' : false);
   const reviewer = q.approval?.status === 'pending' && q.approval.reviewerId === me;
-  const blockers = stage === 'accepted' ? quotationConversionBlockers(state, q) : [];
-  const convertReason = !canOrder ? '没有订单写权限' : blockers.length ? `${quotationConversionBlockerText(blockers[0])}${blockers.length > 1 ? `，另有 ${blockers.length - 1} 个条目同样未认可` : ''}` : false;
+  const pending = quotationPendingLines(q), started = quotationConversionStarted(q), progress = quotationConversionProgress(q), orders = quotationConvertedOrders(q, state.orders);
+  const blockers = stage === 'accepted' ? quotationConversionBlockers(state, { lines: pending }) : [];
+  const allBlocked = blockers.length > 0 && blockers.length >= pending.length;
+  const convertReason = !canOrder ? '没有订单写权限' : allBlocked ? `${quotationConversionBlockerText(blockers[0])}${blockers.length > 1 ? `，另有 ${blockers.length - 1} 个条目同样未认可` : ''}` : false;
   const decideReason = !canApprove ? '没有审批权限' : !reviewer ? '仅本次指定的业务审批人可决定，可在审批中心处理' : false;
+  const docBase = writeReason || quotationDocumentBlocker({ issuer: state.settings.companyProfile, customerFound: state.customers.some(c => c.id === q.customerId), lineCount: q.lines.length }) || false;
+  const formalDocReason = docBase || quotationFormalDocumentBlocker(q, needsApproval) || false;
+  const documents = quotationDocuments(q);
   const reviseReason = writeReason || (next ? `已有新版本 ${next.code}，请在最新版本上修改` : q.convertedOrderId ? '已转订单的报价不再出新版本' : false);
   const banner: { tone: Tone; title: string; text: string } =
     stage === 'pending' ? { tone: 'warn', title: '待业务审批', text: `${shortWhen(q.approval!.submittedAt)} 提交；审批通过前不能发送给客户。` }
@@ -177,16 +224,15 @@ function QuotationDetail({ q, state, all, day, me, can, canOrder, canApprove, lo
       : needsApproval && !approved ? { tone: 'warn', title: '草稿 · 须先审批', text: '有条目低于成本、低于最低毛利率或成本待核实，提交业务审批并通过后才能发送。' }
       : { tone: 'neutral', title: approved ? '草稿 · 审批已通过' : '草稿', text: '核对条目与条款后发送给客户，再在此登记发送方式与对象。' })
     : stage === 'sent' ? { tone: expired ? 'bad' : 'accent', title: expired ? '已过有效期 · 待处理' : '已发送 · 等待客户反馈', text: expired ? '客户仍有意向时请新建版本续期；否则标记为已失效。' : `有效期至 ${q.validUntil}。客户回复后登记接受或未接受。` }
-    : stage === 'accepted' ? { tone: 'ok', title: '客户已接受 · 待转订单', text: '核对交期与负责人后转为订单草稿，条目单位与单价原样带入。' }
-    : stage === 'converted' ? { tone: 'ok', title: '已转订单', text: '订单已按此版本创建，报价不再修改。' }
+    : stage === 'accepted' ? (started ? { tone: 'accent', title: `部分已转订单 · ${pending.length} 个条目待处理`, text: `${progress.text}。未转条目可再转另一张订单，或标记不再转并写明原因。` } : { tone: 'ok', title: '客户已接受 · 待转订单', text: '勾选本次转单的条目，核对交期与负责人后转为订单草稿，条目单位与单价原样带入。' })
+    : stage === 'converted' ? { tone: 'ok', title: '已转订单', text: `全部条目已处理（${progress.text}），报价不再修改。` }
     : { tone: 'neutral', title: q.status === 'Expired' ? '已失效' : '客户未接受', text: next ? `已基于此报价出新版本 ${next.code}。` : '客户如重新询价，可基于此报价新建版本。' };
-  const order = q.convertedOrderId ? state.orders.find(o => o.id === q.convertedOrderId) : undefined;
   const track = [
     { label: '保存草稿', done: true, note: shortWhen(q.createdAt) },
     { label: '业务审批', done: approved || (!needsApproval && stage !== 'draft' && stage !== 'pending'), note: q.approval ? `${q.approval.status === 'approved' ? '已批准' : q.approval.status === 'rejected' ? '已退回' : '审批中'} · ${shortWhen(q.approval.decidedAt || q.approval.submittedAt)}` : needsApproval ? '须审批' : '无需审批', noteTone: q.approval?.status === 'rejected' ? 'bad' as const : undefined },
     { label: '发送给客户', done: !!q.deliveryEvidence, note: q.deliveryEvidence || '未登记' },
     { label: '客户反馈', done: !!q.responseEvidence, note: q.responseEvidence || '未登记', noteTone: q.status === 'Rejected' || q.status === 'Expired' ? 'bad' as const : undefined },
-    { label: '转订单', done: !!order, note: order ? order.code : q.status === 'Accepted' ? '待转单' : '—' },
+    { label: '转订单', done: stage === 'converted', note: orders.length ? `${orders.map(o => o.code || '订单不可用').join('、')}${pending.length ? ` · ${pending.length} 个条目待处理` : ''}` : q.status === 'Accepted' ? '待转单' : '—' },
   ];
   return <DetailBody data-quotation-detail={q.id} heading={<div><span className="mist-mono mist-muted">{q.code}</span><div className="mist-h2" style={{ fontSize: 19, marginTop: 4 }}>{customer}</div></div>}>
     <div className="mist-row" style={{ flexWrap: 'wrap' }}>
@@ -196,7 +242,7 @@ function QuotationDetail({ q, state, all, day, me, can, canOrder, canApprove, lo
       {flags.filter(f => f.key !== 'returned' && f.key !== 'superseded').map(f => <Pill key={f.key} tone={f.tone}>{f.label}</Pill>)}
     </div>
     <Banner tone={banner.tone} title={banner.title}>{banner.text}</Banner>
-    {blockers.length > 0 && <Banner tone="warn" title="开发版本未获需求方认可 · 暂不能转订单"><span data-convert-blockers>{blockers.map(b => <span key={b.lineId} style={{ display: 'block' }}>{quotationConversionBlockerText(b)}</span>)}请先在开发模块记录需求方认可后再转单；产品档案条目不受此限制。</span></Banner>}
+    {blockers.length > 0 && <Banner tone="warn" title={allBlocked ? '开发版本未获需求方认可 · 暂不能转订单' : '部分条目的开发版本未获需求方认可 · 这些条目暂不能转'}><span data-convert-blockers>{blockers.map(b => <span key={b.lineId} style={{ display: 'block' }}>{quotationConversionBlockerText(b)}</span>)}请先在开发模块记录需求方认可后再转单；产品档案条目不受此限制。</span></Banner>}
     <ActionBar busy={locked} actions={[
       { label: '编辑草稿', icon: Pencil, onClick: onEdit, reason: writeReason, hidden: stage !== 'draft' },
       { label: '提交业务审批', icon: Send, onClick: onSubmit, primary: needsApproval && !approved, reason: writeReason, hidden: stage !== 'draft' || approved },
@@ -206,9 +252,12 @@ function QuotationDetail({ q, state, all, day, me, can, canOrder, canApprove, lo
       { label: '客户接受', icon: ThumbsUp, onClick: () => onStatus('Accepted'), primary: true, reason: writeReason, hidden: stage !== 'sent' },
       { label: '客户未接受', icon: ThumbsDown, onClick: () => onStatus('Rejected'), reason: writeReason, hidden: stage !== 'sent' },
       { label: '标记已失效', icon: TimerOff, onClick: () => onStatus('Expired'), reason: writeReason || (!expired ? `有效期至 ${q.validUntil}，到期后才能标记` : false), hidden: stage !== 'sent' },
-      { label: '核对并转订单', icon: ShoppingBag, onClick: onConvert, primary: true, reason: convertReason, hidden: stage !== 'accepted' },
-      { label: '打开订单', icon: ShoppingBag, onClick: () => onOpen('orders/detail', q.convertedOrderId!), primary: true, hidden: !q.convertedOrderId },
+      { label: started ? '转剩余条目' : '核对并转订单', icon: ShoppingBag, onClick: onConvert, primary: true, reason: convertReason, hidden: stage !== 'accepted' },
+      { label: '标记条目不再转', icon: Ban, onClick: onSkip, reason: !canOrder ? '没有订单写权限' : false, hidden: stage !== 'accepted' },
+      { label: orders.length > 1 ? `打开订单 ${orders[0].code}` : '打开订单', icon: ShoppingBag, onClick: () => onOpen('orders/detail', orders[0].id), primary: stage === 'converted', hidden: !orders.length },
       { label: '新建版本', icon: CopyPlus, onClick: onRevise, reason: reviseReason, hidden: stage === 'draft' || stage === 'pending' || stage === 'converted' },
+      { label: '生成正式报价单', icon: FileText, onClick: () => onDocument(false), reason: formalDocReason },
+      { label: '生成草稿水印版', icon: FileText, onClick: () => onDocument(true), reason: docBase },
       { label: '导出条目', icon: Download, onClick: onExport },
     ]} />
     <Facts items={[
@@ -225,6 +274,7 @@ function QuotationDetail({ q, state, all, day, me, can, canOrder, canApprove, lo
         <div className="mist-row" style={{ gap: 8, flexWrap: 'wrap' }}><strong>{l.name}</strong><span className="mist-spacer" /><Button variant="quiet" onClick={() => l.productId ? onOpen('products', l.productId) : onOpen('development/detail', l.sourceDevId, { versionId: l.sourceVersionId })}>{l.productId ? '档案' : '开发版本'}</Button><Button onClick={()=>onOpen('quotations',q.id,{section:'costing:'+l.id})}>条目核算</Button><Button onClick={()=>onOpen('quotations',q.id,{section:'compare:'+l.id})}>历史条件对照</Button></div>
         <small className="mist-muted"><Mono>{l.style}</Mono>{l.specification ? ' · ' + l.specification : ''}</small>
         {specItems.length > 0 && <small className="mist-muted" data-quote-specs>{specItems.map((it, k) => <span key={it.label}>{k ? ' · ' : ''}{it.label} <span className={it.missing ? 'mist-tone-warn' : undefined}>{it.value}</span></span>)}</small>}
+        {(q.status === 'Accepted' || q.convertedOrderId) && (() => { const c = quoteLineConversionStatus(q, l, state.orders); return <div className="mist-row" style={{ gap: 6, flexWrap: 'wrap' }} data-line-conversion={c.state}><Pill tone={c.state === 'converted' ? 'ok' : c.state === 'skipped' ? 'neutral' : 'accent'}>{c.state === 'converted' ? '已转' : c.state === 'skipped' ? '不再转' : '未转'}</Pill><small className="mist-muted">{c.state === 'converted' ? `订单 ${c.orderCode || '不可用'}${c.legacy ? ' · 历史整单转单' : ''}` : c.state === 'skipped' ? `${quoteLineConversionText(c).slice(4)} · ${c.by} ${shortWhen(c.at)}` : '尚未转单'}</small>{c.state === 'converted' && <Button variant="quiet" onClick={() => onOpen('orders/detail', c.orderId)}>打开订单</Button>}</div>; })()}
         {moq.state !== 'none' && moq.state !== 'met' && <div className="mist-row" style={{ gap: 6, flexWrap: 'wrap' }} data-quote-moq={moq.state}>{moq.state === 'below' && <Pill tone="warn">低于 MOQ</Pill>}<small className="mist-muted">{moq.text}</small></div>}
         <div className="mist-row" style={{ gap: 8, flexWrap: 'wrap' }}><span className="mist-num">{l.qty} {l.unit} × {l.price} = {q.currency} {l.amount}</span><span className="mist-spacer" />{lineBelowMarginFloor(l) && <span data-margin-floor-breach><Pill tone="warn">{`低于最低毛利率 ${l.marginFloor!.minMarginPercent}%（V${l.marginFloor!.version}）`}</Pill></span>}{m === null ? <span className="mist-muted">成本待核</span> : <span className={m < 0 ? 'mist-tone-bad mist-num' : 'mist-num mist-muted'}>毛利 {m}%</span>}</div>
       </div>; })}</div>
@@ -241,6 +291,16 @@ function QuotationDetail({ q, state, all, day, me, can, canOrder, canApprove, lo
     {!!(q.approvalHistory?.length || q.approval) && <DetailBlock title="审批记录">
       <Timeline events={[...(q.approvalHistory || []), ...(q.approval ? [q.approval] : [])].reverse().map(a => ({ who: a.status === 'pending' ? '等待审批' : a.status === 'approved' ? '已批准' : '已退回', when: new Date(a.decidedAt || a.submittedAt).toLocaleString(), text: <>{a.note || (a.status === 'pending' ? '已提交，待指定审批人决定' : '—')}<br /><span className="mist-note">{a.details.filter(d => d.label === '金额' || d.label === '有效期').map(d => d.label + ' ' + d.value).join(' · ')}</span></> }))} />
     </DetailBlock>}
+    <DetailBlock title="报价单文件">
+      <div className="mist-col" style={{ gap: 0 }} data-quote-documents role="list" aria-label={`${q.code} 报价单文件`}>{documents.length ? documents.map(d => <div key={d.id} role="listitem" className="mist-row" style={{ gap: 8, flexWrap: 'wrap', padding: '8px 0' }} data-quote-document={d.draft ? 'draft' : 'formal'}>
+        <Pill tone={d.draft ? 'warn' : 'ok'}>{d.draft ? '草稿水印版' : '正式版'}</Pill><Pill tone="accent">{'V' + d.revision}</Pill>
+        <span className="mist-col" style={{ gap: 0, minWidth: 0 }}><span style={{ overflowWrap: 'anywhere' }}>{d.fileName}</span><small className="mist-muted">{d.generatedBy} · {shortWhen(d.generatedAt)}</small></span>
+        <span className="mist-spacer" />
+        <Button variant="quiet" icon={Download} onClick={() => onDownloadDocument(d.fileId)}>下载</Button>
+        <Button variant="quiet" icon={Printer} onClick={() => onPrintDocument(d.fileId)}>打印</Button>
+      </div>) : <span className="mist-muted">尚未生成报价单。</span>}</div>
+      <span className="mist-note">每次生成都保存一份不可覆盖的 PDF（时间、生成人、报价版本）；修改报价后请重新生成。{formalDocReason && formalDocReason !== docBase ? `正式版：${formalDocReason}。` : ''}</span>
+    </DetailBlock>
     <DetailBlock title="附件">{attachments}</DetailBlock>
     <DetailBlock title="处理记录">{history}</DetailBlock>
   </DetailBody>;

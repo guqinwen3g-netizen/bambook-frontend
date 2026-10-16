@@ -1,6 +1,6 @@
 # 交接 · 2026-10-16 接手指引（云端 Agent）
 
-> 给下一位接手的云端 Agent。先读本节，再按需看下方 2026-10-15 的速查（第 1–9 节，部分状态已过时，以本节和 GitHub 为准）。常设入口仍是 [README](../README.md) 与 [AGENTS.md](../AGENTS.md)。开始前**必须**重新核对 GitHub 实际分支 / PR / Actions 和开发服务器 `readlink -f /srv/bambook-dev/current`。
+> 本文保留历史交接上下文，下面的版本、覆盖范围、故障和候选事项均为当时快照，不是当前执行清单。每位新接手的云端或本地 Agent 先读当前 [AGENTS.md](../AGENTS.md) 和 [README](../README.md)，再按任务需要查本文；工作流程不以旧会话或本文副本替代。核对与当前任务有关的分支 / PR / Actions；仅在任务涉及开发服务器交付时核对服务器版本，不为纯文档或本地任务启动运维流程。
 
 ### A. 交接时的状态（2026-10-16 05:40Z）
 
@@ -12,24 +12,22 @@
 
 本轮合入：#49（文档）、#50（人事岗位 / 在职变动 / 订单毛利 / 管理员重置后强制改密）、#51（退出所有设备、老板调整角色权限）、#52（两步验证 TOTP + 恢复码、管理员重置两步验证、老板账号防线、账号列表不回显 metadata.mfa）、#53（本人改密退出其他设备并为当前设备换发令牌；调岗随岗位换部门并退出原小组；文档）。#50–#52 已在开发服务器用测试账号接口实测（含两步验证完整开启→登录→恢复码→关闭，测试账号已复原）；界面未用真实账号人工走查。
 
-### B. 用户规则（覆盖下方第 2 节的旧写法）
+### B. 长期规则入口
 
-- 中文、简洁、只讲实际进展；**不干等**：CI / 部署期间做别的，按确切 SHA 抽查。
-- 范围已确认的批次：最新 head 的 CI 全绿后**直接** merge commit 合入（AGENTS.md），无需再问。只在公司特有业务规则、超范围、关键权限变更、数据迁移、正式环境、真实资金时停下来问。
-- 用户已授权：通用专业知识（如毛利口径）与软件设计（安全、权限 UI 等）由 Agent 自行决定；只有公司特有业务规范需确认。
-- 汇报时分开写：已推送 / 已合入 / 已部署开发服务器 / 人工验收（未做就写未做）/ 正式环境。
-- README 只写“当前工作”；验证证据写在 PR；LIVE-PROGRESS 只记未合入停点。凭据不进仓库、日志、PR、聊天。
+工作分工、按改动范围验证、证据复用、CI 等待、合入授权和状态报告统一见 [AGENTS.md 的“开工、接力与分支收口”](../AGENTS.md#开工接力与分支收口)。本文不维护第二套规则。认领任务时保留用户最新明确的业务规则与验收 / 合入要求；历史交接和历史通过不能覆盖它们。
+
+保留当时的业务决策背景：用户已授权通用专业知识（如毛利口径）与软件设计（安全、权限 UI 等）由 Agent 自行决定；公司特有业务规范需确认。具体任务仍核对用户最新要求。
 
 ### C. 操作要点
 
-- 推送：GitHub MCP `create_branch`（自 main）→ `push_files` → `create_pull_request` → CI 绿 → `merge_pull_request`（merge）。
-- CI：PR 状态 `ci/mist-verify`（作业 changes / verify / report）。CI 只跑前端测试和服务端 `src/mist` + 共享 mist 测试；其他服务端测试（auth、admin、hr 等）**只能本地跑**，改这些代码要自己跑。
-- 本地已知既有失败（与近期改动无关，已在未改动代码上复现）：`server/src/admin/route.test.ts` 5、`auth/__tests__/currentOrderLineWriteAccess` 42、`operationalReadBoundaries` 6、`danglingScopeConsumption` 4（引用已删文件）、`roleLabels` 3（qc:write 种子漂移）、`hr/route.test.ts` 2。值得单独开一个 PR 清理。
-- 部署：main 的 Mist verification 成功后自动 “Bambook development delivery”，约 15 分钟，只部署 main 最新提交——**交付运行中再合入会使其失效**，连续合入时只有最后一个会部署。
+- 提交与合入：按当前可用的 Git / GitHub 工具执行，并遵守 [长期规则](../AGENTS.md)；不因历史会话选用过某个工具就限定新 Agent 的工具链。
+- CI：以当前 [`package.json`](../package.json)、[`server/package.json`](../server/package.json) 与 [工作流](../.github/workflows/mist.yml) 核实命令和覆盖范围。旧记录中“auth / admin / hr 只能本地跑”的说法已过时；这些测试已纳入 `verify:mist`。避免因此重复补跑全套，也不要据此推断所有历史服务端目录均被 CI 覆盖。
+- 历史失败记录：当时记录过 admin、auth、hr 的失败；它们不是当前基线结论或允许忽略失败的清单。按当前提交的 CI 和必要的针对性复现判定，不自动重做旧清理任务。
+- 部署：main 验证成功后的开发环境交付及等待方式见 [开发环境部署](deployment/bambook-development.md)。旧耗时不作为固定休眠时长；仅在当前任务涉及交付时按对应提交核对实际结果。
 - 运维通道：向 `ops-channel` 推 `ops/request.sh`（内容必须变化，可在首行加时间注释），约 30–60 秒后读 `ops/results/<请求提交SHA>.md`。测试账号文件 `/srv/bambook-dev/shared/test-accounts.txt`（制表符分隔：第 3 行管理员、第 6 行业务员、第 9 行物流；脚本里 `sudo awk` 取值，不要打印）。两步验证实测可在服务器上用 `node -e` 计算 TOTP。
 - `JWT_SECRET` 同时派生两步验证密钥的加密钥匙：**更换它会让所有已绑定的验证器失效**，需管理员逐个“重置两步验证”。
 
-### D. 下一步候选（按价值排序，开工前与用户的优先级对一下）
+### D. 历史下一步候选（2026-10-16 05:40Z，不能自动当作当前任务）
 
 1. 确认 `2ea11fd` 已部署并冒烟（`/api/hr/personnel`、包内文案“部门随新岗位确定”）。
 2. 清理上面列出的本地既有失败测试，或把 auth / admin / hr 测试纳入 CI。
@@ -47,15 +45,9 @@
 
 主线包含公司端 Mist 全部菜单页的前端首轮与大部分业务接线（报价核算 / 历史对照 / AI 审阅、风险、售后索赔、应付 / 预付 / 结算 / 付款、跨岗位协作、审批与放行、我的工作待办、通知中心）、工作助手 P0 骨架，以及开发服务器部署流程与共享运维通道。**未正式部署**，正式环境未动；开发服务器运行的仍是旧版本（见第 4 节）。
 
-## 2. 用户长期规则（务必遵守）
+## 2. 长期规则入口
 
-- 中文沟通，简洁讲实际进展；不要绕远路、不要干等、不要“掺水”。
-- 只用 **merge commit** 合入，不 squash、不强推、不改写历史。
-- （已过时，见 B 节）合入规则以 AGENTS.md 为准。
-- mock / 模拟桥不能冒充真实模型或真实集成验收。
-- 凭据不写进仓库、日志、PR 或聊天。
-- 不动正式环境（Mac mini、`jiangsupanda.com`），不动真实资金；不擅自删除他人分支或关闭他人 PR。
-- 每项一个可独立验收的 PR；未完成成果写明分支、停点、下一步。
+现行规则统一见 [AGENTS.md](../AGENTS.md)。本附录仅提供历史上下文，不额外规定验证、等待或合入流程。
 
 ## 3. 本轮（2026-10-15）合入记录
 
@@ -79,7 +71,7 @@
 
 **自动部署**（PR #33）：main 推送触发的 `Mist verification` 成功后，`Bambook development delivery` 经 `workflow_run` 部署该次 `head_sha`；要求该提交 `verify` check 成功，且只部署 main 最新提交（落后的运行直接失败，不回滚）。PR 上的验证不部署。服务器端 `npm ci` + `prisma generate` + `tsc` 约 15 分钟；交付作业超时已由 20 分钟提到 45 分钟（PR #36，首次自动部署 run 21 因此被 GitHub 取消但服务器已激活）。内外层超时已统一（发布脚本 2100 秒 < ssh 2280 秒 < 作业 50 分钟），超时会结束子进程并按标记回切，见 [开发环境部署](deployment/bambook-development.md)。
 
-**每次合入后核对**：经运维通道核对 `readlink -f /srv/bambook-dev/current` 指向新 main SHA、两个服务 active、健康接口 200。
+**涉及开发服务器交付时核对**：经运维通道核对 `readlink -f /srv/bambook-dev/current` 指向本次交付 SHA、两个服务 active、健康接口 200。其他任务不因这份历史记录额外启动服务器检查。
 
 ## 5. 开放 PR 与分支
 
@@ -126,11 +118,11 @@
 ## 8. 工程速查
 
 - 本地：Node 22；`npm ci && npm ci --prefix server && (cd server && npm exec -- prisma generate) && npm run dev:mist`（前端 3001，本地文件 API 8082）。
-- 验证：`npm run verify:mist`（类型、前后端测试、构建、Mist 规范）；CI 为 `.github/workflows/mist.yml`，PR 状态名 `ci/mist-verify`。
+- 验证：按 [AGENTS.md](../AGENTS.md) 选择检查范围；具体命令与覆盖由当前 package scripts / CI 工作流核实，不能把本速查当作每次必须本地全量验证的要求。
 - 主要目录：`pages/`（Mist 页面）、`runtime/`（前端派生逻辑，如 `workQueue.ts`）、`components/mist/`（组件与 token）、`server/src/shared/mist*.ts`（工作空间命令与规则）、`electron/assistant/`（工作助手）、`scripts/deploy/`（部署）、`docs/`（[文档导航](README.md)）。
 - 工作流：`mist.yml`（verify）、`bambook-dev-deploy.yml`（开发服务器：main 验证通过后自动 deploy；也可手动 check / deploy）、`bambook-dev-ops.yml`（`ops-channel` 推送 `ops/request.sh` 执行，结果写回 `ops/results/<SHA>.md`）。
 - 开发服务器：腾讯云 `https://bambook-dev.sylway.cloud`，服务 `bambook-dev`（主 API）、`bambook-dev-mist`（Mist API 8081/8082，nginx 8080），库 `panda_hub_dev`；测试账号在服务器 `/srv/bambook-dev/shared/test-accounts.txt`（不入库）。所需 SSH 钥匙已存为仓库 Actions secrets（`BAMBOOK_DEV_OPS_SSH_KEY`、`BAMBOOK_DEV_SSH_KEY`、`BAMBOOK_DEV_KNOWN_HOSTS`），Agent 不需要也不应持有私钥。
-- 工具限制：当前 GitHub token 不能建 issue、不能触发 Actions、不能删分支；需要时请用户在网页操作或授权浏览器登录。
+- 历史工具限制：当时会话的 GitHub token 无法执行部分操作。新 Agent 应先核实自己实际可用的连接和权限，不能把该历史限制当作当前事实。
 
 ## 9. 已知风险 / 待用户决定
 
