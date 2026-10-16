@@ -147,7 +147,7 @@ export function AdminAccounts() {
       footer={<div className="mist-row"><Button variant="primary" loading={busy} disabled={confirm?.kind === 'reject' && !reason.trim()} onClick={() => void decide()}>确认</Button><Button disabled={busy} onClick={() => setConfirm(null)}>取消</Button></div>}>
       {confirm?.kind === 'reject' && <Field label="拒绝原因" required><TextArea value={reason} onChange={e => setReason(e.target.value)} /></Field>}
     </Dialog>
-    <Dialog open={!!temporary} onClose={() => setTemporary(null)} title="临时密码" description={`请转交 ${temporary?.name ?? ''}，并提醒其登录后在“设置 · 安全”中修改。关闭后不再显示。`} footer={<Button variant="primary" onClick={() => setTemporary(null)}>已转交</Button>}>
+    <Dialog open={!!temporary} onClose={() => setTemporary(null)} title="临时密码" description={`请转交 ${temporary?.name ?? ''}；对方用它登录后会被要求先设置新密码。关闭后不再显示。`} footer={<Button variant="primary" onClick={() => setTemporary(null)}>已转交</Button>}>
       <Mono>{temporary?.password}</Mono>
     </Dialog>
   </>;
