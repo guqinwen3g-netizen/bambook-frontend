@@ -87,3 +87,31 @@ it('BB-ORD-1 line fulfillment panel shows the fabric track, matching mode text a
   await act(async () => getByRole(host, 'button', { name: '查看来源记录' }).click());
   expect(go).toHaveBeenLastCalledWith('production-board', undefined, { orderLineId: 'l-fabric', productionId: 'p-fabric' });
 });
+
+it.each(['garment', 'fabric'] as const)('shows completed %s shipping without inventing missing upstream records', type => {
+  const o=order(type),l=line(type);
+  s.fulfillment.shipments.push({id:'sent',code:'SHP-SENT',state:'departed',plannedDate:'2026-10-16',lines:[{orderId:o.id,lineId:l.id,quantity:100}]} as never);
+  const stages=lineStages(s,o,l);
+  expect(stages.find(stage=>stage.key==='material')?.state).toBe('todo');
+  expect(currentLineStage(stages)).toBeNull();
+  act(()=>root.render(<MistRoot><ToastProvider><OrderLineFulfillment state={s} order={o} line={l} go={vi.fn()}/></ToastProvider></MistRoot>));
+  expect(host.textContent).toContain('已完成出运');
+  expect(host.textContent).not.toContain('当前：');
+});
+
+it('keeps a passed production retest blocked until business explicitly resumes it',()=>{
+  const o=order('garment'),l=line('garment');s.orders.push(o);s.orderLines.push(l);s.productions.push(job('garment','qc'));
+  const waiting={...task('garment','retest','production') as any,state:'awaiting_business',reportIds:['retestr']};
+  s.fulfillment.qcTasks.push(waiting);s.fulfillment.qcReports.push(report('retest','pass'));
+  expect(currentLineStage(lineStages(s,o,l))).toMatchObject({key:'inspection',state:'blocked',caption:'待业务恢复'});
+  expect(orderLineFlags(s,o)).toMatchObject({business:1,nok:0});
+  waiting.state='reported';waiting.businessContinued={reportId:'retestr'};
+  expect(lineStages(s,o,l).find(stage=>stage.key==='inspection')).toMatchObject({state:'done'});
+});
+
+it('still surfaces a current quality blocker even when stored shipments have departed',()=>{
+  const o=order('fabric'),l=line('fabric');s.productions.push(job('fabric','qc'));
+  s.fulfillment.shipments.push({id:'sent',code:'SHP-SENT',state:'departed',lines:[{orderId:o.id,lineId:l.id,quantity:100}]} as never);
+  s.fulfillment.qcTasks.push(task('fabric','nok','production'));s.fulfillment.qcReports.push(report('nok','reject'));
+  expect(currentLineStage(lineStages(s,o,l))).toMatchObject({key:'inspection',state:'blocked',caption:'QC NOK'});
+});

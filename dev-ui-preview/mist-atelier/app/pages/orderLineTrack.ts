@@ -65,7 +65,9 @@ export function lineStages(state: MistState, order: MistOrder, line: MistOrderLi
       return { ...base, state: 'now', caption: '生产已完成 · 未发起检验', target: { view: 'production-board', id: jobs[0].id } };
     }
     const nok = qcTasks.find(task => reportOf(task)?.result === 'reject' && !task.businessContinued);
-    if (nok) return { ...base, state: 'blocked', caption: 'QC NOK', reason: `${nok.code} 结论 NOK，需要暂停、复验后由 QC 恢复。`, target: { view: 'qc-workbench', id: nok.id } };
+    if (nok) return { ...base, state: 'blocked', caption: 'QC NOK', reason: `${nok.code} 结论 NOK，需要暂停、由 QC 复验后经业务确认恢复。`, target: { view: 'qc-workbench', id: nok.id } };
+    const waiting = qcTasks.find(task => task.state === 'awaiting_business');
+    if (waiting) return { ...base, state: 'blocked', caption: '待业务恢复', reason: `${waiting.code} 复检已出结论，须由业务核对后明确继续。`, target: { view: 'qc-workbench', id: waiting.id } };
     const passed = qcTasks.filter(task => { const result = reportOf(task)?.result; return result === 'pass' || result === 'conditional' || !!task.businessContinued; });
     const covered = jobs.length > 0 && jobs.every(job => qcTasks.some(task => task.source.kind === 'orderLine' && task.source.productionId === job.id && passed.includes(task)));
     if (covered) return { ...base, state: 'done', caption: '全部分支 OK' };
@@ -81,16 +83,19 @@ export function lineStages(state: MistState, order: MistOrder, line: MistOrderLi
   return fabric ? [material, pp, inspection, completion, shipment] : [pp, material, cut, inspection, completion, shipment];
 }
 
-/** 条目当前阶段：先报受阻，再报第一个未完成的阶段。 */
+/** 先显示当前受阻；已足量离港显示出运完成，未登记的上游事实保持原状。 */
 export function currentLineStage(stages: LineStage[]): LineStage | null {
-  return stages.find(stage => stage.state === 'blocked') || stages.find(stage => stage.state !== 'done') || null;
+  const blocked = stages.find(stage => stage.state === 'blocked');
+  if (blocked) return blocked;
+  if (stages.some(stage => stage.key === 'shipment' && stage.state === 'done')) return null;
+  return stages.find(stage => stage.state !== 'done') || null;
 }
 
 /** 列表上的订单提醒：待业务动作、QC NOK、待出运条目数。 */
 export function orderLineFlags(state: MistState, order: MistOrder) {
   const lines = state.orderLines.filter(line => line.orderId === order.id), tracks = lines.map(line => ({ line, stages: lineStages(state, order, line) }));
   const business = (state.fulfillment?.qcTasks || []).filter(task => task.state === 'awaiting_business' && task.source.kind === 'orderLine' && task.source.orderId === order.id).length;
-  const nok = tracks.filter(track => track.stages.find(stage => stage.key === 'inspection')?.state === 'blocked').length;
+  const nok = tracks.filter(track => track.stages.find(stage => stage.key === 'inspection')?.caption === 'QC NOK').length;
   const toShip = tracks.filter(track => { const completion = track.stages.find(stage => stage.key === 'completion'), shipment = track.stages.find(stage => stage.key === 'shipment'); return completion?.state !== 'todo' && shipment?.state !== 'done'; }).length;
   return { tracks, business, nok, toShip };
 }
