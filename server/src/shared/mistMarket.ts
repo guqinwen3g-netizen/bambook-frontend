@@ -2,6 +2,7 @@ import {freezeQuotationHistoryEvidence,type QuoteHistoryReference} from './mistQ
 import {quotationFeedbackTarget,validateQuoteFeedback,type QuoteFeedbackInput,type QuoteFeedbackRecord} from './mistQuotationFeedback';
 import {activeQuoteCostSnapshots,calculateQuoteCosting,quotationCostingTarget,quoteCostModelVersion,quoteCostDecimal,type QuoteCostInput,type QuoteCostSnapshot} from './mistQuotationCosting';
 import {developmentDomain} from './mistDevelopmentDomain';
+import {normalizeQuoteSpecs,quoteMoqStatus,quoteSpecSummary,type QuoteLineSpecs} from './mistQuotationSpecs';
 /** Market-side business records owned by the current Mist workspace. No fixture records are created. */
 import { MistCommandError, type MistState, type MistContext, type MistCommandResult, type MistCustomer, mistMoneyMinor } from './mistWorkspace';
 import type { MistReviewTask } from './mistReview';
@@ -30,7 +31,7 @@ export type MarketTrend = RecordBase & { name:string; type:'fabric'|'color'|'cra
 export type MarketShow = RecordBase & { name:string; location:string; seasonId:string; startDate:string; endDate:string; booth:string; attendees:string; cost:string; currency:string; status:'Planned'|'Ongoing'|'Completed'|'Cancelled' };
 export type MarketCampaign = RecordBase & { code:string; name:string; type:string; seasonId:string; showId:string; startDate:string; endDate:string; target:string; budget:string; actualCost:string; currency:string; status:'Draft'|'Active'|'Paused'|'Completed'|'Cancelled'; owner:string; productIds:string[] };
 export type MarketLead = RecordBase & { name:string; company:string; email:string; phone:string; demand:string; source:'campaign'|'show'; parentId:string; customerId:string; status:'New'|'Contacted'|'Qualified'|'Following'|'Converted'|'Lost'; followUpDate:string; estimatedValue:string; actualValue:string; currency:string; convertedAt:string|null; opportunityId?:string };
-export type MarketQuoteLine = { id:string; productId:string; sourceDevId:string; sourceVersionId:string; name:string; style:string; specification:string; qty:string; unit:string; price:string; cost:string; amount:string; costBasis?:'product'|'unverified' };
+export type MarketQuoteLine = { id:string; productId:string; sourceDevId:string; sourceVersionId:string; name:string; style:string; specification:string; qty:string; unit:string; price:string; cost:string; amount:string; costBasis?:'product'|'unverified'; /** BB-QUO-2 结构化规格与 MOQ；历史条目可能没有。 */ specs?:QuoteLineSpecs };
 export type MarketQuoteApproval = { id:string; requesterId:string; reviewerId:string; status:'pending'|'approved'|'rejected'; submittedAt:string; decidedAt?:string; note?:string; details:Array<{label:string;value:string}>; fileIds:string[] };
 export type MarketQuotation = RecordBase & { code:string; customerId:string; currency:string; season:string; validUntil:string; deliveryTerms:string; paymentTerms:string; status:'Draft'|'Sent'|'Accepted'|'Rejected'|'Expired'; lines:MarketQuoteLine[]; total:string; deliveryEvidence:string; responseEvidence:string; approval:MarketQuoteApproval|null; approvalHistory?:MarketQuoteApproval[]; requiresApproval?:boolean; convertedOrderId:string|null; /** 版本链：V1 无 previousId；新版本不覆盖旧版本。 */ revision?:number; rootId?:string; previousId?:string;costingSnapshots?:QuoteCostSnapshot[];feedback?:QuoteFeedbackRecord[] };
 export type MarketLookbook = RecordBase & { name:string; customerId:string; productIds:string[]; status:'Draft'|'Prepared'|'Archived'; preparedAt:string|null; snapshots:Array<{id:string;sku:string;name:string;specification:string}> };
@@ -139,7 +140,8 @@ function sourceLine(root:MistState,m:MarketState,input:Omit<MarketQuoteLine,'id'
  const cost=costBasis==='product'?product!.cost:input.cost?decimal(input.cost,'参考成本价').text:'';
  const unit=str(input.unit,'单位'),family=quoteLineFamily(root,m,{productId,sourceDevId}),units=quoteUnitOptions(family);
  if(units&&!units.includes(unit))fail(`${QUOTE_FAMILY_LABEL[family!]}条目「${str(input.name,'品名')}」计价单位只能是 ${units.join(' / ')}，不能用“${unit}”；不自动换算`);
- return {id:ctx.id(),productId,sourceDevId,sourceVersionId,name:str(input.name,'品名'),style:str(input.style,'款号'),specification:str(input.specification,'规格',false),qty,unit,price,cost,costBasis,amount:marketLineAmount(qty,price)};
+ const name=str(input.name,'品名'),specs=family?normalizeQuoteSpecs(family,(input as {specs?:unknown}).specs,QUOTE_UNITS[family],name,fail):{};
+ return {id:ctx.id(),productId,sourceDevId,sourceVersionId,name,style:str(input.style,'款号'),specification:str(input.specification,'规格',false),qty,unit,price,cost,costBasis,amount:marketLineAmount(qty,price),...(Object.keys(specs).length?{specs}:{})};
 }
 /** 新版本只能基于同一客户、已离开草稿且尚无后续版本的报价；已转单的报价不再出新版本。 */
 function quotationPrevious(m:MarketState,old:MarketQuotation|undefined,previousId:string|undefined,customerId:string){
@@ -282,7 +284,8 @@ function execute(root:MistState,command:MarketCommand,ctx:MistContext):MistComma
      ...activeQuoteCostSnapshots(q).map(x=>({label:'核算快照',value:`${x.id} / ${x.modelVersion}; ${x.input.mode}; ${x.input.currency}/${x.input.unit}; 成本 ${x.result.cost}; ${x.input.method} ${x.input.targetPercent}%; 人工拟报价 ${x.result.proposedPrice}; 依据 ${x.input.basis}; 策略 ${x.input.strategyBasis}`})),
      ...activeQuoteCostSnapshots(q).filter(x=>x.result.allocation).map(x=>({label:'本行整笔费用分摊',value:`${x.id}; ${x.result.allocation!.total} ${x.input.currency} / ${x.result.allocation!.quantity} ${x.input.unit} = 单位 ${x.result.allocation!.unitCost} ${x.input.currency}; 仅本行参考，不是实际费用归属`})),
      ...activeQuoteCostSnapshots(q).filter(x=>x.historyEvidence).map(x=>({label:'人工历史依据',value:`${x.id}; ${x.historyEvidence!.version}; ${x.historyEvidence!.source.quoteCode} / ${x.historyEvidence!.source.lineId}; ${x.historyEvidence!.source.status}; ${x.historyEvidence!.source.line.price} ${x.historyEvidence!.source.currency}/${x.historyEvidence!.source.line.unit}; 采用理由与差异处理 ${x.historyEvidence!.reason}`})),
-     ...q.lines.map(l=>({label:l.name+' / '+l.style,value:`${l.qty} ${l.unit} × ${l.price} = ${l.amount}; 成本 ${l.cost||'未填写'}; 来源 ${l.productId||l.sourceDevId+'/'+l.sourceVersionId}`})),
+     ...q.lines.map(l=>{const family=quoteLineFamily(root,m,l);return {label:l.name+' / '+l.style,value:`${l.qty} ${l.unit} × ${l.price} = ${l.amount}; 成本 ${l.cost||'未填写'}; 来源 ${l.productId||l.sourceDevId+'/'+l.sourceVersionId}${family?'; 规格 '+quoteSpecSummary(family,l.specs):''}`};}),
+     ...q.lines.flatMap(l=>{const moq=quoteMoqStatus(quoteLineFamily(root,m,l),l);return moq.state==='below'?[{label:'低于 MOQ',value:`${l.name} / ${l.style}：${moq.text}`}]:[];}),
     ],
    };
    q.approval = approval; q.updatedAt = ctx.now;

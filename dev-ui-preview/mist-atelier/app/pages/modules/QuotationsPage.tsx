@@ -4,7 +4,8 @@ import { CheckCircle2, CopyPlus, Download, FileText, Pencil, Plus, SearchX, Send
 import { Banner, Button, Card, Checklist, DataTable, Dropdown, EmptyState, Facts, MistPage, Mono, ObjectCell, PageHeader, Pill, Pipeline, SearchField, Segmented, Timeline, Toolbar, type Column, type Tone } from '../../../../../components/mist';
 import type { MistState } from '../../../../../server/src/shared/mistWorkspace';
 import { developmentDomain } from '../../../../../server/src/shared/mistDevelopmentDomain';
-import { marketBusinessDate, quotationConversionBlockerText, quotationConversionBlockers, quotationNeedsApproval, quotationVersions, type MarketQuotation } from '../../../../../server/src/shared/mistMarket';
+import { marketBusinessDate, quotationConversionBlockerText, quotationConversionBlockers, quotationNeedsApproval, quoteLineFamily, quotationVersions, type MarketQuotation } from '../../../../../server/src/shared/mistMarket';
+import { quoteMoqStatus, quoteSpecItems } from '../../../../../server/src/shared/mistQuotationSpecs';
 import { useMistWorkspace } from '../../runtime/workspace';
 import { useMistSession } from '../../runtime/auth';
 import { useNav } from '../../nav';
@@ -219,9 +220,11 @@ function QuotationDetail({ q, state, all, day, me, can, canOrder, canApprove, lo
     ]} />
     {q.note && <p className="mist-sub">{q.note}</p>}
     <DetailBlock title="报价条目">
-      <div className="mist-col" style={{ gap: 0 }} role="list" aria-label={`${q.code} 报价条目`}>{q.lines.map(l => { const m = margin(l.price, l.cost); return <div key={l.id} role="listitem" className="mist-col mist-quote-line" style={{ gap: 4, padding: '10px 0' }}>
+      <div className="mist-col" style={{ gap: 0 }} role="list" aria-label={`${q.code} 报价条目`}>{q.lines.map(l => { const m = margin(l.price, l.cost), family = state.market ? quoteLineFamily(state, state.market, l) : undefined, specItems = quoteSpecItems(family, l.specs), moq = quoteMoqStatus(family, l); return <div key={l.id} role="listitem" className="mist-col mist-quote-line" style={{ gap: 4, padding: '10px 0' }}>
         <div className="mist-row" style={{ gap: 8, flexWrap: 'wrap' }}><strong>{l.name}</strong><span className="mist-spacer" /><Button variant="quiet" onClick={() => l.productId ? onOpen('products', l.productId) : onOpen('development/detail', l.sourceDevId, { versionId: l.sourceVersionId })}>{l.productId ? '档案' : '开发版本'}</Button><Button onClick={()=>onOpen('quotations',q.id,{section:'costing:'+l.id})}>条目核算</Button><Button onClick={()=>onOpen('quotations',q.id,{section:'compare:'+l.id})}>历史条件对照</Button></div>
         <small className="mist-muted"><Mono>{l.style}</Mono>{l.specification ? ' · ' + l.specification : ''}</small>
+        {specItems.length > 0 && <small className="mist-muted" data-quote-specs>{specItems.map((it, k) => <span key={it.label}>{k ? ' · ' : ''}{it.label} <span className={it.missing ? 'mist-tone-warn' : undefined}>{it.value}</span></span>)}</small>}
+        {moq.state !== 'none' && moq.state !== 'met' && <div className="mist-row" style={{ gap: 6, flexWrap: 'wrap' }} data-quote-moq={moq.state}>{moq.state === 'below' && <Pill tone="warn">低于 MOQ</Pill>}<small className="mist-muted">{moq.text}</small></div>}
         <div className="mist-row" style={{ gap: 8, flexWrap: 'wrap' }}><span className="mist-num">{l.qty} {l.unit} × {l.price} = {q.currency} {l.amount}</span><span className="mist-spacer" />{m === null ? <span className="mist-muted">成本待核</span> : <span className={m < 0 ? 'mist-tone-bad mist-num' : 'mist-num mist-muted'}>毛利 {m}%</span>}</div>
       </div>; })}</div>
       <span className="mist-note">毛利参考 = (单价 − 成本) / 单价，仅按已记录条目成本，不是实际订单利润。专业核算从准确条目进入；历史行业基准、汇率换算与 AI 尚未接入。</span>
