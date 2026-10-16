@@ -25,3 +25,24 @@ describe('Mist payment request reviewer authority',()=>{
   expect((await mistApprovalAuthority({},actor,'payable.request.submit')).paymentReviewerIds).toEqual([]);
  });
 });
+describe('Mist risk handling and reviewer authority',()=>{
+ it('rebuilds handling capability from the current account permissions only for risk commands',async()=>{
+  mocks.dept.mockRejectedValue(Object.assign(new Error('none'),{code:'NO_REVIEWER_RESOLVED'}));
+  expect((await mistApprovalAuthority({},{...actor,permissions:['risk:read','orders:write','relations:write']},'platform.risk.save')).risk).toEqual({all:false,orders:true,customers:true});
+  expect((await mistApprovalAuthority({},{...actor,permissions:['risk:read','risk:write']},'platform.risk.transition')).risk).toEqual({all:true,orders:false,customers:false});
+  expect((await mistApprovalAuthority({},actor,'payable.request.submit')).risk).toBeUndefined();
+ });
+ it('uses the requester department head only while active, not the requester, and still holding risk:write',async()=>{
+  mocks.dept.mockResolvedValue({reviewerId:'head'});mocks.users.set('head',{id:'head',status:'active',permissions:['risk:write']});
+  expect((await mistApprovalAuthority({},actor,'platform.risk.escalate')).riskReviewerIds).toEqual(['head']);
+  mocks.users.set('head',{id:'head',status:'active',permissions:['risk:read']});
+  expect((await mistApprovalAuthority({},actor,'platform.risk.decide')).riskReviewerIds).toEqual([]);
+  mocks.users.set('head',{id:'head',status:'disabled',permissions:['risk:write']});
+  expect((await mistApprovalAuthority({},actor,'platform.risk.escalate')).riskReviewerIds).toEqual([]);
+  mocks.dept.mockResolvedValue({reviewerId:'owner'});mocks.users.set('owner',{id:'owner',status:'active',permissions:['risk:write']});
+  expect((await mistApprovalAuthority({},actor,'platform.risk.escalate')).riskReviewerIds).toEqual([]);
+  mocks.dept.mockRejectedValue(Object.assign(new Error('none'),{code:'NO_REVIEWER_RESOLVED'}));
+  expect((await mistApprovalAuthority({},actor,'platform.risk.escalate')).riskReviewerIds).toEqual([]);
+ });
+ it('local identities route risk requests to the sales-manager test profile',async()=>{vi.stubEnv('MIST_LOCAL_WORKSPACE','1');const value=await mistApprovalAuthority({},{...actor,mistLocal:true,permissions:['risk:read','orders:write']},'platform.risk.escalate');expect(value.riskReviewerIds).toEqual(['local-manager','local-reviewer']);expect(value.risk).toEqual({all:false,orders:true,customers:false});});
+});

@@ -30,7 +30,7 @@ export type MistContext = {
   visibleNotificationIds?: string[];
   consumeBusinessNumber?: (prefix: MistBusinessNumberPrefix) => string;
   creditDocumentIssue?: MistCreditDocumentIssue;
-  authority?: { supplier: Record<string,{version:number;userIds:string[]}>; claimReviewerId?:string; businessReviewerId?:string; orderReviewerIds?:{garment:string[];fabric:string[]}; paymentReviewerIds?:string[] };
+  authority?: { supplier: Record<string,{version:number;userIds:string[]}>; claimReviewerId?:string; businessReviewerId?:string; orderReviewerIds?:{garment:string[];fabric:string[]}; paymentReviewerIds?:string[]; /** 风险处理与审批：服务端按当前账号岗位权限与部门主管路由重建，不接受 payload。 */ risk?:{ all:boolean; orders:boolean; customers:boolean }; riskReviewerIds?:string[] };
 };
 export type DevelopmentValues = {
   domain?:DevelopmentDomain; sampleForm?:string; sampleUnit?:string; targetCurrency?:string; targetUnit?:string; fabricRequirements?:FabricDevelopmentRequirements;
@@ -108,6 +108,8 @@ export type MistOrder = {
   id: string; code: string; type: 'garment' | 'fabric'; customerId: string; customer: string;
   season: string; lines: number; qty: number; amount: number; currency: string; due: string;
   progress: number; state: string; tone: MistTone; owner: string; img: MistImage;
+  /** 负责人的稳定账号：仅由服务端在负责人变更时绑定（见 bindSourceOwners），不接受 payload。旧资料没有该字段。 */
+  ownerId?: string;
   checklist: MistChecklistItem[]; handoffAt: string | null; createdAt: string; updatedAt: string;
 };
 export type MistProduction = { sourcePurchaseId?:string; id: string; code: string; orderId: string; lineId: string; order: string; name: string; factory: string; qty: number; due: string; pct: number; img: MistImage; col: 'cut' | 'sew' | 'finish' | 'qc' | 'done'; risk?: string; startDate?: string };
@@ -179,7 +181,7 @@ export type MistAllocation = { id: string; receiptId: string; invoiceId: string;
  */
 export type MistFinanceReversal = { id: string; kind: 'allocation' | 'payment'; targetId: string; amount: number; currency: string; reason: string; at: string; actor: string; actorId?: string;
   allocation?: MistAllocation; receiptId?: string; invoiceId?: string; voucherId?: string };
-export type MistCustomer = { id: string; name: string; code: string; country: string; city: string; industry: string; owner: string; grade: string; currency: string; terms: string; incoterm: string; categories: string; creditLimit: number; since: string };
+export type MistCustomer = { id: string; name: string; code: string; country: string; city: string; industry: string; owner: string; /** 同 MistOrder.ownerId。 */ ownerId?: string; grade: string; currency: string; terms: string; incoterm: string; categories: string; creditLimit: number; since: string };
 export type MistContact = { id: string; customerId: string; name: string; role: string; email: string; phone: string; tone: MistTone };
 export type MistEvent = { id: string; entityType: string; entityId: string; actor: string; at: string; text: string; fileIds: string[] };
 export type MistTarget = { view: string; id?: string; versionId?: string; customerId?: string; orderLineId?: string; productionId?: string };
@@ -638,7 +640,28 @@ export function mistCommandPermission(command: MistCommand): string | null {
   if(['settings.update','notification.read','notification.readAll','task.complete','calendar.save'].includes(command.type))return null;
   throw new MistCommandError('VALIDATION','未知操作');
 }
+/**
+ * 订单 / 客户负责人的账号绑定（风险“本人来源”判断的依据）。负责人仍是姓名文本，可重名、可改名，不能直接用于授权。
+ * 每条命令执行后统一处理：负责人未变 → 沿用原绑定（payload 无法写入或改写）；新建或变更负责人时，只有负责人填为
+ * 执行人本人姓名且执行人有账号时绑定执行人账号，否则不绑定（指派给他人、旧资料都不按姓名猜测）。
+ */
+export function bindSourceOwners(before: MistState, after: MistState, context: MistContext): void {
+  const bind = <T extends { id: string; owner: string; ownerId?: string }>(old: T[], next: T[]) => {
+    const prior = new Map(old.map(row => [row.id, row]));
+    for (const row of next) {
+      const was = prior.get(row.id);
+      const id = was && was.owner === row.owner ? was.ownerId : row.owner && row.owner === context.actorName && context.actorId ? context.actorId : undefined;
+      if (id) row.ownerId = id; else delete row.ownerId;
+    }
+  };
+  bind(before.orders || [], after.orders || []); bind(before.customers || [], after.customers || []);
+}
 export function applyMistCommand(original: MistState, command: MistCommand, context: MistContext): {state:MistState;result:MistCommandResult} {
+  const applied = applyMistCommandUnbound(original, command, context);
+  bindSourceOwners(original, applied.state, context);
+  return applied;
+}
+function applyMistCommandUnbound(original: MistState, command: MistCommand, context: MistContext): {state:MistState;result:MistCommandResult} {
   if(!original||original.schemaVersion!==1)throw new MistCommandError('INVALID_STATE','工作区数据版本无效',500);
   if(!command||typeof command.type!=='string'||!command.payload||typeof command.payload!=='object')throw new MistCommandError('VALIDATION','操作格式无效');
   mistCommandPermission(command);
