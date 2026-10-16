@@ -62,13 +62,37 @@ it('converts an accepted quotation from the new-order source dialog and keeps ma
   await click(getByRole(document.body, 'radio', { name: /QT-0042/ }));
   input('订单交期', '2026-12-10', document.body);
   await click(getByRole(document.body, 'button', { name: '转为订单草稿' }));
-  expect(store.run).toHaveBeenCalledWith({ type: 'market.quotation.convert', payload: { id: 'qt-1', type: 'garment', due: '2026-12-10', owner: '业务员甲' } });
+  expect(store.run).toHaveBeenCalledWith({ type: 'market.quotation.convert', payload: { id: 'qt-1', type: 'garment', due: '2026-12-10', owner: '业务员甲', lineIds: ['ql'] } });
   const order = store.state!.orders[0];
   expect(go).toHaveBeenCalledWith('orders/detail', order.id, { customerId: undefined, section: 'garment' });
   await click(getAllByRole(host, 'button', { name: '新建订单' })[0]);
   expect(getByRole(document.body, 'button', { name: /从报价转单/ }).hasAttribute('disabled')).toBe(true);
   await click(getByRole(document.body, 'button', { name: /手工新建/ }));
   expect(go).toHaveBeenLastCalledWith('orders/new', undefined, { customerId: undefined, section: 'garment' });
+});
+
+it('BB-QUO-5 converts only the ticked quotation lines and keeps the rest available for a later order', async () => {
+  const line = (id: string, qty: string) => ({ id, productId: 'prd-1', sourceDevId: '', sourceVersionId: '', name: '双面羊毛大衣 ' + id, style: 'CC-COAT-14', specification: '', qty, unit: '件', price: '64', amount: String(Number(qty) * 64), cost: '' });
+  store.state!.market.quotations.push({ id: 'qt-2', code: 'QT-0050', customerId: 'customer-a', currency: 'USD', season: 'AW27', validUntil: '2026-10-31', deliveryTerms: 'FOB', paymentTerms: 'TT', status: 'Accepted', lines: [line('qa', '100'), line('qb', '200')], total: '19200.00', deliveryEvidence: '', responseEvidence: '', approval: null, convertedOrderId: null, createdAt: '', updatedAt: '' } as never);
+  render({ view: 'orders' }, <OrderListPage />);
+  await click(getAllByRole(host, 'button', { name: '新建订单' })[0]);
+  await click(getByRole(document.body, 'button', { name: /从报价转单/ }));
+  await click(getByRole(document.body, 'radio', { name: /QT-0050/ }));
+  const box = (name: string) => getByRole(getByRole(document.body, 'group', { name: '本次转单条目' }), 'checkbox', { name: new RegExp(name) }) as HTMLInputElement;
+  expect(box('qa').checked).toBe(true); expect(box('qb').checked).toBe(true);
+  await click(box('qb'));
+  input('订单交期', '2026-12-10', document.body);
+  await click(getByRole(document.body, 'button', { name: '转为订单草稿' }));
+  expect(store.run).toHaveBeenCalledWith({ type: 'market.quotation.convert', payload: { id: 'qt-2', type: 'garment', due: '2026-12-10', owner: '业务员甲', lineIds: ['qa'] } });
+  const first = store.state!.orders[0];
+  expect(store.state!.orderLines.filter(row => row.orderId === first.id).map(row => row.qty)).toEqual([100]);
+  await click(getAllByRole(host, 'button', { name: '新建订单' })[0]);
+  await click(getByRole(document.body, 'button', { name: /从报价转单/ }));
+  const radio = getByRole(document.body, 'radio', { name: /QT-0050/ });
+  expect(radio.textContent).toContain('1/2 个条目可转');
+  await click(radio);
+  expect(box('qb').checked).toBe(true);
+  expect(() => box('qa')).toThrow();
 });
 
 it('derives line stages and short shipment only from recorded facts', () => {
