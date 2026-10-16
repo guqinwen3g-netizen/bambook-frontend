@@ -31,12 +31,13 @@ async function click(text:string){const target=button(text);expect(target,text).
 async function check(group:string,label:string){const box=[...document.querySelectorAll(`[aria-label="${group}"] label.mist-check`)].find(item=>item.textContent?.startsWith(label))?.querySelector('input') as HTMLInputElement;expect(box,label).toBeTruthy();await act(async()=>box.click());}
 async function fill(label:string,value:string){const field=[...document.querySelectorAll('label')].find(item=>item.querySelector('.mist-field-label')?.textContent?.replace('*','')===label);const input=field?.querySelector('input,textarea') as HTMLInputElement;expect(input,label).toBeTruthy();await act(async()=>{const prototype=input.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(prototype,'value')!.set!.call(input,value);input.dispatchEvent(new Event('input',{bubbles:true}));});}
 const roundText=(number:number)=>document.querySelector(`[data-round="${number}"]`)?.textContent||'';
+const versionCard=(round:number,label:string)=>document.querySelector(`[data-round="${round}"] [data-version="${label}"]`)?.textContent||'';
 const taskText=(label:string)=>document.querySelector(`[data-task="${label}"]`)?.textContent||'';
 async function fillIn(group:string,label:string,value:string){const field=[...document.querySelectorAll(`[aria-label="${group}"] label`)].find(item=>item.querySelector('.mist-field-label')?.textContent?.replace('*','')===label);const input=field?.querySelector('input,textarea') as HTMLInputElement;expect(input,group+label).toBeTruthy();await act(async()=>{const prototype=input.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(prototype,'value')!.set!.call(input,value);input.dispatchEvent(new Event('input',{bubbles:true}));});}
 
 describe('BB-DEV-2 round card and new-round dialog',()=>{
   it('opens R2 with only C and new D, previews R2-C / R2-D and keeps R1 unchanged',async()=>{
-    expect(roundText(1)).toContain('R1-A · A厂');expect(roundText(1)).toContain('R1-C · C厂');
+    expect(versionCard(1,'R1-A')).toContain('A厂');expect(versionCard(1,'R1-C')).toContain('C厂');
     const r1=roundText(1);
     await click('开新一轮');
     expect(document.body.textContent).toContain('开启第 2 轮');
@@ -61,7 +62,7 @@ describe('BB-DEV-2 round card and new-round dialog',()=>{
       {factory:'C厂',extraRequirements:'',sampleForm:'样衣',sampleQuantity:1,sampleUnit:'件',dueDate:'2026-11-10'},
       {factory:'D厂',extraRequirements:'D 厂另改领型',sampleForm:'样衣',sampleQuantity:2,sampleUnit:'件',dueDate:'2026-11-05'}]})}));
     expect(taskText('R2-D')).toContain('样衣 2 件 · 要求 2026-11-05');expect(taskText('R2-D')).toContain('差异：D 厂另改领型');
-    expect(roundText(2)).toContain('R2-C · C厂');expect(roundText(2)).toContain('R2-D · D厂');expect(roundText(2)).toContain('参考 R1-C');expect(roundText(2)).toContain('收腰 2cm');
+    expect(versionCard(2,'R2-C')).toContain('C厂');expect(versionCard(2,'R2-D')).toContain('D厂');expect(roundText(2)).toContain('参考 R1-C');expect(roundText(2)).toContain('收腰 2cm');
     expect(roundText(1)).toBe(r1);
     expect(document.body.textContent).toContain('D D厂');
   });
@@ -162,5 +163,74 @@ describe('BB-DEV-5 服装小版本',()=>{
     expect(document.querySelector('[data-task="R1-A.1"]')).toBeNull();expect(roundText(1)).toContain('R1-A.1');
     // 确认表单针对小版本，未继承 R1-A 的认可
     expect(document.querySelector('#mist-dev-confirmation')!.textContent).toContain('R1-A.1');expect(button('保存确认')).toBeTruthy();
+  });
+});
+
+describe('BB-DEV-11 round timeline and multi-version comparison',()=>{
+  const id=(label:string)=>state.versions.find(v=>v.label===label&&v.devId===devId)!.id;
+  const sample=(label:string)=>apply({type:'development.recordSample',payload:{devId,versionId:id(label),sample:'S-'+label,quantity:1,returnedAt:'2026-10-15T08:00:00Z'}});
+  const qc=(label:string,result:'pass'|'conditional'|'reject',opinion:string,measurements:any[]=[])=>apply({type:'development.recordQc',payload:{devId,versionId:id(label),qc:{result,reviewer:'许言',reviewedAt:'2026-10-15T09:00:00Z',report:'QC-'+label,opinion,measurements}}});
+  const confirm=(label:string,result:'approved'|'rejected',originalText:string)=>apply({type:'development.confirm',payload:{devId,versionId:id(label),result,confirmer:'Anna',organization:'测试客户',confirmedAt:'2026-10-16T08:00:00Z',basis:'邮件 12',originalText}});
+  const refresh=async(versionId?:string)=>act(async()=>{bridge.current={...bridge.current,state};render(versionId);});
+  const tags=(label:string)=>[...document.querySelectorAll(`[data-version="${label}"] .mist-rtl-tags .mist-pill`)].map(item=>item.textContent);
+  const compareBox=(label:string)=>document.querySelector(`#mist-dev-rounds [data-version="${label}"] input[type="checkbox"]`) as HTMLInputElement;
+  const cells=(row:string)=>[...document.querySelectorAll(`#mist-dev-compare tr[data-row="${row}"] td`)].map(item=>item.textContent);
+  beforeEach(async()=>{
+    sessionStorage.clear();
+    sample('R1-A');qc('R1-A','pass','合格',[{point:'胸围',standard:112,actual:112.5,tolerance:1}]);confirm('R1-A','approved','面料手感 OK');
+    sample('R1-B');qc('R1-B','conditional','袖长偏长 0.8cm，可接受');confirm('R1-B','rejected','颜色偏暗，不采用');
+    await refresh();
+  });
+  it('shows one row per round with factory cards whose status comes only from recorded facts',()=>{
+    const row=document.querySelector('[data-round="1"] [role="list"]')!;
+    expect([...row.querySelectorAll('[data-version]')].map(item=>item.getAttribute('data-version'))).toEqual(['R1-A','R1-B','R1-C']);
+    expect(tags('R1-A')).toEqual(['认可']);
+    expect(tags('R1-B')).toEqual(['不采用','需关注']); // 有保留通过仍须可见
+    expect(tags('R1-C')).toEqual(['待返样']);
+  });
+  it('opens the exact version from its card and keeps the round, factory and selection visible',async()=>{
+    await act(async()=>(document.querySelector('[data-version="R1-B"] .mist-rtl-open') as HTMLButtonElement).click());
+    expect(go).toHaveBeenLastCalledWith('development/detail',devId,{versionId:id('R1-B')});
+    expect(document.querySelector('[data-version="R1-B"]')!.getAttribute('aria-current')).toBe('true');
+    expect(document.querySelector('[data-version="R1-A"]')!.getAttribute('aria-current')).toBeNull();
+    expect(document.querySelector('[data-selection="R1-B"]')!.textContent).toContain('第 1 轮 · B厂 · R1-B');
+    expect(document.querySelector('#mist-dev-confirmation')!.textContent).toContain('B厂 · R1-B');
+    expect(document.querySelector('#mist-dev-qc')!.textContent).toContain('袖长偏长 0.8cm');
+    // 返回（路由带回同一 versionId）时选中项不变；费用卡仍在
+    await refresh(id('R1-B'));expect(document.querySelector('[data-version="R1-B"]')!.getAttribute('aria-current')).toBe('true');
+    expect(document.querySelector('[data-dev-billing]')).toBeTruthy();
+  });
+  it('compares checked versions side by side with sources, honest gaps, and opens a version from the table',async()=>{
+    await act(async()=>compareBox('R1-A').click());
+    expect(button('并排对比')!.disabled).toBe(true);
+    await act(async()=>compareBox('R1-B').click());await act(async()=>compareBox('R1-C').click());
+    expect(document.querySelector('.mist-rtl-bar')!.textContent).toContain('已选 3 个版本：R1-A、R1-B、R1-C');
+    await click('并排对比');
+    const heads=[...document.querySelectorAll('#mist-dev-compare thead th[data-version]')].map(item=>item.textContent);
+    expect(heads[0]).toContain('R1-A · A厂');expect(heads[0]).toContain('第 1 轮');expect(heads[2]).toContain('R1-C · C厂');
+    expect(cells('qcResult')).toEqual(['通过','有保留通过','未返样，无 QC']);
+    expect(cells('qcOpinion')[1]).toBe('袖长偏长 0.8cm，可接受');
+    expect(cells('confirmResult')[0]).toContain('认可 · Anna');expect(cells('confirmResult')[1]).toContain('不采用');expect(cells('confirmResult')[2]).toBe('尚无确认');
+    expect(cells('confirmText')).toEqual(['面料手感 OK','颜色偏暗，不采用','未记录']);
+    expect(document.querySelector('#mist-dev-compare tr[data-row="confirmText"] td:nth-child(4)')!.hasAttribute('data-missing')).toBe(true);
+    expect(cells('qcFacts')[0]).toBe('1 个测量点 · 超出公差 0');
+    expect(document.querySelector('[data-dev-billing]')).toBeTruthy();
+    const open=[...document.querySelectorAll<HTMLButtonElement>('#mist-dev-compare thead th[data-version="R1-B"] button')].find(item=>item.textContent?.includes('打开详情'))!;
+    await act(async()=>open.click());
+    expect(go).toHaveBeenLastCalledWith('development/detail',devId,{versionId:id('R1-B')});
+    expect(document.querySelector('#mist-dev-compare thead th[data-version="R1-B"]')!.textContent).toContain('当前查看');
+    await click('收起对比');expect(document.querySelector('#mist-dev-compare')).toBeNull();
+    expect(compareBox('R1-A').checked).toBe(true); // 收起不丢选择
+    await click('清除');expect(document.querySelector('.mist-rtl-bar')).toBeNull();
+  });
+  it('never mixes another case’s version into the comparison, even from stale saved selection',async()=>{
+    const other=apply({type:'development.submit',payload:{values:{name:'另一案',customer:'c',style:'ST2',season:'AW',category:'大衣',kind:'new',fabric:'羊毛',color:'灰',target:'',sizeBase:'M',goal:'x',factories:['A厂'],due:'2026-10-30',collaborators:[],sampleQuantity:1},fileIds:[]}}).result.devId!;
+    const foreign=state.devs.find(dev=>dev.id===other)!.versionIds[0];
+    sessionStorage.setItem(`mist.dev.compare.${devId}`,JSON.stringify([id('R1-A'),foreign,id('R1-B')]));
+    await act(async()=>root!.unmount());root=createRoot(host);await refresh();
+    expect(document.querySelector('.mist-rtl-bar')!.textContent).toContain('已选 2 个版本：R1-A、R1-B');
+    await click('并排对比');
+    expect([...document.querySelectorAll('#mist-dev-compare thead th[data-version]')].map(item=>item.getAttribute('data-version'))).toEqual(['R1-A','R1-B']);
+    expect(document.querySelector('#mist-dev-compare')!.textContent).not.toContain('另一案');
   });
 });
