@@ -347,7 +347,7 @@ export class MistRepository {
   private async concurrentChanges(db: any, workspaceId: string, current: number, expected: number, type: string | undefined): Promise<string[][]> {
     const refuse = (message: string): never => fail('REVISION_CONFLICT', message, 409);
     if (expected > current) refuse('工作区版本无效，请刷新后重试');
-    if (!type || NON_REBASABLE_COMMAND.test(type)) refuse('工作区已被他人更新，此操作需基于最新内容重新确认，请刷新后重试');
+    if (!type || NON_REBASABLE_COMMAND.test(type) || type === 'development.notice.generate') refuse('工作区已被他人更新，此操作需基于最新内容重新确认，请刷新后重试');
     if (current - expected > MIST_MAX_REBASE_GAP) refuse('工作区已有较多更新，无法自动合并，请刷新后重试');
     const keys: string[][] = [];
     for (let value = expected + 1; value <= current; value++) {

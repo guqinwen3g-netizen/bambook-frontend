@@ -122,6 +122,7 @@ describe('多人保存冲突自动重试：只在最新状态上重新执行可�
     await repo.execute(owner, id, { requestId: 'lock', expectedRevision: 1, command: { type: 'settings.lock', payload: {} } });
     await expect(repo.execute(other, id, note('late', 1))).rejects.toMatchObject({ code: 'LOCKED' });
     await expect(repo.execute(owner, id, { requestId: 'confirm', expectedRevision: 1, command: { type: 'notes.confirm', payload: { id: added.receipt.result.id } } })).rejects.toMatchObject({ code: 'REVISION_CONFLICT', message: expect.stringContaining('重新确认') });
+    await expect(repo.execute(owner, id, { requestId: 'notice', expectedRevision: 1, command: { type: 'development.notice.generate', payload: {} } } as any)).rejects.toMatchObject({ code: 'REVISION_CONFLICT', message: expect.stringContaining('重新确认') });
     expect(db.workspaces.get(id).state.notes[0].confirmed).toBeUndefined(); expect(db.workspaces.get(id).revision).toBe(2);
   });
 
