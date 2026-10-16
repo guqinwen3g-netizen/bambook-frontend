@@ -6,6 +6,8 @@ import { createAuthRouter } from '../route';
 import { createAuthService } from '../service';
 import { buildAuthTokenPayload, serializeAuthUser } from '../tokenHelpers';
 
+// qc:write is constrained by the primary department's business attributes
+// (departmentAuthorization); the QC fixture department carries fabric_qc.
 let own: any;
 let other: any;
 let updates: unknown[];
@@ -25,7 +27,7 @@ function storage() {
 function app() { const a = express(); a.use(cookieParser()); a.use(express.json()); a.use('/auth', createAuthRouter({ prisma: storage() as any, loginRateLimit: false, requireEmailVerification: false })); return a; }
 function token() { return createAuthService().signToken({ userId: own.id, displayName: own.displayName, roles: ['owner'], roleIds: ['role-super-admin'], permissions: ['*'], departmentIds: ['company'], permissionCeiling: [], roleLabels: [{ id: 'role-super-admin', name: 'Forged Boss' }] } as any); }
 beforeEach(() => {
-  own = { id: 'own-profile', displayName: 'Own QC', email: 'own@acceptance.invalid', status: 'active', deletedAt: null, primaryDeptId: 'company', primaryDepartment: { name: 'Company' }, roles: [assigned('role-qc', '质检专员'), assigned('custom-review', '品质复核')] };
+  own = { id: 'own-profile', displayName: 'Own QC', email: 'own@acceptance.invalid', status: 'active', deletedAt: null, primaryDeptId: 'company', primaryDepartment: { name: 'QC', status: 'active', parentId: 'company', metadata: { businessAttributes: ['fabric_qc'] } }, roles: [assigned('role-qc', '质检专员'), assigned('custom-review', '品质复核')] };
   other = { id: 'other-profile', displayName: 'Other', status: 'active', deletedAt: null, roles: [assigned('role-super-admin', 'Other Secret Boss')] };
   updates = [];
 });
@@ -34,7 +36,7 @@ it('serializes names only from the loaded assigned role tree without changing au
   const permissions = [...scopes]; const ceiling: string[] = [];
   const dto = serializeAuthUser(own, ['viewer'], permissions, ['company'], { newRoleIds: ['role-qc', 'custom-review', 'role-qc'], permissionCeiling: ceiling });
   expect((dto as any).roleLabels).toEqual([{ id: 'role-qc', name: '质检专员' }, { id: 'custom-review', name: '品质复核' }]);
-  expect(dto.roles).toEqual(['viewer']); expect(dto.roleIds).toEqual(['role-qc', 'custom-review', 'role-qc']); expect(dto.permissions).toBe(permissions); expect(dto.permissionCeiling).toEqual([]);
+  expect(dto.roles).toEqual(['viewer']); expect(dto.roleIds).toEqual(['role-qc', 'custom-review', 'role-qc']); expect(dto.permissions).toEqual(permissions); expect(dto.permissionCeiling).toEqual([]);
 });
 it('keeps role labels out of JWT payload and keeps QC legacy viewer mapping', () => {
   const payload = buildAuthTokenPayload(own);

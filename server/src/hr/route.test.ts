@@ -72,6 +72,8 @@ describe('HR personnel route filters erased users', () => {
       primaryDeptId: null,
       primaryDepartment: null,
       metadata: null,
+      // Personnel list only shows sign-in accounts (passwordHash present).
+      passwordHash: 'synthetic-hash',
       lastLoginAt: null,
       lastLoginIp: null,
       createdAt: new Date('2026-01-01T00:00:00Z'),
@@ -123,6 +125,7 @@ describe('HR personnel route filters erased users', () => {
     }));
     // 关键断言：erased 用户被过滤，active + disabled 用户保留
     expect(res.body.personnel).toHaveLength(2);
+    expect(JSON.stringify(res.body)).not.toContain('synthetic-hash');
     const ids = res.body.personnel.map((u: any) => u.id);
     expect(ids).toContain('user-active');
     expect(ids).toContain('user-disabled');
@@ -141,6 +144,8 @@ describe('HR personnel route filters erased users', () => {
       primaryDeptId: null,
       primaryDepartment: null,
       metadata: null,
+      // Personnel list only shows sign-in accounts (passwordHash present).
+      passwordHash: 'synthetic-hash',
       lastLoginAt: null,
       lastLoginIp: null,
       createdAt: new Date('2026-01-01T00:00:00Z'),

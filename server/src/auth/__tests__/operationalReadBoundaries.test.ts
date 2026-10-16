@@ -58,6 +58,9 @@ function storage() {
     purchaseOrder: [{ id: 'po-own', orderId: 'order-own', deletedAt: null }, { id: 'po-hidden', orderId: 'order-hidden', deletedAt: null }],
     purchaseLine: [{ id: 'purchase-line-own', purchaseOrderId: 'po-own' }, { id: 'purchase-line-hidden', purchaseOrderId: 'po-hidden' }],
     materialReceipt: [{ id: 'receipt-own', purchaseOrderId: 'po-own' }, { id: 'receipt-hidden', purchaseOrderId: 'po-hidden' }],
+    // Detail reads the native production receipt link; summary adds in-transit transfers.
+    productionStockReceipt: [],
+    inventoryTransfer: [],
     shipment: [{ id: 'shipment-own', orderId: null, deletedAt: null }, { id: 'shipment-hidden', orderId: 'order-hidden', deletedAt: null }],
     shipmentOrderAllocation: [{ shipmentId: 'shipment-own', orderId: 'order-own' }],
     productionStage: [{ id: 'stage-own', orderId: 'order-own' }, { id: 'stage-hidden', orderId: 'order-hidden' }],
@@ -90,10 +93,11 @@ function storage() {
       { id: 'pay-own', productionPlanId: 'plan-own', pieceRateRuleId: 'rule', employeeId: 'worker-own', employeeName: 'Worker', amount: 12, ratePerUnit: 3, quantity: 4, status: 'Pending', workDate: '2026-10-01' },
       { id: 'pay-hidden', productionPlanId: 'plan-hidden', pieceRateRuleId: 'rule', employeeId: 'worker-secret', employeeName: 'Secret person', amount: 900, ratePerUnit: 3, quantity: 300, status: 'Pending', workDate: '2026-10-01' },
     ],
+    // Persisted ordinary MES rows: null business owner / approved commitment columns.
     outsourcingOrder: [
-      { id: 'outsourcing-hidden', orderId: 'order-hidden', orderNumber: 'OSO-HIDDEN', unitPrice: 900, totalAmount: 900, deletedAt: null, createdAt: BigInt(90) },
-      { id: 'outsourcing-own', orderId: 'order-own', orderNumber: 'OSO-OWN', unitPrice: 7, quantity: 4, totalAmount: 28, deletedAt: null, createdAt: BigInt(80) },
-      { id: 'outsourcing-general', orderId: null, orderNumber: 'OSO-GENERAL', unitPrice: 5, quantity: 1, totalAmount: 5, deletedAt: null, createdAt: BigInt(70) },
+      { id: 'outsourcing-hidden', businessOwnerId: null, approvedCommitmentRevisionId: null, orderId: 'order-hidden', orderNumber: 'OSO-HIDDEN', unitPrice: 900, totalAmount: 900, deletedAt: null, createdAt: BigInt(90) },
+      { id: 'outsourcing-own', businessOwnerId: null, approvedCommitmentRevisionId: null, orderId: 'order-own', orderNumber: 'OSO-OWN', unitPrice: 7, quantity: 4, totalAmount: 28, deletedAt: null, createdAt: BigInt(80) },
+      { id: 'outsourcing-general', businessOwnerId: null, approvedCommitmentRevisionId: null, orderId: null, orderNumber: 'OSO-GENERAL', unitPrice: 5, quantity: 1, totalAmount: 5, deletedAt: null, createdAt: BigInt(70) },
     ],
     outsourcingLine: [{ id: 'line', outsourcingOrderId: 'outsourcing-own', quantity: 4, unitPrice: 7, amount: 28 }],
     orderProcessNode: [{ id: 'process-own', orderId: 'order-own', seq: 1, processType: 'gray_fabric', status: 'done', inputQty: 20, outputQty: 19, unitPrice: 3, amount: 57, deletedAt: null }],

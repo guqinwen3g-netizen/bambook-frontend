@@ -28,6 +28,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:mist": "vitest run src/mist src/shared/mist*.test.ts",
+    "test:access": "vitest run src/auth src/admin src/hr",
     "typecheck:mist": "tsc -p tsconfig.mist.json"
   },
   "dependencies": {

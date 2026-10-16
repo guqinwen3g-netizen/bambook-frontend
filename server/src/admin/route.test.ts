@@ -132,6 +132,8 @@ describe('admin user status management', () => {
         create: vi.fn().mockResolvedValue({}),
       },
     };
+    // Account update and role replacement commit in one transaction.
+    (prisma as any).$transaction = vi.fn(async (callback: any) => callback(prisma));
 
     const res = await request(makeApp(prisma))
       .post('/admin/users')
@@ -508,7 +510,7 @@ describe('admin SuperAdmin 角色权限编辑防线', () => {
 describe('legacy admin approval decision boundaries', () => {
   function approvalFixture(overrides: Record<string, any> = {}, auditFail = false) {
     let row: any = { id: 'admin-approval', requesterId: 'requester', reviewerId: 'admin-1',
-      status: 'pending', actionType: 'quotation:price-deviation', targetType: 'Quotation', targetId: 'q1',
+      status: 'pending', actionType: 'test:approval-kernel-contract', targetType: 'KernelContract', targetId: 'q1',
       payload: { businessScope: ['line1'] }, decidedAt: null, decisionNote: null, ...overrides };
     const read = async () => ({ ...row });
     const auditCreate = vi.fn(async () => {
@@ -521,6 +523,8 @@ describe('legacy admin approval decision boundaries', () => {
         updateMany: vi.fn(async ({ data }: any) => { row = { ...row, ...data }; return { count: 1 }; }),
       },
       userRole: { findMany: vi.fn().mockResolvedValue([{ roleId: 'role-admin' }]) },
+      // Decision commits the requester's result receipt in the same transaction.
+      notification: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
       auditLog: { create: auditCreate }, $queryRaw: vi.fn().mockResolvedValue([{ id: row.id }]),
       $transaction: vi.fn(async (callback: any) => {
         const before = row;
