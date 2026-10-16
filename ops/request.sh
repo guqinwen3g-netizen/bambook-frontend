@@ -1,11 +1,9 @@
 set -u
-date -u
-echo check-deploy-8207fc4
-echo '== current'; readlink -f /srv/bambook-dev/current
-ls -1dt /srv/bambook-dev/releases/*/ | head -4
-echo '== stamp'; cat /srv/bambook-dev/current/server/.deps-stamp 2>&1 | cut -c1-30
-echo '== services'; systemctl is-active bambook-dev bambook-dev-mist postfix dovecot
-curl -s -o /dev/null -w 'health %{http_code}\n' --max-time 5 http://127.0.0.1:8081/api/health
-curl -s -o /dev/null -w 'public %{http_code}\n' --max-time 10 https://bambook-dev.sylway.cloud/
-echo '== marker'; ls /srv/bambook-dev/.activation.json 2>&1
-echo '== build procs'; ps -eo etime,args | grep -E 'npm ci|tsc|prisma' | grep -v grep | cut -c1-120
+echo "current: $(readlink -f /srv/bambook-dev/current)"
+ls -1t /srv/bambook-dev/releases | head -4
+for s in bambook-dev mist; do echo "$s: $(systemctl is-active $s 2>/dev/null)"; done
+echo "health: $(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3001/api/health || true)"
+echo "public: $(curl -s -o /dev/null -w '%{http_code}' https://bambook-dev.sylway.cloud/ || true)"
+cur=$(readlink -f /srv/bambook-dev/current); echo "stamp: $(test -f $cur/server/.deps-stamp && echo yes || echo no)"
+sudo test -f /srv/bambook-dev/shared/test-accounts.txt && sudo sed -E 's/[^[:space:]:=|,]/x/g' /srv/bambook-dev/shared/test-accounts.txt | head -12
+sudo journalctl -u bambook-dev-receiver --since "40 min ago" --no-pager 2>/dev/null | grep -iE "reus|deps|npm ci|activated|switch" | tail -8
