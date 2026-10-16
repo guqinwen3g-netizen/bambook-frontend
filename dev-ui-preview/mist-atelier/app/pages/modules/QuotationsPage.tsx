@@ -4,7 +4,7 @@ import { CheckCircle2, CopyPlus, Download, FileText, Pencil, Plus, SearchX, Send
 import { Banner, Button, Card, Checklist, DataTable, Dropdown, EmptyState, Facts, MistPage, Mono, ObjectCell, PageHeader, Pill, Pipeline, SearchField, Segmented, Timeline, Toolbar, type Column, type Tone } from '../../../../../components/mist';
 import type { MistState } from '../../../../../server/src/shared/mistWorkspace';
 import { developmentDomain } from '../../../../../server/src/shared/mistDevelopmentDomain';
-import { marketBusinessDate, quotationNeedsApproval, quotationVersions, type MarketQuotation } from '../../../../../server/src/shared/mistMarket';
+import { marketBusinessDate, quotationConversionBlockerText, quotationConversionBlockers, quotationNeedsApproval, quotationVersions, type MarketQuotation } from '../../../../../server/src/shared/mistMarket';
 import { useMistWorkspace } from '../../runtime/workspace';
 import { useMistSession } from '../../runtime/auth';
 import { useNav } from '../../nav';
@@ -165,6 +165,8 @@ function QuotationDetail({ q, state, all, day, me, can, canOrder, canApprove, lo
   const writeReason = !can ? '没有报价写权限' : false;
   const sendReason = writeReason || (q.approval?.status === 'pending' ? '审批中，等待业务负责人决定' : needsApproval && !approved ? '低于成本或成本待核，须先取得业务审批' : expired ? '已过有效期，请修改有效期后再发送' : false);
   const reviewer = q.approval?.status === 'pending' && q.approval.reviewerId === me;
+  const blockers = stage === 'accepted' ? quotationConversionBlockers(state, q) : [];
+  const convertReason = !canOrder ? '没有订单写权限' : blockers.length ? `${quotationConversionBlockerText(blockers[0])}${blockers.length > 1 ? `，另有 ${blockers.length - 1} 个条目同样未认可` : ''}` : false;
   const decideReason = !canApprove ? '没有审批权限' : !reviewer ? '仅本次指定的业务审批人可决定，可在审批中心处理' : false;
   const reviseReason = writeReason || (next ? `已有新版本 ${next.code}，请在最新版本上修改` : q.convertedOrderId ? '已转订单的报价不再出新版本' : false);
   const banner: { tone: Tone; title: string; text: string } =
@@ -192,6 +194,7 @@ function QuotationDetail({ q, state, all, day, me, can, canOrder, canApprove, lo
       {flags.filter(f => f.key !== 'returned' && f.key !== 'superseded').map(f => <Pill key={f.key} tone={f.tone}>{f.label}</Pill>)}
     </div>
     <Banner tone={banner.tone} title={banner.title}>{banner.text}</Banner>
+    {blockers.length > 0 && <Banner tone="warn" title="开发版本未获需求方认可 · 暂不能转订单"><span data-convert-blockers>{blockers.map(b => <span key={b.lineId} style={{ display: 'block' }}>{quotationConversionBlockerText(b)}</span>)}请先在开发模块记录需求方认可后再转单；产品档案条目不受此限制。</span></Banner>}
     <ActionBar busy={locked} actions={[
       { label: '编辑草稿', icon: Pencil, onClick: onEdit, reason: writeReason, hidden: stage !== 'draft' },
       { label: '提交业务审批', icon: Send, onClick: onSubmit, primary: needsApproval && !approved, reason: writeReason, hidden: stage !== 'draft' || approved },
@@ -201,7 +204,7 @@ function QuotationDetail({ q, state, all, day, me, can, canOrder, canApprove, lo
       { label: '客户接受', icon: ThumbsUp, onClick: () => onStatus('Accepted'), primary: true, reason: writeReason, hidden: stage !== 'sent' },
       { label: '客户未接受', icon: ThumbsDown, onClick: () => onStatus('Rejected'), reason: writeReason, hidden: stage !== 'sent' },
       { label: '标记已失效', icon: TimerOff, onClick: () => onStatus('Expired'), reason: writeReason || (!expired ? `有效期至 ${q.validUntil}，到期后才能标记` : false), hidden: stage !== 'sent' },
-      { label: '核对并转订单', icon: ShoppingBag, onClick: onConvert, primary: true, reason: !canOrder ? '没有订单写权限' : false, hidden: stage !== 'accepted' },
+      { label: '核对并转订单', icon: ShoppingBag, onClick: onConvert, primary: true, reason: convertReason, hidden: stage !== 'accepted' },
       { label: '打开订单', icon: ShoppingBag, onClick: () => onOpen('orders/detail', q.convertedOrderId!), primary: true, hidden: !q.convertedOrderId },
       { label: '新建版本', icon: CopyPlus, onClick: onRevise, reason: reviseReason, hidden: stage === 'draft' || stage === 'pending' || stage === 'converted' },
       { label: '导出条目', icon: Download, onClick: onExport },
