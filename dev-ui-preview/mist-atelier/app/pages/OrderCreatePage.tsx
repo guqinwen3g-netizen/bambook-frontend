@@ -21,7 +21,6 @@ export function OrderCreatePage() {
   const alive=React.useRef(true);React.useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
   const locked=React.useRef(false);
   const initialType=route.section==='fabric'?'fabric':'garment';
-  const stateRef=React.useRef(state);stateRef.current=state;
   const source=React.useMemo<DraftSource|null>(()=>{
     if(!state)return null;
     const unit=initialType==='garment'?'件':'米';
@@ -56,20 +55,11 @@ export function OrderCreatePage() {
     if (message) { setFailure(message); return; }
     const bound=scope;locked.current=true;setWorking(true); setFailure('');
     try {
-      const receipt = await run({ type: 'order.create', payload: { ...form, governance:contract, lines: lines.map(({ key, origin, ...line }) => line) } });
+      // BB-ORD-2：来源随条目在同一条 order.create 命令中写入并由服务端校验，不再二次补写
+      const receipt = await run({ type: 'order.create', payload: { ...form, governance:contract, lines: lines.map(({ key, origin, ...line }) => ({ ...line, ...(origin||{}) })) } });
       const id = receipt.result.orderId ?? receipt.result.id;
       if (!id) throw new Error('订单已提交，但回执缺少编号。请返回列表核对，勿重复创建。');
-      let linked='';
-      if(lines.some(line=>line.origin)){
-        try{
-          let created=stateRef.current?.orderLines.filter(line=>line.orderId===id)||[];
-          for(let attempt=0;attempt<40&&created.length!==lines.length;attempt++){await new Promise(resolve=>setTimeout(resolve,50));created=stateRef.current?.orderLines.filter(line=>line.orderId===id)||[];}
-          if(created.length!==lines.length)throw new Error('尚未读到新建条目');
-          const order=stateRef.current?.orders.find(row=>row.id===id) as {governance?:{contract:OrderGovernanceInput}}|undefined;
-          await run({type:'order.governance.saveDraft',payload:{orderId:id,input:order?.governance?.contract||contract,lines:created.map((line,index)=>({id:line.id,name:line.name,style:line.style,img:line.img,qty:line.qty,unit:line.unit,price:line.price,...(lines[index].origin||{})}))}});
-        }catch(problem){linked=problem instanceof Error?problem.message:'来源关联未写入';}
-      }
-      if(alive.current&&activeScope.current===bound){toast(linked?`订单草稿已创建；来源关联未写入（${linked}），请在条目中核对`:'订单草稿已创建，待主单审批'); go('orders/detail', id,{customerId:form.customerId,section:form.type});}
+      if(alive.current&&activeScope.current===bound){toast('订单草稿已创建，待主单审批'); go('orders/detail', id,{customerId:form.customerId,section:form.type});}
     } catch (problem) { if(alive.current&&activeScope.current===bound)setFailure(problem instanceof Error ? problem.message : '订单未能创建，请重试'); } finally { if(alive.current&&activeScope.current===bound){locked.current=false;setWorking(false);} }
   };
   const resolve=async()=>{if(working||saving||locked.current)return;const bound=scope;locked.current=true;setWorking(true);try{const receipt=await recover();if(alive.current&&activeScope.current===bound&&receipt){const id=receipt.result.orderId??receipt.result.id;if(id&&pending?.command?.type==='order.create')go('orders/detail',id,{customerId:form.customerId,section:form.type});}}catch(error){if(alive.current&&activeScope.current===bound)setFailure(error instanceof Error?error.message:'原请求核对失败');}finally{if(alive.current&&activeScope.current===bound){locked.current=false;setWorking(false);}}};

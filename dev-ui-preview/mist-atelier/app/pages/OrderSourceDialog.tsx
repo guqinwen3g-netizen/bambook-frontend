@@ -39,7 +39,7 @@ export function OrderSourceDialog({ open, onClose, type, customerId, canWrite }:
   React.useEffect(() => { if (open) { setKind(null); setQ(''); setPicked(''); setDue(''); setOwner(state?.settings.profileName || ''); setFailure(''); } }, [open]);
   const domainLabel = type === 'fabric' ? '面料' : '成衣';
   const quotes = convertibleQuotations(state, type).filter(quote => !customerId || quote.customerId === customerId);
-  const versions = (state?.versions || []).filter(version => !version.archivedAt && version.confirmations.some(row => row.result === 'approved')).map(version => ({ version, dev: state!.devs.find(dev => dev.id === version.devId) })).filter(row => row.dev && (developmentDomain(row.dev.values) === 'fabric' ? 'fabric' : 'garment') === type && (!customerId || row.dev.customerId === customerId));
+  const versions = (state?.versions || []).filter(version => !version.archivedAt && version.confirmations.at(-1)?.result === 'approved').map(version => ({ version, dev: state!.devs.find(dev => dev.id === version.devId) })).filter(row => row.dev && (developmentDomain(row.dev.values) === 'fabric' ? 'fabric' : 'garment') === type && (!customerId || row.dev.customerId === customerId));
   const products = (state?.market?.products || []).filter((product: MarketProduct) => product.status === 'active' && product.category === type);
   const pickedQuote = kind === 'quotation' ? quotes.find(quote => quote.id === picked) : undefined;
   const pickedLines = pickedQuote ? convertibleQuoteLines(state, pickedQuote, type) : [];

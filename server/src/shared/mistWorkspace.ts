@@ -10,6 +10,7 @@ import {createEmailState,applyEmailCommand,emailCommandPermission,seedEmailExamp
 import {createPlatformState,applyPlatformCommand,platformCommandPermission,getPlatformReviews,platformCreditAppliedMinor,getRequiredBusinessNumberPlan as platformBusinessNumberPlan,platformBusinessDate,type PlatformState,type PlatformCommand} from './mistPlatform';
 import type {MistCreditDocumentIssue} from './mistCreditDocuments';
 import type {MistReviewTask} from './mistReview';
+import {assertOrderLineSource,type OrderLineSource} from './mistOrderSource';
 import {createOrderGovernance,applyOrderGovernanceCommand,orderGovernancePermission,getOrderGovernanceReviews,assertOrderApproved,type OrderGovernanceFields,type OrderGovernanceCommand,type OrderGovernanceInput} from './mistOrderGovernance';
 import {createOrderFundingState,applyOrderFundingCommand,orderFundingCommandPermission,assertOrderDepositCovered,assertOrderFundingIntegrity,type OrderFundingState,type OrderFundingCommand} from './mistOrderFunding';
 import {createPayablesState,applyPayablesCommand,payablesCommandPermission,getPayableReviews,type PayablesState,type PayablesCommand} from './mistPayables';
@@ -178,7 +179,7 @@ export type MistState = {
   /** 所有者明确授权进入本空间的账号（只管进入，不授予业务权限）与授权历史。 */
   memberIds?:string[]; members?:MistWorkspaceMember[]; memberLog?:MistWorkspaceMemberLog[];
 };
-export type MistOrderInput = { type: 'garment' | 'fabric'; customerId: string; season: string; currency: string; due: string; owner: string; governance?:OrderGovernanceInput; lines: Array<Omit<MistOrderLine, 'id' | 'orderId' | 'made' | 'qc'>> };
+export type MistOrderInput = { type: 'garment' | 'fabric'; customerId: string; season: string; currency: string; due: string; owner: string; governance?:OrderGovernanceInput; lines: Array<Omit<MistOrderLine, 'id' | 'orderId' | 'made' | 'qc'> & OrderLineSource> };
 export type MistCommand = FulfillmentCommand | MarketCommand | PlatformCommand | EmailCommand | CrmCommand | OrderGovernanceCommand | OrderFundingCommand | PayablesCommand
   | { type: 'development.saveDraft'; payload: { draftId?: string; values: DevelopmentValues; fileIds: string[] } }
   | { type: 'development.submit'; payload: { draftId?: string; values: DevelopmentValues; fileIds: string[] } }
@@ -694,8 +695,11 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
       const id=context.id(),code='SO-'+(p.type==='fabric'?'F':'G')+'-'+context.now.slice(0,4)+'-'+String(state.orders.length+1).padStart(4,'0'),currency=text(p.currency,'币种',true,3).toUpperCase();
       if(!/^[A-Z]{3}$/.test(currency))throw new MistCommandError('VALIDATION','币种格式无效');
       const order:MistOrder={id,code,type:p.type,customerId:c?.id||'',customer:c?.name||governance.contract.receiver||'内部接收方待填写',governance,season:text(p.season,'季节'),lines:0,qty:0,amount:0,currency,due:date(p.due),progress:0,state:'订单草稿',tone:'neutral',owner:text(p.owner,'负责人'),img:p.lines[0].img||'coat',checklist:['拟发范围确认','收货与贸易条款确认','收款条件核对'].map((label,index)=>({id:id+'-check-'+index,label,done:false,note:''})),handoffAt:null,createdAt:context.now,updatedAt:context.now};
+      // BB-ORD-2：来源与条目同一命令写入，先全部校验再落库，任何一条不合规整单拒绝
+      const scope={type:p.type,customerId:c?.id||'',internal:governance.contract.kind==='internal'};
+      const rows=(p.lines as MistOrderInput['lines']).map((row,index)=>{const qty=positive(row.qty,'数量'),price=positive(row.price,'单价',true);lineAmount(qty,price);const name=text(row.name,'品名');return {name,style:text(row.style,'款号'),img:['coat','blazer','suit','clay'].includes(row.img)?row.img:'coat' as MistImage,qty,unit:text(row.unit,'单位',true,20),price,source:assertOrderLineSource(state,scope,row,name||String(index+1))};});
       state.orders.unshift(order);
-      for(const row of p.lines){const qty=positive(row.qty,'数量'),price=positive(row.price,'单价',true);lineAmount(qty,price);state.orderLines.push({id:context.id(),orderId:id,name:text(row.name,'品名'),style:text(row.style,'款号'),img:['coat','blazer','suit','clay'].includes(row.img)?row.img:'coat',qty,unit:text(row.unit,'单位',true,20),price,made:0,qc:0});}
+      for(const {source,...row} of rows)state.orderLines.push({id:context.id(),orderId:id,...row,made:0,qc:0,...source} as MistOrderLine);
       event(state,context,'order',id,'创建订单 '+code,{view:'orders/detail',id});result={id,orderId:id};break;
     }
     case 'order.update': {
