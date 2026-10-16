@@ -26,6 +26,8 @@ async function type(label: string, value: string) { const c = document.body.quer
 const risk = (state_: string) => state.platform!.risks.find(r => r.state === state_)!;
 const row = (text: string) => [...host.querySelectorAll<HTMLElement>('[role="row"][tabindex]')].find(r => r.textContent?.includes(text));
 
+/** 汇总栏某项的数值（SummaryBar：<small>标签</small><div class=mist-sumbar-big>值</div>）。 */
+const summaryValue = (label: string) => [...host.querySelectorAll('[data-risk-summary] .mist-sumbar > div')].find(d => d.querySelector('small')?.textContent === label)?.querySelector('.mist-sumbar-big')?.textContent;
 const detail = (id: string) => host.querySelector(`[data-risk-detail="${id}"]`)!;
 /** 直接放一条订单来源的风险（不经种子），用于分级与负责人场景。 */
 /** owner 为来源订单负责人姓名；ownerId 为服务端绑定的负责人账号（缺省为空，即旧资料未绑定）。 */
@@ -147,5 +149,25 @@ describe('风险审批与操作记录的日期口径', () => {
     expect(text).toContain('周敏 · 10/17'); expect(text).toContain('沈禾 · 10/17');
     expect(text).not.toContain('10/16');
     expect(text).toContain('2026/10/17');
+  });
+  it('关闭事件跨 UTC 日界与月界：短日期与“本月关闭”都按上海业务日归入 11 月', async () => {
+    // 上海 2026-11-01 00:30 = UTC 2026-10-31 16:30；页面当前时间为上海 11-01 09:00。
+    vi.setSystemTime(new Date('2026-11-01T01:00:00Z'));
+    const at = '2026-10-31T16:30:00.000Z';
+    const r = orderRisk({ id: 'risk-month', state: 'Resolved', resolution: '已追回', closedAt: at, closedBy: '周敏', disposition: 'closed' });
+    // 上海 2026-10-31 23:30 关闭的仍属 10 月，不计入。
+    orderRisk({ id: 'risk-oct', state: 'Resolved', resolution: '已追回', closedAt: '2026-10-31T15:30:00.000Z', closedBy: '周敏' });
+    await mount(r.id, 'ledger');
+    expect(summaryValue('本月关闭')).toBe('1');
+    const text = detail(r.id).textContent!;
+    expect(text).toContain('周敏 · 11/01'); expect(text).not.toContain('10/31');
+    expect(state.platform!.risks.find(x => x.id === r.id)!.closedAt).toBe(at); // 原始时间戳不改
+  });
+  it('月末反向边界：UTC 仍在 11/30、上海已是 12/01 的关闭不计入 11 月', async () => {
+    vi.setSystemTime(new Date('2026-11-30T08:00:00Z')); // 上海 11-30 16:00
+    const r = orderRisk({ id: 'risk-dec', state: 'Resolved', resolution: '已追回', closedAt: '2026-11-30T16:30:00.000Z', closedBy: '周敏' });
+    await mount(r.id, 'ledger');
+    expect(summaryValue('本月关闭')).toBe('0');
+    expect(detail(r.id).textContent).toContain('周敏 · 12/01');
   });
 });

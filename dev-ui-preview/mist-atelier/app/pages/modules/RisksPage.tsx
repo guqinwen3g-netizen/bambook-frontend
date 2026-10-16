@@ -14,7 +14,7 @@ import { useMistSession } from '../../runtime/auth';
 import { useNav } from '../../nav';
 import { ModuleEditorDialog, downloadModuleCsv, type ModuleEditorSpec } from './ModuleWorkbench';
 import { useRouteDraft } from './useRouteDraft';
-import { ActionBar, DetailBlock, DetailBody, ListDetail, businessWhen, shortWhen } from './pageKit';
+import { ActionBar, DetailBlock, DetailBody, ListDetail, businessDay, businessWhen, shortWhen } from './pageKit';
 
 type Tab = 'signals' | 'ledger';
 type LedgerFilter = 'open' | 'escalated' | 'closed' | 'all';
@@ -70,7 +70,8 @@ export function RisksPage() {
 
   const unregistered = signals.filter(s => !openByKey.has(s.key));
   const open = risks.filter(r => r.state !== 'Resolved'), escalated = risks.filter(r => pendingEscalation(r));
-  const monthClosed = risks.filter(r => r.state === 'Resolved' && (r.closedAt || '').slice(0, 7) === day.slice(0, 7));
+  // 关闭时间是 UTC 时间戳，按上海业务日归月（与 day 同口径），不能直接截取 UTC 字符串。
+  const monthClosed = risks.filter(r => r.state === 'Resolved' && !!r.closedAt && businessDay(r.closedAt).slice(0, 7) === day.slice(0, 7));
   const signalRows = signals.filter(s => typeFilter === 'all' || s.type === typeFilter);
   const ledgerRows = risks.filter(r => (typeFilter === 'all' || riskType(r) === typeFilter) && (ledgerFilter === 'all' || (ledgerFilter === 'open' ? r.state !== 'Resolved' : ledgerFilter === 'closed' ? r.state === 'Resolved' : !!pendingEscalation(r))))
     .sort((a, b) => Number(a.state === 'Resolved') - Number(b.state === 'Resolved') || Number(!pendingEscalation(a)) - Number(!pendingEscalation(b)) || levelRank[a.level] - levelRank[b.level] || (b.updatedAt || b.createdAt).localeCompare(a.updatedAt || a.createdAt));
