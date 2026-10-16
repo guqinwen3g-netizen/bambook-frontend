@@ -70,3 +70,24 @@ describe('Mist workspace HTTP contracts', () => {
     expect(receipt.body.receipt.revision).toBe(1);
   });
 });
+
+it.each(['全链路模拟PO.pdf','café.pdf','brief.txt'])('preserves the multipart UTF-8 filename %s',async name=>{
+  const workspace=(await request(app).get('/api/mist/workspaces/default').set('x-test-user','owner')).body.workspace;
+  const bytes=Buffer.from('isolated upload bytes');
+  const upload=()=>request(app).post(`/api/mist/workspaces/${workspace.id}/files`).set('x-test-user','owner').field('requestId','unicode-file').field('expectedRevision','0').attach('file',bytes,{filename:name,contentType:'application/pdf'});
+  const saved=await upload().expect(201);
+  expect((await upload()).body.replayed).toBe(true);
+  expect(saved.body.workspace.state.files[0].name).toBe(name);
+  const download=await request(app).get(`/api/mist/workspaces/${workspace.id}/files/${saved.body.workspace.state.files[0].id}`).set('x-test-user','owner').expect(200);
+  expect(download.body).toEqual(bytes);
+  expect(download.headers['content-disposition']).toContain(encodeURIComponent(name));
+});
+
+it('keeps a legacy Latin-1 multipart filename when its bytes are not UTF-8',async()=>{
+  const workspace=(await request(app).get('/api/mist/workspaces/default').set('x-test-user','owner')).body.workspace;
+  const boundary='legacy-name-boundary',bytes=Buffer.from('legacy file bytes');
+  const fields=`--${boundary}\r\nContent-Disposition: form-data; name="requestId"\r\n\r\nlegacy-name\r\n--${boundary}\r\nContent-Disposition: form-data; name="expectedRevision"\r\n\r\n0\r\n--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="café.pdf"\r\nContent-Type: application/pdf\r\n\r\n`;
+  const body=Buffer.concat([Buffer.from(fields,'latin1'),bytes,Buffer.from(`\r\n--${boundary}--\r\n`)]);
+  const saved=await request(app).post(`/api/mist/workspaces/${workspace.id}/files`).set('x-test-user','owner').set('Content-Type',`multipart/form-data; boundary=${boundary}`).send(body).expect(201);
+  expect(saved.body.workspace.state.files[0].name).toBe('café.pdf');
+});
