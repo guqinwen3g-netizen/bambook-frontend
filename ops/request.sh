@@ -1,9 +1,7 @@
 set -u
-echo "current: $(readlink -f /srv/bambook-dev/current)"
-ls -1t /srv/bambook-dev/releases | head -4
-for s in bambook-dev mist; do echo "$s: $(systemctl is-active $s 2>/dev/null)"; done
-echo "health: $(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3001/api/health || true)"
-echo "public: $(curl -s -o /dev/null -w '%{http_code}' https://bambook-dev.sylway.cloud/ || true)"
-cur=$(readlink -f /srv/bambook-dev/current); echo "stamp: $(test -f $cur/server/.deps-stamp && echo yes || echo no)"
-sudo test -f /srv/bambook-dev/shared/test-accounts.txt && sudo sed -E 's/[^[:space:]:=|,]/x/g' /srv/bambook-dev/shared/test-accounts.txt | head -12
-sudo journalctl -u bambook-dev-receiver --since "40 min ago" --no-pager 2>/dev/null | grep -iE "reus|deps|npm ci|activated|switch" | tail -8
+cur=$(readlink -f /srv/bambook-dev/current); echo "current: $cur"
+sudo journalctl -u bambook-dev-receiver --since "60 min ago" --no-pager 2>/dev/null | grep -iE "reus|deps|activated|switch|npm ci" | tail -6
+ls /etc/systemd/system | grep -i bambook
+sudo awk -F'\t' 'NR>2{print NR": "$1}' /srv/bambook-dev/shared/test-accounts.txt
+sudo sed -n 1p /srv/bambook-dev/shared/test-accounts.txt | sed -E 's/[A-Za-z0-9@._-]{12,}/<redacted>/g'
+grep -h "PORT" /srv/bambook-dev/shared/*.env 2>/dev/null | sed -E 's/=.*/=…/' | head; sudo ss -ltnp | grep -E "node|nginx" | awk '{print $4}' | head
