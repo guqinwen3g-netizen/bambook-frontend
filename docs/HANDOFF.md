@@ -1,8 +1,47 @@
-# 交接 · 2026-10-15 收尾
+# 交接 · 2026-10-16 接手指引（云端 Agent）
 
-> **2026-10-15 起不再逐 PR 同步本页状态**：当前状态以 [README](../README.md) 当前工作和 GitHub 为准；本页保留页面 / 工程速查与历史背景。
->
-> 给下一位接手的 Agent。本页是一次性收尾快照，写于 main `ea41cbe`（PR #29 合入）之后、本交接 PR 之前。开始工作前**必须**重新核对 GitHub 实际分支 / PR / Actions，以 GitHub 为准；常设入口仍是 [README](../README.md) 与 [AGENTS.md](../AGENTS.md)。
+> 给下一位接手的云端 Agent。先读本节，再按需看下方 2026-10-15 的速查（第 1–9 节，部分状态已过时，以本节和 GitHub 为准）。常设入口仍是 [README](../README.md) 与 [AGENTS.md](../AGENTS.md)。开始前**必须**重新核对 GitHub 实际分支 / PR / Actions 和开发服务器 `readlink -f /srv/bambook-dev/current`。
+
+### A. 交接时的状态（2026-10-16 05:40Z）
+
+| 位置 | 版本 | 说明 |
+|---|---|---|
+| GitHub `main` | `2ea11fd`（#53 合入） | 无开放 PR，无未合入功能分支 |
+| 开发服务器 | `cd19b0a`（#52）已验证；`2ea11fd` 的 verify / 自动交付在跑 | 接手第一件事：经运维通道确认已切到 `2ea11fd` |
+| 正式环境 | 未触碰 | — |
+
+本轮合入：#49（文档）、#50（人事岗位 / 在职变动 / 订单毛利 / 管理员重置后强制改密）、#51（退出所有设备、老板调整角色权限）、#52（两步验证 TOTP + 恢复码、管理员重置两步验证、老板账号防线、账号列表不回显 metadata.mfa）、#53（本人改密退出其他设备并为当前设备换发令牌；调岗随岗位换部门并退出原小组；文档）。#50–#52 已在开发服务器用测试账号接口实测（含两步验证完整开启→登录→恢复码→关闭，测试账号已复原）；界面未用真实账号人工走查。
+
+### B. 用户规则（覆盖下方第 2 节的旧写法）
+
+- 中文、简洁、只讲实际进展；**不干等**：CI / 部署期间做别的，按确切 SHA 抽查。
+- 范围已确认的批次：最新 head 的 CI 全绿后**直接** merge commit 合入（AGENTS.md），无需再问。只在公司特有业务规则、超范围、关键权限变更、数据迁移、正式环境、真实资金时停下来问。
+- 用户已授权：通用专业知识（如毛利口径）与软件设计（安全、权限 UI 等）由 Agent 自行决定；只有公司特有业务规范需确认。
+- 汇报时分开写：已推送 / 已合入 / 已部署开发服务器 / 人工验收（未做就写未做）/ 正式环境。
+- README 只写“当前工作”；验证证据写在 PR；LIVE-PROGRESS 只记未合入停点。凭据不进仓库、日志、PR、聊天。
+
+### C. 操作要点
+
+- 推送：GitHub MCP `create_branch`（自 main）→ `push_files` → `create_pull_request` → CI 绿 → `merge_pull_request`（merge）。
+- CI：PR 状态 `ci/mist-verify`（作业 changes / verify / report）。CI 只跑前端测试和服务端 `src/mist` + 共享 mist 测试；其他服务端测试（auth、admin、hr 等）**只能本地跑**，改这些代码要自己跑。
+- 本地已知既有失败（与近期改动无关，已在未改动代码上复现）：`server/src/admin/route.test.ts` 5、`auth/__tests__/currentOrderLineWriteAccess` 42、`operationalReadBoundaries` 6、`danglingScopeConsumption` 4（引用已删文件）、`roleLabels` 3（qc:write 种子漂移）、`hr/route.test.ts` 2。值得单独开一个 PR 清理。
+- 部署：main 的 Mist verification 成功后自动 “Bambook development delivery”，约 15 分钟，只部署 main 最新提交——**交付运行中再合入会使其失效**，连续合入时只有最后一个会部署。
+- 运维通道：向 `ops-channel` 推 `ops/request.sh`（内容必须变化，可在首行加时间注释），约 30–60 秒后读 `ops/results/<请求提交SHA>.md`。测试账号文件 `/srv/bambook-dev/shared/test-accounts.txt`（制表符分隔：第 3 行管理员、第 6 行业务员、第 9 行物流；脚本里 `sudo awk` 取值，不要打印）。两步验证实测可在服务器上用 `node -e` 计算 TOTP。
+- `JWT_SECRET` 同时派生两步验证密钥的加密钥匙：**更换它会让所有已绑定的验证器失效**，需管理员逐个“重置两步验证”。
+
+### D. 下一步候选（按价值排序，开工前与用户的优先级对一下）
+
+1. 确认 `2ea11fd` 已部署并冒烟（`/api/hr/personnel`、包内文案“部门随新岗位确定”）。
+2. 清理上面列出的本地既有失败测试，或把 auth / admin / hr 测试纳入 CI。
+3. 自定义角色新建 / 删除：先把约 68 处 `requireRole()` 旧角色判断迁到 `requirePermission(scope)`，否则自定义角色过不了这些检查；属关键权限变更，方案先给用户看。
+4. 订单毛利：退税、费用、外币折算——用哪种汇率（合同 / 结汇）及退税口径是公司规则，需用户确认。
+5. 智能邮箱应用接 IMAP/SMTP（README 第 4 项）；对外收发仍卡在 DNS / 25 端口。
+6. 工作助手：桌面窗口与 host 重启重连未验（README 第 6 项）。
+7. 用真实账号人工走查平台模块界面（管理后台、人事、报表中心、设置·安全）。
+
+---
+
+# 附：2026-10-15 收尾速查（部分已过时）
 
 ## 1. 一句话现状
 
@@ -12,7 +51,7 @@
 
 - 中文沟通，简洁讲实际进展；不要绕远路、不要干等、不要“掺水”。
 - 只用 **merge commit** 合入，不 squash、不强推、不改写历史。
-- 最新 head 的 CI（`ci/mist-verify` = verify 成功）后，**先问用户是否合入**，用户同意才合。
+- （已过时，见 B 节）合入规则以 AGENTS.md 为准。
 - mock / 模拟桥不能冒充真实模型或真实集成验收。
 - 凭据不写进仓库、日志、PR 或聊天。
 - 不动正式环境（Mac mini、`jiangsupanda.com`），不动真实资金；不擅自删除他人分支或关闭他人 PR。
