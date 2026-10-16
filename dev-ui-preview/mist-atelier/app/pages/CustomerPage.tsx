@@ -27,7 +27,7 @@ export function CustomerPage() {
   const devs = (state?.devs ?? []).filter(item => item.customerId === customer?.id);
   const contacts = (state?.contacts ?? []).filter(item => item.customerId === customer?.id);
   const invoices = (state?.invoices ?? []).filter(invoice => orders.some(order => order.id === invoice.orderId));
-  const active = orders.filter(order => !['已出运', '履约完成', '已完成', '已取消', '待收尾款'].includes(order.state));
+  const active = orders.filter(order => !['已出运', '履约完成', '已完成', '已取消', '已作废', '待收尾款'].includes(order.state));
   const events = (state?.events ?? []).filter(event => event.entityId === customer?.id || orders.some(order => order.id === event.entityId) || devs.some(dev => dev.id === event.entityId) || contacts.some(contact => contact.id === event.entityId)).sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
   const fileIds = new Set([...devs.flatMap(dev => dev.fileIds), ...events.flatMap(event => event.fileIds)]);
   const files = (state?.files ?? []).filter(file => fileIds.has(file.id));
@@ -64,7 +64,7 @@ export function CustomerPage() {
   const customerEmail = contacts.find(item=>emailValid(item.email))?.email;
   const writeMail = (email?: string) => { if (!emailValid(email)) { setFailure('请先为联系人填写有效邮箱'); return; } window.location.href = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(customer?.name ?? '')}`; };
   if (!customer) return <MistPage><PageHeader title="客户管理" description="选择客户继续业务，或建立新的客户档案。" actions={customerActions}/><EmptyState title={loading ? '正在读取客户' : requestedId ? '没有找到指定客户' : '还没有客户档案'} description={error || (requestedId ? '请选择当前工作区已有客户，或新建客户。' : '创建首个客户后，即可发起开发、报价与订单。')} action={<Button onClick={() => void refresh()}>重新读取</Button>} /></MistPage>;
-  const currencyOrders = orders.filter(order => order.currency === customer.currency), currencyInvoices = invoices.filter(invoice => invoice.currency === customer.currency);
+  const currencyOrders = orders.filter(order => order.currency === customer.currency && !['已作废', '已取消'].includes(order.state)), currencyInvoices = invoices.filter(invoice => invoice.currency === customer.currency);
   const start = new Date(customer.since).getTime(), years = Number.isFinite(start) ? Math.max(0, (Date.now() - start) / (365.25 * 24 * 3600 * 1000)).toFixed(1) : '—';
   const contactList = <div className="mist-related">{contacts.length ? contacts.map(item => <button key={item.id} type="button" onClick={() => { setContact({ ...item }); setFailure(''); }}><Avatar name={item.name} tone={item.tone} /><span><b>{item.name}</b><small>{item.role} · {item.email || item.phone || '待补充联系方式'}</small></span></button>) : <EmptyState compact title="还没有联系人" action={<Button onClick={() => setContact({ name: '', role: '', email: '', phone: '' })}>添加联系人</Button>} />}</div>;
   return <MistPage>

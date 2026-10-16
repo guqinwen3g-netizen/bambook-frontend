@@ -1,6 +1,6 @@
 /** Actual fulfillment records in the persisted Mist workspace. No fixture import. */
 import {developmentDomain} from './mistDevelopmentDomain';
-import { MistCommandError, lineAmount, mistMoneyMinor, assertMistOrderApproved, assertMistOrderDeposit, isActiveMistInvoice } from './mistWorkspace';
+import { MistCommandError, lineAmount, mistMoneyMinor, assertMistOrderApproved, assertMistOrderDeposit, assertMistOrderOpen, isActiveMistInvoice } from './mistWorkspace';
 import type { MistState, MistContext, MistCommandResult, MistQc, MistTarget, MistProduction } from './mistWorkspace';
 import type { MistReviewTask } from './mistReview';
 import { supplierBusinessDay, supplierUnavailableReason } from './mistSupplierStatus';
@@ -1022,6 +1022,7 @@ export function applyFulfillmentCommand(root: MistState, command: FulfillmentCom
         }
         case 'fulfillment.production.plan': {
             const branch = get(root.productions, p.productionId, '生产分支'), fact = productionFact(root, branch.id);
+            assertMistOrderOpen(root, branch.orderId);
             if (fact.release || fact.completion) fail('已放行生产不得改写计划尺码');
             fact.sizes = normalizeSizes(p.sizes, branch.qty, get(root.orders, branch.orderId, '订单').type === 'garment');
             fact.revision++;
@@ -1091,6 +1092,7 @@ export function applyFulfillmentCommand(root: MistState, command: FulfillmentCom
         }
         case 'fulfillment.procurement.save': {
             const s = source(root, { kind: 'orderLine', orderId: p.orderId, lineId: p.lineId }), order = get(root.orders, p.orderId, '订单');
+            assertMistOrderOpen(root, order.id);
             const existing = p.id ? get(f.purchases, p.id, '采购') : undefined;
             if (existing && !['draft', 'rejected'].includes(existing.state))
                 fail('已提交采购须退回后修订');

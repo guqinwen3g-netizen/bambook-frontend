@@ -14,7 +14,9 @@ import { useMistSession } from '../runtime/auth';
 import { OrderSourceDialog } from './OrderSourceDialog';
 import { currentLineStage, orderLineFlags } from './orderLineTrack';
 const approvalOf=(order:MistOrder)=>(order as MistOrder&{governance?:OrderGovernanceFields}).governance?.status;
-const approvalLabel=(order:MistOrder)=>({draft:'订单草稿',pending:'待主单审批',approved:'主单已批准',rejected:'主单已退回'}[approvalOf(order)||'']||'待补主单审批');
+/** BB-ORD-7：已作废 / 已取消订单默认不在列表与统计中，可按主单审批筛选查看。 */
+export const isTerminatedOrder=(order:MistOrder)=>['void','cancelled'].includes(approvalOf(order)||'');
+const approvalLabel=(order:MistOrder)=>({draft:'订单草稿',pending:'待主单审批',approved:'主单已批准',rejected:'主单已退回',void:'已作废',cancelled:'已取消'}[approvalOf(order)||'']||'待补主单审批');
 
 /** Export the displayed records as a real UTF-8 spreadsheet-compatible file. */
 export function downloadMistCsv(filename: string, headings: string[], rows: Array<Array<string | number | null | undefined>>) {
@@ -50,10 +52,10 @@ export function OrderListPage() {
   React.useEffect(()=>{if(route.section==='fabric'||route.section==='garment'){setTab(route.section);setStatus('all');}},[route.section]);
   const customerId = route.customerId;
   const family = allOrders.filter(order => order.type === tab && (!customerId || order.customerId === customerId));
-  const rows = family.filter(order => (approvalFilter==='all'||approvalOf(order)===approvalFilter) && (status === 'all' || order.state === status) && (!q || `${order.code} ${order.customer} ${order.season}`.toLowerCase().includes(q.toLowerCase())));
+  const rows = family.filter(order => (approvalFilter==='all'?!isTerminatedOrder(order):approvalOf(order)===approvalFilter) && (status === 'all' || order.state === status) && (!q || `${order.code} ${order.customer} ${order.season}`.toLowerCase().includes(q.toLowerCase())));
   React.useEffect(() => setPage(1), [tab, q, status, customerId,approvalFilter]);
   const pages = Math.max(1, Math.ceil(rows.length / 20)), currentPage = Math.min(page, pages);
-  const active = family.filter(order => approvalOf(order)==='approved' && !['已出运', '履约完成', '已完成', '已取消', '待收尾款'].includes(order.state));
+  const active = family.filter(order => approvalOf(order)==='approved' && !['已出运', '履约完成', '已完成', '已取消', '已作废', '待收尾款'].includes(order.state));
   const amounts = [...new Set(active.map(order => order.currency))].map(currency => ({ currency, amount: active.filter(order => order.currency === currency).reduce((sum, order) => sum + order.amount, 0) }));
   const shipped = family.filter(order => ['已出运', '履约完成', '待收尾款'].includes(order.state));
   const unitTotals = new Map<string, number>();
@@ -69,7 +71,7 @@ export function OrderListPage() {
       return <div className="mist-col" style={{ gap: 4 }} data-order-stages={order.id}><div className="mist-row" style={{ gap: 4, flexWrap: 'wrap' }}>{shown.map(({ line, stages }) => { const stage = currentLineStage(stages); return <Pill key={line.id} tone={!stage ? 'ok' : stage.state === 'blocked' ? 'bad' : stage.state === 'now' ? 'accent' : 'neutral'}>{line.style} · {stage ? stage.label : '已出运'}</Pill>; })}{flags.tracks.length > 2 && <span className="mist-muted">+{flags.tracks.length - 2}</span>}</div>{notes.length > 0 && <span className={flags.nok ? 'mist-cell-sub mist-tone-bad' : 'mist-cell-sub'}>{notes.join(' · ')}</span>}</div>; } },
     { key: 'due', header: '交期', width: '70px', hideOnMobile: true, sortValue: order => order.due, render: order => <b className="mist-cell-strong" title={order.due}>{order.due.slice(-5).replace('-', '/')}</b> },
     { key: 'owner', header: '负责人', width: '56px', hideOnMobile: true, render: order => <Avatar name={order.owner} size="sm" /> },
-    { key: 'state', header: '状态', width: '96px', render: order => <><Pill tone={approvalOf(order)==='approved'?order.tone:'warn'}>{approvalOf(order)==='approved'?order.state:approvalLabel(order)}</Pill>{approvalOf(order)==='approved'&&<span className="mist-cell-sub">主单已批准</span>}</> },
+    { key: 'state', header: '状态', width: '96px', render: order => <><Pill tone={approvalOf(order)==='approved'||isTerminatedOrder(order)?order.tone:'warn'}>{approvalOf(order)==='approved'?order.state:approvalLabel(order)}</Pill>{approvalOf(order)==='approved'&&<span className="mist-cell-sub">主单已批准</span>}</> },
     { key: 'go', header: '', width: '16px', hideOnMobile: true, render: () => <span className="mist-go"><Icon icon={ChevronRight} size="sm" /></span> },
   ];
   return <MistPage>
@@ -84,7 +86,7 @@ export function OrderListPage() {
       <StatCard icon={AlertTriangle} label="逾期收款" value={overdue.length} unit="笔" foot={overdue.length ? '需跟进' : '暂无逾期'} onClick={() => go('payment-vouchers',undefined,{section:`overdue:${tab}`,customerId})} />
     </StatGrid>
     <Tabs<'garment' | 'fabric'> value={tab} onChange={value=>{setTab(value);setStatus('all');}} options={[{ value: 'garment', label: '成衣订单', count: allOrders.filter(order => order.type === 'garment'&&(!customerId||order.customerId===customerId)).length }, { value: 'fabric', label: '面料订单', count: allOrders.filter(order => order.type === 'fabric'&&(!customerId||order.customerId===customerId)).length }]} />
-    <Toolbar><SearchField value={q} onChange={setQ} placeholder="订单号、客户或季节" /><Dropdown label="主单审批" value={approvalFilter} onChange={setApprovalFilter} options={[{value:'all',label:'全部'},{value:'draft',label:'草稿'},{value:'pending',label:'待审批'},{value:'approved',label:'已批准'},{value:'rejected',label:'已退回'}]}/><Dropdown label="状态" value={status} onChange={setStatus} options={[{ value: 'all', label: '全部' }, ...[...new Set(family.map(order => order.state))].map(value => ({ value, label: value }))]} />{customerId && <TextLink onClick={() => go('orders')}>清除客户筛选</TextLink>}</Toolbar>
+    <Toolbar><SearchField value={q} onChange={setQ} placeholder="订单号、客户或季节" /><Dropdown label="主单审批" value={approvalFilter} onChange={setApprovalFilter} options={[{value:'all',label:'全部（不含作废 / 取消）'},{value:'draft',label:'草稿'},{value:'pending',label:'待审批'},{value:'approved',label:'已批准'},{value:'rejected',label:'已退回'},{value:'void',label:'已作废'},{value:'cancelled',label:'已取消'}]}/><Dropdown label="状态" value={status} onChange={setStatus} options={[{ value: 'all', label: '全部' }, ...[...new Set(family.map(order => order.state))].map(value => ({ value, label: value }))]} />{customerId && <TextLink onClick={() => go('orders')}>清除客户筛选</TextLink>}</Toolbar>
     <Card><DataTable density={state?.settings.density} ariaLabel="订单" columns={cols} rows={rows.slice((currentPage - 1) * 20, currentPage * 20)} rowKey={order => order.id} loading={loading} onRowClick={order => go('orders/detail', order.id,{customerId,section:tab})}
       empty={<EmptyState icon={SearchX} title={q || status !== 'all' ? '没有匹配的订单' : `还没有${tab === 'garment' ? '成衣' : '面料'}订单`} action={q || status !== 'all' ? <TextLink onClick={() => { setQ(''); setStatus('all'); }}>清除筛选</TextLink> : <Button icon={Plus} onClick={() => setCreateOpen(true)}>新建订单</Button>} />}
       footer={<><span>{rows.length} 个订单</span><Pagination page={currentPage} pages={pages} onChange={setPage} /></>} /></Card>

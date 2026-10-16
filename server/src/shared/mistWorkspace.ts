@@ -13,7 +13,7 @@ import type {MistReviewTask} from './mistReview';
 import {assertOrderLineSource,type OrderLineSource} from './mistOrderSource';
 import {lineQuantityFromBreakdown,type OrderLineBreakdown} from './mistOrderBreakdown';
 import {isLineClosed} from './mistOrderClosure';
-import {createOrderGovernance,applyOrderGovernanceCommand,orderGovernancePermission,getOrderGovernanceReviews,assertOrderApproved,type OrderGovernanceFields,type OrderGovernanceCommand,type OrderGovernanceInput} from './mistOrderGovernance';
+import {createOrderGovernance,applyOrderGovernanceCommand,orderGovernancePermission,getOrderGovernanceReviews,assertOrderApproved,assertOrderWritable,assertOrderNotTerminated,type OrderGovernanceFields,type OrderGovernanceCommand,type OrderGovernanceInput} from './mistOrderGovernance';
 import {createOrderFundingState,applyOrderFundingCommand,orderFundingCommandPermission,assertOrderDepositCovered,assertOrderFundingIntegrity,type OrderFundingState,type OrderFundingCommand} from './mistOrderFunding';
 import {createPayablesState,applyPayablesCommand,payablesCommandPermission,getPayableReviews,type PayablesState,type PayablesCommand} from './mistPayables';
 
@@ -240,6 +240,10 @@ export class MistCommandError extends Error {
 export function assertMistOrderApproved(state:MistState,orderId:string):MistOrder {
   return assertOrderApproved(state,orderId);
 }
+/** BB-ORD-7：已取消 / 作废 / 取消审批中订单不能新建采购或生产安排（草稿也不行）。 */
+export function assertMistOrderOpen(state:MistState,orderId:string):void {
+  const order=state.orders.find(o=>o.id===orderId);if(order)assertOrderNotTerminated(order as never);
+}
 export function assertMistOrderDeposit(state:MistState,orderId:string):void {
   assertMistOrderApproved(state,orderId);assertOrderDepositCovered(state,orderId);
 }
@@ -441,7 +445,8 @@ function recalculate(state: MistState) {
     const shipments=(state.fulfillment?.shipments||[]).filter(s=>s.lines.some(line=>line.orderId===order.id)&&s.state!=='cancelled');
     const departed=shipments.filter(s=>s.state==='departed');
     if(order.governance&&order.governance.status!=='approved'){
-      order.state=order.governance.status==='pending'?'待主单审批':order.governance.status==='rejected'?'主单已退回':'订单草稿';order.tone=order.governance.status==='pending'?'warn':order.governance.status==='rejected'?'bad':'neutral';
+      // BB-ORD-7：已作废 / 已取消为终止状态
+      const gs=order.governance.status;order.state=gs==='pending'?'待主单审批':gs==='rejected'?'主单已退回':gs==='void'?'已作废':gs==='cancelled'?'已取消':'订单草稿';order.tone=gs==='pending'?'warn':gs==='rejected'||gs==='cancelled'?'bad':'neutral';
     }else if(departed.length){
       const complete=rows.every(line=>isLineClosed(line)||departed.reduce((sum,s)=>sum+s.lines.filter(item=>item.lineId===line.id).reduce((n,item)=>n+Math.round(item.quantity*10000),0),0)>=Math.round(line.qty*10000));
       const unpaid=state.invoices.some(invoice=>invoice.orderId===order.id&&invoice.open>0);
@@ -451,6 +456,7 @@ function recalculate(state: MistState) {
     else if(jobs.some(job=>job.sourcePurchaseId)){
       order.state=jobs.every(job=>job.col==='done')?'待出运':jobs.some(job=>job.col==='qc')?'待终期 QC':'生产中';order.tone='accent';
     }else if((state.fulfillment?.purchases||[]).some(p=>p.orderId===order.id&&p.state==='approved')){order.state='备料中';order.tone='neutral';}
+    if(order.governance?.status==='approved'&&order.governance.cancellation?.status==='pending'){order.state='取消审批中';order.tone='warn';}
   }
 }
 export function createMistState(context: MistContext, seed: 'demo'|'empty' = 'demo', onDemoSeedFailures?: (failures: Array<{step:string;message:string}>) => void): MistState {
@@ -706,7 +712,7 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
       event(state,context,'order',id,'创建订单 '+code,{view:'orders/detail',id});result={id,orderId:id};break;
     }
     case 'order.update': {
-      const o=find(state.orders,p.orderId,'订单');
+      const o=find(state.orders,p.orderId,'订单');assertOrderWritable(o);
       if(o.governance?.status==='pending'||o.governance?.changeDraft?.status==='pending')throw new MistCommandError('PRECONDITION','审批中的订单内容已锁定');
       if((p.due!==undefined&&p.due!==o.due||p.season!==undefined&&p.season!==o.season)&&(!o.governance||o.governance.status==='approved'))throw new MistCommandError('PRECONDITION','正式商业条款变更须保存变更草稿并重新审批');
       if(p.due!==undefined)o.due=date(p.due);if(p.season!==undefined)o.season=text(p.season,'季节');if(p.owner!==undefined)o.owner=text(p.owner,'负责人');o.updatedAt=context.now;event(state,context,'order',o.id,'更新订单');result={orderId:o.id};break;

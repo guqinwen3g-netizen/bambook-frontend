@@ -8,13 +8,13 @@ import { formatOrderQuantity as q } from './orderAmounts';
 
 type Go = (view: string, id?: string, target?: Record<string, string | undefined>) => void;
 
-export function OrderChangeImpactList({ state, order, lines, go }: { state: MistState; order: MistOrder; lines: OrderGovernanceLine[]; go: Go }) {
+export function OrderChangeImpactList({ state, order, lines, go, note }: { state: MistState; order: MistOrder; lines: OrderGovernanceLine[]; go: Go; note?: string }) {
   const impact = orderChangeImpact(state, order, lines);
   if (!impact.hasFacts) return null;
   const link = (label: React.ReactNode, onClick: () => void) => <Button size="sm" variant="quiet" onClick={onClick}>{label}</Button>;
   return <section className="mist-col" style={{ gap: 8 }} aria-label="影响清单" data-change-impact>
     <b className="mist-h3">影响清单</b>
-    <span className="mist-note">审批通过后新数量生效，并给下列采购、生产各生成一条核对待办；不会自动改采购或生产数据。</span>
+    <span className="mist-note">{note || '审批通过后新数量生效，并给下列采购、生产各生成一条核对待办；不会自动改采购或生产数据。'}</span>
     {impact.lines.filter(line => line.purchases.length || line.productions.length || line.shipments.length).map(line => <div key={line.lineId} className="mist-col" style={{ gap: 4 }} data-impact-line={line.lineId}>
       <div className="mist-row" style={{ gap: 8, flexWrap: 'wrap' }}><b>{line.label}</b><span className="mist-muted">{line.removed ? '拟删除' : `${line.before === null ? '新增' : q(line.before)} → ${line.after === null ? '—' : q(line.after)} ${line.unit}`}</span><span className="mist-spacer" /><Pill tone="neutral">下限 {q(line.floor)} {line.unit}（已完工 {q(line.completed)} · 已排出运 {q(line.shipped)}）</Pill></div>
       {line.warning && <Banner tone="warn" title="需同步调整生产分配">{line.warning}</Banner>}
