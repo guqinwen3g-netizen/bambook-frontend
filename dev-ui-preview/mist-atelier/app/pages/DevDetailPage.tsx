@@ -16,6 +16,8 @@ import { ToProductDialog, developmentVersionLinks, productConversionBlocker } fr
 import { DevSampleFormsCard } from './DevSampleForms';
 import { DEVELOPMENT_BILLING_LOCK } from '../../../../server/src/shared/mistDevelopmentBilling';
 import { DevBillingCard } from './DevBilling';
+import { DevCompareCard, readCompareIds, writeCompareIds } from './DevCompare';
+import { versionSource } from '../../../../server/src/shared/mistDevelopmentCompare';
 import { confirmationNeedsForms, developmentVersionSamples, sampleRef } from '../../../../server/src/shared/mistDevelopmentSamples';
 
 export function localConfirmationTime(date=new Date()){return Number.isNaN(date.getTime())?'':new Date(date.getTime()-date.getTimezoneOffset()*60_000).toISOString().slice(0,16);}
@@ -63,6 +65,11 @@ export function DevDetailPage(){
   React.useEffect(()=>{if(!version){setQc(qcForm(null,state?.settings.profileName||''));return;}const last=version.confirmationDraft||version.confirmations.at(-1);setForm(last?{confirmer:last.confirmer,organization:last.organization,confirmedAt:localConfirmationTime(new Date(last.confirmedAt)),basis:last.basis,originalText:last.originalText,result:last.result}:dev&&developmentInitiator(dev.values)==='internal'?emptyForm('内部需求方',dev.values.requester||''):emptyForm(dev?.customer));setSample({sample:version.sample==='—'?'':version.sample,quantity:String(version.sampleQuantity||1),form:version.sampleForm||dev?.values.sampleForm||'',unit:version.sampleUnit||dev?.values.sampleUnit||'',location:version.sampleLocation||'',color:version.sampleColor||dev?.values.color||'',returnedAt:localConfirmationTime()});setQc(qcForm(version.qc,state?.settings.profileName||''));setFailure('');},[version?.id]);
   const [confirmSampleIds,setConfirmSampleIds]=React.useState<string[]>([]);React.useEffect(()=>{const saved=version?.confirmationDraft||version?.confirmations.at(-1);setConfirmSampleIds(saved?.samples?.map(sample=>sample.sampleId)||[]);},[version?.id]);
   const versionSamples=state&&version?developmentVersionSamples(state,version):[],needsForms=!!(state&&dev&&version&&confirmationNeedsForms(state,dev,version));
+  const [compareIds,setCompareIds]=React.useState<string[]>([]),[compareOpen,setCompareOpen]=React.useState(false);
+  React.useEffect(()=>{setCompareIds(dev?readCompareIds(dev):[]);setCompareOpen(false);},[dev?.id]);
+  const updateCompare=(ids:string[])=>{if(!dev)return;setCompareIds(ids);writeCompareIds(dev.id,ids);if(ids.length<2)setCompareOpen(false);};
+  const reveal=(id:string,always=false)=>window.setTimeout(()=>{if(always||window.matchMedia?.('(max-width: 760px)').matches)document.getElementById(id)?.scrollIntoView?.({behavior:'smooth',block:'start'});},0);
+  const locateInTimeline=(label:string)=>{const card=document.querySelector(`#mist-dev-rounds [data-version="${CSS.escape(label)}"]`);card?.scrollIntoView?.({behavior:'smooth',block:'center'});card?.querySelector<HTMLButtonElement>('.mist-rtl-open')?.focus({preventScroll:true});};
   const set=<K extends keyof Form>(key:K,value:Form[K])=>setForm(previous=>({...previous,[key]:value}));
   const chooseVersion=(id:string)=>{if(busy||!dev)return;setVersionId(id);setDialog(null);go('development/detail',dev.id,{versionId:id,...(route.customerId?{customerId:route.customerId}:{})});};
   const finish=(message:string)=>{setDialog(null);setFailure('');toast(message);};
@@ -200,17 +207,19 @@ export function DevDetailPage(){
     <Stepper steps={STAGES.map((label,index)=>({label,state:steps[index]}))} onSelect={index=>document.getElementById(['mist-dev-goal','mist-dev-sample','mist-dev-qc','mist-dev-confirmation','mist-dev-archive'][index])?.scrollIntoView({behavior:'smooth',block:'start'})} />
     {(failure||error)&&<div className="mist-section"><Banner tone="bad" title="操作未完成">{failure||error}</Banner></div>}
     {pending&&!saving&&<div className="mist-section"><Banner tone="warn" title="原操作结果尚待核对" actions={recovery}>已保留原请求，核对前请勿重复提交。</Banner></div>}
+    {state&&compareOpen&&compareIds.length>=2&&<div className="mist-section"><DevCompareCard state={state} dev={dev} versionIds={compareIds} currentId={version?.id} onOpen={id=>{chooseVersion(id);reveal('mist-dev-version',true);}} onClose={()=>setCompareOpen(false)}/></div>}
     <div className="mist-detail">
       <div>
-        <Card clip>
+        <Card clip id="mist-dev-version">
           {(mediaFile&&!picture)||fabricDomain&&!picture?<div className="mist-stage" data-size="lg"><EmptyState icon={Layers} title={!mediaFile?'尚未上传本版实物图片':pictureError?'图片读取失败':'正在读取图片'} description={mediaFile?.name||'返样事实与图片分别保存，不用示例图冒充实物。'} action={pictureError?<TextLink onClick={()=>setPictureRetry(value=>value+1)}>重试</TextLink>:undefined} /></div>:<ObjectStage size="lg" src={picture||IMG[currentImage]} alt={dev.name} caption={version?`${version.returnedAt?'返样实物':'计划版本'} · ${version.label}`:'开发计划'} />}
           <div className="mist-vers" role="group" aria-label="版本">{versions.map(item=><button key={item.id} type="button" aria-pressed={version?.id===item.id} disabled={busy} onClick={()=>chooseVersion(item.id)}>{item.label}{(flag=>flag&&<> <Pill tone={flag.tone}>{flag.label}</Pill></>)(versionQcFlag(item))}</button>)}</div>
+          {state&&version&&(source=><div className="mist-row" data-selection={version.label} style={{padding:'10px 22px 0',gap:8,flexWrap:'wrap',fontSize:12.5}}><span className="mist-muted">正在查看</span><span>{source.roundLabel} · {source.factory} · <Mono>{version.label}</Mono></span><span className="mist-spacer" /><TextLink onClick={()=>locateInTimeline(version.label)}>在时间线中定位</TextLink></div>)(versionSource(state,dev,version))}
           <KeyValue items={[{label:'工厂',value:version?.factory||'待安排'},{label:'样品',value:version?`${version.sample||'未登记'} · ${version.sampleQuantity} ${fabricDomain?version.sampleUnit||dev.values.sampleUnit||'单位待登记':(!version.returnedAt&&version.task?.sampleUnit)||'件'}`:'未建立版本'},...(fabricDomain?[{label:'实物形态',value:version?.sampleForm||dev.values.sampleForm||'待登记'}]:[{label:'尺码',value:version?.size||dev.values.sizeBase}]),{label:'面料',value:version?.fabric||dev.fabric}]} />
           <CardFooter><span className="mist-note">准确版本独立记录</span><span className="mist-spacer" /><Button size="sm" disabled={!version||busy||!!sampleBlocker} title={sampleBlocker} icon={PackageCheck} onClick={()=>setDialog('sample')}>登记返样</Button></CardFooter>
           {version?.minor&&<div className="mist-section" data-minor={version.label}><Banner tone="neutral" title={`小版本 · 沿用 ${parentVersion?.label||'大版本'} 实物与 QC 结论`}>本次调整：{version.minor.change}。需求方确认须对 {version.label} 单独记录，不继承 {parentVersion?.label||'大版本'} 的确认。</Banner></div>}
           {!!childMinors.length&&<p className="mist-note" style={{padding:'0 22px 12px'}}>本版小调整：{childMinors.map(item=>`${item.label}（${item.minor!.change}）`).join('；')}</p>}
         </Card>
-        {state&&<DevRoundsCard state={state} dev={dev} versionId={version?.id} busy={busy} onSelect={chooseVersion} onCreate={()=>{setFailure('');setRoundInitial(undefined);setDialog('round');}} onEditRequirements={round=>{setFailure('');setRoundEdit(round);}} onSync={target=>void syncRoundTask(target)}/>}
+        {state&&<DevRoundsCard state={state} dev={dev} versionId={version?.id} busy={busy} onSelect={id=>{chooseVersion(id);reveal('mist-dev-version');}} compareIds={compareIds} onToggleCompare={(id,checked)=>updateCompare(checked?[...compareIds.filter(item=>item!==id),id]:compareIds.filter(item=>item!==id))} onCompare={()=>{setCompareOpen(true);reveal('mist-dev-compare',true);}} onClearCompare={()=>updateCompare([])} onCreate={()=>{setFailure('');setRoundInitial(undefined);setDialog('round');}} onEditRequirements={round=>{setFailure('');setRoundEdit(round);}} onSync={target=>void syncRoundTask(target)}/>}
         {state&&version&&<DevSampleFormsCard state={state} dev={dev} version={version} disabled={busy||!!pending} run={run}/>}
         {state&&<div data-dev-billing><DevBillingCard state={state} dev={dev} disabled={busy||!!pending} run={run}/></div>}
         {state&&version&&!version.minor&&<DevNoticeCard state={state} dev={dev} version={version} busy={busy} onGenerate={()=>void generateNotice()} onDownload={downloadNotice} onPrint={printNotice}/>}

@@ -5,6 +5,7 @@ import { Banner, Button, Card, CardHeader, Checkbox, Dialog, Field, FormGrid, Mo
 import type { MistDev, MistRound, MistState, MistVersion } from '../../../../server/src/shared/mistWorkspace';
 import { caseFactoryLetters, defaultFactoryTask, developmentClosure, developmentRoundBlocker, duplicateRoundFactories, developmentRoundViews, factoryLetterAt, factoryTaskError, factoryTaskSync, factoryTaskSyncBlocker, nextRoundNumber, roundVersionLabel, type FactoryTaskInput } from '../../../../server/src/shared/mistDevelopmentRounds';
 import { developmentDomain } from '../../../../server/src/shared/mistDevelopmentDomain';
+import { versionTimelineStatus } from '../../../../server/src/shared/mistDevelopmentCompare';
 
 export type NewRoundInput = { factories: string[]; requirements: string; fileIds: string[]; referenceVersionIds: string[]; targetDate: string; resampleFromVersionId?: string; factoryTasks?: FactoryTaskInput[] };
 export const NEW_ROUND_STEPS = ['参考版本', '参与工厂', '共同要求', '逐厂要求'] as const;
@@ -48,7 +49,8 @@ export function roundTasks(dev: MistDev, form: Pick<NewRoundInput, 'factories' |
 }
 const taskSummary = (task: NonNullable<MistVersion['task']>) => `${task.sampleForm} ${task.sampleQuantity} ${task.sampleUnit} · 要求 ${task.dueDate}`;
 
-export function DevRoundsCard({ state, dev, versionId, busy, onSelect, onCreate, onEditRequirements, onSync }: { state: MistState; dev: MistDev; versionId?: string; busy: boolean; onSelect: (id: string) => void; onCreate: () => void; onEditRequirements?: (round: MistRound) => void; onSync?: (version: MistVersion) => void }) {
+/** BB-DEV-11 轮次时间线：一轮一行，横排该轮各工厂版本卡（状态只来自已记录事实）；点卡片打开准确版本详情，勾选加入同案对比。 */
+export function DevRoundsCard({ state, dev, versionId, busy, onSelect, onCreate, onEditRequirements, onSync, compareIds = [], onToggleCompare, onCompare, onClearCompare }: { state: MistState; dev: MistDev; versionId?: string; busy: boolean; onSelect: (id: string) => void; onCreate: () => void; onEditRequirements?: (round: MistRound) => void; onSync?: (version: MistVersion) => void; compareIds?: string[]; onToggleCompare?: (id: string, checked: boolean) => void; onCompare?: () => void; onClearCompare?: () => void }) {
   const closure = developmentClosure(state, dev), editBlocker = closure ? `开发案${closure.label}，不能再改共同要求` : null;
   const views = developmentRoundViews(state, dev), letters = caseFactoryLetters(state, dev);
   const label = (id: string) => state.versions.find(version => version.id === id)?.label || '已不可见版本';
@@ -56,10 +58,19 @@ export function DevRoundsCard({ state, dev, versionId, busy, onSelect, onCreate,
     <CardHeader title="开发轮次" sub={Object.keys(letters).length ? `工厂字母固定：${Object.entries(letters).map(([factory, letter]) => `${letter} ${factory}`).join(' · ')}` : '尚无参与工厂'} tools={(blocker => <><Button size="sm" icon={Plus} disabled={busy || !!blocker} title={blocker || undefined} onClick={onCreate}>开新一轮</Button>{blocker && <span className="mist-note">{blocker}</span>}</>)(developmentRoundBlocker(state, dev))} />
     {views.length ? views.map(view => <div key={view.number} className="mist-section" style={{ padding: '10px 22px' }} data-round={view.number}>
       <div className="mist-row"><Pill tone={view.round ? 'accent' : 'neutral'}>{view.number ? `R${view.number}` : '未编号'}</Pill>
-        <span className="mist-muted" style={{ fontSize: 12.5 }}>{view.round ? `目标 ${view.round.targetDate}${view.round.referenceVersionIds.length ? ` · 参考 ${view.round.referenceVersionIds.map(label).join('、')}` : ''}${view.round.fileIds.length ? ` · 附件 ${view.round.fileIds.length}` : ''}` : '历史记录 · 按原版本号只读展示'}</span></div>
+        <span className="mist-muted" style={{ fontSize: 12.5 }}>{`${view.versions.length} 个版本 · `}{view.round ? `目标 ${view.round.targetDate}${view.round.referenceVersionIds.length ? ` · 参考 ${view.round.referenceVersionIds.map(label).join('、')}` : ''}${view.round.fileIds.length ? ` · 附件 ${view.round.fileIds.length}` : ''}` : '历史记录 · 按原版本号只读展示'}</span></div>
       {view.round && <p className="mist-sub" style={{ fontSize: 13, margin: '6px 0', whiteSpace: 'pre-wrap' }}>{view.round.requirements}</p>}
       {view.round && onEditRequirements && <div className="mist-row" style={{ margin: '0 0 6px' }}><Button size="sm" variant="quiet" icon={Pencil} disabled={busy || !!editBlocker} title={editBlocker || undefined} onClick={() => onEditRequirements(view.round!)}>修改共同要求</Button>{editBlocker && <span className="mist-note">{editBlocker}</span>}</div>}
-      <div className="mist-vers" role="group" aria-label={`第 ${view.number} 轮版本`}>{view.versions.map(version => <button key={version.id} type="button" aria-pressed={versionId === version.id} disabled={busy} onClick={() => onSelect(version.id)}><Mono>{version.label}</Mono> · {version.factory}{(flag => flag && <> <Pill tone={flag.tone}>{flag.label}</Pill></>)(versionQcFlag(version))}</button>)}</div>
+      <div className="mist-rtl-row" role="list" aria-label={`第 ${view.number} 轮版本`}>{view.versions.map(version => {
+        const status = versionTimelineStatus(version), current = versionId === version.id;
+        return <div key={version.id} role="listitem" className="mist-rtl-card" data-version={version.label} aria-current={current || undefined}>
+          <button type="button" className="mist-rtl-open" aria-pressed={current} disabled={busy} onClick={() => onSelect(version.id)}>
+            <Mono>{version.label}</Mono><span className="mist-rtl-factory" title={version.factory}>{version.factory || '待安排工厂'}</span>
+            <span className="mist-rtl-tags"><Pill tone={status.tone}>{status.label}</Pill>{status.flags.map(flag => <Pill key={flag.label} tone={flag.tone}>{flag.label}</Pill>)}</span>
+          </button>
+          {onToggleCompare && <Checkbox checked={compareIds.includes(version.id)} disabled={busy} onChange={checked => onToggleCompare(version.id, checked)} label={<span aria-label={`对比 ${version.label}`}>对比</span>} />}
+        </div>;
+      })}</div>
       {view.round && <ul className="mist-list" aria-label={`第 ${view.number} 轮工厂任务`} style={{ margin: '6px 0 0', padding: 0, listStyle: 'none' }}>{view.versions.filter(version => !version.minor).map(version => {
         const sync = factoryTaskSync(state, version), blocker = sync && !sync.inSync ? factoryTaskSyncBlocker(state, dev, version) : null;
         return <li key={version.id} data-task={version.label} className="mist-row" style={{ fontSize: 12.5, padding: '3px 0', flexWrap: 'wrap', gap: 6 }}>
@@ -71,6 +82,11 @@ export function DevRoundsCard({ state, dev, versionId, busy, onSelect, onCreate,
         </li>;
       })}</ul>}
     </div>) : <p className="mist-note" style={{ padding: '10px 22px 18px' }}>尚未开始打样轮次。</p>}
+    {onCompare && !!compareIds.length && <div className="mist-rtl-bar" aria-live="polite">
+      <span>已选 {compareIds.length} 个版本：{compareIds.map(label).join('、')}</span><span className="mist-spacer" />
+      <Button size="sm" disabled={busy || compareIds.length < 2} title={compareIds.length < 2 ? '至少选择 2 个版本' : undefined} onClick={onCompare}>并排对比</Button>
+      {onClearCompare && <Button size="sm" variant="quiet" disabled={busy} onClick={onClearCompare}>清除</Button>}
+    </div>}
   </Card>;
 }
 
