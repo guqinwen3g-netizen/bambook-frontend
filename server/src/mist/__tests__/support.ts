@@ -38,6 +38,8 @@ export class MemoryMistDatabase {
     finally { release(); }
   }
 }
+/** 只统计业务请求回执；不含服务端为并发合并记录的版本标记。 */
+export const requestReceiptCount = (db: MemoryMistDatabase) => [...db.receipts.values()].filter(row => !String(row.requestId).startsWith('mist-revision:')).length;
 export const testActor = (id = 'owner'): TokenPayload => ({ userId: id, displayName: id, roles: ['owner'], departmentIds: [], permissions: ['products:write', 'finance:write', 'vouchers:write', 'invoices:reconcile', 'invoices:write'] });
 export function testAuthority() {
   const users = new Map([['owner', { active: true, permissions: ['products:write', 'finance:write', 'vouchers:write', 'invoices:reconcile', 'invoices:write'] }], ['other', { active: true, permissions: ['products:write'] }]]);

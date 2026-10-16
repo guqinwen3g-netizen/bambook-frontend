@@ -32,6 +32,10 @@ async function click(text:string){const button=[...document.querySelectorAll('bu
 async function fill(label:string,value:string){const field=[...document.querySelectorAll('label')].find(item=>item.querySelector('.mist-field-label')?.textContent?.replace('*','')===label);const input=field?.querySelector('input,textarea') as HTMLInputElement|HTMLTextAreaElement;expect(input,label).toBeTruthy();await act(async()=>{const prototype=input.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(prototype,'value')!.set!.call(input,value);input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));});}
 
 describe('exact persisted version detail',()=>{
+  it('shows a not-yet-returned factory sample using its planned unit',async()=>{
+    bridge.current.state.versions[0]={...bridge.current.state.versions[0],sample:'',sampleQuantity:1,returnedAt:null,qc:null,task:{commonRequirements:'测试',extraRequirements:'',sampleForm:'半成品',sampleQuantity:1,sampleUnit:'套',dueDate:'2026-11-20',syncedAt:'2026-10-16T00:00:00Z',syncedBy:'业务员'}};
+    await mount();expect(host.textContent).toContain('未登记 · 1 套');
+  });
   it('uses each selected version’s report and sends a real ID, not its display label',async()=>{
     await mount();expect(host.textContent).toContain('评审 A');await click('R2-B-1');expect(host.textContent).toContain('评审 B');expect(host.textContent).not.toContain('评审 A');
     expect(go).toHaveBeenCalledWith('development/detail','dev-a',{versionId:'vb'});
@@ -164,8 +168,9 @@ describe('BB-DEV-7 QC gate on the detail page',()=>{
     await mount();expect(button('整改复检')).toBeUndefined();await click('重新打样');
     const textarea=[...document.querySelectorAll('label')].find(item=>item.querySelector('.mist-field-label')?.textContent?.replace('*','')==='本轮共同要求')!.querySelector('textarea')!;
     expect(textarea.value).toContain('克重偏低 20g');expect(document.body.textContent).toContain('重新打样 · 来源 R1-A-1 QC 不通过');
+    await click('下一步：逐厂要求');
     const submit=[...document.querySelectorAll('button')].find(item=>item.textContent?.startsWith('建立 '))!;await act(async()=>submit.click());
-    expect(bridge.current.run).toHaveBeenCalledWith(expect.objectContaining({type:'development.round.create',payload:expect.objectContaining({devId:'dev-a',factories:['工厂 va'],referenceVersionIds:['va'],resampleFromVersionId:'va'})}));
+    expect(bridge.current.run).toHaveBeenCalledWith(expect.objectContaining({type:'development.round.create',payload:expect.objectContaining({devId:'dev-a',factories:['工厂 va'],referenceVersionIds:['va'],resampleFromVersionId:'va',factoryTasks:[expect.objectContaining({factory:'工厂 va',sampleForm:'米样',sampleUnit:'米'})]})}));
   });
   it('shows 需关注 with the QC opinion for a conditional pass and still allows confirmation',async()=>{
     const v=bridge.current.state.versions.find((row:any)=>row.id==='va');v.qc={...v.qc,result:'conditional',opinion:'领口略紧，量产前确认'};
@@ -176,4 +181,90 @@ describe('BB-DEV-7 QC gate on the detail page',()=>{
     const v=bridge.current.state.versions.find((row:any)=>row.id==='va');v.qcHistory=[{...v.qc,result:'reject',opinion:'第一次不通过',decision:{kind:'rework',note:'改袖长',decidedAt:'2026-10-14T00:00:00Z',decidedBy:'业务员'}}];v.qc=null;
     await mount();expect(host.textContent).toContain('历次 QC');expect(host.textContent).toContain('第一次不通过');expect(host.textContent).toContain('整改复检 · 改袖长');expect(button('提交复检')!.disabled).toBe(false);expect(button('保存确认')!.disabled).toBe(true);
   });
+});
+
+describe('BB-DEV-10 version links and product conversion',()=>{
+  const button=(text:string)=>[...document.querySelectorAll('button')].find(item=>item.textContent?.trim()===text) as HTMLButtonElement|undefined;
+  it('converts a conditionally passed version without customer confirmation, using the version factory as supplier',async()=>{
+    const st=bridge.current.state;st.market={suppliers:[{id:'sup-b',name:'工厂 vb'}],products:[],quotations:[]};const v=st.versions.find((row:any)=>row.id==='vb');v.qc={...v.qc,result:'conditional',opinion:'袖口需关注'};
+    await mount('vb');expect(button('转为产品档案')!.disabled).toBe(false);await click('转为产品档案');expect(document.body.textContent).toContain('袖口需关注');
+    await fill('公司产品编码','GA-R2B');await click('建立产品档案');
+    expect(bridge.current.run).toHaveBeenCalledWith({type:'market.product.fromVersion',payload:{devId:'dev-a',versionId:'vb',sku:'GA-R2B',supplierId:'sup-b'}});
+  });
+  it('blocks conversion without a passing QC and shows the reason',async()=>{
+    const v=bridge.current.state.versions.find((row:any)=>row.id==='va');v.qc={...v.qc,result:'reject'};await mount('va');
+    expect(button('转为产品档案')!.disabled).toBe(true);expect(host.textContent).toContain('本版 QC 不通过，不能转为产品档案');
+  });
+  it('shows the archive number with a link and lists the exact sample, QC task, quotation and order of this version only',async()=>{
+    const st=bridge.current.state;
+    st.market={suppliers:[],products:[{id:'prod-1',sku:'GA-2711',name:'实际档案',sourceDevId:'dev-a',sourceVersionId:'vb'}],quotations:[{id:'q-1',code:'QT-0001',lines:[{sourceVersionId:'vb'}],convertedOrderId:'o-2'},{id:'q-2',code:'QT-OTHER',lines:[{sourceVersionId:'va'}]}]};
+    st.fulfillment={samples:[{id:'s-1',code:'SM-0001',name:'R2-B 实物',source:{kind:'version',devId:'dev-a',versionId:'vb'}},{id:'s-2',code:'SM-OTHER',name:'其他',source:{kind:'version',devId:'dev-a',versionId:'va'}}],qcTasks:[{id:'t-1',code:'QC-T-1',kind:'sample',factory:'工厂 vb',source:{kind:'version',devId:'dev-a',versionId:'vb'}}]};
+    st.orders=[{id:'o-1',code:'SO-0001',customerId:'customer-a'},{id:'o-2',code:'SO-0002',customerId:'customer-a'},{id:'o-3',code:'SO-UNRELATED',customerId:'customer-a'}];st.orderLines=[{id:'l-1',orderId:'o-1',sourceVersionId:'vb'}];
+    await mount('vb');const text=host.textContent||'';
+    for(const code of ['GA-2711','SM-0001','QC-T-1','QT-0001','SO-0001','SO-0002'])expect(text).toContain(code);
+    for(const code of ['SM-OTHER','QT-OTHER','SO-UNRELATED'])expect(text).not.toContain(code);
+    expect(button('转为产品档案')).toBeUndefined();
+    await act(async()=>[...host.querySelectorAll('button')].find(item=>item.textContent?.trim()==='GA-2711')!.click());expect(go).toHaveBeenCalledWith('products','prod-1');
+  });
+});
+
+describe('BB-DEV-6/8 fabric physical forms and dispatch on the version detail',()=>{
+ const metre={id:'s-m',code:'SMP-0002',name:'测试',category:'面料',form:'米样',unit:'米',quantity:5,available:5,location:'架B',size:'',color:'',source:{kind:'version',devId:'dev-a',versionId:'va'},fileIds:[],note:'',createdAt:'2026-10-12T00:00:00Z'};
+ const colour={...metre,id:'s-c',code:'SMP-0001',form:'色样',unit:'份',quantity:3,available:3,location:'架A'};
+ const useFabric=(samples:object[])=>{const st=bridge.current.state;st.devs=[{...record,img:'clay',values:{...record.values,domain:'fabric',category:'斜纹',sizeBase:'',sampleForm:'色样',sampleUnit:'份'}}];st.versions[0]={...st.versions[0],sample:'R1-A-实物',size:''};st.fulfillment={samples,sampleMovements:[],qcTasks:[]};};
+ async function choose(label:string,value:string){const field=[...document.querySelectorAll('label')].find(item=>item.querySelector('.mist-field-label')?.textContent?.replace('*','')===label);const select=field?.querySelector('select') as HTMLSelectElement;expect(select,label).toBeTruthy();await act(async()=>{Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value')!.set!.call(select,value);select.dispatchEvent(new Event('change',{bubbles:true}));});}
+ it('lists every form with its own balance and appends a metre sample to the same version',async()=>{
+  useFabric([colour]);await mount();expect(host.textContent).toContain('本版实物与寄样');expect(host.textContent).toContain('3 / 3 份');
+  await click('追加形态');await choose('实物形态','米样');await fill('数量（米）','2');await fill('存放位置','架B');await click('保存形态');
+  expect(bridge.current.run).toHaveBeenCalledWith({type:'development.version.addSampleForm',payload:{devId:'dev-a',versionId:'va',form:'米样',quantity:2,unit:'米',location:'架B',color:''}});
+ });
+ it('dispatches the exact selected sample within its available balance, fee optional',async()=>{
+  useFabric([colour,metre]);await mount();expect(host.textContent).toContain('5 / 5 米');
+  await click('寄样');await choose('寄出实物','s-m');await fill('寄出数量（米）','6');await fill('收件方','客户 Anna');
+  expect(document.body.textContent).toContain('超过可用余额 5 米');expect([...document.querySelectorAll('button')].find(b=>b.textContent?.trim()==='确认寄出')!.disabled).toBe(true);
+  await fill('寄出数量（米）','2');await fill('运单号','SF123');await click('确认寄出');
+  expect(bridge.current.run).toHaveBeenCalledWith({type:'development.sample.dispatch',payload:{devId:'dev-a',versionId:'va',sampleId:'s-m',quantity:2,recipient:'客户 Anna',trackingNo:'SF123',note:'',fee:null}});
+ });
+ it('selects the actual source position before dispatching stock stored in multiple places',async()=>{
+  useFabric([{...metre,location:'多个位置',positions:[{location:'架A',available:1},{location:'架B',available:4}]}]);await mount();
+  await click('寄样');await fill('寄出数量（米）','2');await fill('收件方','客户 Anna');
+  const submit=()=>[...document.querySelectorAll('button')].find(b=>b.textContent?.trim()==='确认寄出')!;
+  expect(submit().disabled).toBe(true);
+  await choose('本次出库位置','架A');expect(submit().disabled).toBe(true);expect(document.body.textContent).toContain('所选位置');
+  await choose('本次出库位置','架B');expect(submit().disabled).toBe(false);await click('确认寄出');
+  expect(bridge.current.run).toHaveBeenCalledWith({type:'development.sample.dispatch',payload:{devId:'dev-a',versionId:'va',sampleId:'s-m',quantity:2,recipient:'客户 Anna',trackingNo:'',note:'',fee:null,sourceLocation:'架B'}});
+ });
+ it('requires choosing which forms a confirmation covers when the version has several',async()=>{
+  useFabric([colour,metre]);await mount();
+  await fill('实际确认人','实际客户');await fill('确认依据','邮件');
+  const save=()=>[...document.querySelectorAll('button')].find(b=>b.textContent?.trim()==='保存确认')!;
+  expect(save().disabled).toBe(true);
+  const box=[...document.querySelectorAll('label.mist-check')].find(item=>item.textContent?.includes('米样 · SMP-0002'))!.querySelector('input')!;
+  await act(async()=>box.click());expect(save().disabled).toBe(false);
+  await click('保存确认');await click('确认提交');
+  expect(bridge.current.run).toHaveBeenCalledWith(expect.objectContaining({type:'development.confirm',payload:expect.objectContaining({versionId:'va',sampleIds:['s-m']})}));
+ });
+ it('restores confirmed forms and permits a new confirmation when only its physical scope changes',async()=>{
+  useFabric([colour,metre]);
+  bridge.current.state.versions[0].confirmations=[{id:'confirmed-colour',result:'approved',confirmer:'客户',organization:'客户公司',confirmedAt:'2026-10-13T08:00:00Z',basis:'确认邮件',originalText:'Approved',recordedAt:'2026-10-13T08:00:00Z',recordedBy:'业务员',samples:[{sampleId:colour.id,code:colour.code,form:colour.form,unit:colour.unit}]}];
+  await mount();
+  const check=(code:string)=>[...document.querySelectorAll('label.mist-check')].find(item=>item.textContent?.includes(code))!.querySelector('input')!;
+  expect(check(colour.code).checked).toBe(true);
+  expect([...document.querySelectorAll('button')].find(b=>b.textContent?.trim()==='本版已记录')!.disabled).toBe(true);
+  await act(async()=>{check(colour.code).click();check(metre.code).click();});
+  const save=[...document.querySelectorAll('button')].find(b=>b.textContent?.trim()==='保存确认')!;expect(save.disabled).toBe(false);
+  await click('存为草稿');
+  expect(bridge.current.run).toHaveBeenCalledWith(expect.objectContaining({type:'development.saveConfirmationDraft',payload:expect.objectContaining({draft:expect.objectContaining({samples:[{sampleId:metre.id,code:metre.code,form:metre.form,unit:metre.unit}]})})}));
+  await click('保存确认');await click('确认提交');
+  expect(bridge.current.run).toHaveBeenCalledWith(expect.objectContaining({type:'development.confirm',payload:expect.objectContaining({sampleIds:[metre.id],basis:'确认邮件'})}));
+ });
+ it('restores the selected forms from a saved confirmation draft',async()=>{
+  useFabric([colour,metre]);bridge.current.state.versions[0].confirmationDraft={result:'approved',confirmer:'客户',organization:'客户公司',confirmedAt:'2026-10-13T08:00:00Z',basis:'草稿',originalText:'OK',samples:[{sampleId:metre.id,code:metre.code,form:metre.form,unit:metre.unit}]};
+  await mount();const checkbox=[...document.querySelectorAll('label.mist-check')].find(item=>item.textContent?.includes(metre.code))!.querySelector('input')!;expect(checkbox.checked).toBe(true);
+ });
+ it('lets a missing dispatch fee be added later',async()=>{
+  useFabric([{...metre,available:3}]);bridge.current.state.versions[0].dispatches=[{id:'d-1',sampleId:'s-m',sampleCode:'SMP-0002',form:'米样',unit:'米',quantity:2,recipient:'客户 Anna',trackingNo:'SF123',fee:null,note:'',movementId:'m-1',recordedAt:'2026-10-16T00:00:00Z',recordedBy:'业务员'}];
+  await mount();expect(host.textContent).toContain('SF123');await click('补登费用');await fill('寄样费','28.50');await click('保存费用');
+  expect(bridge.current.run).toHaveBeenCalledWith({type:'development.sample.dispatchFee',payload:{devId:'dev-a',versionId:'va',dispatchId:'d-1',fee:{amount:28.5,currency:'CNY'}}});
+ });
 });

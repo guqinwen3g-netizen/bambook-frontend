@@ -75,3 +75,14 @@ describe('BB-DEV-7 QC gate and failed-QC handling',()=>{
     expect(()=>f.run({type:'development.qc.decide',payload:{devId,versionId,decision:'abandon',note:''}})).toThrow(/只有最新 QC 不通过/);
   });
 });
+
+describe('acceptance review #64: abandon reason is enforced on the server',()=>{
+  it('rejects abandon without a reason (blank or spaces) and writes nothing',()=>{
+    const {f,devId,versionId}=garmentCase();
+    f.run({type:'development.recordQc',payload:{devId,versionId,qc:qc('reject','做工差')}});
+    const before=JSON.stringify(f.state);
+    for(const note of ['','   ',undefined as unknown as string])expect(()=>f.run({type:'development.qc.decide',payload:{devId,versionId,decision:'abandon',note}})).toThrow(/放弃本版须填写原因/);
+    expect(JSON.stringify(f.state)).toBe(before);
+    expect(f.state.versions.find(v=>v.id===versionId)!.qcDecision).toBeUndefined();
+  });
+});

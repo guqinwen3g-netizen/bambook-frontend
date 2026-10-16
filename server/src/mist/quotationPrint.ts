@@ -17,7 +17,10 @@ export function nextQuotationDocumentSeq(state: MistState, quotationId: string) 
 }
 
 export async function buildQuotationDocument(snapshot: QuoteDocumentSnapshot, seq: number, options: { renderPdf?: (html: string) => Promise<PdfRenderResult> } = {}): Promise<PreparedQuotationDocument> {
-  const result = await (options.renderPdf || ((html: string) => renderHtmlToPdf(html, { format: 'A4' })))(renderQuotationDocumentHtml(snapshot));
+  const html = renderQuotationDocumentHtml(snapshot), render = options.renderPdf || ((value: string) => renderHtmlToPdf(value, { format: 'A4' }));
+  let result: PdfRenderResult;
+  // 渲染发生在写文件与落库之前：失败即确定未生成，返回明确原因，避免前端按“结果未确认”处理。
+  try { result = await render(html); } catch (error) { console.error('[mist] quotation PDF render failed:', error instanceof Error ? error.message : error); throw new MistCommandError('QUOTATION_PDF_UNAVAILABLE', '报价单 PDF 渲染服务暂不可用，本次未生成文件，请稍后重试或联系管理员', 422); }
   const bytes = Buffer.from(result.pdf);
   if (bytes.length < 10 || bytes.subarray(0, 5).toString() !== '%PDF-' || !bytes.subarray(Math.max(0, bytes.length - 1024)).toString('ascii').includes('%%EOF')) return fail('PDF渲染未返回有效报价单');
   const sha = createHash('sha256').update(bytes).digest('hex');

@@ -58,3 +58,41 @@ describe('BB-DEV-2 development rounds and fixed factory letters',()=>{
     expect(parseVersionLabel('R4-A.1')).toEqual({round:4,letter:'A'});expect(parseVersionLabel('R1-A-1')).toEqual({round:1,letter:'A'});expect(parseVersionLabel('R2-C')).toEqual({round:2,letter:'C'});
   });
 });
+
+describe('acceptance review #59: round creation boundaries',()=>{
+  const setup=()=>{
+    let n=0;const ctx:MistContext={id:()=>`rv-${++n}`,now:'2026-10-16T10:00:00Z',actorName:'测试'};let state=createMistState(ctx,'empty');
+    state.customers.push({id:'c',name:'客户',code:'C',country:'',city:'',industry:'',owner:'',grade:'',currency:'EUR',terms:'',incoterm:'',categories:'',creditLimit:0,since:''});
+    const run=(command:MistCommand)=>{const r=applyMistCommand(state,command,ctx);state=r.state;return r.result;};
+    const values:DevelopmentValues={initiator:'customer',requestType:'replicate',name:'边界测试',customer:'c',style:'B-1',season:'AW',category:'大衣',kind:'new',fabric:'羊毛',color:'灰',target:'',sizeBase:'M',goal:'首轮',factories:['A厂'],due:'2026-10-30',collaborators:[],sampleQuantity:1};
+    const ids=run({type:'development.submit',payload:{values,fileIds:[]}});
+    return{run,devId:ids.devId!,versionId:ids.versionId!,ctx,get state(){return state;}};
+  };
+  const round=(devId:string,extra:Record<string,unknown>={})=>({type:'development.round.create' as const,payload:{devId,factories:['A厂'],requirements:'第二轮',targetDate:'2026-11-01',...extra}});
+  for(const kind of ['cancelled','archived'] as const)it(`rejects a new round, revise and resample on a ${kind} case without writing`,()=>{
+    const t=setup();t.run({type:'development.close',payload:{devId:t.devId,kind,reason:'客户撤单'}});
+    const before=JSON.stringify(t.state);
+    expect(()=>t.run(round(t.devId))).toThrow(kind==='cancelled'?/已取消，不能再开新一轮/:/已归档，不能再开新一轮/);
+    expect(()=>t.run({type:'development.revise',payload:{devId:t.devId,versionId:t.versionId,note:'改'}})).toThrow(/不能再开新一轮/);
+    expect(JSON.stringify(t.state)).toBe(before);
+  });
+  it('rejects a new round, including resample, on a closed (non-charged, approved) case',()=>{
+    const t=setup(),dev=t.state.devs.find(d=>d.id===t.devId)!;dev.values.charged=false;
+    t.run({type:'development.recordSample',payload:{devId:t.devId,versionId:t.versionId,sample:'S',quantity:1,returnedAt:t.ctx.now}});
+    t.run({type:'development.recordQc',payload:{devId:t.devId,versionId:t.versionId,qc:{result:'pass',reviewer:'QC',reviewedAt:t.ctx.now,report:'R',opinion:'通过',measurements:[]}}});
+    t.run({type:'development.confirm',payload:{devId:t.devId,versionId:t.versionId,result:'approved',confirmer:'客户',organization:'',confirmedAt:t.ctx.now,basis:'邮件',originalText:''}});
+    const before=JSON.stringify(t.state);
+    expect(()=>t.run(round(t.devId))).toThrow(/已结案，不能再开新一轮/);
+    expect(JSON.stringify(t.state)).toBe(before);
+  });
+  it('rejects duplicate factories within one round instead of silently de-duplicating',()=>{
+    const t=setup(),before=JSON.stringify(t.state);
+    expect(()=>t.run(round(t.devId,{factories:['A厂','B厂',' A厂 ']}))).toThrow(/同一轮内工厂不能重复：A厂/);
+    expect(JSON.stringify(t.state)).toBe(before);
+    expect(t.run(round(t.devId,{factories:['A厂','B厂']})).versionIds).toHaveLength(2);
+  });
+  it('requires a reason to cancel or archive a case',()=>{
+    const t=setup();expect(()=>t.run({type:'development.close',payload:{devId:t.devId,kind:'cancelled',reason:'  '}})).toThrow();
+    expect(t.state.devs.find(d=>d.id===t.devId)!.closure).toBeUndefined();
+  });
+});

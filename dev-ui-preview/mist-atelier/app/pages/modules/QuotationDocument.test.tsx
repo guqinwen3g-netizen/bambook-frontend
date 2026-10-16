@@ -44,10 +44,10 @@ describe('BB-QUO-6 生成报价单', () => {
     expect(reasons()).toContain('生成正式报价单：此报价须业务审批，未批准只能生成草稿水印版');
     expect(button('生成草稿水印版')!.disabled).toBe(false);
   });
-  it('未填公司档案时两种都禁用并指向设置', async () => {
+  it('未维护公司资料时两种都禁用并写明需管理员补全', async () => {
     setup({}, false); await mount();
     expect(button('生成正式报价单')!.disabled).toBe(true); expect(button('生成草稿水印版')!.disabled).toBe(true);
-    expect(reasons()).toContain('设置 › 公司档案');
+    expect(reasons()).toContain('工作区尚未维护公司资料（公司抬头），需管理员补全后才能生成报价单');
   });
   it('列出每次生成的文件记录（新在前），可下载与打印', async () => {
     setup({ documents: [record(true, 1), record(false, 2)] });
@@ -67,5 +67,16 @@ describe('BB-QUO-6 生成报价单', () => {
     expect(fetchMock).toHaveBeenCalledWith('/files/file-1', expect.objectContaining({ credentials: 'include' }));
     expect(win.location.href).toBe('blob:pdf');
     open.mockRestore(); vi.unstubAllGlobals();
+  });
+  it('缺公司抬头时所有者可直达系统设置的公司资料并带回本报价；成员只看到由所有者维护的说明', async () => {
+    setup({}, false); await mount();
+    expect(document.body.querySelector('[data-quote-company-missing]')?.textContent).toContain('缺少公司抬头');
+    expect(button('生成正式报价单')!.disabled).toBe(true); expect(button('生成草稿水印版')!.disabled).toBe(true);
+    await click(button('去维护公司资料')!); expect(go).toHaveBeenCalledWith('settings', 'qt-q6', { section: 'company' });
+    await act(async () => root!.unmount()); root = undefined; document.body.innerHTML = '';
+    setup({}, false); bridge.current.workspace = { id: 'w', name: '空间', access: { role: 'member' } }; await mount();
+    expect(button('去维护公司资料')).toBeUndefined(); expect(document.body.textContent).toContain('公司资料由空间所有者维护');
+    await act(async () => root!.unmount()); root = undefined; document.body.innerHTML = '';
+    setup(); await mount(); expect(document.body.querySelector('[data-quote-company-missing]')).toBeNull(); expect(button('生成正式报价单')!.disabled).toBe(false);
   });
 });
