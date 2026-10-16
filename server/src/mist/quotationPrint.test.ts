@@ -37,6 +37,7 @@ describe('BB-QUO-6 正式报价单',()=>{
   expect(first.html).toContain(q().code);expect(first.html).toContain('V2');expect(first.html).toContain('2.30');expect(first.html).not.toContain('>2.50<');
   for(const text of ['报价单','QUOTATION','杭州竹语纺织有限公司','FOB Ningbo','30% T/T 预付，70% 见提单副本','颜色以确认色卡为准 / Color per approved lab dip','800 米','1000 米','竹纤维 70% 棉 30%','贸易术语','Trade terms','付款条件','Payment terms','有效期至','Valid until','授权签字及公司盖章'])expect(first.html).toContain(text);
   expect(first.html).not.toContain('class="watermark"');
+  expect(doc.snapshot.lines[0].moqBelow).toBe(true);expect(first.html).toContain('class="moq-below"');expect(first.html).toContain('低于 MOQ');
   expect(s.files.find(f=>f.id===doc.fileId)).toMatchObject({name:doc.fileName,mimeType:'application/pdf'});
   expect(s.events[0].text).toMatch(/生成正式报价单 .*V2/);
   await generate(s,ctx,v2,false);

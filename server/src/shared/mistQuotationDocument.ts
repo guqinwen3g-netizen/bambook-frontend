@@ -5,7 +5,7 @@ import { quoteMoqStatus, quoteSpecItems, type QuoteSpecFamily } from './mistQuot
 import { creditDocumentFingerprint } from './mistCreditDocuments';
 
 export const QUOTE_DOCUMENT_TEMPLATE_VERSION = 1 as const;
-export type QuoteDocumentLine = { no: number; lineId: string; name: string; style: string; specification: string; specs: Array<{ label: string; value: string }>; moq: string; qty: string; unit: string; price: string; amount: string };
+export type QuoteDocumentLine = { no: number; lineId: string; name: string; style: string; specification: string; specs: Array<{ label: string; value: string }>; moq: string; /** 报价数量低于 MOQ（同单位比较）；历史快照无此字段。 */ moqBelow?: boolean; qty: string; unit: string; price: string; amount: string };
 export type QuoteDocumentSnapshot = {
   quotationId: string; code: string; revision: number; draft: boolean; templateVersion: number;
   issuer: MistCompanyProfile; customer: { id: string; name: string; country: string; city: string };
@@ -45,7 +45,8 @@ export function buildQuotationDocumentSnapshot(input: { q: MarketQuotation; issu
     lines: q.lines.map((l, i) => {
       const family = input.family(l), specs = quoteSpecItems(family, l.specs).filter(s => !s.missing).map(s => ({ label: s.label, value: s.value }));
       const moqItem = specs.length && l.specs?.moqQty ? specs.pop()! : undefined;
-      return { no: i + 1, lineId: l.id, name: l.name, style: l.style, specification: l.specification || '', specs, moq: moqItem ? moqItem.value : '', qty: l.qty, unit: l.unit, price: l.price, amount: l.amount };
+      const below = quoteMoqStatus(family, l).state === 'below';
+      return { no: i + 1, lineId: l.id, name: l.name, style: l.style, specification: l.specification || '', specs, moq: moqItem ? moqItem.value : '', ...(below ? { moqBelow: true } : {}), qty: l.qty, unit: l.unit, price: l.price, amount: l.amount };
     }),
     total: q.total, sourceUpdatedAt: q.updatedAt, generatedAt: input.now, generatedBy: input.actorName, generatedById: input.actorId,
   };

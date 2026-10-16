@@ -24,6 +24,17 @@ describe('BB-QUO-3 最低毛利率底价线',()=>{
   expect(s.market.marginFloors!.map(f=>[f.version,f.minMarginPercent])).toEqual([[1,'15'],[2,'10']]);
   expect(s.events.some(e=>e.entityType==='pricing'&&e.text.includes('V2：10%'))).toBe(true);
  });
+ it('editing a saved quote after the floor changes keeps its frozen 15% instead of loosening to the new 10%',()=>{
+  const {ctx,s}=setup();const p=run(s,{type:'market.product.save',payload:{input:garment}},ctx).id!;
+  setFloor(s,ctx,'15');
+  const id=run(s,{type:'market.quotation.save',payload:{input:quote(p)}},ctx).id!;const q=()=>s.market.quotations.find(x=>x.id===id)!;
+  setFloor(s,ctx,'10');
+  run(s,{type:'market.quotation.save',payload:{id,input:{...quote(p),note:'退回后修改重提'}}},ctx);
+  expect(q().lines[0].marginFloor).toMatchObject({version:1,minMarginPercent:'15'});expect(quotationNeedsApproval(q())).toBe(true);
+  expect(()=>run(s,{type:'market.quotation.status',payload:{id,status:'Sent',evidence:'直接发'}},ctx)).toThrow(/审批/);
+  const fresh=run(s,{type:'market.quotation.save',payload:{input:quote(p)}},ctx).id!;
+  expect(s.market.quotations.find(x=>x.id===fresh)!.lines[0].marginFloor).toMatchObject({version:2,minMarginPercent:'10'});
+ });
  it('approval details show the applicable floor and version, every line margin, and which line triggered',()=>{
   const {ctx,s}=setup();const p=run(s,{type:'market.product.save',payload:{input:garment}},ctx).id!;setFloor(s,ctx,'15');
   const id=run(s,{type:'market.quotation.save',payload:{input:quote(p)}},{...ctx,actorId:'sales'}).id!;

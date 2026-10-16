@@ -10,7 +10,7 @@ import { downloadMistCsv, mistDate } from './OrderListPage';
 import { formatOrderQuantity, orderAmounts, sumOrderMoney } from './orderAmounts';
 import {createOrderGovernance,type OrderGovernanceInput,type OrderGovernanceFields,type OrderGovernanceLine} from '../../../../server/src/shared/mistOrderGovernance';
 import { OrderLineFulfillment } from './OrderLineFulfillment';
-import { OrderLineSourceValue } from './orderLineSource';
+import { OrderLineQuotationValue, OrderLineSourceValue, lineQuotation } from './orderLineSource';
 import { OrderBreakdownEditor } from './OrderBreakdownEditor';
 import { OrderChangeImpactList } from './OrderChangeImpactList';
 import { OrderTerminationBanner, OrderTerminationButton, orderLocked } from './OrderTermination';
@@ -192,7 +192,7 @@ export function OrderDetailPage() {
       </div>
     </section>
     <Drawer open={!!selectedLine} onClose={() => {setLineId(null);go('orders/detail',order.id,{customerId:route.customerId,section:order.type});}} title={selectedLine?.name ?? '订单条目'} sub={selectedLine?.style} size="lg">
-      {selectedLine && <div className="mist-col" data-module-detail>{state&&<OrderLineFulfillment state={state} order={order} line={selectedLine} go={go} onCloseLine={reason=>run({type:'order.governance.closeLine',payload:{orderId:order.id,lineId:selectedLine.id,reason}})}/>}<KeyValue items={[...(state?[{ label: '来源', value: <OrderLineSourceValue state={state} line={selectedLine} go={go}/> }]:[]), { label: '数量', value: `${formatOrderQuantity(selectedLine.qty)} ${selectedLine.unit}` }, { label: '单价', value: `${amountLabel(lineAmounts.get(selectedLine.id) == null ? null : selectedLine.price)} ${order.currency}` }, { label: '小计', value: `${amountLabel(lineAmounts.get(selectedLine.id))} ${order.currency}` }]} />
+      {selectedLine && <div className="mist-col" data-module-detail>{state&&<OrderLineFulfillment state={state} order={order} line={selectedLine} go={go} onCloseLine={reason=>run({type:'order.governance.closeLine',payload:{orderId:order.id,lineId:selectedLine.id,reason}})}/>}<KeyValue items={[...(state?[{ label: '来源', value: <OrderLineSourceValue state={state} line={selectedLine} go={go}/> }]:[]),...(state&&lineQuotation(state,selectedLine,go)?[{ label: '来源报价', value: <OrderLineQuotationValue state={state} line={selectedLine} go={go}/> }]:[]), { label: '数量', value: `${formatOrderQuantity(selectedLine.qty)} ${selectedLine.unit}` }, { label: '单价', value: `${amountLabel(lineAmounts.get(selectedLine.id) == null ? null : selectedLine.price)} ${order.currency}` }, { label: '小计', value: `${amountLabel(lineAmounts.get(selectedLine.id))} ${order.currency}` }]} />
         <Button icon={Pencil} disabled={busy||approvalPending} onClick={()=>setLineEditorId(selectedLine.id)}>编辑条目</Button>
         <CardHeader title="采购" /><Button block disabled={busy||locked} onClick={()=>go('procurement',undefined,{orderLineId:selectedLine.id,section:'order:'+order.id,customerId:order.customerId})}>准备采购草稿</Button>
         {!approved&&<Banner tone="warn" title="仅可准备采购草稿">主单批准前不能提交采购承诺、发出合同或进入生产。</Banner>}

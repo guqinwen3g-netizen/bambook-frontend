@@ -14,7 +14,7 @@ vi.mock('../runtime/auth', () => ({ useMistSession: () => ({ status: 'authentica
 import { OrderCreatePage } from './OrderCreatePage';
 import { OrderListPage } from './OrderListPage';
 import { currentLineStage, lineShipping, lineStages } from './orderLineTrack';
-import { OrderLineSourceValue } from './orderLineSource';
+import { OrderLineQuotationValue, OrderLineSourceValue } from './orderLineSource';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let host: HTMLElement, root: Root, sequence = 0;
@@ -171,4 +171,14 @@ it('BB-ORD-2 line detail shows a product archive source and a manual line withou
   expect(go).toHaveBeenLastCalledWith('products', 'prd-1');
   act(() => root.render(<MistRoot><ToastProvider><OrderLineSourceValue state={s} line={{ ...(line as object), sourceProductId: undefined } as never} go={go} /></ToastProvider></MistRoot>));
   expect(host.textContent).toContain('手工新建 · 无来源记录');
+});
+
+it('BB-QUO-5 line detail links back to the exact source quotation and line', async () => {
+  const s = { ...store.state!, market: { ...(store.state as MistState & { market?: object }).market, quotations: [{ id: 'q-1', code: 'QT-2026-0008-V2', lines: [{ id: 'ql-1' }, { id: 'ql-2' }] }] } } as never;
+  const line = { id: 'l', orderId: 'o', name: '面料', style: 'F1', img: 'coat', qty: 500, unit: '米', price: 7.6, made: 0, qc: 0, sourceProductId: 'prd-1', sourceQuotationId: 'q-1', sourceQuotationLineId: 'ql-2' } as never;
+  act(() => root.render(<MistRoot><ToastProvider><OrderLineQuotationValue state={s} line={line} go={go} /></ToastProvider></MistRoot>));
+  await click(getByRole(host, 'button', { name: 'QT-2026-0008-V2 · 第 2 条' }));
+  expect(go).toHaveBeenLastCalledWith('quotations', 'q-1');
+  act(() => root.render(<MistRoot><ToastProvider><OrderLineQuotationValue state={s} line={{ ...(line as object), sourceQuotationId: undefined } as never} go={go} /></ToastProvider></MistRoot>));
+  expect(host.querySelector('[data-line-quotation]')).toBeNull();
 });
