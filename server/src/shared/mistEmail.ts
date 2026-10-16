@@ -22,6 +22,11 @@ export type EmailAccount = {
   connection: EmailConnection; lastSyncAt: string | null; failedFolders: string[]; example: boolean;
   /** 真实账号的归属：按用户 ID 控制可见与可操作范围；个人邮箱只有本人，共享邮箱为本人 + 授权成员。 */
   ownerId?: string; memberIds?: string[]; transport?: EmailTransport; credentialSet?: boolean; lastError?: EmailProblem | null; folders?: EmailFolderSync[]; syncStartedAt?: string | null;
+  /**
+   * 收信来源代际：邮箱地址、收信服务器、端口、加密方式或登录用户名变化即视为换了一个远端邮箱，代际 +1 并清空文件夹游标；
+   * 之后同步的去重键与 Message-ID 合并都只在当前代际内进行，旧来源已同步的邮件原样保留。缺省按 1。
+   */
+  sourceGeneration?: number;
 };
 /** fileId 指向私有附件文件；omitted 说明未保存内容的原因（如超过大小上限）。 */
 export type EmailAttachment = { id: string; name: string; size: number; contentType: string; fileId?: string; omitted?: string };
@@ -31,16 +36,24 @@ export type EmailMessage = {
   from: EmailAddress; to: EmailAddress[]; cc: EmailAddress[]; subject: string; body: string; at: string; attachments: EmailAttachment[];
   read: boolean; starred: boolean; important: boolean; category: EmailCategory; extracted: Array<{ field: string; value: string }>;
   links: EmailLink[]; followUpTaskIds: string[]; submissions: Array<{ at: string; actor: string; link: EmailLink; taskId: string }>; example: boolean;
-  /** 已同步邮件的远端身份（去重键 = 账号 + 文件夹 + UIDVALIDITY + UID）。 */
-  remote?: { folder: string; uid: number; uidValidity: number }; messageId?: string; inReplyTo?: string; sendId?: string; forwardOfId?: string;
+  /** 已同步邮件的远端身份（去重键 = 账号 + 收信来源代际 + 文件夹 + UIDVALIDITY + UID）。 */
+  remote?: { folder: string; uid: number; uidValidity: number }; messageId?: string;
+  /** 真实邮件所属的收信来源代际（同步入库或本系统发出时的账号代际），缺省按 1。 */
+  source?: number; inReplyTo?: string; sendId?: string; forwardOfId?: string;
 };
-export type EmailSendStatus = 'sending' | 'sent' | 'failed' | 'unknown';
-export type EmailSendAttempt = { at: string; actor: string; outcome: 'claimed' | 'accepted' | 'failed' | 'unknown' | 'verified' | 'not_found'; code: string; message: string };
+/** sent = 全部收件人都被发信服务器接收；partial = 部分接收、其余被明确拒绝或未送出（只能对未接收者重发）。接收不等于对方最终收到。 */
+export type EmailSendStatus = 'sending' | 'sent' | 'partial' | 'failed' | 'unknown';
+/** 收件人级结果：pending 待投递；accepted 服务器已接收；rejected 服务器明确拒收该地址；failed 本次投递整体未送出；unknown 无法确认。 */
+export type EmailRecipientStatus = 'pending' | 'accepted' | 'rejected' | 'failed' | 'unknown';
+export type EmailSendRecipient = { address: string; role: 'to' | 'cc' | 'bcc'; status: EmailRecipientStatus; reply: string; at: string | null };
+export type EmailSendAttempt = { at: string; actor: string; outcome: 'claimed' | 'accepted' | 'partial' | 'failed' | 'unknown' | 'verified' | 'copy_found' | 'not_found'; code: string; message: string; recipients?: string[] };
 /** 持久发送记录：先落库再投递；结果不确定时保持 unknown，不自动重发。 */
 export type EmailSend = {
   id: string; requestKey: string; accountId: string; draftId?: string; replyToId?: string; forwardOfId?: string;
   from: string; to: string; cc: string; bcc: string; subject: string; body: string; links: EmailLink[]; fileIds: string[];
   messageId: string; status: EmailSendStatus; attempts: EmailSendAttempt[]; response: string; sentMessageId?: string;
+  /** 每个收件人的投递结果；旧记录缺省时按整封状态推导（见 emailSendRecipients）。 */
+  recipients?: EmailSendRecipient[];
   createdBy: string; createdById: string; createdAt: string; updatedAt: string;
 };
 export type EmailDraftInput = { accountId: string; from: string; to: string; cc: string; bcc: string; subject: string; body: string; template: string; links: EmailLink[]; fileIds: string[]; replyToId?: string };
@@ -64,9 +77,9 @@ export type EmailCommand =
   | { type: 'email.account.save'; payload: { id?: string; input: EmailAccountInput } }
   // 以下 email.server.* 只能由服务端邮件服务在真实 IMAP / SMTP 操作后提交。
   | { type: 'email.server.account'; payload: { id: string; connection?: EmailConnection; credentialSet?: boolean; lastError?: EmailProblem | null; syncStartedAt?: string | null } }
-  | { type: 'email.server.sync'; payload: { accountId: string; at: string; folders: EmailFolderSync[]; messages: EmailSyncedMessage[]; files: StoredFile[]; lastError: EmailProblem | null } }
+  | { type: 'email.server.sync'; payload: { accountId: string; source?: number; at: string; folders: EmailFolderSync[]; messages: EmailSyncedMessage[]; files: StoredFile[]; lastError: EmailProblem | null } }
   | { type: 'email.server.send.begin'; payload: { mode: 'new'; requestKey: string; draftId?: string; input: EmailDraftInput; forwardOfId?: string; messageId: string } | { mode: 'retry'; id: string; confirmUnknown?: boolean } }
-  | { type: 'email.server.send.finish'; payload: { id: string; outcome: 'accepted' | 'failed' | 'unknown' | 'verified' | 'not_found'; code: string; message: string; response?: string } };
+  | { type: 'email.server.send.finish'; payload: { id: string; outcome: 'accepted' | 'failed' | 'unknown' | 'verified' | 'not_found'; code: string; message: string; response?: string; accepted?: string[]; rejected?: Array<{ address: string; reply: string }> } };
 export const EMAIL_SERVER_COMMAND = /^email\.server\./;
 /** 发送中超过该时长仍未写回结果，按"结果待核对"处理（进程中断等）。 */
 export const EMAIL_SEND_STALE_MS = 5 * 60 * 1000;
@@ -97,6 +110,30 @@ export function emailVisibleScope(email: EmailState | undefined, actorId?: strin
 export function emailSendEffectiveStatus(send: Pick<EmailSend, 'status' | 'updatedAt'>, now = Date.now()): EmailSendStatus {
   return send.status === 'sending' && now - new Date(send.updatedAt).getTime() > EMAIL_SEND_STALE_MS ? 'unknown' : send.status;
 }
+const RECIPIENT_FROM_STATUS: Record<EmailSendStatus, EmailRecipientStatus> = { sending: 'pending', sent: 'accepted', partial: 'unknown', failed: 'failed', unknown: 'unknown' };
+/** 收件人级结果（去重，按收件人、抄送、密送顺序）；旧记录没有收件人明细时按整封状态推导。 */
+export function emailSendRecipients(send: Pick<EmailSend, 'to' | 'cc' | 'bcc' | 'status' | 'recipients' | 'updatedAt'>): EmailSendRecipient[] {
+  if (send.recipients?.length) return send.recipients;
+  const status = RECIPIENT_FROM_STATUS[send.status] || 'unknown';
+  return sendRecipientRows(send).map(row => ({ ...row, status, reply: '', at: status === 'pending' ? null : send.updatedAt }));
+}
+function sendRecipientRows(send: Pick<EmailSend, 'to' | 'cc' | 'bcc'>) {
+  const seen = new Set<string>(), rows: Array<{ address: string; role: 'to' | 'cc' | 'bcc' }> = [];
+  for (const role of ['to', 'cc', 'bcc'] as const) for (const address of (send[role] || '').split(/,\s*/).map(item => item.trim().toLowerCase()).filter(Boolean)) if (!seen.has(address)) { seen.add(address); rows.push({ address, role }); }
+  return rows;
+}
+/** 由收件人结果推导整封状态：全部接收 = sent；有无法确认 = unknown；部分接收 = partial；无人接收 = failed。 */
+function sendStatusOf(rows: EmailSendRecipient[]): EmailSendStatus {
+  if (rows.some(row => row.status === 'pending')) return 'sending';
+  if (rows.length && rows.every(row => row.status === 'accepted')) return 'sent';
+  if (rows.some(row => row.status === 'unknown')) return 'unknown';
+  return rows.some(row => row.status === 'accepted') ? 'partial' : 'failed';
+}
+/** 重发只针对尚未被服务器接收的收件人。 */
+export function emailSendRetryTargets(send: Pick<EmailSend, 'to' | 'cc' | 'bcc' | 'status' | 'recipients' | 'updatedAt'>) { return emailSendRecipients(send).filter(row => row.status !== 'accepted'); }
+const sourceOf = (row: { source?: number } | undefined) => row?.source || 1;
+/** 收信来源身份：任何一项变化都表示远端邮箱已不是同一个，旧的 UID 游标与去重键失效。 */
+const imapSourceKey = (address: string, t: EmailTransport | undefined) => t ? [address.toLowerCase(), t.imapHost.toLowerCase(), t.imapPort, t.imapSecure ? 'tls' : 'starttls', t.username.toLowerCase()].join('|') : '';
 /** 个人邮箱由本人以邮件编辑权限接入；共享邮箱涉及他人可见范围，需要邮件账户管理权限（emails:admin）。 */
 export function emailCommandPermission(command: EmailCommand) { return command.type === 'email.account.save' && (command.payload as { input?: { kind?: string } })?.input?.kind === 'shared' ? 'emails:admin' : 'emails:write'; }
 
@@ -164,13 +201,13 @@ function recordSent(root: MistState, row: EmailSend, context: MistContext) {
     id, accountId: row.accountId, folder: 'sent', threadId: parent?.threadId || id, from: { name: owner.displayName, address: row.from }, to: addressRows(row.to), cc: addressRows(row.cc), subject: row.subject, body: row.body, at: context.now,
     attachments: row.fileIds.map(fileId => root.files.find(file => file.id === fileId)).filter((file): file is NonNullable<typeof file> => !!file).map(file => ({ id: context.id(), name: file.name, size: file.size, contentType: file.mimeType, fileId: file.id })),
     read: true, starred: false, important: false, category: { label: '', source: 'none', detail: '未配置分类规则' }, extracted: [], links: row.links.map(item => ({ ...item })), followUpTaskIds: [], submissions: [], example: false,
-    messageId: row.messageId, sendId: row.id, ...(parent?.messageId ? { inReplyTo: parent.messageId } : {}), ...(row.forwardOfId ? { forwardOfId: row.forwardOfId } : {}),
+    messageId: row.messageId, sendId: row.id, source: owner.sourceGeneration || 1, ...(parent?.messageId ? { inReplyTo: parent.messageId } : {}), ...(row.forwardOfId ? { forwardOfId: row.forwardOfId } : {}),
   });
   row.sentMessageId = id;
   if (row.draftId) root.email.drafts = root.email.drafts.filter(item => item.id !== row.draftId);
   if (parent) log(root, context, parent.id, `已回复：${row.subject}`);
   if (row.forwardOfId) log(root, context, row.forwardOfId, `已转发：${row.subject}`);
-  log(root, context, id, `发送成功（服务器已接收）：${row.subject}`);
+  log(root, context, id, row.status === 'sent' ? `发送成功（服务器已接收）：${row.subject}` : `部分收件人已被服务器接收：${row.subject}（其余未接收，见发送记录）`);
   return id;
 }
 function log(root: MistState, context: MistContext, entityId: string, textValue: string) { root.events.unshift({ id: context.id(), entityType: 'email', entityId, actor: context.actorName, at: context.now, text: textValue, fileIds: [] }); }
@@ -246,25 +283,68 @@ export function applyEmailCommand(root: MistState, command: EmailCommand, contex
     }
     case 'email.server.sync': return applySync(root, command.payload, context);
     case 'email.server.send.begin': return beginSend(root, command.payload, context);
-    case 'email.server.send.finish': {
-      const v = command.payload, row = send(root, v.id, context), outcome = v.outcome;
-      const attempt = (value: EmailSendAttempt['outcome']) => row.attempts.push({ at: context.now, actor: context.actorName, outcome: value, code: clip(v.code, 60), message: clip(v.message, 300) });
-      if (outcome === 'verified' || outcome === 'not_found') {
-        if (emailSendEffectiveStatus(row, Date.parse(context.now)) !== 'unknown') fail('只有结果待核对的发送需要核对', 'PRECONDITION');
-        attempt(outcome); row.updatedAt = context.now;
-        if (outcome === 'verified') { row.status = 'sent'; row.response = clip(v.response || '已在邮箱中核对到该邮件', 300); return { id: row.id, status: row.status, sentMessageId: recordSent(root, row, context) }; }
-        row.status = 'unknown'; log(root, context, row.id, `核对发送结果：未在邮箱中找到 ${row.subject}，仍待确认`); return { id: row.id, status: row.status };
-      }
-      if (row.status !== 'sending') fail('发送记录不在发送中，不能重复写回结果', 'PRECONDITION');
-      if (!['accepted', 'failed', 'unknown'].includes(outcome)) fail('发送结果无效');
-      attempt(outcome); row.updatedAt = context.now; row.response = clip(v.response || '', 300);
-      if (outcome === 'accepted') { row.status = 'sent'; return { id: row.id, status: row.status, sentMessageId: recordSent(root, row, context) }; }
-      row.status = outcome === 'failed' ? 'failed' : 'unknown';
-      log(root, context, row.id, outcome === 'failed' ? `发送失败：${row.subject}（${clip(v.message, 120)}）` : `发送结果不确定：${row.subject}，请核对后再决定是否重发`);
-      return { id: row.id, status: row.status };
-    }
+    case 'email.server.send.finish': return finishSend(root, command.payload, context);
   }
   return fail('未知邮件操作');
+}
+
+const lower = (value: unknown) => clip(value, 254).trim().toLowerCase();
+/** 写回投递结果：只改本次投递中（pending）的收件人；已被接收的收件人结果不会被后续尝试覆盖。 */
+function finishSend(root: MistState, v: Extract<EmailCommand, { type: 'email.server.send.finish' }>['payload'], context: MistContext) {
+  const row = send(root, v?.id, context), outcome = v.outcome, owner = root.email.accounts.find(item => item.id === row.accountId)!;
+  const rows = row.recipients = emailSendRecipients(row).map(item => ({ ...item }));
+  const attempt = (value: EmailSendAttempt['outcome'], message = clip(v.message, 300), recipients?: string[]) => row.attempts.push({ at: context.now, actor: context.actorName, outcome: value, code: clip(v.code, 60), message, ...(recipients ? { recipients } : {}) });
+  const mark = (item: EmailSendRecipient, status: EmailRecipientStatus, reply: string) => Object.assign(item, { status, reply: clip(reply, 300), at: context.now });
+  const hadCopy = !!row.sentMessageId;
+  const done = (extra: Record<string, unknown> = {}) => {
+    row.status = sendStatusOf(rows); row.updatedAt = context.now;
+    const copy = rows.some(item => item.status === 'accepted') ? recordSent(root, row, context) : undefined;
+    return { id: row.id, status: row.status, ...(copy ? { sentMessageId: copy, firstCopy: !hadCopy } : {}), recipients: rows.map(item => ({ address: item.address, status: item.status })), ...extra };
+  };
+  if (outcome === 'verified' || outcome === 'not_found') {
+    if (emailSendEffectiveStatus(row, Date.parse(context.now)) !== 'unknown') fail('只有结果待核对的发送需要核对', 'PRECONDITION');
+    // 中断后停在"发送中"的收件人同样按无法确认处理。
+    for (const item of rows) if (item.status === 'pending') mark(item, 'unknown', '投递过程中断，结果无法确认');
+    const open = rows.filter(item => item.status === 'unknown');
+    if (outcome === 'not_found') { attempt('not_found'); log(root, context, row.id, `核对发送结果：未在本邮箱找到 ${row.subject}，仍待确认`); return done({ confirmed: false }); }
+    // 在本邮箱找到副本只能证明本邮箱自己收到；仅当待确认的收件人全部是本邮箱自身地址时才据此确认，其他收件人保持待确认。
+    const self = new Set([owner.address, ...owner.aliases].map(item => item.toLowerCase()));
+    if (open.length && open.every(item => self.has(item.address))) {
+      for (const item of open) mark(item, 'accepted', clip(v.response || '已在本邮箱中按 Message-ID 找到该邮件', 300));
+      attempt('verified', clip(v.message, 300), open.map(item => item.address)); row.response = clip(v.response || '已在本邮箱中核对到该邮件', 300);
+      return done({ confirmed: true });
+    }
+    attempt('copy_found', '在本邮箱中找到该邮件副本，但不能据此确认其他收件人是否收到，仍待确认', open.map(item => item.address));
+    log(root, context, row.id, `核对发送结果：本邮箱中有 ${row.subject} 的副本，其他收件人仍待确认`);
+    return done({ confirmed: false, copyFound: true });
+  }
+  if (row.status !== 'sending') fail('发送记录不在发送中，不能重复写回结果', 'PRECONDITION');
+  if (!['accepted', 'failed', 'unknown'].includes(outcome)) fail('发送结果无效');
+  const targets = rows.filter(item => item.status === 'pending'), envelope = targets.map(item => item.address);
+  const rejected = new Map((Array.isArray(v.rejected) ? v.rejected : []).map(item => [lower(item?.address), clip(item?.reply, 300)] as const).filter(([address]) => address));
+  const accepted = new Set((Array.isArray(v.accepted) ? v.accepted : []).map(lower).filter(Boolean)), listed = accepted.size > 0 || rejected.size > 0;
+  row.response = clip(v.response || '', 300);
+  if (outcome === 'accepted') {
+    // 服务器接收了正文：逐个对应接收/拒收清单；服务器未回报的收件人如实记为无法确认。两份清单都为空时按整封接收处理。
+    for (const item of targets) {
+      if (rejected.has(item.address)) mark(item, 'rejected', rejected.get(item.address) || '发信服务器拒收该收件人');
+      else if (accepted.has(item.address) || !listed) mark(item, 'accepted', row.response || '发信服务器已接收');
+      else mark(item, 'unknown', '发信服务器未回报该收件人的结果');
+    }
+    const ok = targets.filter(item => item.status === 'accepted'), notOk = targets.filter(item => item.status !== 'accepted');
+    attempt(notOk.length ? (ok.length ? 'partial' : 'failed') : 'accepted', clip(v.message, 300), envelope);
+    if (notOk.length) log(root, context, row.id, ok.length ? `部分收件人未被接收：${row.subject}（${notOk.map(item => item.address).join('、')}）` : `发送失败：${row.subject}（全部收件人被拒）`);
+    else if (hadCopy) log(root, context, row.id, `补发成功（服务器已接收）：${row.subject} → ${envelope.join('、')}`);
+    return done();
+  }
+  for (const item of targets) {
+    if (outcome === 'unknown') mark(item, 'unknown', clip(v.message, 300));
+    else if (rejected.has(item.address)) mark(item, 'rejected', rejected.get(item.address) || clip(v.message, 300));
+    else mark(item, 'failed', clip(v.response || v.message, 300));
+  }
+  attempt(outcome, clip(v.message, 300), envelope);
+  log(root, context, row.id, outcome === 'failed' ? `发送失败：${row.subject}（${clip(v.message, 120)}）` : `发送结果不确定：${row.subject}，请核对后再决定是否重发`);
+  return done();
 }
 
 function saveAccount(root: MistState, payload: { id?: string; input: EmailAccountInput }, context: MistContext): { id: string } {
@@ -286,20 +366,27 @@ function saveAccount(root: MistState, payload: { id?: string; input: EmailAccoun
   if (existing && (existing.example || existing.ownerId !== context.actorId)) fail(existing.example ? '示例邮箱不能改为真实邮箱，请新建账号' : '只有接入该邮箱的本人可以修改账号设置', 'FORBIDDEN');
   if (root.email.accounts.some(row => row.id !== existing?.id && !row.example && row.address === address)) fail('该邮箱已在本工作空间接入', 'CONFLICT');
   if (existing) {
-    const before = existing.transport, rebind = !before || before.username !== transport.username || before.imapHost !== transport.imapHost || before.imapPort !== transport.imapPort || before.smtpHost !== transport.smtpHost || before.smtpPort !== transport.smtpPort || existing.address !== address;
+    // 先比较再写入：收信来源（地址/收信服务器/端口/加密/用户名）变化 → 新代际并清空游标；仅发信设置变化 → 只需重新校验凭据，保留收信游标与历史。
+    const before = existing.transport, sourceChanged = imapSourceKey(existing.address, before) !== imapSourceKey(address, transport);
+    const smtpChanged = !before || before.smtpHost !== transport.smtpHost || before.smtpPort !== transport.smtpPort || before.smtpSecure !== transport.smtpSecure;
+    const rebind = sourceChanged || smtpChanged, kept = root.email.messages.filter(row => row.accountId === existing.id && !row.example).length;
     Object.assign(existing, { address, displayName, kind, memberIds, memberNames, aliases, signature, transport });
-    if (rebind) Object.assign(existing, { credentialSet: false, connection: 'not_connected', lastError: null, folders: existing.address === address ? existing.folders || [] : [] });
-    log(root, context, existing.id, rebind ? `修改邮箱 ${address} 的服务器或登录设置，需要重新校验凭据` : `更新邮箱 ${address} 的设置`);
+    if (rebind) Object.assign(existing, { credentialSet: false, connection: 'not_connected', lastError: null });
+    if (sourceChanged) Object.assign(existing, { sourceGeneration: (existing.sourceGeneration || 1) + 1, folders: [], failedFolders: [], lastSyncAt: null, syncStartedAt: null });
+    log(root, context, existing.id, sourceChanged ? `更换邮箱 ${address} 的收信来源，需要重新校验凭据；将从新来源重新同步，已同步的 ${kept} 封邮件保留` : rebind ? `修改邮箱 ${address} 的发信设置，需要重新校验凭据（收信同步进度保留）` : `更新邮箱 ${address} 的设置`);
     return { id: existing.id };
   }
   const id = context.id();
-  root.email.accounts.push({ id, address, displayName, kind, ownerId: context.actorId, ownerName: context.actorName, memberIds, memberNames, aliases, signature, transport, connection: 'not_connected', credentialSet: false, lastError: null, lastSyncAt: null, failedFolders: [], folders: [], syncStartedAt: null, example: false });
+  root.email.accounts.push({ id, address, displayName, kind, ownerId: context.actorId, ownerName: context.actorName, memberIds, memberNames, aliases, signature, transport, connection: 'not_connected', credentialSet: false, lastError: null, lastSyncAt: null, failedFolders: [], folders: [], syncStartedAt: null, sourceGeneration: 1, example: false });
   log(root, context, id, `接入${kind === 'shared' ? '共享' : '个人'}邮箱 ${address}（待校验凭据）`);
   return { id };
 }
 
 function applySync(root: MistState, payload: Extract<EmailCommand, { type: 'email.server.sync' }>['payload'], context: MistContext) {
   const owner = account(root, payload?.accountId, context); if (owner.example) fail('示例邮箱不能同步', 'PRECONDITION');
+  // 同步开始后邮箱改了收信来源：本次拉到的是旧来源的数据，整体作废，避免写进新代际。
+  const generation = owner.sourceGeneration || 1;
+  if (payload.source !== undefined && Number(payload.source) !== generation) fail('邮箱收信设置已在同步期间修改，本次同步结果作废，请重新同步', 'CONFLICT');
   const folders = Array.isArray(payload.folders) ? payload.folders : [], incoming = Array.isArray(payload.messages) ? payload.messages : [], files = Array.isArray(payload.files) ? payload.files : [];
   if (incoming.length > 500 || files.length > 1000) fail('单次同步数量超过上限');
   const fileById = new Map<string, StoredFile>();
@@ -310,7 +397,8 @@ function applySync(root: MistState, payload: Extract<EmailCommand, { type: 'emai
     fileById.set(f.id, f);
   }
   const key = (r: { folder: string; uid: number; uidValidity: number }) => `${r.folder}\u0000${r.uidValidity}\u0000${r.uid}`;
-  const mine = root.email.messages.filter(row => row.accountId === owner.id);
+  // 去重与 Message-ID 合并只在当前收信来源代际内进行；旧来源的邮件保留，但不会让新来源的同号 UID 被误判为重复。
+  const mine = root.email.messages.filter(row => row.accountId === owner.id && sourceOf(row) === generation);
   const seen = new Set(mine.filter(row => row.remote).map(row => key(row.remote!)));
   const usedFiles = new Set<string>(); let added = 0, merged = 0, skipped = 0;
   for (const m of incoming) {
@@ -335,7 +423,7 @@ function applySync(root: MistState, payload: Extract<EmailCommand, { type: 'emai
     const row: EmailMessage = {
       id, accountId: owner.id, folder: m.folder, threadId: parent?.threadId || id, from: addressRow(m.from), to: (Array.isArray(m.to) ? m.to : []).slice(0, 100).map(addressRow), cc: (Array.isArray(m.cc) ? m.cc : []).slice(0, 100).map(addressRow),
       subject: clip(m.subject, 300) || '（无主题）', body: clip(m.body, 100000), at: isoAt(m.at, context.now), attachments, read: m.folder === 'sent' ? true : !!m.read, starred: false, important: false,
-      category: { label: '', source: 'none', detail: '未配置分类规则' }, extracted: [], links: [], followUpTaskIds: [], submissions: [], example: false, remote, ...(messageId ? { messageId } : {}), ...(m.inReplyTo ? { inReplyTo: clip(m.inReplyTo, 300) } : {}),
+      category: { label: '', source: 'none', detail: '未配置分类规则' }, extracted: [], links: [], followUpTaskIds: [], submissions: [], example: false, remote, source: generation, ...(messageId ? { messageId } : {}), ...(m.inReplyTo ? { inReplyTo: clip(m.inReplyTo, 300) } : {}),
     };
     root.email.messages.push(row); mine.push(row); added++;
   }
@@ -364,10 +452,15 @@ function beginSend(root: MistState, payload: Extract<EmailCommand, { type: 'emai
     if (status === 'sent') fail('该邮件已发送，不能重复发送', 'PRECONDITION');
     if (status === 'sending') fail('该邮件正在发送，请稍后查看结果', 'PRECONDITION');
     if (status === 'unknown' && payload.confirmUnknown !== true) fail('上次发送结果不确定：请先核对对方或已发送中是否已收到，确认未送达后再重发', 'SEND_RESULT_UNCERTAIN');
+    // 只重发尚未被服务器接收的收件人；已接收的收件人不会再收到第二封。
+    const rows = row.recipients = emailSendRecipients(row).map(item => ({ ...item })), targets = rows.filter(item => item.status !== 'accepted');
+    if (!targets.length) fail('所有收件人都已被服务器接收，不需要重发', 'PRECONDITION');
+    for (const item of targets) Object.assign(item, { status: 'pending', reply: '', at: null });
     row.status = 'sending'; row.updatedAt = context.now;
-    row.attempts.push({ at: context.now, actor: context.actorName, outcome: 'claimed', code: status === 'unknown' ? 'RETRY_CONFIRMED_UNDELIVERED' : 'RETRY_AFTER_FAILURE', message: status === 'unknown' ? '已确认未送达，重新发送' : '上次明确失败，重新发送' });
-    log(root, context, row.id, `重新发送：${row.subject}`);
-    return { id: row.id, status: row.status, existing: false };
+    const only = rows.length > targets.length, list = targets.map(item => item.address);
+    row.attempts.push({ at: context.now, actor: context.actorName, outcome: 'claimed', code: status === 'unknown' ? 'RETRY_CONFIRMED_UNDELIVERED' : only ? 'RETRY_REJECTED_ONLY' : 'RETRY_AFTER_FAILURE', message: `${status === 'unknown' ? '已确认未送达，重新发送' : '上次明确未送出，重新发送'}${only ? `（仅发给尚未接收的收件人：${list.join('、')}）` : ''}`, recipients: list });
+    log(root, context, row.id, `重新发送：${row.subject}${only ? `（仅 ${list.join('、')}）` : ''}`);
+    return { id: row.id, status: row.status, existing: false, recipients: list };
   }
   if (payload?.mode !== 'new') fail('发送方式无效');
   const requestKey = text(payload.requestKey, '发送请求编号', true, 80); if (!/^[A-Za-z0-9_-]{8,80}$/.test(requestKey)) fail('发送请求编号无效');
@@ -381,7 +474,7 @@ function beginSend(root: MistState, payload: Extract<EmailCommand, { type: 'emai
   const forwardOfId = payload.forwardOfId ? message(root, String(payload.forwardOfId), context).id : undefined;
   const messageId = text(payload.messageId, 'Message-ID', true, 300); if (!/^<[^<>\s@]{3,200}@[^<>\s@]{1,200}>$/.test(messageId)) fail('Message-ID 无效');
   const id = context.id();
-  root.email.sends.unshift({ id, requestKey, accountId: owner.id, ...(payload.draftId ? { draftId: payload.draftId } : {}), ...(draft.replyToId ? { replyToId: draft.replyToId } : {}), ...(forwardOfId ? { forwardOfId } : {}), from: draft.from, to: draft.to, cc: draft.cc, bcc: draft.bcc, subject: draft.subject || '（无主题）', body: draft.body, links: draft.links, fileIds: draft.fileIds, messageId, status: 'sending', attempts: [{ at: context.now, actor: context.actorName, outcome: 'claimed', code: 'SEND_STARTED', message: '已登记，开始投递' }], response: '', createdBy: context.actorName, createdById: context.actorId!, createdAt: context.now, updatedAt: context.now });
+  root.email.sends.unshift({ id, requestKey, accountId: owner.id, ...(payload.draftId ? { draftId: payload.draftId } : {}), ...(draft.replyToId ? { replyToId: draft.replyToId } : {}), ...(forwardOfId ? { forwardOfId } : {}), from: draft.from, to: draft.to, cc: draft.cc, bcc: draft.bcc, subject: draft.subject || '（无主题）', body: draft.body, links: draft.links, fileIds: draft.fileIds, messageId, status: 'sending', recipients: sendRecipientRows(draft).map(item => ({ ...item, status: 'pending' as const, reply: '', at: null })), attempts: [{ at: context.now, actor: context.actorName, outcome: 'claimed', code: 'SEND_STARTED', message: '已登记，开始投递', recipients: sendRecipientRows(draft).map(item => item.address) }], response: '', createdBy: context.actorName, createdById: context.actorId!, createdAt: context.now, updatedAt: context.now });
   log(root, context, id, `开始发送：${draft.subject || '（无主题）'}`);
   return { id, status: 'sending' as EmailSendStatus, existing: false };
 }

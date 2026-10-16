@@ -128,6 +128,28 @@ it('retries a definite failure and shows the server reply',async()=>{
   expect(store.mail).toHaveBeenLastCalledWith({kind:'retry',sendId:'send-failed'});
 });
 
+it('partial acceptance is shown per recipient; resend targets only unaccepted recipients and the sent copy says so',async()=>{
+  const s=realState() as any;
+  const rec={requestKey:'abcdefgh14',accountId:'acc-real',from:'sales@sylway.cloud',to:'buyer@partner.test, bounce@partner.test',cc:'',bcc:'',body:'正文',links:[],fileIds:[],messageId:'<p@sylway.cloud>',response:'250 queued',createdBy:'顾言',createdById:'sales',createdAt:'2026-10-14T01:00:00Z',updatedAt:'2026-10-14T01:00:00Z',
+    id:'send-partial',subject:'部分被拒的邮件',status:'partial',sentMessageId:'mail-sent-p',
+    recipients:[{address:'buyer@partner.test',role:'to',status:'accepted',reply:'250 queued',at:'2026-10-14T01:00:00Z'},{address:'bounce@partner.test',role:'to',status:'rejected',reply:'550 5.1.1 <bounce@partner.test>: User unknown',at:'2026-10-14T01:00:00Z'}],
+    attempts:[{at:'2026-10-14T01:00:00Z',actor:'顾言',outcome:'claimed',code:'SEND_STARTED',message:'已登记，开始投递'},{at:'2026-10-14T01:00:00Z',actor:'顾言',outcome:'partial',code:'SMTP_PARTIAL',message:'发信服务器只接收了部分收件人；被拒：bounce@partner.test'}]};
+  s.email.sends=[rec];
+  s.email.messages.push({...s.email.messages[0],id:'mail-sent-p',folder:'sent',subject:'部分被拒的邮件',from:{name:'业务邮箱',address:'sales@sylway.cloud'},to:[{name:'',address:'buyer@partner.test'},{name:'',address:'bounce@partner.test'}],attachments:[],remote:undefined,messageId:'<p@sylway.cloud>',sendId:'send-partial'});
+  store.state=s;store.mail.mockResolvedValue({send:{id:'send-partial',status:'partial',recipients:[{address:'buyer@partner.test',status:'accepted'},{address:'bounce@partner.test',status:'rejected'}]}});render('send-partial');
+  expect(host.textContent).toContain('部分收件人未被接收');
+  expect(host.textContent).toContain('550 5.1.1 <bounce@partner.test>: User unknown');
+  expect(document.querySelector('[data-recipient="buyer@partner.test"]')!.textContent).toContain('服务器已接受');
+  expect(document.querySelector('[data-recipient="bounce@partner.test"]')!.textContent).toContain('被拒收');
+  expect(button('重发')).toBeUndefined();
+  await click(button('仅重发未接收的收件人')!);
+  expect(store.mail).toHaveBeenLastCalledWith({kind:'retry',sendId:'send-partial'});
+  expect(document.body.textContent).toContain('以下收件人未被接收：bounce@partner.test');
+  render('mail-sent-p');
+  expect(host.textContent).toContain('发件服务器已接受：buyer@partner.test；未接收或无法确认：bounce@partner.test（被拒收）');
+  expect(host.textContent).not.toContain('已接受全部收件人');
+});
+
 it('downloads synced attachments and explains omitted ones; forwarding carries the stored attachment',async()=>{
   store.state=realState();render('mail-real-1');
   const downloads=[...document.querySelectorAll('button')].filter(b=>b.textContent?.trim()==='下载') as HTMLButtonElement[];

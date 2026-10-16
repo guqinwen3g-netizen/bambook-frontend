@@ -5,10 +5,10 @@ import { fail } from '../errors';
 import type { MistRepository } from '../repository';
 import type { MistStoredFile } from '../files';
 import { MIST_FILE_MAX_BYTES } from '../files';
-import { emailSendEffectiveStatus, type EmailAccount, type EmailAddress, type EmailDraftInput, type EmailFolderSync, type EmailMessageFolder, type EmailProblem, type EmailSend, type EmailSyncedMessage } from '../../shared/mistEmail';
+import { emailSendEffectiveStatus, emailSendRecipients, type EmailAccount, type EmailAddress, type EmailDraftInput, type EmailFolderSync, type EmailMessageFolder, type EmailProblem, type EmailSend, type EmailSyncedMessage } from '../../shared/mistEmail';
 import type { MistState } from '../../shared/mistWorkspace';
 import { MistMailCredentials, type MistMailSecret } from './credentials';
-import { classifySmtpError, composeMail, describeMailError, imapSmtpTransport, type MailFolderInfo, type MailImapSession, type MailTransport } from './transport';
+import { classifySmtpError, composeMail, describeMailError, imapSmtpTransport, smtpRejectedReplies, type MailFolderInfo, type MailImapSession, type MailTransport } from './transport';
 
 /** 每次同步每个文件夹最多拉取的邮件数；剩余部分下次同步继续（按 UID 递增，不重复）。 */
 export const MAIL_SYNC_BATCH = 100;
@@ -135,7 +135,7 @@ export class MistMailService {
           }
           if (!targets.length && !lastError) lastError = problem('MAIL_NO_FOLDERS', '收信服务器没有可同步的收件箱');
         }
-        const result = await this.write(prior, workspaceId, 'email.server.sync', { accountId, at: this.now().toISOString(), folders, messages, files, lastError });
+        const result = await this.write(prior, workspaceId, 'email.server.sync', { accountId, source: account.sourceGeneration || 1, at: this.now().toISOString(), folders, messages, files, lastError });
         await cleanup(new Set(((result.receipt as any)?.result?.fileIds || []) as string[]));
         return { ...result, sync: { ...(result.receipt as any)?.result, remaining, failedFolders: folders.filter(f => f.error).map(f => f.remote), error: lastError?.message || null } };
       } catch (error) {
@@ -192,7 +192,7 @@ export class MistMailService {
     return this.exclusive(`send:${workspaceId}:${sendId}`, '该邮件的发送', async () => {
       const { state } = await this.repository.mailSnapshot(prior, workspaceId);
       const record = state.email.sends.find(row => row.id === sendId)!, account = state.email.accounts.find(row => row.id === record.accountId)!;
-      const finish = (outcome: string, code: string, message: string, response = '') => this.write(prior, workspaceId, 'email.server.send.finish', { id: sendId, outcome, code, message, response });
+      const finish = (outcome: string, code: string, message: string, response = '', accepted: string[] = [], rejected: Array<{ address: string; reply: string }> = []) => this.write(prior, workspaceId, 'email.server.send.finish', { id: sendId, outcome, code, message, response, accepted, rejected });
       let raw: Buffer, secret: MistMailSecret;
       try {
         secret = await this.secret(workspaceId, account);
@@ -201,20 +201,28 @@ export class MistMailService {
         const result = await finish('failed', String(error?.code || 'MAIL_PREPARE_FAILED'), String(error?.message || '邮件准备失败，未发送'));
         return { ...result, send: { id: sendId, status: 'failed', message: String(error?.message || '邮件准备失败，未发送') } };
       }
+      // 只投递给本次待投递的收件人（新发送为全部；重发时只含之前未被接收的收件人）。
+      const envelope = emailSendRecipients(record).filter(row => row.status === 'pending').map(row => row.address);
+      if (!envelope.length) { const result = await finish('failed', 'MAIL_NO_PENDING_RECIPIENTS', '没有需要投递的收件人'); return { ...result, send: { id: sendId, status: (result.receipt as any)?.result?.status || 'failed', message: '没有需要投递的收件人' } }; }
       let outcome: 'accepted' | 'failed' | 'unknown', code = 'SMTP_ACCEPTED', message = '发信服务器已接收', response = '';
+      let accepted: string[] = [], rejected: Array<{ address: string; reply: string }> = [];
       try {
-        const info = await this.transport.smtpSend(account.transport!, secret!, this.insecure(account.transport!.smtpHost), { from: record.from, to: [...recipients(record.to), ...recipients(record.cc), ...recipients(record.bcc)] }, raw!);
-        outcome = 'accepted'; response = info.response; if (info.rejected.length) message = `发信服务器已接收；以下收件人被拒：${info.rejected.join('、')}`;
+        const info = await this.transport.smtpSend(account.transport!, secret!, this.insecure(account.transport!.smtpHost), { from: record.from, to: envelope }, raw!);
+        outcome = 'accepted'; response = info.response; accepted = info.accepted.map(item => item.toLowerCase());
+        rejected = info.rejectedReplies?.length ? info.rejectedReplies : info.rejected.map(address => ({ address: address.toLowerCase(), reply: '' }));
+        if (rejected.length) { code = 'SMTP_PARTIAL'; message = `发信服务器只接收了部分收件人；被拒：${rejected.map(item => item.address).join('、')}`; }
       } catch (error: any) {
         outcome = classifySmtpError(error); const reason = describeMailError(error, 'smtp');
         code = outcome === 'failed' ? reason.code : 'SEND_RESULT_UNCERTAIN';
         message = outcome === 'failed' ? `${reason.message}，邮件未发出` : '与发信服务器的连接在投递过程中中断，无法确认对方是否收到；请先核对，勿直接重发';
         response = String(error?.response || (error?.responseCode ? error?.message : '') || '').slice(0, 300);
+        if (outcome === 'failed') rejected = smtpRejectedReplies(error);
       }
       // 写回失败时记录仍是"发送中"，超时后显示为"结果待核对"，不会被自动重发。
-      const result = await finish(outcome, code, message, response);
-      if (outcome === 'accepted') await this.appendSent(account, secret!, raw!).catch(() => undefined);
-      return { ...result, send: { id: sendId, status: outcome === 'accepted' ? 'sent' : outcome, message } };
+      const result = await finish(outcome, code, message, response, accepted, rejected), done = (result.receipt as any)?.result || {};
+      // 远端"已发送"只在第一次有收件人被接收时写入一次，重发被拒收件人不再重复写入。
+      if (done.firstCopy) await this.appendSent(account, secret!, raw!).catch(() => undefined);
+      return { ...result, send: { id: sendId, status: done.status || (outcome === 'accepted' ? 'sent' : outcome), message, recipients: done.recipients || [] } };
     });
   }
   private async compose(prior: TokenPayload, workspaceId: string, state: MistState, record: EmailSend, account: EmailAccount) {
@@ -233,7 +241,7 @@ export class MistMailService {
     const session = await this.imap(account, secret);
     try { const sent = pickMailFolders(await session.folders()).find(item => item.folder === 'sent'); if (sent) await session.append(sent.remote, raw); } finally { await session.close(); }
   }
-  /** 核对结果不确定的发送：在本邮箱的已发送与收件箱中按 Message-ID 查找。找到才确认已发送；找不到仍保持待核对。 */
+  /** 核对结果不确定的发送：只在本邮箱自身的文件夹中按 Message-ID 查找，不读其他邮箱。找到副本只在待确认收件人全是本邮箱地址时才确认已接收；否则仅记录"本邮箱有副本"。 */
   async verify(prior: TokenPayload, workspaceId: string, sendId: string) {
     const snapshot = await this.repository.mailSnapshot(prior, workspaceId), record = snapshot.state.email.sends.find(row => row.id === sendId);
     if (!record) fail('NOT_FOUND', '发送记录不存在', 404);
@@ -244,7 +252,9 @@ export class MistMailService {
     try {
       for (const target of pickMailFolders(await session.folders())) { await session.open(target.remote); if (await session.hasMessageId(record!.messageId)) { found = true; break; } }
     } finally { await session.close(); }
-    const result = await this.write(prior, workspaceId, 'email.server.send.finish', { id: sendId, outcome: found ? 'verified' : 'not_found', code: found ? 'MESSAGE_ID_FOUND' : 'MESSAGE_ID_NOT_FOUND', message: found ? '已在邮箱中找到该邮件' : '邮箱中未找到该邮件', response: found ? '按 Message-ID 在邮箱中核对到' : '' });
-    return { ...result, send: { id: sendId, status: found ? 'sent' : 'unknown' } };
+    // 只读本邮箱自身的文件夹；找到副本能否确认由共享规则决定（仅待确认收件人全是本邮箱地址时才确认）。
+    const result = await this.write(prior, workspaceId, 'email.server.send.finish', { id: sendId, outcome: found ? 'verified' : 'not_found', code: found ? 'MESSAGE_ID_FOUND' : 'MESSAGE_ID_NOT_FOUND', message: found ? '已在本邮箱中找到该邮件' : '本邮箱中未找到该邮件', response: found ? '按 Message-ID 在本邮箱中核对到' : '' });
+    const done = (result.receipt as any)?.result || {};
+    return { ...result, send: { id: sendId, status: done.status || 'unknown', found, confirmed: !!done.confirmed, recipients: done.recipients || [] } };
   }
 }

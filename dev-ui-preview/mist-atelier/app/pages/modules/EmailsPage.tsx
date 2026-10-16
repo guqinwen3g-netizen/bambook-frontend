@@ -3,7 +3,7 @@ import React from 'react';
 import { AlertTriangle, Archive, ArchiveRestore, CalendarPlus, Download, Forward, Inbox, KeyRound, Link2, Mail, MailOpen, Paperclip, PenLine, Plus, Reply, ReplyAll, RotateCcw, SearchCheck, SearchX, Send, Settings2, Sparkles, Star, Trash2, Unlink, Upload } from 'lucide-react';
 import { Banner, Button, Card, Checkbox, DataTable, Dialog, Drawer, Dropdown, EmptyState, Facts, Field, FormGrid, MistPage, PageHeader, Pill, SearchField, Select, TextArea, TextInput, TextLink, Toolbar, useToast, type Column, type Tone } from '../../../../../components/mist';
 import type { MistCommand, MistState } from '../../../../../server/src/shared/mistWorkspace';
-import { EMAIL_LINK_LABEL, emailLinkTarget, emailSendEffectiveStatus, type EmailAccount, type EmailAccountInput, type EmailDraft, type EmailDraftInput, type EmailLink, type EmailLinkKind, type EmailMessage, type EmailSend, type EmailSendStatus } from '../../../../../server/src/shared/mistEmail';
+import { EMAIL_LINK_LABEL, emailLinkTarget, emailSendEffectiveStatus, emailSendRecipients, emailSendRetryTargets, type EmailRecipientStatus, type EmailAccount, type EmailAccountInput, type EmailDraft, type EmailDraftInput, type EmailLink, type EmailLinkKind, type EmailMessage, type EmailSend, type EmailSendStatus } from '../../../../../server/src/shared/mistEmail';
 import { useMistWorkspace, type MistMailAction, type MistMailResult } from '../../runtime/workspace';
 import { useMistSession } from '../../runtime/auth';
 import { useNav } from '../../nav';
@@ -23,8 +23,10 @@ const FOLDERS: Array<{ value: MailFolder; label: string; icon: typeof Inbox }> =
 ];
 const VIEWS: Array<{ value: MailView; label: string }> = [{ value: 'unread', label: '未读' }, { value: 'starred', label: '星标' }, { value: 'important', label: '重要' }, { value: 'followup', label: '待跟进' }, { value: 'unlinked', label: '未关联业务' }];
 const FOLDER_FOR_FAILURE: Record<string, MailFolder> = { 收件箱: 'inbox', 已发送: 'sent', 已归档: 'archive', 已删除: 'trash' };
-const SEND_STATUS: Record<EmailSendStatus, { label: string; tone: Tone }> = { sending: { label: '发送中', tone: 'accent' }, sent: { label: '已发送', tone: 'ok' }, failed: { label: '发送失败', tone: 'bad' }, unknown: { label: '结果不确定', tone: 'warn' } };
-const ATTEMPT_LABEL: Record<EmailSend['attempts'][number]['outcome'], string> = { claimed: '开始投递', accepted: '服务器已接受', failed: '明确失败', unknown: '结果不确定', verified: '已在本邮箱找到', not_found: '本邮箱未找到' };
+const SEND_STATUS: Record<EmailSendStatus, { label: string; tone: Tone }> = { sending: { label: '发送中', tone: 'accent' }, sent: { label: '已发送', tone: 'ok' }, partial: { label: '部分未接收', tone: 'warn' }, failed: { label: '发送失败', tone: 'bad' }, unknown: { label: '结果不确定', tone: 'warn' } };
+const ATTEMPT_LABEL: Record<EmailSend['attempts'][number]['outcome'], string> = { claimed: '开始投递', accepted: '服务器已接受', partial: '部分接受', failed: '明确失败', unknown: '结果不确定', verified: '已在本邮箱找到', copy_found: '本邮箱有副本', not_found: '本邮箱未找到' };
+const RECIPIENT_STATUS: Record<EmailRecipientStatus, { label: string; tone: Tone }> = { pending: { label: '投递中', tone: 'accent' }, accepted: { label: '服务器已接受', tone: 'ok' }, rejected: { label: '被拒收', tone: 'bad' }, failed: { label: '未送出', tone: 'bad' }, unknown: { label: '无法确认', tone: 'warn' } };
+const ROLE_LABEL = { to: '收件人', cc: '抄送', bcc: '密送' } as const;
 const newRequestKey = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`).replace(/[^A-Za-z0-9]/g, '').slice(0, 40);
 /** 真实邮箱（非示例、已有服务器设置）；发送还要求已绑定凭据。 */
 const isReal = (a?: EmailAccount) => !!a && !a.example && !!a.transport;
@@ -130,9 +132,13 @@ export function EmailsPage() {
   const callMail = async (action: MistMailAction): Promise<MistMailResult | null> => { setFailure(''); try { return await mail(action); } catch (problem) { setFailure(problemText(problem, '操作未完成，请重试')); return null; } };
   const reportSend = (result: MistMailResult | null, again = false) => {
     const sent = result?.send; if (!sent) return false;
-    if (sent.status === 'sent') { setNotice(null); toast(sent.replayed ? '该邮件此前已发送，未重复投递' : again ? '已核对：邮件已在本邮箱中找到' : '邮件已发送，服务器已接受'); return true; }
-    if (sent.status === 'failed') setNotice({ tone: 'bad', title: '发送失败', text: `${sent.message || '服务器拒绝了这封邮件'}。邮件保留在待发送，可修正后重发。` });
-    else if (sent.status === 'unknown') setNotice(again
+    if (sent.status === 'sent') { setNotice(null); toast(sent.replayed ? '该邮件此前已发送，未重复投递' : again ? '已核对：邮件已在本邮箱中找到' : '邮件已发送：发信服务器已接受全部收件人'); return true; }
+    const missing = (sent.recipients || []).filter(item => item.status !== 'accepted').map(item => item.address);
+    if (sent.status === 'partial') setNotice({ tone: 'warn', title: '部分收件人未被接收', text: `发信服务器接受了其余收件人，${missing.length ? `以下收件人未被接收：${missing.join('、')}` : '部分收件人被拒'}。已接受的收件人不会再收到第二封；可在待发送中查看拒收原因，修正后仅对未接收的收件人重发。` });
+    else if (sent.status === 'failed') setNotice({ tone: 'bad', title: '发送失败', text: `${sent.message || '服务器拒绝了这封邮件'}。邮件保留在待发送，可修正后重发。` });
+    else if (sent.status === 'unknown') setNotice(again && sent.found
+      ? { tone: 'warn', title: '本邮箱有副本，其他收件人仍无法确认', text: '在本邮箱中找到了这封邮件，但这只能说明本邮箱收到，不能证明其他收件人收到。系统不会自动重发；请向收件人确认后再决定是否重发。' }
+      : again
       ? { tone: 'warn', title: '仍无法确认是否送达', text: '本邮箱的收件箱、已发送和归档中都没有找到这封邮件。系统不会自动重发；请向收件人确认未收到后，再选择“确认未送达后重发”。' }
       : { tone: 'warn', title: '发送结果不确定', text: `${sent.message || '连接在投递过程中中断'}。系统不会自动重发；请在待发送中核对，确认未送达后再重发。` });
     else setNotice({ tone: 'neutral', title: '正在发送', text: '这封邮件正在投递，稍后在待发送或已发送中查看结果。' });
@@ -279,7 +285,7 @@ export function EmailsPage() {
     {accountsOpen && state && <AccountsDrawer state={state} me={me} can={can} canAdmin={canAdmin} locked={locked} run={run} mail={mail} onClose={() => setAccountsOpen(false)} />}
     {confirmResend && <Dialog open onClose={() => setConfirmResend(null)} title="确认未送达后重发" icon={AlertTriangle} tone="warn" description={`「${confirmResend.subject}」上次发送结果不确定。`}
       footer={<><Button onClick={() => setConfirmResend(null)}>取消</Button><Button variant="primary" disabled={locked} onClick={() => void retrySend(confirmResend, true)}>确认未送达，重新发送</Button></>}>
-      <p className="mist-sub">请先点“核对”在本邮箱的已发送中查找，或向收件人确认未收到。确认后重发若对方其实已收到，会收到两封相同邮件。</p>
+      <p className="mist-sub">请先点“核对”在本邮箱的已发送中查找，或向收件人确认未收到。只会发给尚未被服务器接受的收件人（{emailSendRetryTargets(confirmResend).map(item => item.address).join('、')}）；若对方其实已收到，会收到两封相同邮件。</p>
     </Dialog>}
     {followUp && <FollowUpDialog message={followUp} owner={session.user?.displayName || state?.settings.profileName || ''} locked={locked} onClose={() => setFollowUp(null)} onSubmit={createFollowUp} />}
   </MistPage>;
@@ -328,8 +334,9 @@ function MessageDetail({ message: m, state, can, locked, exec, onOpen, onRespond
       { label: '发件人', value: <Addresses rows={[m.from]} /> }, { label: '收件人', value: m.to.length ? <Addresses rows={m.to} /> : '—' },
       ...(m.cc.length ? [{ label: '抄送', value: <Addresses rows={m.cc} /> }] : []), { label: '时间', value: when(m.at) },
     ]} />
-    {m.folder === 'sent' && <Banner tone={record ? 'ok' : 'neutral'} title="发送记录">{m.example ? '示例已发送邮件，没有真实投递或回执记录。'
-      : record ? `${record.createdBy} 于 ${when(record.updatedAt)} 发送，发件服务器已接受${record.response ? `（${record.response}）` : ''}。“已接受”表示发件服务器收下，不代表对方已阅读。`
+    {m.folder === 'sent' && <Banner tone={record ? (emailSendEffectiveStatus(record) === 'sent' ? 'ok' : 'warn') : 'neutral'} title="发送记录">{m.example ? '示例已发送邮件，没有真实投递或回执记录。'
+      : record && emailSendEffectiveStatus(record) !== 'sent' ? sentPartialText(record)
+      : record ? `${record.createdBy} 于 ${when(record.updatedAt)} 发送，发件服务器已接受全部收件人${record.response ? `（${record.response}）` : ''}。“已接受”表示发件服务器收下，不代表对方最终收到或已阅读。`
       : '从邮箱服务器的已发送文件夹同步，不是经本系统发出，没有投递回执。'}</Banner>}
     <div className="mist-mail-body">{m.body}</div>
     {m.attachments.length > 0 && <DetailBlock title={`附件（${m.attachments.length}）`}>
@@ -391,11 +398,19 @@ function DraftDetail({ draft: d, state, can, locked, onEdit, onDelete, onSend }:
   </DetailBody>;
 }
 
+/** 已发送副本如实说明：只有部分收件人被服务器接受时，列出未接收者并指向待发送。 */
+function sentPartialText(record: EmailSend) {
+  const rows = emailSendRecipients(record), ok = rows.filter(item => item.status === 'accepted').map(item => item.address), open = rows.filter(item => item.status !== 'accepted');
+  return `${record.createdBy} 于 ${when(record.updatedAt)} 发送。发件服务器已接受：${ok.join('、') || '无'}；未接收或无法确认：${open.map(item => `${item.address}（${RECIPIENT_STATUS[item.status].label}）`).join('、')}。未接收的收件人可在待发送中处理。`;
+}
+
 function SendDetail({ send: row, state, can, me, locked, onRetry, onVerify, onConfirmResend }: { send: EmailSend; state: MistState; can: boolean; me: string; locked: boolean; onRetry: (row: EmailSend) => void; onVerify: (row: EmailSend) => void; onConfirmResend: (row: EmailSend) => void }) {
   const account = state.email.accounts.find(a => a.id === row.accountId), status = emailSendEffectiveStatus(row), tone = SEND_STATUS[status];
+  const recipients = emailSendRecipients(row), accepted = recipients.filter(item => item.status === 'accepted'), open = recipients.filter(item => item.status !== 'accepted');
   const mine = !me || row.createdById === me, noWrite = !can ? '需要邮件编辑权限' : !mine ? '只有发起人可以重发或核对' : false;
   const actions: ReasonedAction[] = [
     { label: '重发', icon: Send, onClick: () => onRetry(row), primary: true, reason: noWrite, hidden: status !== 'failed' },
+    { label: '仅重发未接收的收件人', icon: Send, onClick: () => onRetry(row), primary: true, reason: noWrite, hidden: status !== 'partial' },
     { label: '核对是否已发出', icon: SearchCheck, onClick: () => onVerify(row), primary: true, reason: noWrite, hidden: status !== 'unknown' },
     { label: '确认未送达后重发', icon: RotateCcw, onClick: () => onConfirmResend(row), reason: noWrite, hidden: status !== 'unknown' },
   ];
@@ -403,12 +418,14 @@ function SendDetail({ send: row, state, can, me, locked, onRetry, onVerify, onCo
     <div className="mist-row"><Pill tone={tone.tone}>{tone.label}</Pill></div>
     {status !== 'sending' && <ActionBar busy={locked} actions={actions} />}
     {status === 'unknown' && <Banner tone="warn" title="不会自动重发">投递过程中连接中断或没有收到服务器的明确答复，对方可能已经收到。可先核对本邮箱的已发送；仍不确定时请向收件人确认后再重发。</Banner>}
+    {status === 'partial' && <Banner tone="warn" title="部分收件人未被接收">发信服务器接受了 {accepted.length} 位收件人，{open.length} 位被拒或未送出。重发只发给未接收的收件人，已接受的不会再收到第二封。“已接受”表示发信服务器收下，不代表对方最终收到或阅读。</Banner>}
     {status === 'failed' && <Banner tone="bad" title="服务器明确拒绝或未能连接">{row.response || row.attempts[row.attempts.length - 1]?.message || '发送失败'}。修正邮箱设置或收件人后可重发。</Banner>}
     {status === 'sending' && <Banner tone="neutral" title="正在发送">稍后刷新查看结果；超过 5 分钟仍无结果会转为“结果不确定”。</Banner>}
-    <Facts items={[{ label: '发件身份', value: row.from }, { label: '收件人', value: row.to || '—' }, ...(row.cc ? [{ label: '抄送', value: row.cc }] : []), ...(row.bcc ? [{ label: '密送', value: row.bcc }] : []), { label: '发起人', value: `${row.createdBy} · ${when(row.createdAt)}` }]} />
+    <Facts items={[{ label: '发件身份', value: row.from }, { label: '发起人', value: `${row.createdBy} · ${when(row.createdAt)}` }]} />
+    <DetailBlock title={`收件人结果（${recipients.length}）`}>{recipients.map(item => <div key={item.address} className="mist-row" data-recipient={item.address} style={{ flexWrap: 'wrap' }}><Pill tone={RECIPIENT_STATUS[item.status].tone}>{RECIPIENT_STATUS[item.status].label}</Pill><span className="mist-sub">{item.address}</span><small className="mist-muted">{ROLE_LABEL[item.role]}</small>{item.reply && <small className="mist-muted" style={{ flexBasis: '100%', overflowWrap: 'anywhere' }}>{item.reply}</small>}</div>)}</DetailBlock>
     <div className="mist-mail-body">{row.body || '正文为空'}</div>
     {row.fileIds.length > 0 && <DetailBlock title={`附件（${row.fileIds.length}）`}>{row.fileIds.map(id => <span key={id} className="mist-sub mist-row" style={{ gap: 4 }}><Paperclip size={12} />{state.files.find(file => file.id === id)?.name || '文件不可用'}</span>)}</DetailBlock>}
-    <DetailBlock title="投递记录">{row.attempts.map((attempt, index) => <div key={index} className="mist-row" style={{ flexWrap: 'wrap' }}><Pill tone={attempt.outcome === 'accepted' || attempt.outcome === 'verified' ? 'ok' : attempt.outcome === 'failed' ? 'bad' : attempt.outcome === 'unknown' || attempt.outcome === 'not_found' ? 'warn' : 'neutral'}>{ATTEMPT_LABEL[attempt.outcome]}</Pill><span className="mist-sub">{attempt.message}</span><span className="mist-spacer" /><small className="mist-muted">{attempt.actor} · {when(attempt.at)}</small></div>)}</DetailBlock>
+    <DetailBlock title="投递记录">{row.attempts.map((attempt, index) => <div key={index} className="mist-row" style={{ flexWrap: 'wrap' }}><Pill tone={attempt.outcome === 'accepted' || attempt.outcome === 'verified' ? 'ok' : attempt.outcome === 'failed' ? 'bad' : attempt.outcome === 'unknown' || attempt.outcome === 'not_found' || attempt.outcome === 'partial' || attempt.outcome === 'copy_found' ? 'warn' : 'neutral'}>{ATTEMPT_LABEL[attempt.outcome]}</Pill><span className="mist-sub">{attempt.message}</span><span className="mist-spacer" /><small className="mist-muted">{attempt.actor} · {when(attempt.at)}</small></div>)}</DetailBlock>
   </DetailBody>;
 }
 

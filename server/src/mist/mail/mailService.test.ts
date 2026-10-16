@@ -16,7 +16,9 @@ type Box = { uidValidity: number; nextUid: number; attribs: string[]; messages: 
 type Mailbox = { password: string; boxes: Map<string, Box> };
 const SECRET = 'S3cret-only-in-test';
 class FakeMail {
-  boxes = new Map<string, Mailbox>(); deliveries: Array<{ from: string; to: string[]; raw: Buffer }> = []; smtpMode: 'ok' | 'reject-login' | 'drop-after-data' | 'deliver-then-drop' = 'ok';
+  boxes = new Map<string, Mailbox>(); deliveries: Array<{ from: string; to: string[]; raw: Buffer }> = []; attemptsSeen: string[][] = []; smtpMode: 'ok' | 'reject-login' | 'drop-after-data' | 'deliver-then-drop' = 'ok';
+  /** 服务器在 RCPT 阶段拒收的地址（550 原文）；全部被拒时与真实 SMTP 一样以信封错误结束，不提交正文。 */
+  rejectRcpt = new Set<string>();
   add(address: string, password = SECRET) { this.boxes.set(address, { password, boxes: new Map([['INBOX', { uidValidity: 7, nextUid: 1, attribs: [], messages: [] }], ['Sent', { uidValidity: 9, nextUid: 1, attribs: ['\\Sent'], messages: [] }], ['Trash', { uidValidity: 3, nextUid: 1, attribs: ['\\Trash'], messages: [] }]]) }); }
   put(address: string, folder: string, raw: Buffer, seen = false) { const box = this.boxes.get(address)!.boxes.get(folder)!; box.messages.push({ uid: box.nextUid++, raw, seen }); }
   login(user: string, password: string) { const box = this.boxes.get(user); if (!box || box.password !== password) throw Object.assign(new Error('Invalid credentials (Failure)'), { textCode: 'AUTHENTICATIONFAILED', source: 'authentication' }); return box; }
@@ -41,10 +43,14 @@ class FakeMail {
         if (self.smtpMode === 'reject-login') throw Object.assign(new Error('Invalid login: 535'), { code: 'EAUTH', responseCode: 535, mailStage: 'login', mailReplied: true });
         self.login(secret.username, secret.password);
         if (self.smtpMode === 'drop-after-data') throw Object.assign(new Error('Connection closed unexpectedly'), { code: 'ECONNECTION', command: 'CONN', mailStage: 'send', mailReplied: false });
-        self.deliveries.push({ ...envelope, raw });
-        for (const to of envelope.to) if (self.boxes.has(to)) self.put(to, 'INBOX', raw);
+        const rejected = envelope.to.filter(to => self.rejectRcpt.has(to)), accepted = envelope.to.filter(to => !self.rejectRcpt.has(to));
+        const rejectedErrors = rejected.map(to => Object.assign(new Error('Recipient command failed'), { recipient: to, responseCode: 550, response: `550 5.1.1 <${to}>: Recipient address rejected: User unknown` }));
+        self.attemptsSeen.push([...envelope.to]);
+        if (!accepted.length) throw Object.assign(new Error("Can't send mail - all recipients were rejected"), { code: 'EENVELOPE', responseCode: 550, response: rejectedErrors[0]?.response, rejected, rejectedErrors, mailStage: 'send', mailReplied: true });
+        self.deliveries.push({ from: envelope.from, to: accepted, raw });
+        for (const to of accepted) if (self.boxes.has(to)) self.put(to, 'INBOX', raw);
         if (self.smtpMode === 'deliver-then-drop') throw Object.assign(new Error('Timeout'), { code: 'ETIMEDOUT', command: 'CONN', mailStage: 'send', mailReplied: false });
-        return { response: '250 2.0.0 Ok: queued as TEST', accepted: envelope.to, rejected: [] };
+        return { response: '250 2.0.0 Ok: queued as TEST', accepted, rejected, rejectedReplies: rejected.map((address, i) => ({ address, reply: rejectedErrors[i].response })) };
       },
     };
   }
@@ -239,6 +245,103 @@ describe('智能邮箱真实收发（服务端）', () => {
     expect(self.body.send.status).toBe('unknown');
     const verified = await t.owner.post(W + t.ws.id + '/email/sends/' + self.body.send.id + '/verify').send({}).expect(200);
     expect(verified.body.send.status).toBe('sent'); expect(fake.deliveries).toHaveLength(3);
+  });
+
+  it('部分收件人被拒：记录收件人级结果；只对被拒收件人重发，已接收者不会再收到；全部被拒为失败', async () => {
+    const t = await setup(), id = await t.account('sales@sylway.cloud'); await t.bind(id);
+    const send = (key: string, patch: Record<string, string> = {}) => t.owner.post(W + t.ws.id + '/email/sends').send({ requestKey: key, input: { accountId: id, from: 'sales@sylway.cloud', to: 'customer-demo@sylway.cloud, bounce@sylway.cloud', cc: 'finance@sylway.cloud', bcc: '', subject: '装箱单', body: '见附件', template: '', links: [], fileIds: [], ...patch } }).expect(200);
+    const sentBox = () => fake.boxes.get('sales@sylway.cloud')!.boxes.get('Sent')!.messages;
+    fake.rejectRcpt.add('bounce@sylway.cloud');
+    const first = await send('send-key-part1');
+    expect(first.body.send.status).toBe('partial');
+    let ws = first.body.workspace, record = ws.state.email.sends.find((s: any) => s.id === first.body.send.id);
+    expect(record.recipients.map((r: any) => [r.address, r.role, r.status])).toEqual([['customer-demo@sylway.cloud', 'to', 'accepted'], ['bounce@sylway.cloud', 'to', 'rejected'], ['finance@sylway.cloud', 'cc', 'accepted']]);
+    expect(record.recipients[1].reply).toContain('550 5.1.1 <bounce@sylway.cloud>');
+    expect(record.attempts.map((a: any) => a.outcome)).toEqual(['claimed', 'partial']);
+    // 已发送副本只生成一份并如实关联发送记录；远端"已发送"只写一次
+    const copies = () => realMessages(ws, id).filter((m: any) => m.folder === 'sent' && m.sendId === record.id);
+    expect(copies()).toHaveLength(1); expect(sentBox()).toHaveLength(1);
+    expect(ws.state.events.some((e: any) => e.text.includes('部分收件人'))).toBe(true);
+    // 同一请求重放：返回部分接收状态，不再投递
+    const replay = await send('send-key-part1');
+    expect(replay.body.send).toMatchObject({ id: record.id, status: 'partial', replayed: true }); expect(fake.attemptsSeen).toHaveLength(1);
+    // 重发：信封只含被拒收件人；仍被拒 → 仍为部分接收
+    const again = await t.owner.post(W + t.ws.id + '/email/sends/' + record.id + '/retry').send({}).expect(200);
+    expect(fake.attemptsSeen[1]).toEqual(['bounce@sylway.cloud']); expect(again.body.send.status).toBe('partial');
+    // 修复后重发：只投给被拒者，整封变为已发送；已接收者收件箱仍只有一封
+    fake.rejectRcpt.clear();
+    const fixed = await t.owner.post(W + t.ws.id + '/email/sends/' + record.id + '/retry').send({}).expect(200);
+    expect(fake.attemptsSeen[2]).toEqual(['bounce@sylway.cloud']); expect(fixed.body.send.status).toBe('sent');
+    ws = fixed.body.workspace; record = ws.state.email.sends.find((s: any) => s.id === record.id);
+    expect(record.recipients.every((r: any) => r.status === 'accepted')).toBe(true);
+    expect(record.attempts.map((a: any) => a.outcome)).toEqual(['claimed', 'partial', 'claimed', 'failed', 'claimed', 'accepted']);
+    expect(fake.boxes.get('customer-demo@sylway.cloud')!.boxes.get('INBOX')!.messages).toHaveLength(1);
+    expect(fake.boxes.get('finance@sylway.cloud')!.boxes.get('INBOX')!.messages).toHaveLength(1);
+    expect(copies()).toHaveLength(1); expect(sentBox()).toHaveLength(1);
+    await t.owner.post(W + t.ws.id + '/email/sends/' + record.id + '/retry').send({}).expect(422);
+
+    // 全部被拒：失败、不生成已发送副本；修复后安全重发
+    fake.rejectRcpt.add('nobody@sylway.cloud');
+    const all = await send('send-key-allrj', { to: 'nobody@sylway.cloud', cc: '' });
+    expect(all.body.send.status).toBe('failed');
+    let rec = all.body.workspace.state.email.sends.find((s: any) => s.id === all.body.send.id);
+    expect(rec.recipients).toMatchObject([{ address: 'nobody@sylway.cloud', status: 'rejected', reply: expect.stringContaining('550') }]); expect(rec.sentMessageId).toBeUndefined();
+    fake.rejectRcpt.clear();
+    const ok = await t.owner.post(W + t.ws.id + '/email/sends/' + rec.id + '/retry').send({}).expect(200);
+    expect(ok.body.send.status).toBe('sent');
+    rec = ok.body.workspace.state.email.sends.find((s: any) => s.id === rec.id); expect(rec.sentMessageId).toEqual(expect.any(String));
+
+    // 全部接收：每个收件人都记为已接收
+    const full = await send('send-key-full1', { to: 'customer-demo@sylway.cloud' });
+    expect(full.body.send.status).toBe('sent');
+    expect(full.body.workspace.state.email.sends.find((s: any) => s.id === full.body.send.id).recipients.map((r: any) => r.status)).toEqual(['accepted', 'accepted']);
+  });
+
+  it('多收件人结果不确定时，在本邮箱找到副本不能确认其他收件人；只有收件人全是本邮箱自身时才确认', async () => {
+    const t = await setup(), id = await t.account('sales@sylway.cloud'); await t.bind(id);
+    fake.smtpMode = 'deliver-then-drop';
+    const multi = await t.owner.post(W + t.ws.id + '/email/sends').send({ requestKey: 'send-key-mult1', input: { accountId: id, from: 'sales@sylway.cloud', to: 'sales@sylway.cloud, customer-demo@sylway.cloud', cc: '', bcc: '', subject: '多收件人中断', body: '', template: '', links: [], fileIds: [] } }).expect(200);
+    expect(multi.body.send.status).toBe('unknown');
+    const check = await t.owner.post(W + t.ws.id + '/email/sends/' + multi.body.send.id + '/verify').send({}).expect(200);
+    expect(check.body.send).toMatchObject({ status: 'unknown', found: true, confirmed: false });
+    const rec = check.body.workspace.state.email.sends.find((s: any) => s.id === multi.body.send.id);
+    expect(rec.recipients.map((r: any) => r.status)).toEqual(['unknown', 'unknown']); expect(rec.attempts.at(-1).outcome).toBe('copy_found'); expect(rec.sentMessageId).toBeUndefined();
+    // 仍不能盲目重发
+    await t.owner.post(W + t.ws.id + '/email/sends/' + rec.id + '/retry').send({}).expect(409);
+    expect(fake.deliveries).toHaveLength(1);
+  });
+
+  it('重绑到新收信来源：清空旧游标、换代际，新来源同号 UID 正常入库；旧邮件保留；仅改发信设置不重置', async () => {
+    const t = await setup(), id = await t.account('sales@sylway.cloud'); await t.bind(id);
+    for (let i = 1; i <= 42; i++) fake.put('sales@sylway.cloud', 'INBOX', await raw(`旧来源 ${i}`));
+    let ws = (await t.sync(id)).body.workspace;
+    expect(ws.state.email.accounts.find((a: any) => a.id === id).folders.find((f: any) => f.remote === 'INBOX')).toMatchObject({ uidValidity: 7, lastUid: 42 });
+    const oldIds = realMessages(ws, id).map((m: any) => m.id), ownerId = ws.state.email.accounts.find((a: any) => a.id === id).ownerId;
+    // 新来源（不同地址与服务器），同样 UIDVALIDITY=7，UID 从 1 开始
+    fake.add('factory-demo@sylway.cloud');
+    fake.put('factory-demo@sylway.cloud', 'INBOX', await raw('新来源第一封', { to: 'factory-demo@sylway.cloud', messageId: '<new-source-1@sylway.cloud>' }));
+    await t.command('email.account.save', { id, input: { address: 'factory-demo@sylway.cloud', displayName: 'factory', kind: 'personal', memberIds: [], aliases: [], signature: '', transport: { ...transport('127.0.0.1'), imapPort: 143, imapSecure: false, username: 'factory-demo@sylway.cloud' } } });
+    let acct = t.ws.state.email.accounts.find((a: any) => a.id === id);
+    expect(acct).toMatchObject({ sourceGeneration: 2, folders: [], credentialSet: false, connection: 'not_connected', ownerId, memberIds: [] });
+    await t.bind(id);
+    const fresh = await t.sync(id);
+    expect(fresh.body.sync.added).toBe(1); expect(fresh.body.sync.skipped).toBe(0);
+    ws = fresh.body.workspace;
+    const added = realMessages(ws, id).find((m: any) => m.subject === '新来源第一封');
+    expect(added).toMatchObject({ source: 2, remote: { folder: 'INBOX', uid: 1, uidValidity: 7 } });
+    expect(oldIds.every((oid: string) => realMessages(ws, id).some((m: any) => m.id === oid))).toBe(true);
+    expect(realMessages(ws, id)).toHaveLength(43);
+    // 重复同步不重复入库
+    expect((await t.sync(id)).body.sync).toMatchObject({ added: 0, merged: 0 });
+    // 仅改发信设置：需重新校验凭据，但代际与收信游标不变，重新同步不重复导入
+    await t.command('email.account.save', { id, input: { address: 'factory-demo@sylway.cloud', displayName: '工厂', kind: 'personal', memberIds: [], aliases: [], signature: '新签名', transport: { ...transport('127.0.0.1'), imapPort: 143, imapSecure: false, smtpPort: 465, smtpSecure: true, username: 'factory-demo@sylway.cloud' } } });
+    acct = t.ws.state.email.accounts.find((a: any) => a.id === id);
+    expect(acct).toMatchObject({ sourceGeneration: 2, credentialSet: false }); expect(acct.folders.find((f: any) => f.remote === 'INBOX')).toMatchObject({ lastUid: 1 });
+    await t.bind(id);
+    expect((await t.sync(id)).body.sync).toMatchObject({ added: 0 });
+    // 只改显示名：不需要重新绑定
+    await t.command('email.account.save', { id, input: { address: 'factory-demo@sylway.cloud', displayName: '工厂邮箱', kind: 'personal', memberIds: [], aliases: [], signature: '新签名', transport: { ...transport('127.0.0.1'), imapPort: 143, imapSecure: false, smtpPort: 465, smtpSecure: true, username: 'factory-demo@sylway.cloud' } } });
+    expect(t.ws.state.email.accounts.find((a: any) => a.id === id)).toMatchObject({ sourceGeneration: 2, credentialSet: true });
   });
 
   it('设置允许投递域名时拒绝外部收件人，不登记发送；示例邮箱不能发送', async () => {

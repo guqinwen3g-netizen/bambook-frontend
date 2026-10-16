@@ -17,7 +17,17 @@ export interface MailImapSession {
   append(path: string, raw: Buffer): Promise<void>;
   close(): Promise<void>;
 }
-export type MailSendResult = { response: string; accepted: string[]; rejected: string[] };
+/** rejected 为服务器明确拒收的收件人及其回复原文（部分拒收时正文仍会提交给已接收的收件人）。 */
+export type MailSendResult = { response: string; accepted: string[]; rejected: string[]; rejectedReplies?: Array<{ address: string; reply: string }> };
+const cleanReply = (value: unknown) => String(value || '').replace(/[\u0000-\u001f\u007f]+/g, ' ').trim().slice(0, 300);
+/** 从 SMTP 结果或信封错误中取出逐个收件人的拒收原文。 */
+export function smtpRejectedReplies(source: any): Array<{ address: string; reply: string }> {
+  const errors: any[] = Array.isArray(source?.rejectedErrors) ? source.rejectedErrors : [];
+  return (Array.isArray(source?.rejected) ? source.rejected : []).map((address: unknown) => {
+    const match = errors.find(item => String(item?.recipient || '').toLowerCase() === String(address).toLowerCase());
+    return { address: String(address).toLowerCase(), reply: cleanReply(match?.response || match?.message || '') };
+  });
+}
 export interface MailTransport {
   imap(config: EmailTransport, secret: MistMailSecret, insecureTls: boolean): Promise<MailImapSession>;
   smtpVerify(config: EmailTransport, secret: MistMailSecret, insecureTls: boolean): Promise<void>;
@@ -106,7 +116,7 @@ function smtpSession(config: EmailTransport, secret: MistMailSecret, insecureTls
         stage = 'send';
         connection.send(deliver.envelope as any, deliver.raw, (failure: any, info: any) => {
           if (failure) return finish(failure, undefined, !!failure.responseCode || failure.code === 'EENVELOPE');
-          finish(null, { response: String(info?.response || ''), accepted: (info?.accepted || []).map(String), rejected: (info?.rejected || []).map(String) });
+          finish(null, { response: String(info?.response || ''), accepted: (info?.accepted || []).map(String), rejected: (info?.rejected || []).map(String), rejectedReplies: smtpRejectedReplies(info) });
         });
       });
     });

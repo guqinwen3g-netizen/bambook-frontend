@@ -1,4 +1,5 @@
 import {describe,it,expect} from 'vitest';
+import {emailSendRecipients} from './mistEmail';
 import {applyMistCommand,createMistState,mistCommandPermission,type MistContext,type MistCommand} from './mistWorkspace';
 
 function fixture(seed:'demo'|'empty'='demo'){
@@ -52,5 +53,15 @@ describe('智能邮箱工作空间切片',()=>{
     expect(()=>f.run({type:'email.draft.save',payload:{input:{...input,to:'bad-address'}}})).toThrow('地址格式无效');
     f.run({type:'email.draft.delete',payload:{id:draft.id}});
     expect(f.state.email.drafts).toEqual([]);
+  });
+  it('同步期间改了收信来源：旧代际写回作废；旧发送记录没有收件人明细时按整封状态推导',()=>{
+    const f=fixture('empty');
+    const transport={imapHost:'mail.sylway.cloud',imapPort:993,imapSecure:true,smtpHost:'mail.sylway.cloud',smtpPort:587,smtpSecure:false,username:'sales@sylway.cloud'};
+    const {id}=f.run({type:'email.account.save',payload:{input:{address:'sales@sylway.cloud',displayName:'sales',kind:'personal',memberIds:[],aliases:[],signature:'',transport}}}) as {id:string};
+    f.run({type:'email.account.save',payload:{id,input:{address:'sales@sylway.cloud',displayName:'sales',kind:'personal',memberIds:[],aliases:[],signature:'',transport:{...transport,imapHost:'imap.other.cloud'}}}});
+    expect(f.state.email.accounts[0].sourceGeneration).toBe(2);
+    expect(()=>f.run({type:'email.server.sync',payload:{accountId:id,source:1,at:f.ctx.now,folders:[],messages:[],files:[],lastError:null}})).toThrow('同步结果作废');
+    expect(emailSendRecipients({to:'a@b.co, c@d.co',cc:'A@b.co',bcc:'e@f.co',status:'sent',updatedAt:f.ctx.now}).map(r=>[r.address,r.role,r.status])).toEqual([['a@b.co','to','accepted'],['c@d.co','to','accepted'],['e@f.co','bcc','accepted']]);
+    expect(emailSendRecipients({to:'a@b.co',cc:'',bcc:'',status:'failed',updatedAt:f.ctx.now})[0].status).toBe('failed');
   });
 });
