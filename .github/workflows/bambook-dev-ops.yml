@@ -55,7 +55,7 @@ jobs:
           test -s "$RUNNER_TEMP/request.sh" || { echo '::error::ops/request.sh is empty'; exit 1; }
           # The independent observation lane accepts only this fixed read-only probe.
           if [ "$OBSERVE_ONLY" = true ]; then
-            test "$(sha256sum "$RUNNER_TEMP/request.sh" | cut -d' ' -f1)" = "4390c5130b53da049e44134d23d396773b70e945d3c63e7e9a4f40e4447778ec"
+            test "$(sha256sum "$RUNNER_TEMP/request.sh" | cut -d' ' -f1)" = "faef192636add8c0c3adfd111b07fda21e15c568a4771e8806bc1924ea66f2c8"
           fi
           echo "sha256=$(sha256sum "$RUNNER_TEMP/request.sh" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
           source_sha=$(sed -nE 's/^# capacity-source-main: ([0-9a-f]{40})$/\1/p' "$RUNNER_TEMP/request.sh")
@@ -117,9 +117,28 @@ jobs:
             test "$(head -c "$offset" "$RUNNER_TEMP/capacity-source.tar.gz" | sha256sum | cut -d' ' -f1)" = "$remote_prefix"
           fi
           echo "resuming verified required-source prefix at byte $offset"
-          tail -c "+$((offset + 1))" "$RUNNER_TEMP/capacity-source.tar.gz" | \
-            timeout --kill-after=10 600 ssh "${ssh_options[@]}" "$DEV_USER@$DEV_HOST" \
-            "set -e; umask 077; cat >> '$root/required-source.tar.gz'; echo '$digest  $root/required-source.tar.gz' | sha256sum -c -; echo '$digest' > '$root/source.sha256'; tar -xzf '$root/required-source.tar.gz' -C '$root/source'; rm '$root/required-source.tar.gz'"
+          remaining=$(( $(stat -c%s "$RUNNER_TEMP/capacity-source.tar.gz") - offset ))
+          pids=()
+          if [ "$remaining" -gt 0 ]; then
+            part_bytes=$(( (remaining + 3) / 4 ))
+            tail -c "+$((offset + 1))" "$RUNNER_TEMP/capacity-source.tar.gz" | split -b "$part_bytes" -d -a 2 - "$RUNNER_TEMP/transport-part-"
+            for part in "$RUNNER_TEMP"/transport-part-*; do
+              index=${part##*transport-part-}
+              (
+                part_digest=$(sha256sum "$part" | cut -d' ' -f1)
+                started=$(date +%s)
+                timeout --kill-after=10 180 ssh "${ssh_options[@]}" "$DEV_USER@$DEV_HOST" \
+                  "set -e; umask 077; cat > '$root/transport-part-$offset-$index.bin'; echo '$part_digest  $root/transport-part-$offset-$index.bin' | sha256sum -c -" < "$part"
+                echo "part=$index bytes=$(stat -c%s "$part") seconds=$(( $(date +%s)-started )) checksum=ok"
+              ) &
+              pids+=("$!")
+            done
+            failed=0
+            for pid in "${pids[@]}"; do if ! wait "$pid"; then failed=1; fi; done
+            test "$failed" = 0
+          fi
+          timeout --kill-after=10 60 ssh "${ssh_options[@]}" "$DEV_USER@$DEV_HOST" \
+            "set -e; for index in 00 01 02 03; do part='$root/transport-part-$offset-'\$index.bin; if test -f \$part; then cat \$part >> '$root/required-source.tar.gz'; rm \$part; fi; done; echo '$digest  $root/required-source.tar.gz' | sha256sum -c -; echo '$digest' > '$root/source.sha256'; tar -xzf '$root/required-source.tar.gz' -C '$root/source'; rm '$root/required-source.tar.gz'"
           timeout --kill-after=10 60 ssh "${ssh_options[@]}" "$DEV_USER@$DEV_HOST" "python3 - '$SOURCE_SHA'" <<'COPY_SOURCE'
           import hashlib,json,pathlib,shutil,sys
           sha=sys.argv[1];root=pathlib.Path('/var/tmp/bambook-ci-capacity-'+sha);source=root/'source';release=pathlib.Path('/srv/bambook-dev/releases')/sha
