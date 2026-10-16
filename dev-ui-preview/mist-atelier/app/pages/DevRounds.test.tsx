@@ -170,15 +170,15 @@ describe('BB-DEV-11 round timeline and multi-version comparison',()=>{
   const id=(label:string)=>state.versions.find(v=>v.label===label&&v.devId===devId)!.id;
   const sample=(label:string)=>apply({type:'development.recordSample',payload:{devId,versionId:id(label),sample:'S-'+label,quantity:1,returnedAt:'2026-10-15T08:00:00Z'}});
   const qc=(label:string,result:'pass'|'conditional'|'reject',opinion:string,measurements:any[]=[])=>apply({type:'development.recordQc',payload:{devId,versionId:id(label),qc:{result,reviewer:'许言',reviewedAt:'2026-10-15T09:00:00Z',report:'QC-'+label,opinion,measurements}}});
-  const confirm=(label:string,result:'approved'|'rejected',originalText:string)=>apply({type:'development.confirm',payload:{devId,versionId:id(label),result,confirmer:'Anna',organization:'测试客户',confirmedAt:'2026-10-16T08:00:00Z',basis:'邮件 12',originalText}});
+  const confirmVersion=(label:string,result:'approved'|'rejected',originalText:string)=>apply({type:'development.confirm',payload:{devId,versionId:id(label),result,confirmer:'Anna',organization:'测试客户',confirmedAt:'2026-10-16T08:00:00Z',basis:'邮件 12',originalText}});
   const refresh=async(versionId?:string)=>act(async()=>{bridge.current={...bridge.current,state};render(versionId);});
   const tags=(label:string)=>[...document.querySelectorAll(`[data-version="${label}"] .mist-rtl-tags .mist-pill`)].map(item=>item.textContent);
   const compareBox=(label:string)=>document.querySelector(`#mist-dev-rounds [data-version="${label}"] input[type="checkbox"]`) as HTMLInputElement;
   const cells=(row:string)=>[...document.querySelectorAll(`#mist-dev-compare tr[data-row="${row}"] td`)].map(item=>item.textContent);
   beforeEach(async()=>{
     sessionStorage.clear();
-    sample('R1-A');qc('R1-A','pass','合格',[{point:'胸围',standard:112,actual:112.5,tolerance:1}]);confirm('R1-A','approved','面料手感 OK');
-    sample('R1-B');qc('R1-B','conditional','袖长偏长 0.8cm，可接受');confirm('R1-B','rejected','颜色偏暗，不采用');
+    sample('R1-A');qc('R1-A','pass','合格',[{point:'胸围',standard:112,actual:112.5,tolerance:1}]);confirmVersion('R1-A','approved','面料手感 OK');
+    sample('R1-B');qc('R1-B','conditional','袖长偏长 0.8cm，可接受');confirmVersion('R1-B','rejected','颜色偏暗，不采用');
     await refresh();
   });
   it('shows one row per round with factory cards whose status comes only from recorded facts',()=>{
