@@ -50,6 +50,8 @@ it('shows a voided order as read-only without edit, submit or termination action
   store.state!.orders[0].state = '已作废';
   render();
   expect(host.textContent).toContain('订单已作废，只读');
+  expect(host.textContent).not.toContain('待审批');
+  expect(host.textContent).not.toContain('批准前不能采购或履约');
   expect((getByRole(host, 'button', { name: '编辑' }) as HTMLButtonElement).disabled).toBe(true);
   expect(queryByRole(host, 'button', { name: '提交主单审批' })).toBeNull();
   expect(queryByRole(host, 'button', { name: '作废订单' })).toBeNull();
