@@ -57,6 +57,6 @@ it('blocks generation without company profile and rolls back when rendering or f
  delete (state().settings as any).companyProfile;let before=structuredClone(state());
  await expect(repo.execute(testActor(),workspaceId,doc('no-company',0))).rejects.toMatchObject({status:422});expect(renderPdf).not.toHaveBeenCalled();expect(state()).toEqual(before);
  state().settings.companyProfile={...company} as never;before=structuredClone(state());
- renderPdf.mockRejectedValueOnce(new Error('synthetic renderer failure'));await expect(repo.execute(testActor(),workspaceId,doc('render-fail',0))).rejects.toThrow('synthetic renderer failure');expect(state()).toEqual(before);expect(await names()).toHaveLength(0);
+ renderPdf.mockRejectedValueOnce(new Error('synthetic renderer failure'));await expect(repo.execute(testActor(),workspaceId,doc('render-fail',0))).rejects.toMatchObject({code:'QUOTATION_PDF_UNAVAILABLE',status:422});expect(state()).toEqual(before);expect(await names()).toHaveLength(0);
  vi.spyOn(files,'write').mockRejectedValueOnce(new Error('private file unavailable'));await expect(repo.execute(testActor(),workspaceId,doc('write-fail',0))).rejects.toThrow('private file unavailable');expect(state()).toEqual(before);expect(quote().documents).toBeUndefined();
 });
