@@ -114,12 +114,36 @@ class RoleWriteRejectedError extends Error {
   }
 }
 
+
+/** 账号列表只回显业务元数据：两步验证密钥/恢复码哈希不出服务器（另以 mfaEnabled 布尔值表示）。 */
+function publicAccountMetadata(metadata: unknown) {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return metadata ?? null;
+  const { mfa: _mfa, ...rest } = metadata as Record<string, unknown>;
+  return rest;
+}
+
 export function createAdminRouter(options: AdminRouterOptions) {
   const router = Router();
   const auth = createAuthService();
   const decisions = createApprovalDecisionService(options.prisma, { onDecided: options.onDecided });
   const orderMainApprovals = createOrderMainApprovalService(options.prisma);
   const email = options.email || createEmailService();
+
+  /**
+   * 老板账号防线：管理员（非老板）不得修改、停用老板账号，也不得重置其密码或两步验证——
+   * 否则可借「重置密码 → 用临时密码登录」接管老板账号，等同绕过 SuperAdmin 授予防线。
+   */
+  async function rejectIfSuperAdminTarget(req: Request, res: Response, userId: string): Promise<boolean> {
+    if (actorIsOwner(req)) return false;
+    let links: any[] = [];
+    try { links = await options.prisma.userRole.findMany({ where: { userId }, include: { role: true } }); }
+    catch { res.status(503).json({ ok: false, error: 'ROLE_CHECK_FAILED', message: '暂时无法核对目标账号的角色，请稍后重试。' }); return true; }
+    if (links.some(link => link.role && isSuperAdminRole(link.role))) {
+      res.status(403).json({ ok: false, error: 'FORBIDDEN', message: '老板账号只能由老板本人维护。' });
+      return true;
+    }
+    return false;
+  }
 
   const requireAuth = options.requireAuth ?? true;
   const apiKeys = options.apiKeys ?? new Set<string>();
@@ -180,7 +204,8 @@ export function createAdminRouter(options: AdminRouterOptions) {
       roleIds: u.roles.map(ur => ur.roleId),
       departmentId: u.primaryDeptId,
       department: u.primaryDepartment?.name || null,
-      metadata: u.metadata,
+      metadata: publicAccountMetadata(u.metadata),
+      mfaEnabled: (u.metadata as any)?.mfa?.enabled === true,
       lastLoginAt: u.lastLoginAt,
       lastLoginIp: u.lastLoginIp,
       createdAt: u.createdAt,
@@ -255,6 +280,7 @@ export function createAdminRouter(options: AdminRouterOptions) {
   }));
 
   router.patch('/users/:id', withRouteErrorGuard(async (req: Request, res: Response) => {
+    if (await rejectIfSuperAdminTarget(req, res, req.params.id)) return;
     const { id } = req.params;
     const { displayName, email, status, departmentId } = req.body || {};
     if (departmentId !== undefined && !(await departmentExists(options.prisma, departmentId))) {
@@ -275,6 +301,7 @@ export function createAdminRouter(options: AdminRouterOptions) {
   }));
 
   router.post('/users/:id/reset-password', withRouteErrorGuard(async (req: Request, res: Response) => {
+    if (await rejectIfSuperAdminTarget(req, res, req.params.id)) return;
     const { id } = req.params;
     const { newPassword } = req.body || {};
     // 弱口令治理（运维冲刺）：管理员未显式提供新密码时，由服务端生成随机一次性密码，
@@ -315,7 +342,23 @@ export function createAdminRouter(options: AdminRouterOptions) {
     });
   }));
 
+  // 两步验证重置：用户丢失验证器且恢复码用尽时由管理员关闭，之后本人可重新绑定。
+  router.post('/users/:id/reset-mfa', withRouteErrorGuard(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    if (await rejectIfSuperAdminTarget(req, res, id)) return;
+    const target = await options.prisma.userAccount.findUnique({ where: { id }, select: { metadata: true } });
+    if (!target) return res.status(404).json({ ok: false, error: 'NOT_FOUND', message: '用户不存在。' });
+    const metadata = (target.metadata as any) || {};
+    await options.prisma.userAccount.update({ where: { id }, data: { metadata: { ...metadata, mfa: { enabled: false, resetAt: new Date().toISOString() } } } });
+    const actor = (req as any).actor;
+    await options.prisma.auditLog.create({
+      data: { id: `alog_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, actorId: actor?.userId || 'system', action: 'reset_mfa', targetType: 'UserAccount', targetId: id, ip: req.ip },
+    });
+    res.json({ ok: true });
+  }));
+
   const disableUserAccount = withRouteErrorGuard(async (req: Request, res: Response) => {
+    if (await rejectIfSuperAdminTarget(req, res, req.params.id)) return;
     const { id } = req.params;
     const actor = (req as any).actor;
     if (actor?.userId === id) {

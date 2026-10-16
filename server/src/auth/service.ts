@@ -73,5 +73,16 @@ export function createAuthService(options: AuthServiceOptions = {}) {
     return signToken(payload);
   }
 
-  return { hashPassword, verifyPassword, signToken, verifyToken, refreshToken };
+  /** 短期用途令牌（如登录第二步）：不含 userId，因此不会被当成会话令牌。 */
+  function signPurposeToken(purpose: string, subject: string, expiresInSec: number): string {
+    return jwt.sign({ kind: purpose, sub: subject }, jwtSecret, { expiresIn: expiresInSec });
+  }
+  function verifyPurposeToken(token: string, purpose: string): string | null {
+    try {
+      const decoded = jwt.verify(token, jwtSecret) as any;
+      return decoded?.kind === purpose && typeof decoded.sub === 'string' && !decoded.userId ? decoded.sub : null;
+    } catch { return null; }
+  }
+
+  return { hashPassword, verifyPassword, signToken, verifyToken, refreshToken, signPurposeToken, verifyPurposeToken };
 }

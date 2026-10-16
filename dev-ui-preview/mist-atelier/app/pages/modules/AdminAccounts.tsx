@@ -46,7 +46,7 @@ export function AdminAccounts() {
   const [query, setQuery] = React.useState(''), [status, setStatus] = React.useState('');
   const [selected, setSelected] = React.useState<string | null>(null), [form, setForm] = React.useState<Form | null>(null);
   const [busy, setBusy] = React.useState(false), [formError, setFormError] = React.useState('');
-  const [confirm, setConfirm] = React.useState<{ kind: 'disable' | 'enable' | 'reset' | 'reject'; account: AdminAccount } | null>(null), [reason, setReason] = React.useState('');
+  const [confirm, setConfirm] = React.useState<{ kind: 'disable' | 'enable' | 'reset' | 'reject' | 'mfa'; account: AdminAccount } | null>(null), [reason, setReason] = React.useState('');
   const [temporary, setTemporary] = React.useState<{ name: string; password: string } | null>(null);
   const envelope = workspace.workspace, canGrant = envelope?.access?.canManageMembers === true && !!workspace.changeMember;
   const memberIds = new Set((workspace.state?.members ?? []).map(m => m.userId));
@@ -90,8 +90,9 @@ export function AdminAccounts() {
       if (kind === 'disable') await organizationApi.disable(account.id);
       else if (kind === 'enable') await organizationApi.updateAccount(account.id, { status: 'active' });
       else if (kind === 'reject') await organizationApi.reject(account.id, reason.trim());
+      else if (kind === 'mfa') await organizationApi.resetMfa(account.id);
       else { const result = await organizationApi.resetPassword(account.id); if (result.temporaryPassword) setTemporary({ name: account.displayName, password: result.temporaryPassword }); }
-      toast({ disable: '账号已停用，历史记录保留', enable: '账号已重新启用', reject: '已拒绝注册申请', reset: '密码已重置' }[kind]);
+      toast({ disable: '账号已停用，历史记录保留', enable: '账号已重新启用', reject: '已拒绝注册申请', reset: '密码已重置', mfa: '两步验证已重置' }[kind]);
       setConfirm(null); setReason(''); await load();
     } catch (e) { toast(message(e, '操作未完成'), 'bad'); }
     finally { setBusy(false); }
@@ -117,7 +118,7 @@ export function AdminAccounts() {
     <Drawer open={!!current && !form} onClose={() => setSelected(null)} title={current?.displayName ?? ''} sub={current?.email}
       footer={current && <div className="mist-row">
         {current.status === 'pending' && <><Button variant="primary" onClick={() => { setFormError(''); setForm({ ...blank(), mode: 'approve', account: current, displayName: current.displayName, email: current.email, departmentId: current.departmentId ?? '', roles: current.roleIds }); }}>审批通过</Button><Button onClick={() => setConfirm({ kind: 'reject', account: current })}>拒绝</Button></>}
-        {current.status === 'active' && <><Button onClick={() => { setFormError(''); setForm({ ...blank(), mode: 'edit', account: current, displayName: current.displayName, email: current.email, departmentId: current.departmentId ?? '', roles: current.roleIds }); }}>修改资料与角色</Button><Button icon={KeyRound} onClick={() => setConfirm({ kind: 'reset', account: current })}>重置密码</Button><Button disabled={self} onClick={() => setConfirm({ kind: 'disable', account: current })}>{self ? '不能停用自己' : '停用账号'}</Button></>}
+        {current.status === 'active' && <><Button onClick={() => { setFormError(''); setForm({ ...blank(), mode: 'edit', account: current, displayName: current.displayName, email: current.email, departmentId: current.departmentId ?? '', roles: current.roleIds }); }}>修改资料与角色</Button><Button icon={KeyRound} onClick={() => setConfirm({ kind: 'reset', account: current })}>重置密码</Button>{current.mfaEnabled && <Button onClick={() => setConfirm({ kind: 'mfa', account: current })}>重置两步验证</Button>}<Button disabled={self} onClick={() => setConfirm({ kind: 'disable', account: current })}>{self ? '不能停用自己' : '停用账号'}</Button></>}
         {current.status === 'disabled' && <Button onClick={() => setConfirm({ kind: 'enable', account: current })}>重新启用</Button>}
       </div>}>
       {current && <>
@@ -143,8 +144,8 @@ export function AdminAccounts() {
       </>}
     </Drawer>
     <Dialog open={!!confirm} onClose={() => !busy && setConfirm(null)} tone={confirm?.kind === 'disable' || confirm?.kind === 'reject' ? 'bad' : 'warn'}
-      title={confirm ? { disable: '停用账号', enable: '重新启用账号', reset: '重置密码', reject: '拒绝注册申请' }[confirm.kind] : ''}
-      description={confirm ? { disable: `${confirm.account.displayName} 将无法登录，已登录的会话随即失效；历史单据与小组记录保留。`, enable: `${confirm.account.displayName} 可以再次登录，角色与部门保持不变。`, reset: `将为 ${confirm.account.displayName} 生成临时密码，只显示一次，请当面或经内部渠道转交，并提醒对方登录后在“设置 · 安全”中修改。`, reject: `${confirm.account.displayName} 的申请将被拒绝，请写明原因。` }[confirm.kind] : undefined}
+      title={confirm ? { disable: '停用账号', enable: '重新启用账号', reset: '重置密码', reject: '拒绝注册申请', mfa: '重置两步验证' }[confirm.kind] : ''}
+      description={confirm ? { disable: `${confirm.account.displayName} 将无法登录，已登录的会话随即失效；历史单据与小组记录保留。`, enable: `${confirm.account.displayName} 可以再次登录，角色与部门保持不变。`, reset: `将为 ${confirm.account.displayName} 生成临时密码，只显示一次，请当面或经内部渠道转交，并提醒对方登录后在“设置 · 安全”中修改。`, reject: `${confirm.account.displayName} 的申请将被拒绝，请写明原因。`, mfa: `${confirm.account.displayName} 的两步验证将被关闭，下次登录只需密码。仅在对方丢失手机且恢复码用尽时使用，请先当面或电话核实身份，并提醒对方登录后重新开启。` }[confirm.kind] : undefined}
       footer={<div className="mist-row"><Button variant="primary" loading={busy} disabled={confirm?.kind === 'reject' && !reason.trim()} onClick={() => void decide()}>确认</Button><Button disabled={busy} onClick={() => setConfirm(null)}>取消</Button></div>}>
       {confirm?.kind === 'reject' && <Field label="拒绝原因" required><TextArea value={reason} onChange={e => setReason(e.target.value)} /></Field>}
     </Dialog>
@@ -223,7 +224,7 @@ export function AdminRoles() {
   </>;
 }
 
-const AUDIT_ACTIONS: Record<string, string> = { register: '提交注册', create_user: '新建账号', reactivate_user: '重新启用账号', update_user: '修改账号', update_profile: '修改个人资料', reset_password: '重置密码', disable_account: '停用账号', approve_register: '通过注册', reject_register: '拒绝注册', update_roles: '调整角色', update_role_permissions: '调整角色权限', erase_personal_data: '清除个人数据', create_department: '新建部门', edit_department: '修改部门', retire_department: '裁撤部门', create_team: '新建小组', update_team: '修改小组', delete_team: '解散小组', add_team_member: '加入小组', remove_team_member: '移出小组', upsert_employee: '保存员工档案', delete_employee: '删除员工档案' };
+const AUDIT_ACTIONS: Record<string, string> = { register: '提交注册', create_user: '新建账号', reactivate_user: '重新启用账号', update_user: '修改账号', update_profile: '修改个人资料', reset_password: '重置密码', disable_account: '停用账号', approve_register: '通过注册', reject_register: '拒绝注册', update_roles: '调整角色', update_role_permissions: '调整角色权限', reset_mfa: '重置两步验证', enable_mfa: '开启两步验证', disable_mfa: '关闭两步验证', login_mfa_recovery: '用恢复码登录', logout_all_sessions: '退出所有设备', erase_personal_data: '清除个人数据', create_department: '新建部门', edit_department: '修改部门', retire_department: '裁撤部门', create_team: '新建小组', update_team: '修改小组', delete_team: '解散小组', add_team_member: '加入小组', remove_team_member: '移出小组', upsert_employee: '保存员工档案', delete_employee: '删除员工档案' };
 export function AdminAuditLog() {
   const session = useMistSession();
   const [rows, setRows] = React.useState<AuditLogRow[]>([]), [total, setTotal] = React.useState(0), [page, setPage] = React.useState(0), [targetType, setTargetType] = React.useState('');

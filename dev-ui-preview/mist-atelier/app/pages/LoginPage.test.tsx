@@ -51,4 +51,26 @@ describe('original Mist login with real-session binding', () => {
     await act(async () => vi.advanceTimersByTime(2000)); await submit(); expect(seam.session.login).toHaveBeenCalledTimes(2);
     act(() => root!.unmount()); root = undefined; expect(vi.getTimerCount()).toBe(0);
   });
+  it('two-step login: password success with MFA_REQUIRED shows code step, then submits token + code', async () => {
+    seam.session.login.mockRejectedValueOnce(Object.assign(new Error('请输入两步验证码'), { code: 'MFA_REQUIRED', mfaToken: 'step-token' }));
+    const host = render(); input('email', 'boss@example.com'); input('password', 'secret'); await submit();
+    expect(host.textContent).toContain('两步验证'); expect(host.querySelector('[role="alert"]')).toBeNull(); expect(go).not.toHaveBeenCalled();
+    expect(host.querySelector('input[type="password"]')).toBeNull();
+    await submit(); expect(host.querySelector('[role="alert"]')?.textContent).toContain('6 位动态码'); expect(seam.session.login).toHaveBeenCalledTimes(1);
+    seam.session.login.mockResolvedValueOnce({ id: 'boss', displayName: '老板', email: 'boss@example.com' });
+    const code = host.querySelector<HTMLInputElement>('input[autocomplete="one-time-code"]')!;
+    act(() => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(code, '123456'); code.dispatchEvent(new Event('input', { bubbles: true })); });
+    await submit();
+    expect(seam.session.login).toHaveBeenLastCalledWith('boss@example.com', '', { remember: true, mfa: { mfaToken: 'step-token', code: '123456' } });
+    expect(go).toHaveBeenCalledWith('cockpit');
+  });
+  it('expired second step returns to the password form with a message', async () => {
+    seam.session.login.mockRejectedValueOnce(Object.assign(new Error('x'), { code: 'MFA_REQUIRED', mfaToken: 't' }));
+    const host = render(); input('email', 'boss@example.com'); input('password', 'secret'); await submit();
+    seam.session.login.mockRejectedValueOnce(Object.assign(new Error('验证已过期，请重新输入密码登录。'), { code: 'MFA_EXPIRED' }));
+    const code = host.querySelector<HTMLInputElement>('input[autocomplete="one-time-code"]')!;
+    act(() => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(code, '123456'); code.dispatchEvent(new Event('input', { bubbles: true })); });
+    await submit();
+    expect(host.querySelector('input[type="password"]')).not.toBeNull(); expect(host.querySelector('[role="alert"]')?.textContent).toContain('验证已过期');
+  });
 });
