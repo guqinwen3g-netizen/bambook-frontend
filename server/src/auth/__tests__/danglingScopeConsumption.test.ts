@@ -113,7 +113,6 @@ const EXEMPT: ReadonlyArray<{ scope: string; reason: Reason; note: string }> = [
   { scope: 'reports:admin', reason: 'no-scope-enforcement', note: '仅在 permissionGuard.WRITE_SCOPE_EXACT（高危分类），无业务强制点' },
   { scope: 'relations:admin', reason: 'no-scope-enforcement', note: '同上' },
   { scope: 'customs:admin', reason: 'no-scope-enforcement', note: '同上（单证模板/签章配置实际未按本码把关）' },
-  { scope: 'pricing:admin', reason: 'no-scope-enforcement', note: '同上' },
 
   // ── 审批类：设计上走审批策略内核（approvals/），未用 scope 门 ──
   { scope: 'orders:approve:change_delivery', reason: 'ui-label-only', note: '审批走 approvals/ 内核；本码仅 UI 能力标签（口径 B1，2026-09-17 业务方拍板）' },
