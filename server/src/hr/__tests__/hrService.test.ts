@@ -107,6 +107,10 @@ function makeMockPrisma() {
     performanceReview: makeTable([['id'], ['cycleId', 'userId']], { status: 'Draft' }),
     trainingCourse: makeTable([['id']], { status: 'Planned', type: 'Internal', deletedAt: null }),
     trainingEnrollment: makeTable([['id'], ['courseId', 'userId']], { status: 'Enrolled' }),
+    department: makeTable([['id']], { status: 'active' }),
+    jobPosition: makeTable([['id']], { status: 'active', deletedAt: null }),
+    team: makeTable([['id']]),
+    teamMember: makeTable([['id']], { leftAt: null }),
   };
 
   // include 关联仿真（仅覆盖 service 用到的三个关联）
@@ -122,12 +126,15 @@ function makeMockPrisma() {
     if (include.reviews) {
       out.reviews = tables.performanceReview._rows.filter((r: any) => r.cycleId === row.id);
     }
+    if (include.team) {
+      out.team = tables.team._rows.find((t: any) => t.id === row.teamId) ?? null;
+    }
     if (include.run) {
       out.run = tables.payrollRun._rows.find((r: any) => r.id === row.runId) ?? null;
     }
     return out;
   };
-  for (const name of ['trainingCourse', 'payrollRun', 'performanceCycle', 'payrollItem']) {
+  for (const name of ['trainingCourse', 'payrollRun', 'performanceCycle', 'payrollItem', 'teamMember']) {
     const t = tables[name];
     const origFindUnique = t.findUnique;
     const origFindMany = t.findMany;
@@ -141,6 +148,13 @@ function makeMockPrisma() {
     _tables: tables,
   };
   return prisma;
+}
+
+function seedOrg(prisma: any) {
+  if (prisma._tables.department._rows.length) return;
+  prisma._tables.department._rows.push({ id: 'D1', parentId: 'ROOT', status: 'active' }, { id: 'D2', parentId: 'ROOT', status: 'active' }, { id: 'D-OFF', parentId: 'ROOT', status: 'retired' });
+  prisma._tables.jobPosition._rows.push({ id: 'P1', departmentId: 'D1', status: 'active', deletedAt: null }, { id: 'P9', departmentId: 'D2', status: 'active', deletedAt: null }, { id: 'P-OFF', departmentId: 'D1', status: 'inactive', deletedAt: null });
+  prisma._tables.team._rows.push({ id: 'T1', departmentId: 'D1' });
 }
 
 function seedUser(prisma: any, id: string, displayName = `用户${id}`) {
@@ -201,11 +215,16 @@ describe('C3a · 员工档案 + 生命周期事件', () => {
 
   it('Transfer 联动部门与岗位；Suspend/Resume 往返', async () => {
     seedUser(prisma, 'U1');
+    seedOrg(prisma);
+    prisma._tables.userAccount._rows.find((u: any) => u.id === 'U1').primaryDeptId = 'D1';
+    prisma._tables.teamMember._rows.push({ id: 'M1', teamId: 'T1', userId: 'U1', leftAt: null });
     await hr.recordEmploymentEvent('admin', { userId: 'U1', type: 'Onboard', effectiveDate: '2026-01-15' });
-    await hr.recordEmploymentEvent('admin', {
+    const moved = await hr.recordEmploymentEvent('admin', {
       userId: 'U1', type: 'Transfer', effectiveDate: '2026-03-01',
       fromDeptId: 'D1', toDeptId: 'D2', toPositionId: 'P9',
     });
+    expect(moved.leftTeams).toBe(1);
+    expect(prisma._tables.teamMember._rows[0].leftAt).toBeInstanceOf(Date);
     const profile = await hr.getProfile('U1');
     expect(profile.positionId).toBe('P9');
     const user = prisma._tables.userAccount._rows.find((u: any) => u.id === 'U1');
@@ -219,6 +238,18 @@ describe('C3a · 员工档案 + 生命周期事件', () => {
     // 事件流水完整
     const events = await hr.listEmploymentEvents({ userId: 'U1' });
     expect(events.length).toBe(4);
+  });
+
+  it('调岗目标校验：岗位停用 / 部门停用 / 岗位与部门不一致均拒绝，且不留事件', async () => {
+    seedUser(prisma, 'U2'); seedOrg(prisma);
+    prisma._tables.userAccount._rows.find((u: any) => u.id === 'U2').primaryDeptId = 'D1';
+    await hr.recordEmploymentEvent('admin', { userId: 'U2', type: 'Onboard', effectiveDate: '2026-01-15' });
+    await expect(hr.recordEmploymentEvent('admin', { userId: 'U2', type: 'Transfer', effectiveDate: '2026-03-01', toPositionId: 'P-OFF' })).rejects.toMatchObject({ code: 'INVALID_POSITION' });
+    await expect(hr.recordEmploymentEvent('admin', { userId: 'U2', type: 'Transfer', effectiveDate: '2026-03-01', toPositionId: 'P9' })).rejects.toMatchObject({ code: 'POSITION_DEPARTMENT_MISMATCH' });
+    await expect(hr.recordEmploymentEvent('admin', { userId: 'U2', type: 'Transfer', effectiveDate: '2026-03-01', toDeptId: 'D-OFF' })).rejects.toMatchObject({ code: 'INVALID_DEPARTMENT' });
+    const same = await hr.recordEmploymentEvent('admin', { userId: 'U2', type: 'Transfer', effectiveDate: '2026-03-01', toPositionId: 'P1' });
+    expect(same.leftTeams).toBe(0);
+    expect((await hr.listEmploymentEvents({ userId: 'U2' })).length).toBe(2);
   });
 
   it('非 Onboard 事件要求既有档案', async () => {

@@ -543,8 +543,9 @@ export function createAuthRouter(options: AuthRouterOptions) {
     if (newPassword.length < 6) {
       return res.status(400).json({ ok: false, error: 'WEAK_PASSWORD', message: 'New password must be at least 6 characters.' });
     }
+    let payload: ReturnType<typeof auth.verifyToken>;
+    try { payload = auth.verifyToken(token); } catch { return res.status(401).json({ ok: false, error: 'UNAUTHORIZED', message: 'Token expired or invalid.' }); }
     try {
-      const payload = auth.verifyToken(token);
       const user = await options.prisma.userAccount.findUnique({ where: { id: payload.userId } });
       if (!user || !user.passwordHash) {
         return res.status(404).json({ ok: false, error: 'NOT_FOUND', message: 'User not found.' });
@@ -555,12 +556,28 @@ export function createAuthRouter(options: AuthRouterOptions) {
       }
       const newHash = await auth.hashPassword(newPassword);
       // 管理员重置密码时在 metadata 标了 forceChangePassword；本人改密后清除该标记。
-      const metadata = (user.metadata && typeof user.metadata === 'object' && !Array.isArray(user.metadata)) ? user.metadata as Record<string, unknown> : null;
-      await options.prisma.userAccount.update({ where: { id: payload.userId }, data: { passwordHash: newHash, ...(metadata?.forceChangePassword ? { metadata: { ...metadata, forceChangePassword: false, passwordChangedAt: new Date().toISOString() } as any } : {}) } });
+      // 改密同时让其他设备上的旧会话失效（sessionsRevokedAt），当前设备随即换发新令牌继续使用。
+      const metadata = (user.metadata && typeof user.metadata === 'object' && !Array.isArray(user.metadata)) ? user.metadata as Record<string, unknown> : {};
+      const at = new Date().toISOString();
+      await options.prisma.userAccount.update({ where: { id: payload.userId }, data: { passwordHash: newHash, metadata: { ...metadata, ...(metadata.forceChangePassword ? { forceChangePassword: false } : {}), passwordChangedAt: at, sessionsRevokedAt: at } as any } });
       invalidateAccountStatusCache(payload.userId);
-      return res.json({ ok: true });
-    } catch {
-      return res.status(401).json({ ok: false, error: 'UNAUTHORIZED', message: 'Token expired or invalid.' });
+      let token: string | undefined;
+      try {
+        const loaded = await loadUserWithRoles(options.prisma, payload.userId);
+        if (loaded) {
+          const current = await buildLoadedAuthTokenPayload(options.prisma, loaded);
+          if (payload.permissionCeiling !== undefined) current.permissionCeiling = [...payload.permissionCeiling];
+          token = auth.signToken(current);
+          res.cookie(COOKIE_NAME, token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: COOKIE_MAX_AGE, path: '/' });
+        }
+      } catch (err) {
+        logger.error('[auth] change-password token reissue failed', { userId: payload.userId, error: (err as Error).message });
+      }
+      if (!token) res.clearCookie(COOKIE_NAME, { path: '/' });
+      return res.json({ ok: true, otherSessionsRevoked: true, ...(token ? { token } : { reloginRequired: true }) });
+    } catch (err) {
+      logger.error('[auth] change-password failed', { userId: payload.userId, error: (err as Error).message });
+      return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR', message: '密码未修改，请稍后重试。' });
     }
   });
 

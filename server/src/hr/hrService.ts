@@ -498,6 +498,22 @@ export function createHrService(prisma: PrismaClient) {
       }
     }
 
+    // 调岗 / 晋升的目标校验：岗位须存在且在用；部门须存在且在用；岗位与新部门须一致。
+    let targetDeptId: string | null = null;
+    if ((input.type === 'Transfer' || input.type === 'Promote') && input.toPositionId) {
+      const position = await db.jobPosition.findUnique({ where: { id: input.toPositionId } });
+      if (!position || position.deletedAt || position.status !== 'active') throw new HrError('INVALID_POSITION', '目标岗位不存在或已停用');
+      const deptForCheck = input.toDeptId || user.primaryDeptId || null;
+      if (position.departmentId && deptForCheck && position.departmentId !== deptForCheck) {
+        throw new HrError('POSITION_DEPARTMENT_MISMATCH', '目标岗位不属于调入部门，请同时选择岗位所在部门');
+      }
+    }
+    if (input.toDeptId) {
+      const dept = await db.department.findUnique({ where: { id: input.toDeptId } });
+      if (!dept || !dept.parentId || dept.status !== 'active') throw new HrError('INVALID_DEPARTMENT', '调入部门不存在或已停用');
+      if (input.toDeptId !== user.primaryDeptId) targetDeptId = input.toDeptId;
+    }
+
     // ★ **事件前状态必须显式快照**（2026-09-17 修）：
     //   下面的 `employeeProfile.update` 之后，`profile.employmentStatus` 是旧值还是新值，
     //   取决于驱动**是否原地改写对象** —— 真 Prisma 的 `findUnique` 返回新对象（⇒ 仍是旧值），
@@ -532,9 +548,13 @@ export function createHrService(prisma: PrismaClient) {
     if (Object.keys(profilePatch).length > 0) {
       await db.employeeProfile.update({ where: { userId: input.userId }, data: profilePatch });
     }
-    // 部门异动落 UserAccount.primaryDeptId
-    if (input.toDeptId) {
-      await db.userAccount.update({ where: { id: input.userId }, data: { primaryDeptId: input.toDeptId } });
+    // 部门异动落 UserAccount.primaryDeptId；小组须与部门一致，换部门即退出原部门的小组。
+    let leftTeams = 0;
+    if (targetDeptId) {
+      await db.userAccount.update({ where: { id: input.userId }, data: { primaryDeptId: targetDeptId } });
+      const active = await db.teamMember.findMany({ where: { userId: input.userId, leftAt: null }, include: { team: true } });
+      const stale = active.filter((m: any) => m.team && m.team.departmentId !== targetDeptId).map((m: any) => m.id);
+      if (stale.length) leftTeams = (await db.teamMember.updateMany({ where: { id: { in: stale } }, data: { leftAt: new Date() } })).count;
     }
 
     // K2 离职自动停账号（批次二）：进入终态（Resigned/Terminated）即停用系统账号。
@@ -607,7 +627,7 @@ export function createHrService(prisma: PrismaClient) {
     // ★ 返聘启用**同样要失效** —— 否则复职后仍会被 30s 内的旧缓存判为 disabled 而 401。
     if (accountDisabled || accountReenabled) invalidateAccountStatusCache(input.userId);
 
-    return { event, accountDisabled, accountReenabled };
+    return { event, accountDisabled, accountReenabled, leftTeams };
   }
 
   async function listEmploymentEvents(query: { userId?: string; type?: string; limit?: number } = {}) {
