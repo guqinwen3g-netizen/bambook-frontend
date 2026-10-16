@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {emailSendRecipients} from './mistEmail';
+import {emailAddresses,emailSendFingerprint,emailSendRecipients} from './mistEmail';
 import {applyMistCommand,createMistState,mistCommandPermission,type MistContext,type MistCommand} from './mistWorkspace';
 
 function fixture(seed:'demo'|'empty'='demo'){
@@ -63,5 +63,13 @@ describe('智能邮箱工作空间切片',()=>{
     expect(()=>f.run({type:'email.server.sync',payload:{accountId:id,source:1,at:f.ctx.now,folders:[],messages:[],files:[],lastError:null}})).toThrow('同步结果作废');
     expect(emailSendRecipients({to:'a@b.co, c@d.co',cc:'A@b.co',bcc:'e@f.co',status:'sent',updatedAt:f.ctx.now}).map(r=>[r.address,r.role,r.status])).toEqual([['a@b.co','to','accepted'],['c@d.co','to','accepted'],['e@f.co','bcc','accepted']]);
     expect(emailSendRecipients({to:'a@b.co',cc:'',bcc:'',status:'failed',updatedAt:f.ctx.now})[0].status).toBe('failed');
+  });
+  it('收件地址统一拆分；发送指纹忽略大小写、顺序与重复，内容变化即不同',()=>{
+    expect(emailAddresses('a@b.co; c@d.co，e@f.co；g@h.co  i@j.co,k@l.co')).toEqual(['a@b.co','c@d.co','e@f.co','g@h.co','i@j.co','k@l.co']);
+    expect(()=>emailAddresses('a@b.co; not-an-address','抄送')).toThrow('抄送中的地址格式无效：not-an-address');
+    const base={accountId:'acc',from:'Sales@sylway.cloud',to:'a@b.co, c@d.co',cc:'',bcc:'',subject:'',body:'x',fileIds:['f2','f1']};
+    const fp=emailSendFingerprint(base);
+    expect(emailSendFingerprint({...base,from:'sales@sylway.cloud',to:'C@d.co；a@b.co a@b.co',subject:'（无主题）',fileIds:['f1','f2']})).toBe(fp);
+    for(const patch of [{to:'a@b.co'},{cc:'c@d.co'},{subject:'新'},{body:'y'},{fileIds:['f1']},{replyToId:'m1'},{accountId:'other'}]) expect(emailSendFingerprint({...base,...patch})).not.toBe(fp);
   });
 });

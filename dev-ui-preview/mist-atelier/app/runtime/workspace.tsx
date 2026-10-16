@@ -38,7 +38,7 @@ export type MistMailAction =
   | { kind: 'send'; requestKey: string; draftId?: string; input?: Record<string, unknown>; forwardOfId?: string }
   | { kind: 'retry'; sendId: string; confirmUnknown?: boolean }
   | { kind: 'verify'; sendId: string };
-export interface MistMailResult { sync?: { remaining?: number; failedFolders?: string[]; error?: string | null; [key: string]: unknown }; send?: { id: string; status: string; message?: string; replayed?: boolean; found?: boolean; confirmed?: boolean; recipients?: Array<{ address: string; status: string }> } }
+export interface MistMailResult { sync?: { remaining?: number; failedFolders?: string[]; error?: string | null; [key: string]: unknown }; send?: { id: string; status: string; message?: string; replayed?: boolean; recovered?: boolean; found?: boolean; foundIn?: string[]; confirmed?: boolean; recipients?: Array<{ address: string; status: string }> } }
 const Context = React.createContext<MistWorkspaceContext | null>(null);
 const BASE = '/api/mist/workspaces';
 const nonempty = (value: unknown): value is string => typeof value === 'string' && !!value.trim();

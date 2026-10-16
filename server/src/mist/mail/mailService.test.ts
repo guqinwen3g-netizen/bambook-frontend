@@ -354,6 +354,89 @@ describe('智能邮箱真实收发（服务端）', () => {
     if (example) await t.owner.post(W + t.ws.id + '/email/sends').send({ requestKey: 'send-key-ex001', input: { accountId: example.id, from: example.address, to: 'sales@sylway.cloud', cc: '', bcc: '', subject: 'x', body: '', template: '', links: [], fileIds: [] } }).expect(422);
   });
 
+  it('收件人按共享规则逐个拆分并检查域名：分号、全角分隔、空白、大写的 CC/BCC 外部地址都在登记前拒绝', async () => {
+    vi.stubEnv('MIST_MAIL_ALLOWED_RECIPIENT_DOMAINS', 'sylway.cloud');
+    const t = await setup(), id = await t.account('sales@sylway.cloud'); await t.bind(id);
+    const base = { accountId: id, from: 'sales@sylway.cloud', to: 'customer-demo@sylway.cloud', cc: '', bcc: '', subject: '域名检查', body: '', template: '', links: [], fileIds: [] };
+    const cases = [{ to: 'external@outside.test; customer-demo@sylway.cloud' }, { to: 'customer-demo@sylway.cloud；external@outside.test' }, { to: 'customer-demo@sylway.cloud external@outside.test' }, { cc: 'finance@sylway.cloud，EXTERNAL@OUTSIDE.TEST' }, { bcc: 'External@Outside.Test' }];
+    for (const [i, patch] of cases.entries()) {
+      const r = await t.owner.post(W + t.ws.id + '/email/sends').send({ requestKey: 'send-key-dom0' + i, input: { ...base, ...patch } }).expect(422);
+      expect(r.body.error.code).toBe('MAIL_RECIPIENT_NOT_ALLOWED'); expect(r.body.error.message).toContain('external@outside.test');
+    }
+    expect((await t.latest()).state.email.sends).toHaveLength(0); expect(fake.deliveries).toHaveLength(0); expect(fake.attemptsSeen).toHaveLength(0);
+    // 同一规则拆分的允许地址可正常投递，信封逐个地址
+    const ok = await t.owner.post(W + t.ws.id + '/email/sends').send({ requestKey: 'send-key-dom-ok', input: { ...base, to: 'customer-demo@sylway.cloud；finance@sylway.cloud' } }).expect(200);
+    expect(ok.body.send.status).toBe('sent'); expect(fake.attemptsSeen[0]).toEqual(['customer-demo@sylway.cloud', 'finance@sylway.cloud']);
+  });
+
+  it('发送意图：同一请求改内容被拒；同草稿/同内容的未决发送换新请求或重启后只回到原记录，不重复投递', async () => {
+    const t = await setup(), id = await t.account('sales@sylway.cloud'); await t.bind(id);
+    const input = { accountId: id, from: 'sales@sylway.cloud', to: 'customer-demo@sylway.cloud', cc: '', bcc: '', subject: '报价确认', body: '请确认报价', template: '', links: [], fileIds: [] };
+    const draftId = (await t.command('email.draft.save', { input })).receipt.result.id as string;
+    const post = (client: any, key: string, patch: Record<string, unknown> = {}, extra: Record<string, unknown> = { draftId }, status = 200) => client.post(W + t.ws.id + '/email/sends').send({ requestKey: key, ...extra, input: { ...input, ...patch } }).expect(status);
+    // 同一意图改 To / 主题 / 正文：明确冲突，不投递；同内容重放仍只投递一次
+    fake.smtpMode = 'ok';
+    const first = await post(t.owner, 'send-key-int01', {}, {});
+    expect(first.body.send.status).toBe('sent'); expect(fake.attemptsSeen).toHaveLength(1);
+    for (const patch of [{ to: 'finance@sylway.cloud' }, { subject: '报价确认（改）' }, { body: '改过的正文' }]) {
+      const r = await post(t.owner, 'send-key-int01', patch, {}, 409); expect(r.body.error.code).toBe('SEND_INTENT_CONFLICT');
+    }
+    expect((await post(t.owner, 'send-key-int01', { to: 'Customer-Demo@sylway.cloud' }, {})).body.send).toMatchObject({ id: first.body.send.id, replayed: true });
+    expect(fake.attemptsSeen).toHaveLength(1);
+
+    // 草稿发送：服务器已投递但连接中断 → 结果待核对
+    fake.smtpMode = 'deliver-then-drop';
+    const unknown = await post(t.owner, 'send-key-drf01');
+    expect(unknown.body.send.status).toBe('unknown'); expect(fake.deliveries).toHaveLength(2);
+    fake.smtpMode = 'ok';
+    // 刷新后换新请求编号再发同一草稿：回到原记录，不投递
+    const again = await post(t.owner, 'send-key-drf02');
+    expect(again.body.send).toMatchObject({ id: unknown.body.send.id, status: 'unknown', replayed: true, recovered: true });
+    // 服务重启（新运行时，同一数据目录）后仍回到原记录
+    const restarted = createMistServer(undefined, { local: createMistLocalRuntime({ directory }), mailTransport: fake.transport() });
+    const client = request.agent(restarted); await client.get('/api/mist/session').expect(200);
+    const after = await post(client, 'send-key-drf03');
+    expect(after.body.send).toMatchObject({ id: unknown.body.send.id, recovered: true });
+    // 没有草稿、内容相同的新请求也不能绕过核对
+    expect((await post(t.owner, 'send-key-drf04', {}, {})).body.send).toMatchObject({ id: unknown.body.send.id, recovered: true });
+    // 同草稿改了内容：要求先处理原记录
+    const changed = await post(t.owner, 'send-key-drf05', { body: '补充说明' }, { draftId }, 409);
+    expect(changed.body.error.code).toBe('SEND_PENDING_VERIFY');
+    expect(fake.deliveries).toHaveLength(2); expect(fake.attemptsSeen).toHaveLength(2);
+    const ws = await t.latest();
+    expect(ws.state.email.sends.filter((s: any) => s.draftId === draftId)).toHaveLength(1);
+
+    // 明确失败后同草稿重新发送：新记录取代旧记录，旧记录不能再重发
+    const draft2 = (await t.command('email.draft.save', { input: { ...input, subject: '样品寄送' } })).receipt.result.id as string;
+    fake.smtpMode = 'reject-login';
+    const failed = await post(t.owner, 'send-key-fai01', { subject: '样品寄送' }, { draftId: draft2 });
+    expect(failed.body.send.status).toBe('failed');
+    fake.smtpMode = 'ok';
+    const resent = await post(t.owner, 'send-key-fai02', { subject: '样品寄送', body: '更新后的正文' }, { draftId: draft2 });
+    expect(resent.body.send.status).toBe('sent'); expect(resent.body.send.id).not.toBe(failed.body.send.id);
+    const old = resent.body.workspace.state.email.sends.find((s: any) => s.id === failed.body.send.id);
+    expect(old.supersededById).toBe(resent.body.send.id);
+    expect((await t.owner.post(W + t.ws.id + '/email/sends/' + old.id + '/retry').send({}).expect(422)).body.error.message).toContain('取代');
+  });
+
+  it('只在已发送中找到旧副本不能确认任何收件人：部分接收后补发自身断线，核对仍待确认', async () => {
+    const t = await setup(), id = await t.account('sales@sylway.cloud'); await t.bind(id);
+    fake.rejectRcpt.add('sales@sylway.cloud');
+    const first = await t.owner.post(W + t.ws.id + '/email/sends').send({ requestKey: 'send-key-cpy01', input: { accountId: id, from: 'sales@sylway.cloud', to: 'customer-demo@sylway.cloud', cc: 'sales@sylway.cloud', bcc: '', subject: '副本核对', body: '', template: '', links: [], fileIds: [] } }).expect(200);
+    expect(first.body.send.status).toBe('partial');
+    expect(fake.boxes.get('sales@sylway.cloud')!.boxes.get('Sent')!.messages).toHaveLength(1);
+    // 只补发给本邮箱自身，提交正文后断线且未投递
+    fake.rejectRcpt.clear(); fake.smtpMode = 'drop-after-data';
+    const retry = await t.owner.post(W + t.ws.id + '/email/sends/' + first.body.send.id + '/retry').send({}).expect(200);
+    expect(retry.body.send.status).toBe('unknown');
+    expect(fake.boxes.get('sales@sylway.cloud')!.boxes.get('INBOX')!.messages).toHaveLength(0);
+    const check = await t.owner.post(W + t.ws.id + '/email/sends/' + first.body.send.id + '/verify').send({}).expect(200);
+    expect(check.body.send).toMatchObject({ status: 'unknown', found: true, foundIn: ['sent'], confirmed: false });
+    const rec = check.body.workspace.state.email.sends.find((s: any) => s.id === first.body.send.id);
+    expect(rec.recipients.map((r: any) => [r.address, r.status])).toEqual([['customer-demo@sylway.cloud', 'accepted'], ['sales@sylway.cloud', 'unknown']]);
+    expect(rec.attempts.at(-1)).toMatchObject({ outcome: 'copy_found', message: expect.stringContaining('已发送') });
+  });
+
   it('文件夹选择与 SMTP 结果分类', () => {
     expect(pickMailFolders([{ path: 'INBOX', attribs: [] }, { path: 'Sent', attribs: ['\\Sent'] }, { path: 'Junk', attribs: ['\\Junk'] }, { path: 'Trash', attribs: ['\\Trash'] }])).toEqual([{ remote: 'INBOX', folder: 'inbox' }, { remote: 'Sent', folder: 'sent' }]);
     expect(classifySmtpError({ mailStage: 'connect', code: 'ECONNECTION' })).toBe('failed');

@@ -54,6 +54,10 @@ export type EmailSend = {
   messageId: string; status: EmailSendStatus; attempts: EmailSendAttempt[]; response: string; sentMessageId?: string;
   /** 每个收件人的投递结果；旧记录缺省时按整封状态推导（见 emailSendRecipients）。 */
   recipients?: EmailSendRecipient[];
+  /** 登记时冻结的发送内容指纹（账号、发件身份、规范化收件人、主题、正文、附件清单、回复 / 转发来源）。旧记录缺省时按已冻结字段现算。 */
+  fingerprint?: string;
+  /** 明确失败（无人接收）后，同一草稿或同内容以新的发送意图重新发送：旧记录保留、标记被取代，不再出现在待发送。 */
+  supersededById?: string;
   createdBy: string; createdById: string; createdAt: string; updatedAt: string;
 };
 export type EmailDraftInput = { accountId: string; from: string; to: string; cc: string; bcc: string; subject: string; body: string; template: string; links: EmailLink[]; fileIds: string[]; replyToId?: string };
@@ -79,12 +83,12 @@ export type EmailCommand =
   | { type: 'email.server.account'; payload: { id: string; connection?: EmailConnection; credentialSet?: boolean; lastError?: EmailProblem | null; syncStartedAt?: string | null } }
   | { type: 'email.server.sync'; payload: { accountId: string; source?: number; at: string; folders: EmailFolderSync[]; messages: EmailSyncedMessage[]; files: StoredFile[]; lastError: EmailProblem | null } }
   | { type: 'email.server.send.begin'; payload: { mode: 'new'; requestKey: string; draftId?: string; input: EmailDraftInput; forwardOfId?: string; messageId: string } | { mode: 'retry'; id: string; confirmUnknown?: boolean } }
-  | { type: 'email.server.send.finish'; payload: { id: string; outcome: 'accepted' | 'failed' | 'unknown' | 'verified' | 'not_found'; code: string; message: string; response?: string; accepted?: string[]; rejected?: Array<{ address: string; reply: string }> } };
+  | { type: 'email.server.send.finish'; payload: { id: string; outcome: 'accepted' | 'failed' | 'unknown' | 'verified' | 'not_found'; code: string; message: string; response?: string; accepted?: string[]; rejected?: Array<{ address: string; reply: string }>; foundIn?: EmailMessageFolder[] } };
 export const EMAIL_SERVER_COMMAND = /^email\.server\./;
 /** 发送中超过该时长仍未写回结果，按"结果待核对"处理（进程中断等）。 */
 export const EMAIL_SEND_STALE_MS = 5 * 60 * 1000;
 
-const STATUS: Record<string, number> = { NOT_FOUND: 404, FORBIDDEN: 403, CONFLICT: 409, SEND_RESULT_UNCERTAIN: 409 };
+const STATUS: Record<string, number> = { NOT_FOUND: 404, FORBIDDEN: 403, CONFLICT: 409, SEND_RESULT_UNCERTAIN: 409, SEND_INTENT_CONFLICT: 409, SEND_PENDING_VERIFY: 409 };
 const fail = (message: string, code = 'VALIDATION'): never => { throw new MistCommandError(code, message, STATUS[code] ?? 422); };
 const EMAIL_RE = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
 const HOST_RE = /^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,62}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,62}[A-Za-z0-9])?)*$/;
@@ -119,7 +123,7 @@ export function emailSendRecipients(send: Pick<EmailSend, 'to' | 'cc' | 'bcc' | 
 }
 function sendRecipientRows(send: Pick<EmailSend, 'to' | 'cc' | 'bcc'>) {
   const seen = new Set<string>(), rows: Array<{ address: string; role: 'to' | 'cc' | 'bcc' }> = [];
-  for (const role of ['to', 'cc', 'bcc'] as const) for (const address of (send[role] || '').split(/,\s*/).map(item => item.trim().toLowerCase()).filter(Boolean)) if (!seen.has(address)) { seen.add(address); rows.push({ address, role }); }
+  for (const role of ['to', 'cc', 'bcc'] as const) for (const address of emailAddressesLoose(send[role] || '')) if (!seen.has(address)) { seen.add(address); rows.push({ address, role }); }
   return rows;
 }
 /** 由收件人结果推导整封状态：全部接收 = sent；有无法确认 = unknown；部分接收 = partial；无人接收 = failed。 */
@@ -211,7 +215,24 @@ function recordSent(root: MistState, row: EmailSend, context: MistContext) {
   return id;
 }
 function log(root: MistState, context: MistContext, entityId: string, textValue: string) { root.events.unshift({ id: context.id(), entityType: 'email', entityId, actor: context.actorName, at: context.now, text: textValue, fileIds: [] }); }
-const addressList = (value: string, label: string) => { const parts = value.split(/[,;，；\s]+/).map(item => item.trim()).filter(Boolean); for (const item of parts) if (!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(item)) fail(`${label}中的地址格式无效：${item}`); return parts.join(', '); };
+/** 收件地址统一解析：逗号、分号（含全角）与空白都是分隔符；逐个校验格式。服务端域名限制、信封与草稿保存共用这一规则。 */
+export function emailAddresses(value: unknown, label = '收件人'): string[] {
+  const parts = (typeof value === 'string' ? value : '').split(/[,;，；\s]+/).map(item => item.trim()).filter(Boolean);
+  for (const item of parts) if (!EMAIL_RE.test(item)) fail(`${label}中的地址格式无效：${item}`);
+  return parts;
+}
+const addressList = (value: string, label: string) => emailAddresses(value, label).join(', ');
+/** 与投递有关的不可变内容指纹：同一发送意图（requestKey）内容不一致即拒绝；同内容的未决发送不能用新意图绕过核对。 */
+export function emailSendFingerprint(v: { accountId: string; from: string; to: string; cc: string; bcc: string; subject: string; body: string; fileIds: string[]; replyToId?: string; forwardOfId?: string }) {
+  const list = (value: string) => [...new Set(emailAddressesLoose(value))].sort().join(',');
+  const canonical = JSON.stringify([v.accountId, (v.from || '').toLowerCase(), list(v.to), list(v.cc), list(v.bcc), v.subject || '（无主题）', v.body || '', [...new Set(v.fileIds || [])].sort(), v.replyToId || '', v.forwardOfId || '']);
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < canonical.length; i++) { const c = canonical.charCodeAt(i); h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677); }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909); h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return `v1:${(h2 >>> 0).toString(16).padStart(8, '0')}${(h1 >>> 0).toString(16).padStart(8, '0')}:${canonical.length}`;
+}
+const emailAddressesLoose = (value: string) => (value || '').split(/[,;，；\s]+/).map(item => item.trim().toLowerCase()).filter(Boolean);
+const storedFingerprint = (row: EmailSend) => row.fingerprint || emailSendFingerprint(row);
 
 export function applyEmailCommand(root: MistState, command: EmailCommand, context: MistContext): { id: string } & Record<string, unknown> {
   const p = command.payload as Record<string, unknown>;
@@ -307,14 +328,16 @@ function finishSend(root: MistState, v: Extract<EmailCommand, { type: 'email.ser
     for (const item of rows) if (item.status === 'pending') mark(item, 'unknown', '投递过程中断，结果无法确认');
     const open = rows.filter(item => item.status === 'unknown');
     if (outcome === 'not_found') { attempt('not_found'); log(root, context, row.id, `核对发送结果：未在本邮箱找到 ${row.subject}，仍待确认`); return done({ confirmed: false }); }
-    // 在本邮箱找到副本只能证明本邮箱自己收到；仅当待确认的收件人全部是本邮箱自身地址时才据此确认，其他收件人保持待确认。
+    // 只有本邮箱收件箱里出现该 Message-ID，才是本邮箱自身收到的证据；已发送 / 归档里的副本可能是本系统或客户端写入的发件副本，只能记为"有副本"。
+    // 且仅当待确认的收件人全部是本邮箱自身地址时才据此确认，其他收件人保持待确认。
     const self = new Set([owner.address, ...owner.aliases].map(item => item.toLowerCase()));
-    if (open.length && open.every(item => self.has(item.address))) {
+    const inbox = Array.isArray(v.foundIn) && v.foundIn.includes('inbox');
+    if (inbox && open.length && open.every(item => self.has(item.address))) {
       for (const item of open) mark(item, 'accepted', clip(v.response || '已在本邮箱中按 Message-ID 找到该邮件', 300));
       attempt('verified', clip(v.message, 300), open.map(item => item.address)); row.response = clip(v.response || '已在本邮箱中核对到该邮件', 300);
       return done({ confirmed: true });
     }
-    attempt('copy_found', '在本邮箱中找到该邮件副本，但不能据此确认其他收件人是否收到，仍待确认', open.map(item => item.address));
+    attempt('copy_found', inbox ? '本邮箱收件箱中有该邮件，但不能据此确认其他收件人是否收到，仍待确认' : '只在本邮箱的已发送 / 归档中找到副本（可能是发件副本），不能证明任何收件人已收到，仍待确认', open.map(item => item.address));
     log(root, context, row.id, `核对发送结果：本邮箱中有 ${row.subject} 的副本，其他收件人仍待确认`);
     return done({ confirmed: false, copyFound: true });
   }
@@ -450,6 +473,7 @@ function beginSend(root: MistState, payload: Extract<EmailCommand, { type: 'emai
   if (payload?.mode === 'retry') {
     const row = send(root, payload.id, context), status = emailSendEffectiveStatus(row, Date.parse(context.now));
     if (status === 'sent') fail('该邮件已发送，不能重复发送', 'PRECONDITION');
+    if (row.supersededById) fail('该发送记录已由新的发送取代，不能再重发；请查看新的发送记录', 'PRECONDITION');
     if (status === 'sending') fail('该邮件正在发送，请稍后查看结果', 'PRECONDITION');
     if (status === 'unknown' && payload.confirmUnknown !== true) fail('上次发送结果不确定：请先核对对方或已发送中是否已收到，确认未送达后再重发', 'SEND_RESULT_UNCERTAIN');
     // 只重发尚未被服务器接收的收件人；已接收的收件人不会再收到第二封。
@@ -464,17 +488,33 @@ function beginSend(root: MistState, payload: Extract<EmailCommand, { type: 'emai
   }
   if (payload?.mode !== 'new') fail('发送方式无效');
   const requestKey = text(payload.requestKey, '发送请求编号', true, 80); if (!/^[A-Za-z0-9_-]{8,80}$/.test(requestKey)) fail('发送请求编号无效');
-  const prior = root.email.sends.find(row => row.requestKey === requestKey && row.createdById === context.actorId);
-  if (prior) { account(root, prior.accountId, context); return { id: prior.id, status: emailSendEffectiveStatus(prior, Date.parse(context.now)), existing: true }; }
   const { owner, draft } = draftOf(root, payload.input || ({} as EmailDraftInput), context);
+  const forwardOfId = payload.forwardOfId ? message(root, String(payload.forwardOfId), context).id : undefined;
+  const fingerprint = emailSendFingerprint({ ...draft, accountId: owner.id, ...(forwardOfId ? { forwardOfId } : {}) }), now = Date.parse(context.now);
+  // 同一发送意图重放：内容一致回到原记录（不再投递）；内容不一致明确拒绝，不能拿旧结果冒充新内容已发送。
+  const prior = root.email.sends.find(row => row.requestKey === requestKey && row.createdById === context.actorId);
+  if (prior) {
+    account(root, prior.accountId, context);
+    if (storedFingerprint(prior) !== fingerprint) fail('这次发送请求的内容与原发送记录不一致（收件人、主题、正文或附件已变化），未发送；原记录保留在发送记录中', 'SEND_INTENT_CONFLICT');
+    return { id: prior.id, status: emailSendEffectiveStatus(prior, now), existing: true };
+  }
+  // 未决的原发送（发送中 / 结果不确定 / 部分未接收）不能被新意图绕过：同一草稿或同内容一律回到原记录，由核对或显式重发处理。
+  const open = (row: EmailSend) => !row.supersededById && ['sending', 'unknown', 'partial'].includes(emailSendEffectiveStatus(row, now));
+  const mineSends = root.email.sends.filter(row => row.createdById === context.actorId && row.accountId === owner.id);
+  const pending = mineSends.find(row => open(row) && ((payload.draftId && row.draftId === payload.draftId) || storedFingerprint(row) === fingerprint));
+  if (pending) {
+    if (payload.draftId && pending.draftId === payload.draftId && storedFingerprint(pending) !== fingerprint) fail('这份草稿上次的发送尚未确认结果，请先在待发送中核对或处理原记录，再发送修改后的内容', 'SEND_PENDING_VERIFY');
+    return { id: pending.id, status: emailSendEffectiveStatus(pending, now), existing: true, recovered: true };
+  }
   if (owner.example) fail('示例邮箱不能发送真实邮件', 'PRECONDITION');
   if (!owner.credentialSet || owner.connection === 'not_connected') fail('该邮箱尚未完成凭据绑定，不能发送', 'PRECONDITION');
   if (!draft.to && !draft.cc && !draft.bcc) fail('请填写收件人');
   if (payload.draftId) { const d = root.email.drafts.find(row => row.id === payload.draftId); if (!d || d.accountId !== owner.id) fail('草稿不存在或已删除', 'NOT_FOUND'); }
-  const forwardOfId = payload.forwardOfId ? message(root, String(payload.forwardOfId), context).id : undefined;
   const messageId = text(payload.messageId, 'Message-ID', true, 300); if (!/^<[^<>\s@]{3,200}@[^<>\s@]{1,200}>$/.test(messageId)) fail('Message-ID 无效');
   const id = context.id();
-  root.email.sends.unshift({ id, requestKey, accountId: owner.id, ...(payload.draftId ? { draftId: payload.draftId } : {}), ...(draft.replyToId ? { replyToId: draft.replyToId } : {}), ...(forwardOfId ? { forwardOfId } : {}), from: draft.from, to: draft.to, cc: draft.cc, bcc: draft.bcc, subject: draft.subject || '（无主题）', body: draft.body, links: draft.links, fileIds: draft.fileIds, messageId, status: 'sending', recipients: sendRecipientRows(draft).map(item => ({ ...item, status: 'pending' as const, reply: '', at: null })), attempts: [{ at: context.now, actor: context.actorName, outcome: 'claimed', code: 'SEND_STARTED', message: '已登记，开始投递', recipients: sendRecipientRows(draft).map(item => item.address) }], response: '', createdBy: context.actorName, createdById: context.actorId!, createdAt: context.now, updatedAt: context.now });
+  // 明确失败（无人接收）的同草稿 / 同内容旧记录被新意图取代：保留历史，不再在待发送中重复出现。
+  for (const row of mineSends) if (!row.supersededById && emailSendEffectiveStatus(row, now) === 'failed' && ((payload.draftId && row.draftId === payload.draftId) || storedFingerprint(row) === fingerprint)) { row.supersededById = id; log(root, context, row.id, `发送失败的记录已由新的发送取代：${row.subject}`); }
+  root.email.sends.unshift({ id, requestKey, fingerprint, accountId: owner.id, ...(payload.draftId ? { draftId: payload.draftId } : {}), ...(draft.replyToId ? { replyToId: draft.replyToId } : {}), ...(forwardOfId ? { forwardOfId } : {}), from: draft.from, to: draft.to, cc: draft.cc, bcc: draft.bcc, subject: draft.subject || '（无主题）', body: draft.body, links: draft.links, fileIds: draft.fileIds, messageId, status: 'sending', recipients: sendRecipientRows(draft).map(item => ({ ...item, status: 'pending' as const, reply: '', at: null })), attempts: [{ at: context.now, actor: context.actorName, outcome: 'claimed', code: 'SEND_STARTED', message: '已登记，开始投递', recipients: sendRecipientRows(draft).map(item => item.address) }], response: '', createdBy: context.actorName, createdById: context.actorId!, createdAt: context.now, updatedAt: context.now });
   log(root, context, id, `开始发送：${draft.subject || '（无主题）'}`);
   return { id, status: 'sending' as EmailSendStatus, existing: false };
 }

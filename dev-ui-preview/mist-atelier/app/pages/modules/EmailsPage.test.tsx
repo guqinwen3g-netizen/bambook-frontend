@@ -95,18 +95,67 @@ it('sends with one stable request key, keeps the compose open on network failure
   await click(button('写邮件')!);
   type('收件人','buyer@partner.test');type('主题','报价');
   store.mail.mockRejectedValueOnce(new Error('网络中断，请重试'));
-  const send=()=>[...document.querySelectorAll('button')].filter(b=>b.textContent?.trim()==='发送').at(-1)!;
-  expect(send().disabled).toBe(false);
-  await click(send());
+  const send=async()=>{await click([...document.querySelectorAll('button')].filter(b=>b.textContent?.trim()==='发送').at(-1)!);await click(button('确认发送')!);};
+  await send();
   expect(host.textContent).toContain('网络中断，请重试');
   const first=store.mail.mock.calls[0][0];
   expect(first).toMatchObject({kind:'send',input:{accountId:'acc-real',to:'buyer@partner.test',subject:'报价'}});
   expect(first.requestKey).toMatch(/^[A-Za-z0-9]{8,80}$/);
   store.mail.mockResolvedValueOnce({send:{id:'send-new',status:'unknown',message:'连接中断'}});
-  await click(send());
+  await send();
   expect(store.mail.mock.calls[1][0].requestKey).toBe(first.requestKey);
   expect(document.body.textContent).toContain('发送结果不确定');
   expect(document.body.textContent).toContain('系统不会自动重发');
+});
+
+it('confirms recipients and attachments before sending; cancelling sends nothing and keeps the compose',async()=>{
+  store.state=realState();render();
+  await click(button('写邮件')!);
+  type('收件人','buyer@partner.test；Second@Partner.test third@partner.test');type('主题','报价');
+  await click([...document.querySelectorAll('button')].filter(b=>b.textContent?.trim()==='发送').at(-1)!);
+  const dialog=[...document.querySelectorAll('[role="dialog"]')].at(-1)!;
+  expect(dialog.textContent).toContain('确认发送');expect(dialog.textContent).toContain('业务邮箱 · sales@sylway.cloud');
+  expect(dialog.textContent).toContain('收件人（3）');expect(dialog.textContent).toContain('buyer@partner.test、second@partner.test、third@partner.test');
+  expect(dialog.textContent).toContain('附件（0）');
+  await click([...dialog.querySelectorAll('button')].find(b=>b.textContent?.trim()==='取消')!);
+  expect(store.mail).not.toHaveBeenCalled();expect(button('确认发送')).toBeUndefined();
+  expect((document.querySelector('[aria-label="收件人"]') as HTMLInputElement).value).toBe('buyer@partner.test；Second@Partner.test third@partner.test');
+});
+
+it('sending a draft is one stable intent; an unresolved earlier send is reopened instead of delivered again',async()=>{
+  const s=realState() as any;
+  s.email.drafts=[{id:'draft-1',accountId:'acc-real',from:'sales@sylway.cloud',to:'buyer@partner.test',cc:'',bcc:'',subject:'草稿报价',body:'见附件',template:'',links:[],fileIds:['file-a'],createdAt:'2026-10-14T01:00:00Z',updatedAt:'2026-10-14T01:30:00Z',updatedBy:'顾言'}];
+  store.state=s;store.mail.mockResolvedValue({send:{id:'send-unknown',status:'unknown',replayed:true,recovered:true}});render('draft-1');
+  await click(button('发送')!);
+  expect(document.body.textContent).toContain('报价单.pdf（2 KB）');
+  await click(button('确认发送')!);
+  const key=store.mail.mock.calls[0][0].requestKey;
+  expect(store.mail.mock.calls[0][0]).toMatchObject({kind:'send',draftId:'draft-1'});expect(key).toMatch(/^[A-Za-z0-9_-]{8,80}$/);
+  expect(document.body.textContent).toContain('已有发送记录，未重复投递');
+  expect(host.textContent).toContain('结果不确定的邮件');expect(button('核对是否已发出')).toBeDefined();
+  // 重开后再发送同一草稿：仍是同一请求编号
+  act(()=>root.unmount());root=createRoot(host);render('draft-1');
+  await click(button('发送')!);await click(button('确认发送')!);
+  expect(store.mail.mock.calls[1][0].requestKey).toBe(key);
+});
+
+it('searches attachment names, including omitted attachments, and hides superseded failed sends',async()=>{
+  const s=realState() as any;s.email.sends[1].supersededById='send-unknown';
+  store.state=s;render();
+  const search=document.querySelector('input[placeholder^="搜索主题"]') as HTMLInputElement;
+  act(()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(search,'超大.zip');search.dispatchEvent(new Event('input',{bubbles:true}));});
+  expect(host.textContent).toContain('询价单');
+  act(()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(search,'不存在的附件');search.dispatchEvent(new Event('input',{bubbles:true}));});
+  expect(host.querySelector('table')?.textContent||'').not.toContain('询价单');
+  act(()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(search,'');search.dispatchEvent(new Event('input',{bubbles:true}));});
+  await click([...document.querySelectorAll('button')].find(b=>b.textContent?.includes('待发送'))!);
+  expect(host.textContent).toContain('结果不确定的邮件');expect(host.textContent).not.toContain('被拒的邮件');
+});
+
+it('explains a copy found only in Sent: no recipient is confirmed',async()=>{
+  store.state=realState();store.mail.mockResolvedValue({send:{id:'send-unknown',status:'unknown',found:true,foundIn:['sent'],confirmed:false}});render('send-unknown');
+  await click(button('核对是否已发出')!);
+  expect(document.body.textContent).toContain('只在已发送 / 归档中找到副本');expect(document.body.textContent).toContain('不能证明任何收件人已收到');
 });
 
 it('never blindly resends an uncertain send: verify first, resend only after explicit confirmation',async()=>{
@@ -160,6 +209,9 @@ it('downloads synced attachments and explains omitted ones; forwarding carries t
   await click(button('转发')!);
   store.mail.mockResolvedValue({send:{id:'s2',status:'sent'}});type('收件人','colleague@partner.test');
   await click([...document.querySelectorAll('button')].filter(b=>b.textContent?.trim()==='发送').at(-1)!);
+  // 确认弹窗列出转发携带的附件名称与大小
+  expect(document.body.textContent).toContain('附件（1）');expect(document.body.textContent).toContain('报价单.pdf（2 KB）');
+  await click(button('确认发送')!);
   expect(store.mail.mock.calls.at(-1)![0]).toMatchObject({kind:'send',forwardOfId:'mail-real-1',input:{fileIds:['file-a']}});
   expect(store.mail.mock.calls.at(-1)![0].input.replyToId).toBeUndefined();
 });

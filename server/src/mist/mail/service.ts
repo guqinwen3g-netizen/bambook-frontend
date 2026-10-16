@@ -5,7 +5,7 @@ import { fail } from '../errors';
 import type { MistRepository } from '../repository';
 import type { MistStoredFile } from '../files';
 import { MIST_FILE_MAX_BYTES } from '../files';
-import { emailSendEffectiveStatus, emailSendRecipients, type EmailAccount, type EmailAddress, type EmailDraftInput, type EmailFolderSync, type EmailMessageFolder, type EmailProblem, type EmailSend, type EmailSyncedMessage } from '../../shared/mistEmail';
+import { emailAddresses, emailSendEffectiveStatus, emailSendRecipients, type EmailAccount, type EmailAddress, type EmailDraftInput, type EmailFolderSync, type EmailMessageFolder, type EmailProblem, type EmailSend, type EmailSyncedMessage } from '../../shared/mistEmail';
 import type { MistState } from '../../shared/mistWorkspace';
 import { MistMailCredentials, type MistMailSecret } from './credentials';
 import { classifySmtpError, composeMail, describeMailError, imapSmtpTransport, smtpRejectedReplies, type MailFolderInfo, type MailImapSession, type MailTransport } from './transport';
@@ -33,7 +33,8 @@ export function pickMailFolders(folders: MailFolderInfo[]): Array<{ remote: stri
 const addresses = (value: AddressObject | AddressObject[] | undefined): EmailAddress[] => (Array.isArray(value) ? value : value ? [value] : []).flatMap(item => item.value).filter(item => item.address).map(item => ({ name: item.name || '', address: String(item.address).toLowerCase() }));
 const problem = (code: string, message: string): EmailProblem => ({ code, message, at: new Date().toISOString() });
 const domainOf = (address: string) => address.split('@').pop()!.toLowerCase();
-const recipients = (value: string) => value.split(/,\s*/).map(item => item.trim()).filter(Boolean);
+/** 与草稿保存/指纹共用同一解析规则：逗号、分号（含全角）、空白均为分隔符。 */
+const recipients = (value: string, label = '收件人') => emailAddresses(value || '', label);
 
 export class MistMailService {
   private readonly busy = new Map<string, true>();
@@ -166,7 +167,8 @@ export class MistMailService {
   }
 
   private checkRecipients(send: Pick<EmailSend, 'to' | 'cc' | 'bcc'>) {
-    const allowed = this.policy().allowedRecipientDomains, all = [...recipients(send.to), ...recipients(send.cc), ...recipients(send.bcc)];
+    // 在登记发送意图之前按共享规则拆分 To/CC/BCC，每个地址都按小写域名检查；未配置白名单时不限制。
+    const allowed = this.policy().allowedRecipientDomains, all = [...recipients(send.to, '收件人'), ...recipients(send.cc, '抄送'), ...recipients(send.bcc, '密送')].map(item => item.toLowerCase());
     if (!all.length) fail('VALIDATION', '请填写收件人', 422);
     if (allowed.length) for (const address of all) if (!allowed.includes(domainOf(address))) fail('MAIL_RECIPIENT_NOT_ALLOWED', `收件人 ${address} 不在允许投递的域名内`, 422);
   }
@@ -176,8 +178,9 @@ export class MistMailService {
     const { account } = await this.account(prior, workspaceId, String(input.accountId || ''));
     this.checkHosts(account); this.checkRecipients({ to: String(input.to || ''), cc: String(input.cc || ''), bcc: String(input.bcc || '') });
     const begun = await this.write(prior, workspaceId, 'email.server.send.begin', { mode: 'new', requestKey: body.requestKey, ...(body.draftId ? { draftId: String(body.draftId) } : {}), input, ...(body.forwardOfId ? { forwardOfId: String(body.forwardOfId) } : {}), messageId: `<${randomUUID()}@${domainOf(account.address)}>` });
-    const started = (begun.receipt as any).result as { id: string; status: string; existing: boolean };
-    if (started.existing) return { ...begun, send: { id: started.id, status: started.status, replayed: true } };
+    const started = (begun.receipt as any).result as { id: string; status: string; existing: boolean; recovered?: boolean };
+    // 同一意图重放或同草稿/同内容的未决发送：返回原记录，不再投递。
+    if (started.existing) return { ...begun, send: { id: started.id, status: started.status, replayed: true, ...(started.recovered ? { recovered: true } : {}) } };
     return this.deliver(prior, workspaceId, started.id);
   }
   async retry(prior: TokenPayload, workspaceId: string, sendId: string, confirmUnknown: unknown) {
@@ -247,14 +250,16 @@ export class MistMailService {
     if (!record) fail('NOT_FOUND', '发送记录不存在', 404);
     if (emailSendEffectiveStatus(record!, this.now().getTime()) !== 'unknown') fail('PRECONDITION', '只有结果待核对的发送需要核对', 422);
     const account = snapshot.state.email.accounts.find(row => row.id === record!.accountId)!, secret = await this.secret(workspaceId, account);
-    let found = false;
+    const foundIn: EmailMessageFolder[] = [];
     const session = await this.imap(account, secret).catch(error => { const reason = describeMailError(error, 'imap'); return fail(reason.code, `${reason.message}，无法核对`, 422); });
     try {
-      for (const target of pickMailFolders(await session.folders())) { await session.open(target.remote); if (await session.hasMessageId(record!.messageId)) { found = true; break; } }
+      // 逐个查本邮箱自身的收件箱/已发送/归档，记录副本出现在哪里；只有收件箱副本才可能确认"本邮箱作为收件人已收到"。
+      for (const target of pickMailFolders(await session.folders())) { await session.open(target.remote); if (await session.hasMessageId(record!.messageId)) foundIn.push(target.folder); }
     } finally { await session.close(); }
-    // 只读本邮箱自身的文件夹；找到副本能否确认由共享规则决定（仅待确认收件人全是本邮箱地址时才确认）。
-    const result = await this.write(prior, workspaceId, 'email.server.send.finish', { id: sendId, outcome: found ? 'verified' : 'not_found', code: found ? 'MESSAGE_ID_FOUND' : 'MESSAGE_ID_NOT_FOUND', message: found ? '已在本邮箱中找到该邮件' : '本邮箱中未找到该邮件', response: found ? '按 Message-ID 在本邮箱中核对到' : '' });
+    const found = foundIn.length > 0;
+    // 只读本邮箱自身的文件夹；找到副本能否确认由共享规则决定（仅收件箱副本且待确认收件人全是本邮箱地址时才确认）。
+    const result = await this.write(prior, workspaceId, 'email.server.send.finish', { id: sendId, outcome: found ? 'verified' : 'not_found', code: found ? 'MESSAGE_ID_FOUND' : 'MESSAGE_ID_NOT_FOUND', message: found ? '已在本邮箱中找到该邮件' : '本邮箱中未找到该邮件', response: found ? '按 Message-ID 在本邮箱中核对到' : '', foundIn });
     const done = (result.receipt as any)?.result || {};
-    return { ...result, send: { id: sendId, status: done.status || 'unknown', found, confirmed: !!done.confirmed, recipients: done.recipients || [] } };
+    return { ...result, send: { id: sendId, status: done.status || 'unknown', found, foundIn, confirmed: !!done.confirmed, recipients: done.recipients || [] } };
   }
 }
