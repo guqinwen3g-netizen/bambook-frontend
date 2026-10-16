@@ -12,7 +12,10 @@ import type {MistCreditDocumentIssue} from './mistCreditDocuments';
 import {developmentNoticeBlocker,developmentNoticeContent,developmentNoticeFingerprint,developmentNoticeNo,type DevNoticeArtifact,type DevNoticeRecord,type DevNoticeSnapshot} from './mistDevelopmentNotice';
 import type {MistReviewTask} from './mistReview';
 import {confirmationNeedsForms,developmentVersionSamples,sampleDispatchBlocker,sampleFormBlocker,sampleRef,type MistSampleDispatch,type MistSampleFee,type MistSampleRef} from './mistDevelopmentSamples';
-import {createOrderGovernance,applyOrderGovernanceCommand,orderGovernancePermission,getOrderGovernanceReviews,assertOrderApproved,type OrderGovernanceFields,type OrderGovernanceCommand,type OrderGovernanceInput} from './mistOrderGovernance';
+import {assertOrderLineSource,type OrderLineSource} from './mistOrderSource';
+import {lineQuantityFromBreakdown,type OrderLineBreakdown} from './mistOrderBreakdown';
+import {isLineClosed} from './mistOrderClosure';
+import {createOrderGovernance,applyOrderGovernanceCommand,orderGovernancePermission,getOrderGovernanceReviews,assertOrderApproved,assertOrderWritable,assertOrderNotTerminated,type OrderGovernanceFields,type OrderGovernanceCommand,type OrderGovernanceInput} from './mistOrderGovernance';
 import {createOrderFundingState,applyOrderFundingCommand,orderFundingCommandPermission,assertOrderDepositCovered,assertOrderFundingIntegrity,type OrderFundingState,type OrderFundingCommand} from './mistOrderFunding';
 import {createPayablesState,applyPayablesCommand,payablesCommandPermission,getPayableReviews,type PayablesState,type PayablesCommand} from './mistPayables';
 
@@ -196,7 +199,7 @@ export type MistState = {
   /** 所有者明确授权进入本空间的账号（只管进入，不授予业务权限）与授权历史。 */
   memberIds?:string[]; members?:MistWorkspaceMember[]; memberLog?:MistWorkspaceMemberLog[];
 };
-export type MistOrderInput = { type: 'garment' | 'fabric'; customerId: string; season: string; currency: string; due: string; owner: string; governance?:OrderGovernanceInput; lines: Array<Omit<MistOrderLine, 'id' | 'orderId' | 'made' | 'qc'>> };
+export type MistOrderInput = { type: 'garment' | 'fabric'; customerId: string; season: string; currency: string; due: string; owner: string; governance?:OrderGovernanceInput; lines: Array<Omit<MistOrderLine, 'id' | 'orderId' | 'made' | 'qc'> & OrderLineSource & {breakdown?:OrderLineBreakdown}> };
 export type MistCommand = FulfillmentCommand | MarketCommand | PlatformCommand | EmailCommand | CrmCommand | OrderGovernanceCommand | OrderFundingCommand | PayablesCommand
   | { type: 'development.saveDraft'; payload: { draftId?: string; values: DevelopmentValues; fileIds: string[] } }
   | { type: 'development.submit'; payload: { draftId?: string; values: DevelopmentValues; fileIds: string[] } }
@@ -262,6 +265,10 @@ export class MistCommandError extends Error {
 /** Existing unverified records remain readable, but cannot authorize new fulfillment. */
 export function assertMistOrderApproved(state:MistState,orderId:string):MistOrder {
   return assertOrderApproved(state,orderId);
+}
+/** BB-ORD-7：已取消 / 作废 / 取消审批中订单不能新建采购或生产安排（草稿也不行）。 */
+export function assertMistOrderOpen(state:MistState,orderId:string):void {
+  const order=state.orders.find(o=>o.id===orderId);if(order)assertOrderNotTerminated(order as never);
 }
 export function assertMistOrderDeposit(state:MistState,orderId:string):void {
   assertMistOrderApproved(state,orderId);assertOrderDepositCovered(state,orderId);
@@ -521,15 +528,18 @@ function recalculate(state: MistState) {
     const shipments=(state.fulfillment?.shipments||[]).filter(s=>s.lines.some(line=>line.orderId===order.id)&&s.state!=='cancelled');
     const departed=shipments.filter(s=>s.state==='departed');
     if(order.governance&&order.governance.status!=='approved'){
-      order.state=order.governance.status==='pending'?'待主单审批':order.governance.status==='rejected'?'主单已退回':'订单草稿';order.tone=order.governance.status==='pending'?'warn':order.governance.status==='rejected'?'bad':'neutral';
+      // BB-ORD-7：已作废 / 已取消为终止状态
+      const gs=order.governance.status;order.state=gs==='pending'?'待主单审批':gs==='rejected'?'主单已退回':gs==='void'?'已作废':gs==='cancelled'?'已取消':'订单草稿';order.tone=gs==='pending'?'warn':gs==='rejected'||gs==='cancelled'?'bad':'neutral';
     }else if(departed.length){
-      const complete=rows.every(line=>departed.reduce((sum,s)=>sum+s.lines.filter(item=>item.lineId===line.id).reduce((n,item)=>n+Math.round(item.quantity*10000),0),0)>=Math.round(line.qty*10000));
+      const complete=rows.every(line=>isLineClosed(line)||departed.reduce((sum,s)=>sum+s.lines.filter(item=>item.lineId===line.id).reduce((n,item)=>n+Math.round(item.quantity*10000),0),0)>=Math.round(line.qty*10000));
       const unpaid=state.invoices.some(invoice=>invoice.orderId===order.id&&invoice.open>0);
-      order.state=complete?(unpaid?'待收尾款':'已出运'):'部分出运';order.tone=complete?(unpaid?'warn':'ok'):'accent';
+      // BB-ORD-5：所有条目已出足或已结案 → 履约完成（应收仍有余额时保留"待收尾款"提示，财务不在此自动变更）
+      order.state=complete?(unpaid?'待收尾款':'履约完成'):'部分出运';order.tone=complete?(unpaid?'warn':'ok'):'accent';
     }else if(shipments.length){order.state='出运准备中';order.tone='accent';}
     else if(jobs.some(job=>job.sourcePurchaseId)){
       order.state=jobs.every(job=>job.col==='done')?'待出运':jobs.some(job=>job.col==='qc')?'待终期 QC':'生产中';order.tone='accent';
     }else if((state.fulfillment?.purchases||[]).some(p=>p.orderId===order.id&&p.state==='approved')){order.state='备料中';order.tone='neutral';}
+    if(order.governance?.status==='approved'&&order.governance.cancellation?.status==='pending'){order.state='取消审批中';order.tone='warn';}
   }
 }
 export function createMistState(context: MistContext, seed: 'demo'|'empty' = 'demo', onDemoSeedFailures?: (failures: Array<{step:string;message:string}>) => void): MistState {
@@ -873,12 +883,15 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
       const id=context.id(),code='SO-'+(p.type==='fabric'?'F':'G')+'-'+context.now.slice(0,4)+'-'+String(state.orders.length+1).padStart(4,'0'),currency=text(p.currency,'币种',true,3).toUpperCase();
       if(!/^[A-Z]{3}$/.test(currency))throw new MistCommandError('VALIDATION','币种格式无效');
       const order:MistOrder={id,code,type:p.type,customerId:c?.id||'',customer:c?.name||governance.contract.receiver||'内部接收方待填写',governance,season:text(p.season,'季节'),lines:0,qty:0,amount:0,currency,due:date(p.due),progress:0,state:'订单草稿',tone:'neutral',owner:text(p.owner,'负责人'),img:p.lines[0].img||'coat',checklist:['拟发范围确认','收货与贸易条款确认','收款条件核对'].map((label,index)=>({id:id+'-check-'+index,label,done:false,note:''})),handoffAt:null,createdAt:context.now,updatedAt:context.now};
+      // BB-ORD-2：来源与条目同一命令写入，先全部校验再落库，任何一条不合规整单拒绝
+      const scope={type:p.type,customerId:c?.id||'',internal:governance.contract.kind==='internal'};
+      const rows=(p.lines as MistOrderInput['lines']).map((row,index)=>{const name=text(row.name,'品名'),fromBreakdown=lineQuantityFromBreakdown(p.type,row,`条目「${name||index+1}」`),qty=fromBreakdown.qty??positive(row.qty,'数量'),price=positive(row.price,'单价',true);lineAmount(qty,price);return {...(fromBreakdown.breakdown?{breakdown:fromBreakdown.breakdown}:{}),name,style:text(row.style,'款号'),img:['coat','blazer','suit','clay'].includes(row.img)?row.img:'coat' as MistImage,qty,unit:text(row.unit,'单位',true,20),price,source:assertOrderLineSource(state,scope,row,name||String(index+1))};});
       state.orders.unshift(order);
-      for(const row of p.lines){const qty=positive(row.qty,'数量'),price=positive(row.price,'单价',true);lineAmount(qty,price);state.orderLines.push({id:context.id(),orderId:id,name:text(row.name,'品名'),style:text(row.style,'款号'),img:['coat','blazer','suit','clay'].includes(row.img)?row.img:'coat',qty,unit:text(row.unit,'单位',true,20),price,made:0,qc:0});}
+      for(const {source,...row} of rows)state.orderLines.push({id:context.id(),orderId:id,...row,made:0,qc:0,...source} as MistOrderLine);
       event(state,context,'order',id,'创建订单 '+code,{view:'orders/detail',id});result={id,orderId:id};break;
     }
     case 'order.update': {
-      const o=find(state.orders,p.orderId,'订单');
+      const o=find(state.orders,p.orderId,'订单');assertOrderWritable(o);
       if(o.governance?.status==='pending'||o.governance?.changeDraft?.status==='pending')throw new MistCommandError('PRECONDITION','审批中的订单内容已锁定');
       if((p.due!==undefined&&p.due!==o.due||p.season!==undefined&&p.season!==o.season)&&(!o.governance||o.governance.status==='approved'))throw new MistCommandError('PRECONDITION','正式商业条款变更须保存变更草稿并重新审批');
       if(p.due!==undefined)o.due=date(p.due);if(p.season!==undefined)o.season=text(p.season,'季节');if(p.owner!==undefined)o.owner=text(p.owner,'负责人');o.updatedAt=context.now;event(state,context,'order',o.id,'更新订单');result={orderId:o.id};break;

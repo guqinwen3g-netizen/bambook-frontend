@@ -10,7 +10,7 @@ import { emptyFabricRequirements } from './mistDevelopmentDomain';
 import { demoFileRecord, type DemoFileTemplate } from './mistDemoFiles';
 import { riskSignals } from './mistRisk';
 
-export const DEMO_SEED_VERSION = 11;
+export const DEMO_SEED_VERSION = 12;
 export type DemoSeedFailure = { step: string; message: string };
 
 const DAY = 86400000;
@@ -94,6 +94,7 @@ export function seedDemoModules(initial: MistState, context: MistContext): { sta
   if (fabricDevId) {
     run('fabric sample returned', { type: 'development.recordSample', payload: { devId: fabricDevId, versionId: fabricVersionId, sample: 'HS-2701-L1', quantity: 3, form: '米样', unit: '米', location: '面料架 B-2', color: '燕麦色', returnedAt: at(-6) } });
     run('fabric QC', { type: 'development.recordQc', payload: { devId: fabricDevId, versionId: fabricVersionId, domain: 'fabric', qc: { result: 'pass', reviewer: '许言', reviewedAt: at(-4, 10), report: 'QC-F-2026-0031', opinion: '克重、门幅在公差内；起球 4 级，达到目标。', fabricMeasurements: [{ property: '克重', actual: 418, unit: 'g/m²' }, { property: '门幅', actual: 148, unit: 'cm' }] } } }, inspector);
+    run('fabric customer confirmation', { type: 'development.confirm', payload: { devId: fabricDevId, versionId: fabricVersionId, result: 'approved', confirmer: 'Emma Clarke', organization: c0.name, confirmedAt: at(-3), basis: '软件演示确认记录', originalText: '软件演示：已确认本版米样，可按此面料版本报价下单。' } });
   }
 
   /* ───────── 数字档案 ───────── */

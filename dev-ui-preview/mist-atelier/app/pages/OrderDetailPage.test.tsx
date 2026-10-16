@@ -198,10 +198,12 @@ it('keeps approved prices effective until the proposed line change is approved',
 });
 
 it('retains edited input when an existing fulfillment fact prevents an approved commercial change',async()=>{
+  // BB-ORD-4：开工后允许改价改量，但新数量不得低于已完工；被服务端拒绝时保留输入
   lineEditorFixture('approved');store.state!.productions.push({id:'production-existing',code:'P',orderId,lineId:store.state!.orderLines[0].id,order:store.state!.orders[0].code,name:'现有生产',factory:'实际工厂',qty:10,due:'2026-10-30',pct:0,img:'coat',col:'cut'});
-  render();await openLineEditor();await lineInput('销售单价','12');await lineInput('变更原因','客户修订PO');await act(async()=>getByRole(document.body,'button',{name:'保存条目'}).click());
-  expect(getByRole(document.body,'dialog',{name:'编辑订单条目'})).toBeTruthy();expect((getByLabelText(document.body,'销售单价') as HTMLInputElement).value).toBe('12');
-  expect(document.body.textContent).toContain('已有履约或票据事实');expect(store.state!.orderLines[0].price).toBe(11);expect(store.state!.orders[0].governance?.changeDraft).toBeUndefined();
+  store.state!.fulfillment.productionFacts.push({productionId:'production-existing',sizes:[],revision:1,completion:{id:'c',quantity:6,sizeQuantities:[],date:'2026-10-20',at:context.now,actor:'厂长',evidence:'完工单',fileIds:[]}});
+  render();await openLineEditor();await lineInput('订单数量','3');await lineInput('销售单价','12');await lineInput('变更原因','客户修订PO');await act(async()=>getByRole(document.body,'button',{name:'保存条目'}).click());
+  expect(getByRole(document.body,'dialog',{name:'编辑订单条目'})).toBeTruthy();expect((getByLabelText(document.body,'销售单价') as HTMLInputElement).value).toBe('12');expect((getByLabelText(document.body,'订单数量') as HTMLInputElement).value).toBe('3');
+  expect(document.body.textContent).toContain('低于下限 6 件');expect(store.state!.orderLines[0].price).toBe(11);expect(store.state!.orders[0].governance?.changeDraft).toBeUndefined();
 });
 
 it.each(['contract-first','header-first'] as const)('merges price, amended contract and header due into one pending proposal in %s order',async sequence=>{
@@ -302,4 +304,75 @@ it('shows a quantity-only difference without labelling unchanged unit price or c
   store.state=applyMistCommand(state,{type:'order.governance.saveDraft',payload:{orderId,input:order.governance!.contract,lines:[{id:line.id,name:line.name,style:line.style,img:line.img,qty:5,unit:'件',price:12}],reason:'客户增加一件'}},actor).state;
   render();const table=getByRole(host,'table',{name:'订单变更前后差异'}),quantity=within(table).getByRole('row',{name:/ROUND-01 · 数量/});
   expect(quantity.textContent).toContain('4 件');expect(quantity.textContent).toContain('5 件');expect(table.textContent).not.toContain('ROUND-01 · 单价');expect(table.textContent).not.toContain('PO / 合同号');expect(table.textContent).not.toContain('交期');
+});
+
+it('BB-ORD-3 edits a colour × size breakdown, applies it to a draft, and lists approved changes cell by cell',async()=>{
+  const actor=lineEditorFixture('draft');render();await openLineEditor();
+  await act(async()=>getByRole(document.body,'button',{name:'按颜色 × 尺码填写数量'}).click());
+  await lineInput('颜色 1','藏青');await lineInput('藏青 · S 数量','4');await lineInput('藏青 · M 数量','6');
+  expect((getByLabelText(document.body,'订单数量') as HTMLInputElement).disabled).toBe(true);
+  expect((getByLabelText(document.body,'订单数量') as HTMLInputElement).value).toBe('10');
+  await act(async()=>getByRole(document.body,'button',{name:'保存条目'}).click());
+  const saved=store.state!.orderLines[0] as unknown as {qty:number;breakdown:{sizes:string[];rows:Array<{color:string;quantities:number[]}>}};
+  expect(saved.qty).toBe(10);expect(saved.breakdown).toEqual({kind:'garment',sizes:['S','M','L','XL'],rows:[{color:'藏青',quantities:[4,6,0,0]}]});
+  expect(host.textContent).toContain('1 色 × 4 码');
+  store.state=applyMistCommand(store.state!,{type:'order.governance.submit',payload:{orderId}},actor).state;
+  store.state=applyMistCommand(store.state!,{type:'order.governance.decide',payload:{id:orderId,decision:'approved',note:'核对'}},{...actor,actorId:'leader'}).state;
+  render();await openLineEditor();
+  await lineInput('藏青 · M 数量','8');await lineInput('变更原因','客户追加 M 码');
+  await act(async()=>getByRole(document.body,'button',{name:'保存条目'}).click());
+  expect(store.state!.orderLines[0].qty).toBe(10);
+  expect(store.state!.orders[0].governance?.changeDraft?.lines[0].qty).toBe(12);
+  const diff=getByRole(host,'table',{name:'订单变更前后差异'});
+  const row=getByRole(diff,'row',{name:/ROUND-01 · 藏青 · M/});
+  expect(row.textContent).toContain('6');expect(row.textContent).toContain('8');
+});
+
+it('BB-ORD-4 lets a started order change quantity, shows the floor and an impact list with links to production and shipment',async()=>{
+  lineEditorFixture('approved',10,11);const state=store.state!,lineId=state.orderLines[0].id;
+  state.productions.push({id:'job',code:'PR-1',orderId,lineId,order:state.orders[0].code,name:'精确金额条目',factory:'一厂',qty:10,due:'2026-11-20',pct:60,img:'coat',col:'sew'});
+  state.fulfillment.productionFacts.push({productionId:'job',sizes:[],revision:1,completion:{id:'c1',quantity:6,sizeQuantities:[],date:'2026-11-01',at:context.now,actor:'厂长',evidence:'完工单',fileIds:[]}});
+  state.fulfillment.shipments.push({id:'sh',code:'SH-1',customerId:'customer-a',customer:'客户甲',domain:'garment',consignee:'客户甲',mode:'sea',portOfLoading:'上海',portOfDischarge:'汉堡',incoterm:'FOB',plannedDate:'2026-11-25',booking:'',lines:[{lineId,orderId,productionId:'job',quantity:5,factoryConfirmedAt:context.now}],note:'',fileIds:[],state:'preparing',requestedBy:'单证',requesterId:'docs',createdAt:context.now} as never);
+  render();await openLineEditor();
+  expect(document.body.querySelector('[data-line-floor]')!.textContent).toContain('不得低于 6 件（已完工 6 · 已排出运 5）');
+  await lineInput('订单数量','5');await lineInput('变更原因','客户减量');
+  await act(async()=>getByRole(document.body,'button',{name:'保存条目'}).click());
+  expect(document.body.textContent).toContain('低于下限 6 件');
+  await lineInput('订单数量','8');
+  await act(async()=>getByRole(document.body,'button',{name:'保存条目'}).click());
+  expect(store.state!.orders[0].governance?.changeDraft?.lines[0].qty).toBe(8);expect(store.state!.orderLines[0].qty).toBe(10);
+  const impact=getByRole(host,'region',{name:'影响清单'});
+  expect(impact.textContent).toContain('10 → 8 件');expect(impact.textContent).toContain('需同步调整生产分配');
+  await act(async()=>within(impact).getByRole('button',{name:/生产 PR-1/}).click());
+  expect(go).toHaveBeenLastCalledWith('production-board',undefined,{productionId:'job',orderLineId:lineId});
+  await act(async()=>within(impact).getByRole('button',{name:/出运 SH-1/}).click());
+  expect(go).toHaveBeenLastCalledWith('shipments','sh');
+});
+
+it.each([[980,'确认结案','closed','已结案（实际 980 / 订单 1000，客户接受实际数量）'],[950,'提交结案审批','pending','结案待审批（实际 950 / 订单 1000，客户接受实际数量）']] as const)('BB-ORD-5 closes a ±3%% line with %i departed (%s) via the line fulfillment panel',async(departed,submitLabel,status,label)=>{
+  lineEditorFixture('approved',1000,11);const state=store.state!,lineId=state.orderLines[0].id,g=state.orders[0].governance!;
+  for(const contract of [g.contract,g.approvedSnapshot!.contract])Object.assign(contract,{overPercent:3,shortPercent:3});
+  state.fulfillment.shipments.push({id:'sh',code:'SH-1',customerId:'customer-a',customer:'客户甲',domain:'garment',consignee:'客户甲',mode:'sea',portOfLoading:'上海',portOfDischarge:'汉堡',incoterm:'FOB',plannedDate:'2026-11-25',booking:'',lines:[{lineId,orderId,quantity:departed,factoryConfirmedAt:context.now}],note:'',fileIds:[],state:'departed',requestedBy:'单证',requesterId:'docs',createdAt:context.now} as never);
+  render();await act(async()=>getByRole(host,'row',{name:/精确金额条目/}).click());
+  expect(document.body.querySelector('[data-line-tolerance]')!.textContent).toBe('溢装 +3% / 短装 −3%');
+  expect(document.body.querySelector('[data-line-range]')!.textContent).toMatch(/970.*1,?030/);
+  expect(document.body.querySelector('[data-line-verdict]')!.getAttribute('data-line-verdict')).toBe(departed===980?'within':'short');
+  await act(async()=>getByRole(document.body,'button',{name:'按实际完工结案'}).click());
+  await act(async()=>getByRole(document.body,'button',{name:submitLabel}).click());
+  expect(document.body.textContent).toContain('请写明结案原因');
+  await lineInput('结案原因','客户接受实际数量');
+  await act(async()=>getByRole(document.body,'button',{name:submitLabel}).click());
+  expect((store.state!.orderLines[0] as unknown as {closure:{status:string}}).closure.status).toBe(status);
+  expect(document.body.querySelector('[data-line-closure]')!.textContent).toBe(label);
+  expect((getByRole(document.body,'button',{name:'按实际完工结案'}) as HTMLButtonElement).disabled).toBe(true);
+});
+
+it('BB-ORD-6 shows the approved over-ship allowance and its approval record under 分批与尾数',async()=>{
+  lineEditorFixture('approved',1000,11);const state=store.state!,g=state.orders[0].governance!;
+  for(const contract of [g.contract,g.approvedSnapshot!.contract])Object.assign(contract,{overPercent:3,shortPercent:3});
+  (state.orderLines[0] as unknown as {overShips:unknown[]}).overShips=[{id:'os1',status:'approved',quantity:1050,ordered:1000,max:1030,excess:20,reason:'客户要求多发补损',requesterId:'sales',requesterName:'业务员',requestedAt:context.now,reviewerIds:['leader'],decidedBy:'leader',decidedName:'经理',decidedAt:context.now,note:'同意'}];
+  render();await act(async()=>getByRole(host,'row',{name:/精确金额条目/}).click());
+  expect(document.body.querySelector('[data-line-overship-approved]')!.textContent).toMatch(/累计可出 1,?050 件（超出溢装上限 20）/);
+  const record=getByRole(document.body,'list',{name:'超量出运审批记录'});
+  expect(record.textContent).toContain('已批准：累计可出 1050（溢装上限 1030，超出 20），客户要求多发补损；审批意见：同意');expect(record.textContent).toContain('业务员 → 经理');
 });

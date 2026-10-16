@@ -1,10 +1,11 @@
 /** Actual fulfillment records in the persisted Mist workspace. No fixture import. */
 import {developmentDomain} from './mistDevelopmentDomain';
-import { MistCommandError, lineAmount, mistMoneyMinor, assertMistOrderApproved, assertMistOrderDeposit, isActiveMistInvoice } from './mistWorkspace';
+import { MistCommandError, lineAmount, mistMoneyMinor, assertMistOrderApproved, assertMistOrderDeposit, assertMistOrderOpen, isActiveMistInvoice } from './mistWorkspace';
 import type { MistState, MistContext, MistCommandResult, MistQc, MistTarget, MistProduction } from './mistWorkspace';
 import type { MistReviewTask } from './mistReview';
 import { supplierBusinessDay, supplierUnavailableReason } from './mistSupplierStatus';
 import { relationHoldReason } from './mistRelationHold';
+import { assertOrderLineOpen, assertShipmentWithinTolerance } from './mistOrderClosure';
 import {applyClaimInventoryCommand,claimInventoryPermission,type ClaimInventoryCommand,type ClaimInventoryWarehouse,type ClaimReturnReceipt,type ClaimReceivedRecord} from './mistClaimInventory';
 export type FulfillmentSource = {
     kind: 'version';
@@ -788,6 +789,14 @@ function physicalCapacity(root: MistState, line: ShipmentLine): number {
 }
 function checkPhysicalReservation(root: MistState, line: ShipmentLine, excludeShipmentId?: string) { const capacity = physicalCapacity(root, line); const reserved = sum(root.fulfillment.shipments.filter(s => s.id !== excludeShipmentId && s.state !== 'cancelled').flatMap(s => s.lines.filter(l => l.lineId === line.lineId && l.productionId === line.productionId).map(l => l.quantity))); if (sum([reserved, line.quantity]) > capacity)
     fail('本次与已有预留超过该来源分支实际交付数量'); }
+/** 订单条款可能在排单后经审批更新，准备与离港时仍须按最新上限核对全部有效出运。 */
+function assertCurrentShipmentTolerance(root: MistState, shipment: FulfillmentShipment) {
+    for (const lineId of new Set(shipment.lines.map(line => line.lineId))) {
+        const line = get(root.orderLines, lineId, '来源条目'), order = get(root.orders, line.orderId, '订单');
+        const cumulative = sum(root.fulfillment.shipments.filter(item => item.state !== 'cancelled').flatMap(item => item.lines.filter(row => row.lineId === lineId).map(row => row.quantity)));
+        assertShipmentWithinTolerance(line, order.governance?.contract, cumulative);
+    }
+}
 function sourceQuality(root: MistState, line: ShipmentLine) {
     physicalCapacity(root, line);
     const production = root.productions.filter(p => p.lineId === line.lineId && p.id === line.productionId);
@@ -1024,6 +1033,7 @@ export function applyFulfillmentCommand(root: MistState, command: FulfillmentCom
         }
         case 'fulfillment.production.plan': {
             const branch = get(root.productions, p.productionId, '生产分支'), fact = productionFact(root, branch.id);
+            assertMistOrderOpen(root, branch.orderId);
             if (fact.release || fact.completion) fail('已放行生产不得改写计划尺码');
             fact.sizes = normalizeSizes(p.sizes, branch.qty, get(root.orders, branch.orderId, '订单').type === 'garment');
             fact.revision++;
@@ -1093,6 +1103,7 @@ export function applyFulfillmentCommand(root: MistState, command: FulfillmentCom
         }
         case 'fulfillment.procurement.save': {
             const s = source(root, { kind: 'orderLine', orderId: p.orderId, lineId: p.lineId }), order = get(root.orders, p.orderId, '订单');
+            assertMistOrderOpen(root, order.id);
             const existing = p.id ? get(f.purchases, p.id, '采购') : undefined;
             if (existing && !['draft', 'rejected'].includes(existing.state))
                 fail('已提交采购须退回后修订');
@@ -1297,7 +1308,7 @@ export function applyFulfillmentCommand(root: MistState, command: FulfillmentCom
                 fail('请先在来源订单登记合同收货方与分批条款');
             if (p.consignee !== firstTerms!.consignee || p.mode !== firstTerms!.mode)
                 fail('收货方或运输方式与来源合同不符');
-            const lines: ShipmentLine[] = p.lines.map((l: any) => { source(root, { kind: 'orderLine', orderId: l.orderId, lineId: l.lineId, productionId: l.productionId }); const order = assertMistOrderApproved(root, l.orderId), line = get(root.orderLines, l.lineId, '条目'), branches = root.productions.filter(job => job.lineId === line.id); const productionId = l.productionId || (branches.length === 1 ? branches[0].id : undefined); if (!productionId)
+            const lines: ShipmentLine[] = p.lines.map((l: any) => { source(root, { kind: 'orderLine', orderId: l.orderId, lineId: l.lineId, productionId: l.productionId }); const order = assertMistOrderApproved(root, l.orderId), line = get(root.orderLines, l.lineId, '条目'), branches = root.productions.filter(job => job.lineId === line.id); assertOrderLineOpen(line); const productionId = l.productionId || (branches.length === 1 ? branches[0].id : undefined); if (!productionId)
                 fail('请先建立并选择准确生产分支'); if (order.customerId !== first.customerId || order.type !== first.type)
                 fail('不同客户或业务域不能合票'); const terms = f.shippingTerms.find(t => t.orderId === order.id); if (!terms || terms.consignee !== firstTerms!.consignee || terms.mode !== firstTerms!.mode)
                 fail('合票条目的合同收货方或运输方式不同'); if (!order.handoffAt)
@@ -1309,6 +1320,7 @@ export function applyFulfillmentCommand(root: MistState, command: FulfillmentCom
                 const sourceLine = get(root.orderLines, lineId, '来源条目'), terms = f.shippingTerms.find(t => t.orderId === sourceLine.orderId)!;
                 const total = sum(lines.filter(l => l.lineId === lineId).map(l => l.quantity)), reserved = sum(f.shipments.filter(s => s.id !== old?.id && s.state !== 'cancelled').flatMap(s => s.lines.filter(l => l.lineId === lineId).map(l => l.quantity)));
                 const branches = root.productions.filter(branch => branch.lineId === lineId);
+                assertShipmentWithinTolerance(sourceLine, (root.orders.find(o => o.id === sourceLine.orderId) as any)?.governance?.contract, sum([total, reserved]));
                 if (!terms.partialAllowed) {
                     const finalTotal = sum(branches.map(branch => physicalCapacity(root, { orderId: branch.orderId, lineId, productionId: branch.id, quantity: 0, factoryConfirmedAt: '' })));
                     if (reserved > 0 || total !== finalTotal) fail('来源合同禁止分批，须一票覆盖整条最终已确认数量');
@@ -1367,6 +1379,7 @@ export function applyFulfillmentCommand(root: MistState, command: FulfillmentCom
                 if (sum(f.packing.filter(a => a.shipmentId === s.id && a.lineId === line.lineId && a.productionId === line.productionId).map(a => a.quantity)) !== line.quantity)
                     fail('装箱数量未匹配计划');
             }
+            assertCurrentShipmentTolerance(root, s);
             requiredShipmentDocuments(root, s);
             s.state = 'ready';
             audit(root, ctx, 'shipment', s.id, '单据准备完毕，返回业务发送', { view: 'shipments', id: s.id });
@@ -1390,6 +1403,7 @@ export function applyFulfillmentCommand(root: MistState, command: FulfillmentCom
             if (!f.customs.some(c => c.shipmentId === s.id && c.status === 'cleared'))
                 fail('出口清关尚未完成');
             s.lines.forEach(l => { assertMistOrderApproved(root, l.orderId); assertMistOrderDeposit(root, l.orderId); sourceQuality(root, l); requireSampleRole(root, get(root.productions, l.productionId!, '准确生产分支'), 'shipping', s.id); checkPhysicalReservation(root, l, s.id); });
+            assertCurrentShipmentTolerance(root, s);
             requiredShipmentDocuments(root, s);
             const at = instant(p.at, ctx, '实际离港/起飞时间');
             if (at < s.documentsSentAt!)

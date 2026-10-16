@@ -14,6 +14,7 @@ vi.mock('../runtime/auth', () => ({ useMistSession: () => ({ status: 'authentica
 import { OrderCreatePage } from './OrderCreatePage';
 import { OrderListPage } from './OrderListPage';
 import { currentLineStage, lineShipping, lineStages } from './orderLineTrack';
+import { OrderLineSourceValue } from './orderLineSource';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let host: HTMLElement, root: Root, sequence = 0;
@@ -46,7 +47,9 @@ it('carries a product archive source into the draft and stamps it on the created
   input('数量', '300'); input('单价 USD', '62'); await click(getByRole(host, 'button', { name: '下一步' }));
   input('交期', '2026-12-01'); await click(getByRole(host, 'button', { name: '下一步' })); await click(getByRole(host, 'button', { name: '下一步' }));
   await click(getByRole(host, 'button', { name: '创建订单草稿' }));
-  expect(store.run.mock.calls.map(call => call[0].type)).toEqual(['order.create', 'order.governance.saveDraft']);
+  // BB-ORD-2：来源随 order.create 一次写入，不再二次调用 order.governance.saveDraft
+  expect(store.run.mock.calls.map(call => call[0].type)).toEqual(['order.create']);
+  expect(store.run.mock.calls[0][0].payload.lines[0]).toMatchObject({ sourceProductId: 'prd-1', qty: 300 });
   const order = store.state!.orders[0], line = store.state!.orderLines.find(row => row.orderId === order.id) as { sourceProductId?: string; qty: number };
   expect(line.sourceProductId).toBe('prd-1'); expect(line.qty).toBe(300);
   expect(go).toHaveBeenCalledWith('orders/detail', order.id, { customerId: 'customer-a', section: 'garment' });
@@ -125,4 +128,47 @@ it('BB-QUO-4: blocks converting a quotation whose development version lacks requ
   const text = document.body.querySelector('[data-convert-blockers]')?.textContent || '';
   expect(text).toContain('版本来源大衣'); expect(text).toContain(version.label); expect(text).toContain('尚无需求方确认');
   expect(store.run).not.toHaveBeenCalled();
+});
+
+const versionFixture = (result: 'approved' | 'needs_adjustment', customerId = 'customer-a') => {
+  const s = store.state!;
+  s.devs.push({ id: 'dev-1', code: 'DEV-001', name: '羊毛大衣开发', style: 'CC-COAT-20', customerId, customer: '客户甲', img: 'coat', values: { domain: 'garment' }, versionIds: ['ver-1'] } as never);
+  s.versions.push({ id: 'ver-1', devId: 'dev-1', label: 'R1-A', factory: '甲厂', img: 'coat', confirmations: [{ id: 'c1', result }], archivedAt: null } as never);
+};
+async function createFromVersion() {
+  render({ view: 'orders/new', versionId: 'ver-1', customerId: 'customer-a', section: 'garment' }, <OrderCreatePage />);
+  input('季节 / 批次', 'AW27'); await click(getByRole(host, 'button', { name: '下一步' }));
+  input('数量', '120'); input('单价 USD', '50'); await click(getByRole(host, 'button', { name: '下一步' }));
+  input('交期', '2026-12-01'); await click(getByRole(host, 'button', { name: '下一步' })); await click(getByRole(host, 'button', { name: '下一步' }));
+  await click(getByRole(host, 'button', { name: '创建订单草稿' }));
+}
+
+it('BB-ORD-2 writes an approved development version source in one order.create and shows it on the line', async () => {
+  versionFixture('approved');
+  await createFromVersion();
+  expect(store.run.mock.calls.map(call => call[0].type)).toEqual(['order.create']);
+  const order = store.state!.orders[0], line = store.state!.orderLines.find(row => row.orderId === order.id)!;
+  expect(line).toMatchObject({ sourceDevId: 'dev-1', sourceVersionId: 'ver-1', qty: 120 });
+  act(() => root.render(<MistRoot><ToastProvider><OrderLineSourceValue state={store.state!} line={line} go={go} /></ToastProvider></MistRoot>));
+  const link = getByRole(host, 'button', { name: '开发案 DEV-001 · R1-A' });
+  await click(link);
+  expect(go).toHaveBeenLastCalledWith('development/detail', 'dev-1', { versionId: 'ver-1' });
+});
+
+it('BB-ORD-2 shows the server reason and creates nothing when the version is not approved by the customer', async () => {
+  versionFixture('needs_adjustment');
+  await createFromVersion();
+  expect(store.run.mock.calls.map(call => call[0].type)).toEqual(['order.create']);
+  expect(store.state!.orders).toHaveLength(0);
+  expect(host.textContent).toContain('尚未获得客户认可（需求方要求调整）');
+});
+
+it('BB-ORD-2 line detail shows a product archive source and a manual line without source', async () => {
+  const s = store.state!;
+  const line = { id: 'l', orderId: 'o', name: '大衣', style: 'C1', img: 'coat', qty: 1, unit: '件', price: 1, made: 0, qc: 0, sourceProductId: 'prd-1' } as never;
+  act(() => root.render(<MistRoot><ToastProvider><OrderLineSourceValue state={s} line={line} go={go} /></ToastProvider></MistRoot>));
+  await click(getByRole(host, 'button', { name: '产品档案 CC-COAT-14' }));
+  expect(go).toHaveBeenLastCalledWith('products', 'prd-1');
+  act(() => root.render(<MistRoot><ToastProvider><OrderLineSourceValue state={s} line={{ ...(line as object), sourceProductId: undefined } as never} go={go} /></ToastProvider></MistRoot>));
+  expect(host.textContent).toContain('手工新建 · 无来源记录');
 });

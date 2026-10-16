@@ -92,3 +92,24 @@ it('lets a business-only user record the customer dispatch without logistics act
   await click(getByRole(getByRole(document.body,'dialog'),'button',{name:'登记发送'}));
   expect(store.run).toHaveBeenCalledWith(expect.objectContaining({type:'fulfillment.shipments.sent',payload:expect.objectContaining({id:'s'})}));
 });
+
+it('BB-ORD-6 warns before saving a shipment above the over-ship cap and offers an over-ship request; short shipments are only a hint',async()=>{
+  const s=store.state!;s.orderLines[0].qty=1000;(s.orders[0] as any).governance={status:'approved',contract:{overPercent:3,shortPercent:3,incoterm:'FOB'}};
+  s.productions.push({id:'p',code:'PR-1',orderId:'o',lineId:'l',order:'SO-1',name:'大衣',factory:'工厂',qty:1050,due:'2026-11-01',pct:100,img:'coat',col:'done'});
+  s.fulfillment.shippingTerms.push({orderId:'o',consignee:'Cedar DC',partialAllowed:true,mode:'sea',confirmedAt:'2026-10-12',evidence:'合同'} as any);
+  s.fulfillment.shipments.push(shipment('a',{lines:[{orderId:'o',lineId:'l',productionId:'p',quantity:1000,factoryConfirmedAt:'2026-10-09'}]}));
+  render();await click(getByRole(host,'button',{name:'新建出运'}));
+  const select=getByRole(host,'combobox',{name:'来源条目 1'}) as HTMLSelectElement;
+  act(()=>{select.value='production:p';select.dispatchEvent(new Event('change',{bubbles:true}));});
+  const qty=host.querySelector('input[type="number"]') as HTMLInputElement;typeInto(qty,'50');
+  const over=host.querySelector('[data-over-ship="l"]')!;expect(host.textContent).toContain('超出允许溢装，须经理审批');expect(over.textContent).toContain('累计出运 1050');expect(over.textContent).toContain('溢装上限 1030');expect(over.textContent).toContain('超出 20');
+  expect(host.querySelector('.mist-banner p p, .mist-banner p div')).toBeNull();
+  const request=getByRole(host,'button',{name:'发起超量出运申请'}) as HTMLButtonElement;expect(request.disabled).toBe(true);
+  typeInto(getByRole(host,'textbox',{name:'超量原因 COAT-1'}) as HTMLTextAreaElement,'客户要求多发补损');
+  await click(request);
+  expect(store.run).toHaveBeenCalledWith({type:'order.governance.requestOverShip',payload:{orderId:'o',lineId:'l',quantity:1050,reason:'客户要求多发补损'}});
+  expect(host.textContent).toContain('已发起超量出运申请');
+  await click(getByRole(host,'button',{name:'下一步'}));expect(host.textContent).toContain('请先发起超量出运申请并等待批准');
+  s.fulfillment.shipments[0].lines[0].quantity=900;typeInto(qty,'20');
+  expect(host.querySelector('[data-over-ship]')).toBeNull();expect(host.querySelector('[data-short-ship="l"]')!.textContent).toContain('低于短装下限 970');expect(host.textContent).toContain('本条目预计短装');
+});
