@@ -59,7 +59,8 @@ function fixture(requireAuth=false) {
     { id: 'inactive-child', parentId: 'test-dept', status: 'inactive' },
     { id: 'unrelated-child', parentId: 'other-root', status: 'active' }];
   const prisma:any={
-    $queryRaw:vi.fn(async(query:any)=>query.sql.includes('"OrderLine"')?[{id:line.id}]:[{id:order.id}]),
+    // Accepts both Prisma.sql objects and tagged-template calls (strings array).
+    $queryRaw:vi.fn(async(query:any)=>(Array.isArray(query)?query.join('?'):query.sql).includes('"OrderLine"')?[{id:line.id}]:[{id:order.id}]),
     userAccount:{findFirst:vi.fn(async(args:any)=>{authorityReads.push({operation:'userAccount.findFirst',args});return current;}),
       findUnique:vi.fn(async({where,select}:any)=>{authorityReads.push({operation:'userAccount.findUnique',args:{where,select}});return matches(current,where)?projectCurrent(current,select):null;})},
     userPermissionOverrides:{findMany:vi.fn(async(args:any)=>{authorityReads.push({operation:'userPermissionOverrides.findMany',args});return [];})},
@@ -77,7 +78,7 @@ function fixture(requireAuth=false) {
       updateMany:vi.fn(async({where,data}:any)=>{if(!matches({...line,order},where))return {count:0};line={...line,...data};return {count:1};}),delete:vi.fn(async()=>line)},
     entityReference:{upsert:vi.fn(async()=>({})),findMany:vi.fn(async()=>[]),update:vi.fn(async()=>({}))},
     entityLink:{upsert:vi.fn(async()=>({})),count:vi.fn(async()=>0),findMany:vi.fn(async()=>[]),update:vi.fn(async()=>({}))},
-    productAsset:{findUnique:vi.fn(async()=>({id:'ASSET-SYNTHETIC',sku:'SKU-SYNTHETIC',name:'Synthetic asset',mainCategory:'fabric',fabricProfile:null,garmentProfile:null})),findMany:vi.fn(async()=>[])},
+    productAsset:{findUnique:vi.fn(async()=>({id:'ASSET-SYNTHETIC',sku:'SKU-SYNTHETIC',name:'Synthetic asset',mainCategory:'fabric',fabricProfile:{id:'FABRIC-PROFILE-SYNTHETIC',deletedAt:null,millOrganizationId:null},garmentProfile:null})),findMany:vi.fn(async()=>[])},
     fabricProfile:{findMany:vi.fn(async()=>[])},
     fabricCustomerCode:{findMany:vi.fn(async()=>[])},
     // This fixture selects an independent/manual asset, with no development
@@ -107,6 +108,13 @@ afterEach(async context=>recordAuthorityFixtureProof('currentOrderLineWriteAcces
 const send=(f:ReturnType<typeof fixture>,action:typeof actions[number],token?:string)=>{
   const req=(request(f.app) as any)[action.method]('/order-lines'+action.path);if(token)req.set('Authorization','Bearer '+token);return req.send(action.body);
 };
+/** lockConfirmedFabricSources deliberately reads lock hints (by id) before the
+ * Order lock to keep the global lock order; hints are never permission and
+ * nothing is returned. The authorized source resolution (asset + profiles) must
+ * still not run after a denial. */
+function noSourceResolution(f:ReturnType<typeof fixture>) {
+  expect(f.prisma.productAsset.findUnique.mock.calls.filter((call:any[])=>call[0]?.include)).toEqual([]);
+}
 function noWrite(f:ReturnType<typeof fixture>) {
   expect(f.prisma.orderLine.create).not.toHaveBeenCalled();expect(f.prisma.orderLine.update).not.toHaveBeenCalled();expect(f.prisma.orderLine.delete).not.toHaveBeenCalled();
   expect(f.prisma.orderLine.updateMany).not.toHaveBeenCalled();
@@ -156,7 +164,7 @@ describe.each(actions)('OrderLines $name current authority',action=>{
   });
   it('manager cannot guess a line/PO belonging to an unrelated customer',async()=>{
     const f=fixture();f.setUser(account([action.scope],'role-sales-manager'));const r=await send(f,action,actorToken());expect(r.status).toBe(404);noWrite(f);
-    if(action.name==='create')expect(f.prisma.order.findFirst.mock.calls[0][0].where.AND[0].OR).toBeDefined();
+    if(action.name==='create'){expect(f.prisma.order.findMany.mock.calls[0][0].where.AND[0].OR).toBeDefined();expect(f.prisma.order.findFirst).not.toHaveBeenCalled();}
     else expect(f.prisma.orderLine.findFirst.mock.calls[0][0].where.order.AND[0].OR).toBeDefined();
     if(action.name==='version reference')expect(f.prisma.productAsset.findUnique).not.toHaveBeenCalled();
   });
@@ -200,7 +208,7 @@ describe('version reference single-transaction contract',()=>{
   });
   it('current write revocation before the transaction denies before reading source or mutating',async()=>{
     const f=fixture();f.beforeTransaction(()=>f.setUser(account(['orders:read'])));
-    const r=await send(f,actions[2],actorToken());expect(r.status).toBe(403);noWrite(f);expect(f.prisma.productAsset.findUnique).not.toHaveBeenCalled();
+    const r=await send(f,actions[2],actorToken());expect(r.status).toBe(403);noWrite(f);noSourceResolution(f);
   });
   it('account deactivation before the transaction is not replaced by the earlier loaded actor',async()=>{
     const f=fixture();f.beforeTransaction(()=>f.setUser({...account(),status:'inactive'}));
@@ -208,11 +216,11 @@ describe('version reference single-transaction contract',()=>{
   });
   it('personal grant loading failure inside the transaction remains 503 with no write',async()=>{
     const f=fixture();f.beforeTransaction(()=>f.prisma.userPermissionOverrides.findMany.mockRejectedValue(Error('Synthetic transaction grant failure')));
-    const r=await send(f,actions[2],actorToken());expect(r.status).toBe(503);noWrite(f);expect(f.prisma.productAsset.findUnique).not.toHaveBeenCalled();
+    const r=await send(f,actions[2],actorToken());expect(r.status).toBe(503);noWrite(f);noSourceResolution(f);
   });
   it('TeamShare revocation before the transaction rechecks the parent scope with no reader cache',async()=>{
     const f=fixture();f.setUser(account(['orders:write'],'role-sales-manager'));f.shareCustomer();f.beforeTransaction(()=>f.revokeSharedCustomer());
-    const r=await send(f,actions[2],actorToken());expect(r.status).toBe(404);noWrite(f);expect(f.prisma.productAsset.findUnique).not.toHaveBeenCalled();
+    const r=await send(f,actions[2],actorToken());expect(r.status).toBe(404);noWrite(f);noSourceResolution(f);
     expect(f.prisma.teamDataGrant.findMany).toHaveBeenCalledTimes(2);
   });
   it('serialization conflict cannot emit a successful version-change event',async()=>{

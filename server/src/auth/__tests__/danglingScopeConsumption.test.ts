@@ -113,7 +113,6 @@ const EXEMPT: ReadonlyArray<{ scope: string; reason: Reason; note: string }> = [
   { scope: 'reports:admin', reason: 'no-scope-enforcement', note: '仅在 permissionGuard.WRITE_SCOPE_EXACT（高危分类），无业务强制点' },
   { scope: 'relations:admin', reason: 'no-scope-enforcement', note: '同上' },
   { scope: 'emails:admin', reason: 'no-scope-enforcement', note: '同上' },
-  { scope: 'bom:admin', reason: 'no-scope-enforcement', note: '同上（注意：有测试断言 QC 角色持有本码，但无路由消费）' },
   { scope: 'customs:admin', reason: 'no-scope-enforcement', note: '同上（单证模板/签章配置实际未按本码把关）' },
   { scope: 'pricing:admin', reason: 'no-scope-enforcement', note: '同上' },
 
@@ -123,14 +122,12 @@ const EXEMPT: ReadonlyArray<{ scope: string; reason: Reason; note: string }> = [
   { scope: 'orders:approve:change_price', reason: 'ui-label-only', note: '审批走 approvals/ 内核；本码仅 UI 能力标签（口径 B1，2026-09-17 业务方拍板）' },
   { scope: 'orders:approve:cancel', reason: 'ui-label-only', note: '审批走 approvals/ 内核；本码仅 UI 能力标签（口径 B1，2026-09-17 业务方拍板）' },
   { scope: 'quotations:approve', reason: 'ui-label-only', note: '审批走 approvals/ 内核；本码仅 UI 能力标签（口径 B1，2026-09-17 业务方拍板）' },
-  { scope: 'procurement:approve', reason: 'ui-label-only', note: '审批走 approvals/ 内核；本码仅 UI 能力标签（口径 B1，2026-09-17 业务方拍板）' },
   { scope: 'shipments:approve', reason: 'ui-label-only', note: '审批走 approvals/ 内核；本码仅 UI 能力标签（口径 B1，2026-09-17 业务方拍板）' },
   { scope: 'knowledge:approve', reason: 'ui-label-only', note: '审批走 approvals/ 内核；本码仅 UI 能力标签（口径 B1，2026-09-17 业务方拍板）' },
   { scope: 'invoices:approve:writeoff', reason: 'ui-label-only', note: '审批走 approvals/ 内核；本码仅 UI 能力标签（口径 B1，2026-09-17 业务方拍板）' },
   { scope: 'vouchers:approve:pay_lt5', reason: 'ui-label-only', note: '审批走 approvals/ 内核；本码仅 UI 能力标签（口径 B1，2026-09-17 业务方拍板）' },
   { scope: 'vouchers:approve:pay_gt5', reason: 'ui-label-only', note: '审批走 approvals/ 内核；本码仅 UI 能力标签（口径 B1，2026-09-17 业务方拍板）' },
   { scope: 'vouchers:approve:pay_new_supplier', reason: 'ui-label-only', note: '审批走 approvals/ 内核；本码仅 UI 能力标签（口径 B1，2026-09-17 业务方拍板）' },
-  { scope: 'finance:payment_request:approve', reason: 'ui-label-only', note: '审批走 approvals/ 内核；本码仅 UI 能力标签（口径 B1，2026-09-17 业务方拍板）' },
 ];
 
 /** 已知被强制的码 —— 用于**阳性对照**，防止扫描逻辑退化成恒真/恒假 */
@@ -350,9 +347,10 @@ describe('★ 专项：aftersales 三码 —— read/write 门禁与 approve 条
     const entry = EXEMPT.find((e) => e.scope === 'aftersales:approve');
     expect(entry).toBeUndefined();
     expect(consumedScopes().has('aftersales:approve')).toBe(true);
-    const source = fs.readFileSync(path.join(REPO, 'components/ClaimManager.tsx'), 'utf8');
-    expect(source).toContain("hasPermission('aftersales:approve')");
-    expect(source).toContain('/approve');
+    // The legacy components/ClaimManager.tsx was removed with the old UI; the
+    // current consumer is the Mist claim-coordination command gate (waiver).
+    const source = fs.readFileSync(path.join(SRC, 'shared/mistClaimCoordination.ts'), 'utf8');
+    expect(source).toContain("if (type === 'platform.claim.recovery.waive') return 'aftersales:approve';");
   });
 
   it('read/write 的消费点确实在 claims 模块（而不是被别处"假装"消费）', () => {
@@ -386,19 +384,17 @@ describe('★ 专项：审批权限码 = UI 能力标签（口径 B1）', () => 
     'orders:approve:change_price',
     'orders:approve:cancel',
     'quotations:approve',
-    'procurement:approve',
     'shipments:approve',
     'knowledge:approve',
     'invoices:approve:writeoff',
     'vouchers:approve:pay_lt5',
     'vouchers:approve:pay_gt5',
     'vouchers:approve:pay_new_supplier',
-    'finance:payment_request:approve',
   ];
 
-  it('清单为 13 个（防漏列/误删）—— ⚠️ 不含 aftersales:approve（它由 A 组模块按其专项单独钉）', () => {
-    expect(UI_LABEL_APPROVE_CODES).toHaveLength(13);
-    expect(new Set(UI_LABEL_APPROVE_CODES).size).toBe(13);
+  it('清单为 11 个（防漏列/误删）—— ⚠️ 不含 aftersales:approve（它由 A 组模块按其专项单独钉）；procurement:approve / finance:payment_request:approve 已由 Mist 平台命令门禁消费，见下方专项', () => {
+    expect(UI_LABEL_APPROVE_CODES).toHaveLength(11);
+    expect(new Set(UI_LABEL_APPROVE_CODES).size).toBe(11);
   });
 
   it.each(UI_LABEL_APPROVE_CODES)('%s 在册且 reason=ui-label-only', (scope) => {
@@ -426,4 +422,24 @@ describe('★ 专项：审批权限码 = UI 能力标签（口径 B1）', () => 
       expect(['module-absent', 'no-scope-enforcement']).not.toContain(entry.reason);
     }
   });
+});
+
+/**
+ * ★ 专项：Mist 平台命令门禁已真实消费的码（2026-10 平台模块合入后）
+ *
+ * 口径 B1 时这两个审批码只作 UI 标签；Mist 平台（#45–#53）把采购复核与付款申请
+ * 决策接成了命令门禁（mist/context 按持码人解析复核人），bom:admin 则用于 BOM 状态流转。
+ * 这里反向钉住真实消费点：若门禁被删，本断言会红；若要回到 B1，须先改口径再改这里。
+ */
+describe('★ 专项：Mist 平台命令门禁消费的码', () => {
+  const GATES: ReadonlyArray<[string, string, string]> = [
+    ['procurement:approve', 'shared/mistFulfillment.ts', "return 'procurement:approve';"],
+    ['finance:payment_request:approve', 'shared/mistPayables.ts', "approve: 'finance:payment_request:approve'"],
+    ['bom:admin', 'shared/mistPlatform.ts', "command.type==='platform.bom.transition'?'bom:admin':'bom:write'"],
+  ];
+  it.each(GATES)('%s 不在豁免表且有真实门禁（%s）', (scope, file, needle) => {
+    expect(EXEMPT.find((e) => e.scope === scope)).toBeUndefined();
+    expect(consumedScopes().has(scope)).toBe(true);
+    expect(fs.readFileSync(path.join(SRC, file), 'utf8')).toContain(needle);
+  }, SCAN_TIMEOUT_MS);
 });

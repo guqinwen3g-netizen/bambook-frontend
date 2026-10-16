@@ -46,9 +46,10 @@
     "test": "vitest run dev-ui-preview/mist-atelier/app components/mist electron/assistant",
     "test:mist:tooling": "vitest run scripts/mist-version.test.ts",
     "test:mist:server": "npm --prefix server run test:mist",
+    "test:access:server": "npm --prefix server run test:access",
     "typecheck:mist": "tsc -p tsconfig.mist.json && tsc -p tsconfig.assistant.json",
     "typecheck:mist:server": "npm --prefix server run typecheck:mist",
-    "verify:mist": "npm run typecheck:mist && npm run typecheck:mist:server && npm test && npm run test:mist:server && npm run test:mist:tooling && npm run build && npm run mist:check"
+    "verify:mist": "npm run typecheck:mist && npm run typecheck:mist:server && npm test && npm run test:mist:server && npm run test:access:server && npm run test:mist:tooling && npm run build && npm run mist:check"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.18",
