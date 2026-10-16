@@ -427,7 +427,9 @@ export function createAuthRouter(options: AuthRouterOptions) {
         return res.status(401).json({ ok: false, error: 'INVALID_CREDENTIALS', message: 'Current password is incorrect.' });
       }
       const newHash = await auth.hashPassword(newPassword);
-      await options.prisma.userAccount.update({ where: { id: payload.userId }, data: { passwordHash: newHash } });
+      // 管理员重置密码时在 metadata 标了 forceChangePassword；本人改密后清除该标记。
+      const metadata = (user.metadata && typeof user.metadata === 'object' && !Array.isArray(user.metadata)) ? user.metadata as Record<string, unknown> : null;
+      await options.prisma.userAccount.update({ where: { id: payload.userId }, data: { passwordHash: newHash, ...(metadata?.forceChangePassword ? { metadata: { ...metadata, forceChangePassword: false, passwordChangedAt: new Date().toISOString() } as any } : {}) } });
       return res.json({ ok: true });
     } catch {
       return res.status(401).json({ ok: false, error: 'UNAUTHORIZED', message: 'Token expired or invalid.' });
