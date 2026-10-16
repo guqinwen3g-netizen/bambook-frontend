@@ -116,6 +116,19 @@ function history(root:MistState,ctx:MistContext,kind:string,id:string,text:strin
 function supplierRef(m:MarketState,id:string,now:string|false){if(!id)return '';const s=find(m.suppliers,id,'供应商');const unavailable=now?supplierUnavailableReason(s,supplierBusinessDay(now)):'';if(unavailable)fail(unavailable,'PRECONDITION');return s.id;}
 function validateSource(root:MistState,devId:string,versionId:string,pass=false){if(!devId&&!versionId)return;const d=find(root.devs,devId,'来源开发案'),v=find(root.versions,versionId,'来源版本');if(v.devId!==d.id||!d.versionIds.includes(v.id))fail('来源版本不属于该开发案');if(pass&&v.qc?.result!=='pass')fail('只有正式 QC 通过的准确版本可以转产品档案','PRECONDITION');}
 function productRefs(m:MarketState,ids:unknown){const unique=arr(ids||[],'产品');unique.forEach(id=>{if(find(m.products,id,'产品').status!=='active')fail('已归档产品不可用于新活动');});return unique;}
+/** 报价计价单位：面料只能 米 / 码 / 公斤，成衣只能 件 / 套；不换算、不预填。辅料等其他类别不在两个板块内，不限定。 */
+export const QUOTE_UNITS={fabric:['米','码','公斤'],garment:['件','套']} as const;
+export type QuoteFamily=keyof typeof QUOTE_UNITS;
+export const QUOTE_FAMILY_LABEL:Record<QuoteFamily,string>={fabric:'面料',garment:'成衣'};
+/** 条目所属板块：产品档案按类别，开发版本按开发案业务域。 */
+export function quoteLineFamily(state:{devs:Array<{id:string;values:{domain?:'fabric'|'garment';category?:string}}>},market:{products:MarketProduct[]},line:{productId?:string;sourceDevId?:string}):QuoteFamily|undefined{
+ if(line.productId){const p=market.products.find(x=>x.id===line.productId);return p?.category==='fabric'||p?.category==='garment'?p.category:undefined;}
+ const d=line.sourceDevId?state.devs.find(x=>x.id===line.sourceDevId):undefined;return d?developmentDomain(d.values):undefined;
+}
+/** 某板块的合法计价单位；不在板块内返回 undefined（不限定）。 */
+export function quoteUnitOptions(family:QuoteFamily|undefined):readonly string[]|undefined{return family?QUOTE_UNITS[family]:undefined;}
+/** 单位对该板块合法时原样返回，否则返回空（留空由人工选择）。 */
+export function legalQuoteUnit(family:QuoteFamily|undefined,unit:string|undefined):string{const options=quoteUnitOptions(family),u=(unit||'').trim();return !options||options.includes(u)?u:'';}
 function sourceLine(root:MistState,m:MarketState,input:Omit<MarketQuoteLine,'id'|'amount'>,ctx:MistContext,quoteCurrency:string):MarketQuoteLine{
  const productId=str(input.productId||'','产品',false);let sourceDevId=str(input.sourceDevId||'','来源开发案',false),sourceVersionId=str(input.sourceVersionId||'','来源版本',false);
  if(!productId&&!sourceVersionId)fail('报价条目须选择产品档案或准确开发版本');
@@ -124,7 +137,9 @@ function sourceLine(root:MistState,m:MarketState,input:Omit<MarketQuoteLine,'id'
  const price=decimal(input.price,'单价').text,qty=decimal(input.qty,'数量',4,true).text,product=productId?find(m.products,productId,'产品'):undefined;
  const costBasis=product&&product.currency===quoteCurrency&&decimal(product.cost,'产品成本').minor>BigInt(0)?'product':'unverified';
  const cost=costBasis==='product'?product!.cost:input.cost?decimal(input.cost,'参考成本价').text:'';
- return {id:ctx.id(),productId,sourceDevId,sourceVersionId,name:str(input.name,'品名'),style:str(input.style,'款号'),specification:str(input.specification,'规格',false),qty,unit:str(input.unit,'单位'),price,cost,costBasis,amount:marketLineAmount(qty,price)};
+ const unit=str(input.unit,'单位'),family=quoteLineFamily(root,m,{productId,sourceDevId}),units=quoteUnitOptions(family);
+ if(units&&!units.includes(unit))fail(`${QUOTE_FAMILY_LABEL[family!]}条目「${str(input.name,'品名')}」计价单位只能是 ${units.join(' / ')}，不能用“${unit}”；不自动换算`);
+ return {id:ctx.id(),productId,sourceDevId,sourceVersionId,name:str(input.name,'品名'),style:str(input.style,'款号'),specification:str(input.specification,'规格',false),qty,unit,price,cost,costBasis,amount:marketLineAmount(qty,price)};
 }
 /** 新版本只能基于同一客户、已离开草稿且尚无后续版本的报价；已转单的报价不再出新版本。 */
 function quotationPrevious(m:MarketState,old:MarketQuotation|undefined,previousId:string|undefined,customerId:string){
