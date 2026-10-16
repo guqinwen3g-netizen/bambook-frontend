@@ -126,9 +126,31 @@ export function factoryTaskSync(state: MistState, version: MistVersion): { round
 export function factoryTaskSyncBlocker(state: MistState, dev: MistDev, version: MistVersion): string | null {
   const closure = developmentClosure(state, dev);
   if (closure) return `开发案${closure.label}，不能再改工厂任务`;
+  if (version.minor) return `小版本 ${version.label} 没有单独的工厂任务`;
   const sync = factoryTaskSync(state, version);
   if (!sync) return '本版没有所属轮次，无需同步';
   if (sync.inSync) return '本厂任务已与共同要求一致';
   if (version.returnedAt) return `${version.label} 已返样，改要求请开新一轮`;
+  return null;
+}
+
+/** BB-DEV-5：服装小版本号 R4-A.1、R4-A.2…（只挂在大版本上）。 */
+export const minorVersionLabel = (parentLabel: string, seq: number) => `${parentLabel}.${seq}`;
+/** 大版本上已记录的小版本，按序号排列。 */
+export const minorVersions = (state: Pick<MistState, 'versions'>, parent: Pick<MistVersion, 'id'>): MistVersion[] =>
+  state.versions.filter(version => version.minor?.parentVersionId === parent.id).sort((a, b) => a.minor!.seq - b.minor!.seq);
+/** 小版本所属的大版本。 */
+export const minorParent = (state: Pick<MistState, 'versions'>, version: Pick<MistVersion, 'minor'>): MistVersion | undefined =>
+  version.minor ? state.versions.find(row => row.id === version.minor!.parentVersionId) : undefined;
+/** 在该版本上“记录小调整”的阻断原因；可以记录时返回 null。面料开发没有小版本。 */
+export function minorVersionBlocker(state: MistState, dev: MistDev, version: MistVersion): string | null {
+  if (developmentDomain(dev.values) === 'fabric') return '面料开发没有小版本，调整请开新一轮';
+  if (version.minor) return `${version.label} 是小版本，请在大版本 ${minorParent(state, version)?.label ?? ''} 上记录小调整`;
+  const closure = developmentClosure(state, dev);
+  if (closure) return `开发案${closure.label}，不能再记录小调整`;
+  if (version.qcDecision) return version.qcDecision.kind === 'abandon' ? '本版已放弃，不能记录小调整' : '本版已重新打样，请在新一轮版本上继续';
+  if (!version.returnedAt) return '大版本须先登记返样实物，才能记录小调整';
+  if (!version.qc || version.qc.result === 'reject') return '大版本 QC 通过或有保留通过后，才能记录小调整';
+  if (version.archivedAt) return '本版已留档，不能再记录小调整';
   return null;
 }

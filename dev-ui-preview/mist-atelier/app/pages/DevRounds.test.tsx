@@ -139,3 +139,28 @@ describe('acceptance review #59 on the page',()=>{
     expect(create.disabled).toBe(true);expect(document.querySelector('#mist-dev-rounds')!.textContent).toContain('开发案已取消，不能再开新一轮');
   });
 });
+
+describe('BB-DEV-5 服装小版本',()=>{
+  const ready=(label:string)=>{const id=state.versions.find(v=>v.label===label)!.id;
+    apply({type:'development.recordSample',payload:{devId,versionId:id,sample:'S-'+label,quantity:1,returnedAt:'2026-10-15T08:00:00Z'}});
+    apply({type:'development.recordQc',payload:{devId,versionId:id,qc:{result:'pass',reviewer:'许言',reviewedAt:'2026-10-15T09:00:00Z',report:'QC-1',opinion:'通过',measurements:[]}}});return id;};
+  const more=async()=>act(async()=>[...document.querySelectorAll<HTMLButtonElement>('button')].find(item=>item.getAttribute('aria-label')==='更多')!.click());
+  it('shows 记录小调整 disabled with the reason until the major version has a sample and QC',async()=>{
+    await more();expect(button('记录小调整')!.disabled).toBe(true);expect(document.body.textContent).toContain('大版本须先登记返样实物，才能记录小调整');
+  });
+  it('records R1-A.1 from the page; the minor reuses the sample/QC, has its own confirmation and no notice card or new sample entry',async()=>{
+    const a=ready('R1-A');apply({type:'development.confirm',payload:{devId,versionId:a,result:'approved',confirmer:'Anna',organization:'测试客户',confirmedAt:'2026-10-16T08:00:00Z',basis:'邮件',originalText:'OK'}});
+    await act(async()=>{bridge.current={...bridge.current,state};render(a);});
+    await more();await click('记录小调整');expect(document.body.textContent).toContain('生成 R1-A.1');
+    expect(button('生成小版本')!.disabled).toBe(true);await fill('改了什么','领口改小 0.5cm');await click('生成小版本');
+    expect(bridge.current.run).toHaveBeenCalledWith({type:'development.version.recordMinor',payload:{devId,versionId:a,change:'领口改小 0.5cm'}});
+    expect(state.devs[0].currentVersionId).toBe(state.versions.find(v=>v.label==='R1-A.1')!.id);
+    expect(document.querySelector('[data-minor="R1-A.1"]')!.textContent).toContain('沿用 R1-A 实物与 QC 结论');
+    expect(document.querySelector('[data-minor="R1-A.1"]')!.textContent).toContain('不继承 R1-A 的确认');
+    expect(button('登记返样')!.disabled).toBe(true);expect(button('更新报告')!.disabled).toBe(true);
+    expect(document.querySelector('#mist-dev-notice')).toBeNull();
+    expect(document.querySelector('[data-task="R1-A.1"]')).toBeNull();expect(roundText(1)).toContain('R1-A.1');
+    // 确认表单针对小版本，未继承 R1-A 的认可
+    expect(document.querySelector('#mist-dev-confirmation')!.textContent).toContain('R1-A.1');expect(button('保存确认')).toBeTruthy();
+  });
+});

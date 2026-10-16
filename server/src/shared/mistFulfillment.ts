@@ -827,8 +827,8 @@ export function applyFulfillmentCommand(root: MistState, command: FulfillmentCom
         case 'fulfillment.samples.sync': {
             let applied = 0;
             for (const v of root.versions) {
-                if (!v.returnedAt || !v.sample)
-                    continue;
+                if (!v.returnedAt || !v.sample || v.minor)
+                    continue; // 小版本沿用大版本实物，不另入库。
                 const d = get(root.devs, v.devId, '开发案'), fabric = developmentDomain(d.values)==='fabric';
                 const existing = f.samples.filter(s => s.source.kind === 'version' && s.source.versionId === v.id);
                 if (existing.length) {

@@ -1,7 +1,7 @@
 import { MIST_FINANCE_SCOPES } from './mistFinancePermissions';
 import {developmentDomain,developmentInitiator,emptyFabricRequirements,fabricRequirementError,validFabricSample,type DevelopmentDomain,type DevelopmentInitiator,type DevelopmentRequestType,type FabricDevelopmentRequirements} from './mistDevelopmentDomain';
 import { relationHoldReason } from './mistRelationHold';
-import {assignFactoryLetters,defaultFactoryTask,developmentClosure,developmentRoundBlocker,duplicateRoundFactories,factoryTaskError,factoryTaskNote,factoryTaskSync,factoryTaskSyncBlocker,nextRoundNumber,roundVersionLabel,type FactoryTaskInput} from './mistDevelopmentRounds';
+import {assignFactoryLetters,defaultFactoryTask,developmentClosure,developmentRoundBlocker,duplicateRoundFactories,factoryTaskError,factoryTaskNote,factoryTaskSync,factoryTaskSyncBlocker,minorVersionBlocker,minorVersionLabel,minorVersions,nextRoundNumber,roundVersionLabel,type FactoryTaskInput} from './mistDevelopmentRounds';
 import {createFulfillmentState,applyFulfillmentCommand,fulfillmentCommandPermission,getFulfillmentReviews,assertProductionTransition,type FulfillmentState,type FulfillmentCommand} from './mistFulfillment';
 import {createMarketState,applyMarketCommand,marketCommandPermission,getMarketReviews,type MarketState,type MarketCommand} from './mistMarket';
 import {createCrmState,applyCrmCommand,crmCommandPermission,type CrmState,type CrmCommand} from './mistCrm';
@@ -62,7 +62,10 @@ export type MistVersion = {
   task?: MistFactoryTask;
   /** 本厂本轮的试样通知单（BB-DEV-4），每次生成追加一份，旧版保留。 */
   notices?: DevNoticeRecord[];
+  /** 服装小版本（BB-DEV-5）：在大版本上记录小调整生成 R4-A.1、.2…；沿用大版本实物与 QC 结论，需求方确认单独记录。 */
+  minor?: MistMinorVersion;
 };
+export type MistMinorVersion = { parentVersionId: string; seq: number; change: string; recordedAt: string; recordedBy: string };
 export type MistFactoryTask = { commonRequirements: string; extraRequirements: string; sampleForm: string; sampleQuantity: number; sampleUnit: string; dueDate: string; syncedAt: string; syncedBy: string };
 export type MistQcDecisionKind = 'rework' | 'resample' | 'abandon';
 export type MistQcDecision = { kind: MistQcDecisionKind; note: string; decidedAt: string; decidedBy: string; roundId?: string };
@@ -204,6 +207,7 @@ export type MistCommand = FulfillmentCommand | MarketCommand | PlatformCommand |
   | { type: 'development.round.updateRequirements'; payload: { devId: string; roundId: string; requirements: string } }
   | { type: 'development.version.syncRequirements'; payload: { devId: string; versionId: string } }
   | { type: 'development.notice.generate'; payload: { devId: string; versionId: string } }
+  | { type: 'development.version.recordMinor'; payload: { devId: string; versionId: string; change: string } }
   | { type: 'development.close'; payload: { devId: string; kind: 'archived' | 'cancelled'; reason: string } }
   | { type: 'development.qc.decide'; payload: { devId: string; versionId: string; decision: 'rework' | 'abandon'; note: string } }
   | { type: 'fabric.create'; payload: { name: string; request: string; owner: string; due: string } }
@@ -644,6 +648,7 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
     }
     case 'development.recordSample': {
       const [dev,v]=versionOf(state,p.devId,p.versionId);
+      if(v.minor)throw new MistCommandError('PRECONDITION','小版本 '+v.label+' 沿用大版本实物，不登记新实物');
       if(v.archivedAt||v.qc||v.confirmations.length)throw new MistCommandError('PRECONDITION','已有QC、确认或留档记录的实物不可替换，请创建新版本');
       if(state.fulfillment.samples.some(s=>s.source.kind==='version'&&s.source.versionId===v.id))throw new MistCommandError('PRECONDITION','已有入库实物不能覆盖，请创建新版本或从样品仓库追加形态');
       if(developmentDomain(dev.values)==='fabric'){if(!validFabricSample(p.quantity,p.form||'',p.unit||''))throw new MistCommandError('VALIDATION','面料返样须明确形态、数量和单位：米样按米，剪片类按整数份');v.sampleForm=text(p.form,'实际形态');v.sampleUnit=text(p.unit,'实际单位');v.sampleLocation=text(p.location||'','实际位置',false);v.sampleColor=text(p.color||dev.values.color,'实际颜色',false);v.size='';}
@@ -653,6 +658,8 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
     }
     case 'development.recordQc': {
       const [dev,v]=versionOf(state,p.devId,p.versionId);
+      if(v.minor)throw new MistCommandError('PRECONDITION','小版本 '+v.label+' 沿用大版本 QC 结论，不单独记录 QC');
+      if(minorVersions(state,v).length)throw new MistCommandError('PRECONDITION','本版已有小版本 '+minorVersions(state,v).map(x=>x.label).join('、')+' 沿用当前 QC 结论，不能改写');
       if(v.archivedAt)throw new MistCommandError('PRECONDITION','本版已留档，请通过新版本继续记录');
       if(!v.returnedAt)throw new MistCommandError('PRECONDITION','请先记录实物返样');
       if(v.qcDecision)throw new MistCommandError('PRECONDITION',v.qcDecision.kind==='abandon'?'本版已放弃，不能再记录 QC':'本版已转为重新打样，请在新一轮版本上记录 QC');
@@ -761,6 +768,20 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
       state.files.push(structuredClone(artifact.file));v.notices=[...(v.notices||[]),structuredClone(record)];dev.updatedAt=context.now;
       event(state,context,'development',dev.id,'生成'+snapshot.title+' '+record.noticeNo+'（'+v.factory+'）',{view:'development/detail',id:dev.id,versionId:v.id});
       result={devId:dev.id,versionId:v.id,noticeId:record.id,fileId:record.fileId};break;
+    }
+    case 'development.version.recordMinor': {
+      const [dev,parent]=versionOf(state,p.devId,p.versionId), blocked=minorVersionBlocker(state,dev,parent);
+      if(blocked)throw new MistCommandError('PRECONDITION',blocked);
+      const change=text(p.change,'调整内容'), siblings=minorVersions(state,parent), seq=siblings.length+1, id=context.id();
+      const minor:MistVersion={id,devId:dev.id,label:minorVersionLabel(parent.label,seq),factory:parent.factory,sample:parent.sample,sampleQuantity:parent.sampleQuantity,
+        ...(parent.sampleForm!==undefined?{sampleForm:parent.sampleForm}:{}),...(parent.sampleUnit!==undefined?{sampleUnit:parent.sampleUnit}:{}),
+        size:parent.size,fabric:parent.fabric,img:parent.img,fileIds:[...parent.fileIds],returnedAt:parent.returnedAt,qc:structuredClone(parent.qc),confirmations:[],archivedAt:null,note:change,
+        ...(parent.roundId?{roundId:parent.roundId}:{}),...(parent.factoryLetter?{factoryLetter:parent.factoryLetter}:{}),
+        minor:{parentVersionId:parent.id,seq,change,recordedAt:context.now,recordedBy:context.actorName}};
+      const after=dev.versionIds.indexOf((siblings.at(-1)||parent).id);
+      state.versions.push(minor);dev.versionIds.splice(after+1,0,id);dev.currentVersionId=id;updateDev(state,dev,context);
+      event(state,context,'development',dev.id,'在 '+parent.label+' 上记录小调整，生成 '+minor.label+'：'+change,{view:'development/detail',id:dev.id,versionId:id});
+      result={devId:dev.id,versionId:id};break;
     }
     case 'development.archive': {
       const [dev,v]=versionOf(state,p.devId,p.versionId);
