@@ -27,3 +27,15 @@ it('错误动态码透传服务端错误码', async () => {
   expect(failure.code).toBe('MFA_INVALID'); expect(failure.message).toBe('验证码不正确或已使用。');
   expect(auth.getAuthState().isAuthenticated).toBe(false);
 });
+
+it('改密成功后用服务器换发的新令牌替换当前令牌，保持原存放位置', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => json({ ok: true, otherSessionsRevoked: true, token: 'fresh' })));
+  const auth = await import('./authService');
+  sessionStorage.setItem('bambook_auth_token', 'old');
+  await auth.changePassword('a', 'b');
+  expect(sessionStorage.getItem('bambook_auth_token')).toBe('fresh'); expect(localStorage.getItem('bambook_auth_token')).toBeNull();
+  localStorage.setItem('bambook_auth_token', 'fresh');
+  vi.stubGlobal('fetch', vi.fn(async () => json({ ok: true, token: 'fresher' })));
+  await auth.changePassword('b', 'c');
+  expect(localStorage.getItem('bambook_auth_token')).toBe('fresher');
+});

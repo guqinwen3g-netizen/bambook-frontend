@@ -97,7 +97,7 @@ export const organizationApi = {
   updatePosition: (positionId: string, body: { title?: string; departmentId?: string; headcount?: number; description?: string | null; status?: string }) => call<unknown>('/hr/positions/' + id(positionId), { method: 'PATCH', body }),
   deletePosition: (positionId: string) => call<unknown>('/hr/positions/' + id(positionId), { method: 'DELETE' }),
   employmentEvents: (userId: string) => call<{ events: EmploymentEvent[] }>('/hr/employment-events?userId=' + id(userId) + '&limit=50'),
-  recordEvent: (body: { userId: string; type: string; effectiveDate: string; fromDeptId?: string | null; fromPositionId?: string | null; toPositionId?: string | null; reason?: string | null }) => call<{ event: EmploymentEvent; accountDisabled?: boolean }>('/hr/employment-events', { method: 'POST', body }),
+  recordEvent: (body: { userId: string; type: string; effectiveDate: string; fromDeptId?: string | null; toDeptId?: string | null; fromPositionId?: string | null; toPositionId?: string | null; reason?: string | null }) => call<{ event: EmploymentEvent; accountDisabled?: boolean; leftTeams?: number }>('/hr/employment-events', { method: 'POST', body }),
   saveProfile: (userId: string, body: Partial<Pick<EmployeeProfile, 'positionId' | 'hireDate' | 'regularDate' | 'contractType' | 'contractEnd' | 'phone' | 'emergencyContact' | 'workLocation' | 'notes'>>) => call<{ profile: EmployeeProfile }>('/hr/employees/' + id(userId), { method: 'PUT', body }),
 };
 

@@ -111,9 +111,9 @@ export function HrOrganizationPage() {
         const current = employeeOf(form.userId) ?? (profile?.userId === form.userId ? profile.value : null);
         const def = EMPLOYMENT_EVENTS.find(e => e.value === form.type);
         const result = await organizationApi.recordEvent({ userId: form.userId, type: form.type, effectiveDate: form.effectiveDate, reason: form.reason.trim() || null,
-          fromDeptId: person(form.userId)?.departmentId ?? null, fromPositionId: current?.positionId ?? null, ...(def?.position ? { toPositionId: form.toPositionId } : {}) });
+          fromDeptId: person(form.userId)?.departmentId ?? null, fromPositionId: current?.positionId ?? null, ...(def?.position ? { toPositionId: form.toPositionId, ...(deptMove(form.userId, form.toPositionId) ? { toDeptId: deptMove(form.userId, form.toPositionId) } : {}) } : {}) });
         setForm(null); setProfileTick(t => t + 1);
-        toast(result.accountDisabled ? `已办理${def?.label ?? '变动'}，系统账号已停用` : form.type === 'Onboard' ? '已办理返聘，账号已恢复启用' : `已办理${def?.label ?? '变动'}`);
+        toast(result.accountDisabled ? `已办理${def?.label ?? '变动'}，系统账号已停用` : result.leftTeams ? `已办理${def?.label ?? '变动'}，部门已调整并退出原小组` : form.type === 'Onboard' ? '已办理返聘，账号已恢复启用' : `已办理${def?.label ?? '变动'}`);
         await load(); return;
       } else {
         if (!form.exists) {
@@ -167,6 +167,8 @@ export function HrOrganizationPage() {
     { key: 'status', header: '状态', width: '80px', render: p => p.status === 'inactive' ? <Pill tone="neutral">已停用</Pill> : <Pill tone="ok">启用</Pill> },
   ];
   const positionOptions = (keep?: string | null) => (data?.positions ?? []).filter(p => p.status !== 'inactive' || p.id === keep).map(p => ({ value: p.id, label: p.title + (p.department ? ` · ${p.department}` : '') + (p.status === 'inactive' ? '（已停用）' : '') }));
+  /** 新岗位属于其他部门时返回调入部门 id（部门随岗位走）；否则 null。 */
+  const deptMove = (userId: string, positionId: string) => { const to = (data?.positions ?? []).find(p => p.id === positionId)?.departmentId ?? null; return to && to !== (person(userId)?.departmentId ?? null) ? to : null; };
   const eventChoices = (status: string) => EMPLOYMENT_EVENTS.filter(e => e.from.includes(status));
   const profileForm = (userId: string, p: EmployeeProfile | null): ProfileForm => ({ kind: 'profile', userId, exists: !!p, positionId: p?.positionId ?? '', hireDate: p?.hireDate ?? '', regularDate: p?.regularDate ?? '', contractType: p?.contractType ?? '', contractEnd: p?.contractEnd ?? '', phone: p?.phone ?? '', emergencyContact: p?.emergencyContact ?? '', workLocation: p?.workLocation ?? '', notes: p?.notes ?? '' });
 
@@ -295,7 +297,9 @@ export function HrOrganizationPage() {
           <Field label="生效日期" required><TextInput type="date" value={form.effectiveDate} disabled={busy} onChange={e => setForm({ ...form, effectiveDate: e.target.value })} /></Field>
           {def?.position && <Field label="新岗位" required><Select aria-label="新岗位" value={form.toPositionId} disabled={busy} placeholder="选择岗位" onChange={e => setForm({ ...form, toPositionId: e.target.value })} options={positionOptions().filter(o => o.value !== current?.positionId)} /></Field>}
           <Field label="原因 / 说明" full><TextArea value={form.reason} disabled={busy} onChange={e => setForm({ ...form, reason: e.target.value })} /></Field>
-          {def?.position && <p className="mist-note" style={{ gridColumn: '1 / -1' }}>调岗只变更岗位；如需同时换部门，请在“管理后台 · 账号”调整任职部门（会同步检查小组归属）。</p>}
+          {def?.position && (() => { const to = deptMove(form.userId, form.toPositionId); return to
+            ? <div style={{ gridColumn: '1 / -1' }}><Banner tone="warn" title={`部门将从 ${deptName(person(form.userId)?.departmentId ?? null)} 调为 ${deptName(to)}`}>新岗位属于其他部门，办理后任职部门随岗位调整；该员工会退出原部门的小组，可在新部门的小组里重新加入。</Banner></div>
+            : <p className="mist-note" style={{ gridColumn: '1 / -1' }}>部门随新岗位确定：选择其他部门的岗位即同时调部门。</p>; })()}
           {def?.terminal && <div style={{ gridColumn: '1 / -1' }}><Banner tone="bad" title="办理后系统账号立即停用">该员工将无法登录，已登录的会话也会失效。请先在业务交接中转移其负责的客户与单据。之后如需返聘，可在此办理“返聘”，账号会恢复启用。</Banner>
             <Checkbox label="我已确认，办理后立即停用该员工的系统账号" checked={form.acknowledged} disabled={busy} onChange={on => setForm({ ...form, acknowledged: on })} /></div>}
           {form.type === 'Onboard' && <div style={{ gridColumn: '1 / -1' }}><Banner tone="warn" title="返聘会恢复系统账号">员工回到试用期，账号恢复为启用，原有角色与部门不变；请在管理后台核对其权限。</Banner></div>}

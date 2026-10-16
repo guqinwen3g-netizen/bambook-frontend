@@ -1030,8 +1030,9 @@ export function createHRRouter(options: HRRouterOptions) {
       source: 'route:hr:record_employment_event', operation: 'record_employment_event',
       targetType: 'EmploymentEvent', targetId: () => req.body?.userId || 'unknown',
     }, async () => {
-      const { event, accountDisabled } = await hr.recordEmploymentEvent(actorIdFromRequest(req) ?? 'unknown', req.body || {});
-      return { payload: { event, accountDisabled } };
+      const { event, accountDisabled, leftTeams } = await hr.recordEmploymentEvent(actorIdFromRequest(req) ?? 'unknown', req.body || {});
+      if (leftTeams) invalidateTeamMembershipCache();
+      return { payload: { event, accountDisabled, leftTeams } };
     });
   });
 

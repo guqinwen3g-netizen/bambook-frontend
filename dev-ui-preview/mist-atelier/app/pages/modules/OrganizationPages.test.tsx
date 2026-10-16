@@ -170,6 +170,27 @@ describe('人事管理', () => {
     await click('确认离职');
     expect(bridge.calls.find(c => c.method === 'POST' && c.url === '/api/hr/employment-events')?.body).toMatchObject({ userId: 'u3', type: 'Resign', fromDeptId: 'd1', fromPositionId: null });
   });
+  it('transfer to a position of another department moves the department with it', async () => {
+    const profile = { userId: 'u3', employeeNo: 'E001', displayName: '李四', positionId: 'p1', position: '面料跟单', hireDate: '2025-01-01', regularDate: '2025-04-01', contractType: null, contractEnd: null, employmentStatus: 'Regular', phone: null, emergencyContact: null, workLocation: null, notes: null };
+    const depts = [...departments, { id: 'd2', name: '成衣业务部', parentId: 'root', businessAttributes: [] }];
+    const positions = [{ id: 'p1', title: '面料跟单', departmentId: 'd1', department: '面料业务部', status: 'active' }, { id: 'p2', title: '成衣跟单', departmentId: 'd2', department: '成衣业务部', status: 'active' }, { id: 'p3', title: '面料主管', departmentId: 'd1', department: '面料业务部', status: 'active' }];
+    bridge.routes['GET /api/hr/personnel'] = () => ({ ok: true, departments: depts, positions, personnel: [{ id: 'u3', displayName: '李四', email: 'l@x.test', status: 'active', roles: ['业务员'], departmentId: 'd1', department: '面料业务部', lastLoginAt: null }] });
+    bridge.routes['GET /api/hr/employees/u3'] = () => ({ ok: true, profile });
+    bridge.routes['GET /api/hr/employees'] = () => ({ ok: true, employees: [profile] });
+    bridge.routes['GET /api/hr/employment-events?userId=u3&limit=50'] = () => ({ ok: true, events: [] });
+    bridge.routes['POST /api/hr/employment-events'] = () => ({ ok: true, event: { id: 'e2' }, leftTeams: 1 });
+    await render(PLATFORM_PAGES.hr, 'hr', 'people');
+    await act(async () => (document.querySelector('[role="row"][tabindex]') as HTMLElement).click());
+    await act(async () => { await new Promise(r => setTimeout(r, 0)); });
+    await click('办理在职变动');
+    await type(labelled('新岗位'), 'p3');
+    expect(document.body.textContent).toContain('部门随新岗位确定');
+    await type(labelled('新岗位'), 'p2');
+    expect(document.body.textContent).toContain('部门将从 面料业务部 调为 成衣业务部');
+    const submit = [...document.querySelectorAll('.mist-dialog button, [role="dialog"] button')].find(b => /^确认/.test(b.textContent?.trim() ?? '')) as HTMLButtonElement;
+    await act(async () => submit.click());
+    expect(bridge.calls.find(c => c.method === 'POST' && c.url === '/api/hr/employment-events')?.body).toMatchObject({ userId: 'u3', type: 'Transfer', fromDeptId: 'd1', fromPositionId: 'p1', toPositionId: 'p2', toDeptId: 'd2' });
+  });
   it('explains that local workspaces have no company organization and calls nothing', async () => {
     bridge.localMode = true;
     await render(PLATFORM_PAGES.hr, 'hr');

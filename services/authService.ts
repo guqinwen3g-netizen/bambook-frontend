@@ -411,6 +411,13 @@ export async function changePassword(currentPassword: string, newPassword: strin
   if (!res.ok) {
     throw new Error(data.message || data.error || `Password change failed (HTTP ${res.status})`);
   }
+  // 服务器改密后让其他设备的旧会话失效，并为当前设备换发新令牌：沿用原来的存放位置（“保持登录”与否不变）。
+  if (typeof data.token === 'string' && data.token) {
+    authMutationEpoch += 1;
+    let remembered = false;
+    try { remembered = !!localStorage.getItem(AUTH_TOKEN_KEY); if (remembered) localStorage.setItem(AUTH_TOKEN_KEY, data.token); } catch { /* storage restrictions */ }
+    try { sessionStorage.setItem(AUTH_TOKEN_KEY, data.token); } catch { /* storage restrictions */ }
+  }
 }
 
 /** 退出所有设备：服务器使此前签发的全部令牌失效（含当前会话），随后需重新登录。 */
