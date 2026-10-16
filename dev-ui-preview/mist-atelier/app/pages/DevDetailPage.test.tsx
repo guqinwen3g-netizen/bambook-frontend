@@ -32,6 +32,10 @@ async function click(text:string){const button=[...document.querySelectorAll('bu
 async function fill(label:string,value:string){const field=[...document.querySelectorAll('label')].find(item=>item.querySelector('.mist-field-label')?.textContent?.replace('*','')===label);const input=field?.querySelector('input,textarea') as HTMLInputElement|HTMLTextAreaElement;expect(input,label).toBeTruthy();await act(async()=>{const prototype=input.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(prototype,'value')!.set!.call(input,value);input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));});}
 
 describe('exact persisted version detail',()=>{
+  it('shows a not-yet-returned factory sample using its planned unit',async()=>{
+    bridge.current.state.versions[0]={...bridge.current.state.versions[0],sample:'',sampleQuantity:1,returnedAt:null,qc:null,task:{commonRequirements:'测试',extraRequirements:'',sampleForm:'半成品',sampleQuantity:1,sampleUnit:'套',dueDate:'2026-11-20',syncedAt:'2026-10-16T00:00:00Z',syncedBy:'业务员'}};
+    await mount();expect(host.textContent).toContain('未登记 · 1 套');
+  });
   it('uses each selected version’s report and sends a real ID, not its display label',async()=>{
     await mount();expect(host.textContent).toContain('评审 A');await click('R2-B-1');expect(host.textContent).toContain('评审 B');expect(host.textContent).not.toContain('评审 A');
     expect(go).toHaveBeenCalledWith('development/detail','dev-a',{versionId:'vb'});
@@ -239,6 +243,24 @@ describe('BB-DEV-6/8 fabric physical forms and dispatch on the version detail',(
   await act(async()=>box.click());expect(save().disabled).toBe(false);
   await click('保存确认');await click('确认提交');
   expect(bridge.current.run).toHaveBeenCalledWith(expect.objectContaining({type:'development.confirm',payload:expect.objectContaining({versionId:'va',sampleIds:['s-m']})}));
+ });
+ it('restores confirmed forms and permits a new confirmation when only its physical scope changes',async()=>{
+  useFabric([colour,metre]);
+  bridge.current.state.versions[0].confirmations=[{id:'confirmed-colour',result:'approved',confirmer:'客户',organization:'客户公司',confirmedAt:'2026-10-13T08:00:00Z',basis:'确认邮件',originalText:'Approved',recordedAt:'2026-10-13T08:00:00Z',recordedBy:'业务员',samples:[{sampleId:colour.id,code:colour.code,form:colour.form,unit:colour.unit}]}];
+  await mount();
+  const check=(code:string)=>[...document.querySelectorAll('label.mist-check')].find(item=>item.textContent?.includes(code))!.querySelector('input')!;
+  expect(check(colour.code).checked).toBe(true);
+  expect([...document.querySelectorAll('button')].find(b=>b.textContent?.trim()==='本版已记录')!.disabled).toBe(true);
+  await act(async()=>{check(colour.code).click();check(metre.code).click();});
+  const save=[...document.querySelectorAll('button')].find(b=>b.textContent?.trim()==='保存确认')!;expect(save.disabled).toBe(false);
+  await click('存为草稿');
+  expect(bridge.current.run).toHaveBeenCalledWith(expect.objectContaining({type:'development.saveConfirmationDraft',payload:expect.objectContaining({draft:expect.objectContaining({samples:[{sampleId:metre.id,code:metre.code,form:metre.form,unit:metre.unit}]})})}));
+  await click('保存确认');await click('确认提交');
+  expect(bridge.current.run).toHaveBeenCalledWith(expect.objectContaining({type:'development.confirm',payload:expect.objectContaining({sampleIds:[metre.id],basis:'确认邮件'})}));
+ });
+ it('restores the selected forms from a saved confirmation draft',async()=>{
+  useFabric([colour,metre]);bridge.current.state.versions[0].confirmationDraft={result:'approved',confirmer:'客户',organization:'客户公司',confirmedAt:'2026-10-13T08:00:00Z',basis:'草稿',originalText:'OK',samples:[{sampleId:metre.id,code:metre.code,form:metre.form,unit:metre.unit}]};
+  await mount();const checkbox=[...document.querySelectorAll('label.mist-check')].find(item=>item.textContent?.includes(metre.code))!.querySelector('input')!;expect(checkbox.checked).toBe(true);
  });
  it('lets a missing dispatch fee be added later',async()=>{
   useFabric([{...metre,available:3}]);bridge.current.state.versions[0].dispatches=[{id:'d-1',sampleId:'s-m',sampleCode:'SMP-0002',form:'米样',unit:'米',quantity:2,recipient:'客户 Anna',trackingNo:'SF123',fee:null,note:'',movementId:'m-1',recordedAt:'2026-10-16T00:00:00Z',recordedBy:'业务员'}];

@@ -14,7 +14,7 @@ import { DevNoticeCard } from './DevNotices';
 import { DevRoundsCard, NewRoundDialog, RoundRequirementsDialog, versionQcFlag, type NewRoundInput } from './DevRounds';
 import { ToProductDialog, developmentVersionLinks, productConversionBlocker } from './DevVersionLinks';
 import { DevSampleFormsCard } from './DevSampleForms';
-import { confirmationNeedsForms, developmentVersionSamples } from '../../../../server/src/shared/mistDevelopmentSamples';
+import { confirmationNeedsForms, developmentVersionSamples, sampleRef } from '../../../../server/src/shared/mistDevelopmentSamples';
 
 export function localConfirmationTime(date=new Date()){return Number.isNaN(date.getTime())?'':new Date(date.getTime()-date.getTimezoneOffset()*60_000).toISOString().slice(0,16);}
 export function confirmationFormError(values:{confirmer:string;organization:string;confirmedAt:string;basis:string;originalText:string}){
@@ -59,7 +59,7 @@ export function DevDetailPage(){
   const live=React.useRef(true),busyRef=React.useRef(false);React.useEffect(()=>{live.current=true;return()=>{live.current=false;};},[]);
   React.useEffect(()=>{setVersionId(route.versionId||dev?.currentVersionId||'');},[route.id,route.versionId,dev?.id]);
   React.useEffect(()=>{if(!version){setQc(qcForm(null,state?.settings.profileName||''));return;}const last=version.confirmationDraft||version.confirmations.at(-1);setForm(last?{confirmer:last.confirmer,organization:last.organization,confirmedAt:localConfirmationTime(new Date(last.confirmedAt)),basis:last.basis,originalText:last.originalText,result:last.result}:dev&&developmentInitiator(dev.values)==='internal'?emptyForm('内部需求方',dev.values.requester||''):emptyForm(dev?.customer));setSample({sample:version.sample==='—'?'':version.sample,quantity:String(version.sampleQuantity||1),form:version.sampleForm||dev?.values.sampleForm||'',unit:version.sampleUnit||dev?.values.sampleUnit||'',location:version.sampleLocation||'',color:version.sampleColor||dev?.values.color||'',returnedAt:localConfirmationTime()});setQc(qcForm(version.qc,state?.settings.profileName||''));setFailure('');},[version?.id]);
-  const [confirmSampleIds,setConfirmSampleIds]=React.useState<string[]>([]);React.useEffect(()=>{setConfirmSampleIds([]);},[version?.id]);
+  const [confirmSampleIds,setConfirmSampleIds]=React.useState<string[]>([]);React.useEffect(()=>{const saved=version?.confirmationDraft||version?.confirmations.at(-1);setConfirmSampleIds(saved?.samples?.map(sample=>sample.sampleId)||[]);},[version?.id]);
   const versionSamples=state&&version?developmentVersionSamples(state,version):[],needsForms=!!(state&&dev&&version&&confirmationNeedsForms(state,dev,version));
   const set=<K extends keyof Form>(key:K,value:Form[K])=>setForm(previous=>({...previous,[key]:value}));
   const chooseVersion=(id:string)=>{if(busy||!dev)return;setVersionId(id);setDialog(null);go('development/detail',dev.id,{versionId:id,...(route.customerId?{customerId:route.customerId}:{})});};
@@ -67,7 +67,7 @@ export function DevDetailPage(){
   const act=async(kind:'confirm'|'draft'|'revise'|'minor'|'archive'|'sample'|'qc'|'edit'|'qcDecide'|'close')=>{
     if(!dev||busyRef.current||(!version&&kind!=='edit'&&kind!=='close'))return;const originalScope=scope.current;busyRef.current=true;setBusy(true);setFailure('');
     try{
-      if(kind==='draft'){await run({type:'development.saveConfirmationDraft',payload:{devId:dev.id,versionId:version!.id,draft:{...form,confirmedAt:form.confirmedAt&&!Number.isNaN(new Date(form.confirmedAt).getTime())?new Date(form.confirmedAt).toISOString():''}}});}
+      if(kind==='draft'){await run({type:'development.saveConfirmationDraft',payload:{devId:dev.id,versionId:version!.id,draft:{...form,...(confirmSampleIds.length?{samples:versionSamples.filter(sample=>confirmSampleIds.includes(sample.id)).map(sampleRef)}:{}),confirmedAt:form.confirmedAt&&!Number.isNaN(new Date(form.confirmedAt).getTime())?new Date(form.confirmedAt).toISOString():''}}});}
       else if(kind==='confirm'){
         const invalid=confirmationFormError(form);if(invalid)throw Error(invalid);
         if(needsForms&&!confirmSampleIds.length)throw Error('本版有多种实物形态，请选择本次确认针对的形态');
@@ -173,7 +173,8 @@ export function DevDetailPage(){
   const currentImage=version?.img||dev.img,files=(version?.fileIds||dev.fileIds).map(id=>state?.files.find(file=>file.id===id)).filter(file=>!!file),last=version?.confirmations.at(-1),steps=developmentStepStates(dev,version),history=(state?.events||[]).filter(event=>event.entityId===dev.id||event.entityId===version?.id).slice().sort((a,b)=>b.at.localeCompare(a.at));
   const openEdit=()=>{setEdit({goal:dev.goal,due:dev.due,factories:dev.values.factories.join('、')});setDialog('edit');};
   const currentFormError=confirmationFormError(form)||(needsForms&&!confirmSampleIds.length?'请选择本次确认针对的形态':null);
-  const sameConfirmation=last&&last.result===form.result&&last.confirmer===form.confirmer&&last.organization===form.organization&&last.basis===form.basis&&last.originalText===form.originalText&&new Date(last.confirmedAt).getTime()===new Date(form.confirmedAt).getTime();
+  const sameForms=JSON.stringify([...(last?.samples||[]).map(sample=>sample.sampleId)].sort())===JSON.stringify([...confirmSampleIds].sort());
+  const sameConfirmation=last&&sameForms&&last.result===form.result&&last.confirmer===form.confirmer&&last.organization===form.organization&&last.basis===form.basis&&last.originalText===form.originalText&&new Date(last.confirmedAt).getTime()===new Date(form.confirmedAt).getTime();
   const measurements=version?.qc?.measurements||[],measureStats=measurements.reduce((counts,row)=>{const difference=Math.abs(row.actual-row.standard),epsilon=row.tolerance===0?0:Number.EPSILON*Math.max(1,row.actual,row.standard,row.tolerance)*4;return{within:counts.within+(difference<=row.tolerance+epsilon?1:0),attention:counts.attention+(difference>row.tolerance*.5+epsilon?1:0)};},{within:0,attention:0});
   const links=developmentVersionLinks(state,version),productBlocker=productConversionBlocker(version);
   const qcFailed=version?.qc?.result==='reject'&&!version.qcDecision,qcAllowsConfirm=!!version?.qc&&version.qc.result!=='reject'&&!version.qcDecision;
@@ -202,7 +203,7 @@ export function DevDetailPage(){
         <Card clip>
           {(mediaFile&&!picture)||fabricDomain&&!picture?<div className="mist-stage" data-size="lg"><EmptyState icon={Layers} title={!mediaFile?'尚未上传本版实物图片':pictureError?'图片读取失败':'正在读取图片'} description={mediaFile?.name||'返样事实与图片分别保存，不用示例图冒充实物。'} action={pictureError?<TextLink onClick={()=>setPictureRetry(value=>value+1)}>重试</TextLink>:undefined} /></div>:<ObjectStage size="lg" src={picture||IMG[currentImage]} alt={dev.name} caption={version?`${version.returnedAt?'返样实物':'计划版本'} · ${version.label}`:'开发计划'} />}
           <div className="mist-vers" role="group" aria-label="版本">{versions.map(item=><button key={item.id} type="button" aria-pressed={version?.id===item.id} disabled={busy} onClick={()=>chooseVersion(item.id)}>{item.label}{(flag=>flag&&<> <Pill tone={flag.tone}>{flag.label}</Pill></>)(versionQcFlag(item))}</button>)}</div>
-          <KeyValue items={[{label:'工厂',value:version?.factory||'待安排'},{label:'样品',value:version?`${version.sample||'未登记'} · ${version.sampleQuantity} ${fabricDomain?version.sampleUnit||dev.values.sampleUnit||'单位待登记':'件'}`:'未建立版本'},...(fabricDomain?[{label:'实物形态',value:version?.sampleForm||dev.values.sampleForm||'待登记'}]:[{label:'尺码',value:version?.size||dev.values.sizeBase}]),{label:'面料',value:version?.fabric||dev.fabric}]} />
+          <KeyValue items={[{label:'工厂',value:version?.factory||'待安排'},{label:'样品',value:version?`${version.sample||'未登记'} · ${version.sampleQuantity} ${fabricDomain?version.sampleUnit||dev.values.sampleUnit||'单位待登记':(!version.returnedAt&&version.task?.sampleUnit)||'件'}`:'未建立版本'},...(fabricDomain?[{label:'实物形态',value:version?.sampleForm||dev.values.sampleForm||'待登记'}]:[{label:'尺码',value:version?.size||dev.values.sizeBase}]),{label:'面料',value:version?.fabric||dev.fabric}]} />
           <CardFooter><span className="mist-note">准确版本独立记录</span><span className="mist-spacer" /><Button size="sm" disabled={!version||busy||!!sampleBlocker} title={sampleBlocker} icon={PackageCheck} onClick={()=>setDialog('sample')}>登记返样</Button></CardFooter>
           {version?.minor&&<div className="mist-section" data-minor={version.label}><Banner tone="neutral" title={`小版本 · 沿用 ${parentVersion?.label||'大版本'} 实物与 QC 结论`}>本次调整：{version.minor.change}。需求方确认须对 {version.label} 单独记录，不继承 {parentVersion?.label||'大版本'} 的确认。</Banner></div>}
           {!!childMinors.length&&<p className="mist-note" style={{padding:'0 22px 12px'}}>本版小调整：{childMinors.map(item=>`${item.label}（${item.minor!.change}）`).join('；')}</p>}
