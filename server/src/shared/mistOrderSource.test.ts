@@ -83,3 +83,24 @@ describe('BB-ORD-2 order line source is written once and validated on the server
   expect(()=>f.run({type:'order.governance.submit',payload:{orderId:pid}} as MistCommand)).toThrow(/产品档案已归档/);
  });
 });
+
+
+it.each([
+ ['none','g',/尚未获得客户认可/],
+ ['other','gb',/属于其他客户/],
+ ['arch','g',/已归档/],
+ ['missing','g',/开发版本不存在/],
+ ['fab','f',/面料，与成衣订单不一致/],
+])('validates the development behind an active product archive: %s',(versionId,devId,message)=>{
+ const f=fixture(),product=f.state.market.products.find(p=>p.id==='p')!;
+ product.sourceDevId=devId;product.sourceVersionId=versionId;
+ const before=structuredClone(f.state);
+ expect(()=>f.create({sourceProductId:'p'})).toThrow(message);
+ expect(f.state).toEqual(before);
+});
+it('rechecks a product-backed development approval at submission and still allows a source-free catalog product',()=>{
+ const f=fixture(),id=f.create({sourceProductId:'p'}).orderId!;
+ f.state.versions.find(v=>v.id==='ok')!.confirmations.push({result:'needs_adjustment'} as never);
+ expect(()=>f.run({type:'order.governance.submit',payload:{orderId:id}})).toThrow(/尚未获得客户认可/);
+ const fresh=fixture();expect(fresh.create({sourceProductId:'pfab'},{type:'fabric'}).orderId).toBeTruthy();
+});
