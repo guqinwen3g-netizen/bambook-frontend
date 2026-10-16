@@ -142,7 +142,7 @@ export function createMistRouter(options: { prisma?: any; filesRoot?: string; re
     const body = exactBody(req.body, ['requestId', 'expectedRevision', 'claimId']);
     if (!req.file) fail('FILE_REQUIRED', '请选择实际文件', 400);
     if (typeof body.expectedRevision !== 'string' || !/^\d+$/.test(body.expectedRevision)) fail('INVALID_INPUT', '工作区版本无效', 400);
-    res.status(201).json(await repository.upload(actor(req), req.params.id, { requestId: body.requestId, expectedRevision: Number(body.expectedRevision),...(Object.prototype.hasOwnProperty.call(body,'claimId')?{claimId:body.claimId}:{}) }, { bytes: req.file!.buffer, name: req.file!.originalname, mimeType: req.file!.mimetype }));
+    res.status(201).json(await repository.upload(actor(req), req.params.id, { requestId: body.requestId, expectedRevision: Number(body.expectedRevision),...(Object.prototype.hasOwnProperty.call(body,'claimId')?{claimId:body.claimId}:{}) }, { bytes: req.file!.buffer, name: req.file!.originalname, multipartFilename: true, mimeType: req.file!.mimetype }));
   }));
   router.get('/workspaces/:id/files/:fileId', run(async (req, res) => {
     const { file, bytes } = await repository.download(actor(req), req.params.id, req.params.fileId);

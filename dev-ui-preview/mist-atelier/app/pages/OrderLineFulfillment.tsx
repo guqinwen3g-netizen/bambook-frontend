@@ -35,7 +35,7 @@ export function OrderLineFulfillment({ state, order, line, go, onCloseLine }: { 
     ]} />
     <div className="mist-col" style={{ gap: 8 }}>
       {closure && <Banner tone={closure.status === 'closed' ? 'ok' : closure.status === 'pending' ? 'warn' : 'bad'} title={closure.status === 'closed' ? '条目已结案' : closure.status === 'pending' ? '结案待审批' : '结案申请已退回'}><span data-line-closure={closure.status}>{closureLabel(closure)}</span>{closure.status !== 'rejected' && <span className="mist-note"> · 不能再建出运或改数量；{CLOSE_SETTLEMENT_HINT}</span>}</Banner>}
-      <div className="mist-row"><b className="mist-h3">阶段轨迹</b><span className="mist-spacer" />{current ? <Pill tone={current.state === 'blocked' ? 'bad' : 'accent'}>当前：{current.label}</Pill> : <Pill tone="ok">已全部完成</Pill>}</div>
+      <div className="mist-row"><b className="mist-h3">阶段轨迹</b><span className="mist-spacer" />{current ? <Pill tone={current.state === 'blocked' ? 'bad' : 'accent'}>当前：{current.label}</Pill> : <Pill tone="ok">已完成出运</Pill>}</div>
       <nav className="mist-line-track" aria-label="条目阶段" style={{ ['--mist-steps' as string]: stages.length }}>
         {stages.map(stage => <button key={stage.key} type="button" data-state={stage.state === 'todo' ? undefined : stage.state === 'now' && stage.key !== current?.key ? 'partial' : stage.state} aria-current={stage.key === current?.key ? 'step' : undefined} aria-pressed={stage.key === open?.key} onClick={() => setOpenKey(stage.key)}><b>{stage.label}</b><small>{stage.caption || STATE_LABEL[stage.state]}</small></button>)}
       </nav>

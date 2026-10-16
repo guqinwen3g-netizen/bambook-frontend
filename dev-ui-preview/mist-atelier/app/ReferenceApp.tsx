@@ -228,7 +228,8 @@ function AppInner({ theme, setTheme }: { theme: ThemeMode; setTheme: (theme: The
     : session.localMode && route.view === 'mes' ? LocalMesPage
     : PAGES[route.view] ?? null;
   const user = session.user!;
-  const name = state?.settings.profileName?.trim() || user.displayName || user.email;
+  const workspaceProfileName = state?.settings.profileName?.trim() || '';
+  const name = (workspace.workspace?.ownerId === user.id ? workspaceProfileName : '') || user.displayName || user.email;
   const roles = user.roleLabels?.map(role => role.name).join(' · ') || user.roles.map(role => ({ owner: '负责人', admin: '管理员', manager: '管理者', merchandiser: '业务员', finance: '财务', sales: '业务员', viewer: '查看人员', agent_operator: '助手操作员' })[role]).join(' · ');
   return (
     <Nav.Provider value={nav}><MistReviewProvider><MistDensityContext.Provider value={state?.settings.density||'default'}>
@@ -275,7 +276,7 @@ function AppInner({ theme, setTheme }: { theme: ThemeMode; setTheme: (theme: The
         {session.localMode&&<><p className="mist-note">选择本地工作身份；权限和名称由本机服务提供。</p><div className="mist-row">{session.localProfiles?.map(profile=><Button key={profile.id} aria-pressed={profile.id===user.id} disabled={session.signingIn} variant={profile.id===user.id?'primary':'secondary'} onClick={()=>void session.selectLocalProfile?.(profile.id).catch(failure=>toast(failure instanceof Error?failure.message:'身份切换未完成','bad'))}>{profile.name}</Button>)}</div></>}
         <Button onClick={()=>{setAccount(false);setSpaces(true);}}>切换工作空间</Button>
         {workspace.workspace&&<Button onClick={()=>{setAccount(false);go('workspace-settings');}}>工作空间设置与授权</Button>}
-        <KeyValue items={[{ label: '当前工作身份', value: user.displayName || user.email }, { label: '工作区显示名', value: name }, { label: '工作邮箱', value: user.email }, { label: '职责', value: roles || '未设置' }, { label: '部门', value: user.department || '未设置' }]} />
+        <KeyValue items={[{ label: '当前工作身份', value: user.displayName || user.email }, { label: '工作区显示名', value: workspaceProfileName || '未设置' }, { label: '工作邮箱', value: user.email }, { label: '职责', value: roles || '未设置' }, { label: '部门', value: user.department || '未设置' }]} />
         {account&&<MistVersionInfo demoSeed={state?.settings.demoSeed} />}
       </Drawer>
     </MistDensityContext.Provider></MistReviewProvider></Nav.Provider>
