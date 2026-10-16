@@ -2,7 +2,7 @@
 import React from 'react';
 import {developmentCharged,developmentDomain,developmentInitiator,developmentInitiatorLabel,validFabricSample} from '../../../../server/src/shared/mistDevelopmentDomain';
 import { apiService } from '../../../../services/apiService';
-import { ArrowRight, Building2, CircleCheck, ClipboardList, Clock, Download, Ellipsis, FileCheck, FileText, History, Layers, PackageCheck, Paperclip, Pencil, Plus, ShieldCheck, Trash2, Users, X } from 'lucide-react';
+import { Archive, ArrowRight, Building2, CircleCheck, ClipboardList, Clock, Download, Ellipsis, FileCheck, FileText, History, Layers, PackageCheck, Paperclip, Pencil, Plus, ShieldCheck, Trash2, Users, X } from 'lucide-react';
 import { Avatar, BackLink, Banner, Button, Card, CardFooter, CardHeader, Checkbox, ChoiceCards, Dialog, EmptyState, Field, FormGrid, IconButton, IdentityHeader, KeyValue, MeasurementTable, MistPage, Mono, ObjectStage, Pill, RelatedList, Select, Stepper, SummaryNumbers, TextArea, TextInput, TextLink, Thumb, Timeline, UploadZone, useToast, type StepState } from '../../../../components/mist';
 import type { MistConfirmation, MistDev, MistQc, MistVersion } from '../../../../server/src/shared/mistWorkspace';
 import { IMG, STAGES } from '../data';
@@ -11,6 +11,7 @@ import { useNav } from '../nav';
 import { developmentFactoryOptions, InlineDevelopmentFactoryDialog } from './DevCreatePage';
 import { developmentRoundBlocker } from '../../../../server/src/shared/mistDevelopmentRounds';
 import { DevRoundsCard, NewRoundDialog, versionQcFlag, type NewRoundInput } from './DevRounds';
+import { ToProductDialog, developmentVersionLinks, productConversionBlocker } from './DevVersionLinks';
 
 export function localConfirmationTime(date=new Date()){return Number.isNaN(date.getTime())?'':new Date(date.getTime()-date.getTimezoneOffset()*60_000).toISOString().slice(0,16);}
 export function confirmationFormError(values:{confirmer:string;organization:string;confirmedAt:string;basis:string;originalText:string}){
@@ -47,7 +48,7 @@ export function DevDetailPage(){
   const {go,route}=useNav();const {state,loading,error,run,uploadFile,downloadFile,fileUrl,pending,recover,saving}=useMistWorkspace();const toast=useToast();
   const dev=state?.devs.find(item=>item.id===route.id),versions=state?.versions.filter(version=>version.devId===dev?.id)||[];
   const fabricDomain=!!dev&&developmentDomain(dev.values)==='fabric';
-  const [versionId,setVersionId]=React.useState(route.versionId||''),[form,setForm]=React.useState<Form>(()=>emptyForm()),[dialog,setDialog]=React.useState<'confirm'|'actions'|'revise'|'archive'|'sample'|'qc'|'edit'|'round'|'qcDecide'|'close'|null>(null),[busy,setBusy]=React.useState(false),[failure,setFailure]=React.useState('');
+  const [versionId,setVersionId]=React.useState(route.versionId||''),[form,setForm]=React.useState<Form>(()=>emptyForm()),[dialog,setDialog]=React.useState<'confirm'|'actions'|'revise'|'archive'|'sample'|'qc'|'edit'|'round'|'qcDecide'|'close'|'product'|null>(null),[busy,setBusy]=React.useState(false),[failure,setFailure]=React.useState('');
   const [note,setNote]=React.useState(''),[sample,setSample]=React.useState({sample:'',quantity:'1',form:'',unit:'',location:'',color:'',returnedAt:localConfirmationTime()}),[qc,setQc]=React.useState<QcForm>(()=>qcForm(null)),[edit,setEdit]=React.useState({goal:'',due:'',factories:''}),[factoryDialog,setFactoryDialog]=React.useState(false),[roundInitial,setRoundInitial]=React.useState<Partial<NewRoundInput>|undefined>(),[decision,setDecision]=React.useState<{kind:'rework'|'abandon';note:string}>({kind:'rework',note:''}),[closure,setClosure]=React.useState<{kind:'archived'|'cancelled';reason:string}>({kind:'cancelled',reason:''});
   const version=versions.find(item=>item.id===(versionId||dev?.currentVersionId)),scope=React.useRef('');scope.current=`${dev?.id||''}:${version?.id||''}`;
   const fabricRequirements=version?.fabricRequirements||dev?.values.fabricRequirements;
@@ -110,6 +111,13 @@ export function DevDetailPage(){
       setFailure(feedback);
     }catch(cause){if(live.current&&scope.current===originalScope)setFailure(String(cause));}finally{busyRef.current=false;if(live.current)setBusy(false);}
   };
+  const toProduct=async(input:{sku:string;supplierCode:string})=>{
+    if(!dev||!version||busyRef.current)return;busyRef.current=true;setBusy(true);setFailure('');
+    try{const supplier=state?.market.suppliers.find(item=>item.name===version.factory);
+      await run({type:'market.product.fromVersion',payload:{devId:dev.id,versionId:version.id,sku:input.sku,...(supplier?{supplierId:supplier.id}:{}),...(input.supplierCode?{supplierCode:input.supplierCode}:{})}});
+      if(live.current)finish(`已从 ${version.label} 建立产品档案 ${input.sku}`);}
+    catch(cause){if(live.current)setFailure(cause instanceof Error?cause.message:'档案尚未建立，原内容已保留');}finally{busyRef.current=false;if(live.current)setBusy(false);}
+  };
   const createRound=async(input:NewRoundInput)=>{
     if(!dev||busyRef.current)return;busyRef.current=true;setBusy(true);setFailure('');
     try{const receipt=await run({type:'development.round.create',payload:{devId:dev.id,...input}});setRoundInitial(undefined);const id=receipt.result.versionId;
@@ -132,6 +140,7 @@ export function DevDetailPage(){
   const currentFormError=confirmationFormError(form);
   const sameConfirmation=last&&last.result===form.result&&last.confirmer===form.confirmer&&last.organization===form.organization&&last.basis===form.basis&&last.originalText===form.originalText&&new Date(last.confirmedAt).getTime()===new Date(form.confirmedAt).getTime();
   const measurements=version?.qc?.measurements||[],measureStats=measurements.reduce((counts,row)=>{const difference=Math.abs(row.actual-row.standard),epsilon=row.tolerance===0?0:Number.EPSILON*Math.max(1,row.actual,row.standard,row.tolerance)*4;return{within:counts.within+(difference<=row.tolerance+epsilon?1:0),attention:counts.attention+(difference>row.tolerance*.5+epsilon?1:0)};},{within:0,attention:0});
+  const links=developmentVersionLinks(state,version),productBlocker=productConversionBlocker(version);
   const qcFailed=version?.qc?.result==='reject'&&!version.qcDecision,qcAllowsConfirm=!!version?.qc&&version.qc.result!=='reject'&&!version.qcDecision;
   const resampleRound=version?.qcDecision?.roundId?state?.rounds?.find(round=>round.id===version.qcDecision!.roundId):undefined;
   const roundBlocker=developmentRoundBlocker(state!,dev);
@@ -190,7 +199,15 @@ export function DevDetailPage(){
       <div className="mist-detail-rail">
         <Card><CardHeader title="动态" tools={<IconButton icon={History} label="定位动态记录" size="sm" onClick={()=>document.getElementById('mist-dev-history')?.scrollIntoView({behavior:'smooth'})} />} /><div id="mist-dev-history">{history.length?<Timeline events={history.map(event=>({who:event.actor,when:new Date(event.at).toLocaleString(),text:event.text}))} />:<EmptyState compact title="暂无业务动态" />}</div></Card>
         <Card><CardHeader title="确认记录" />{version?.confirmations.length?<Timeline events={version.confirmations.slice().reverse().map(item=>({who:item.confirmer,when:new Date(item.confirmedAt).toLocaleString(),text:`${resultLabel[item.result]} · ${item.organization}\n${item.basis}${item.originalText?`\n${item.originalText}`:''}`}))} />:<EmptyState compact title="本版暂无确认记录" />}</Card>
-        <Card id="mist-dev-archive"><CardHeader title="关联" /><RelatedList items={[...(dev.customerId?[{icon:Users,title:dev.customer,sub:'客户档案',onClick:()=>go('crm',dev.customerId,{customerId:dev.customerId})}]:[]),...(state?.orders.filter(order=>!!dev.customerId&&order.customerId===dev.customerId).map(order=>({icon:ClipboardList,title:order.code,sub:'该客户订单',onClick:()=>go('orders/detail',order.id)}))||[])]} /><CardFooter><span className="mist-note">{version?.archivedAt?`本版已留档 · ${new Date(version.archivedAt).toLocaleDateString()}`:'本版尚未留档'}</span><Button size="sm" disabled={!version||busy||!!version.archivedAt} onClick={()=>setDialog('archive')}>成果留档</Button></CardFooter></Card>
+        <Card id="mist-dev-archive"><CardHeader title="关联" /><RelatedList items={[
+            ...(links.product?[{icon:Archive,title:links.product.sku,sub:`产品档案 · ${links.product.name}`,onClick:()=>go('products',links.product!.id)}]:[]),
+            ...links.samples.map(sample=>({icon:PackageCheck,title:sample.code,sub:`本版实物样品 · ${sample.name}`,onClick:()=>go('samples',sample.id)})),
+            ...links.qcTasks.map(task=>({icon:ShieldCheck,title:task.code,sub:`QC 任务 · ${task.factory}`,onClick:()=>go('qc-workbench',task.id,{section:task.kind})})),
+            ...links.quotations.map(quote=>({icon:FileText,title:quote.code,sub:'引用本版的报价',onClick:()=>go('quotations',quote.id)})),
+            ...links.orders.map(order=>({icon:ClipboardList,title:order.code,sub:'引用本版的订单',onClick:()=>go('orders/detail',order.id)})),
+            ...(dev.customerId?[{icon:Users,title:dev.customer,sub:'客户档案',onClick:()=>go('crm',dev.customerId,{customerId:dev.customerId})}]:[])]} />
+          {links.product?<div className="mist-row" style={{padding:'6px 22px 10px',gap:8}}><span className="mist-note">本版产品档案</span><TextLink onClick={()=>go('products',links.product!.id)}><Mono>{links.product.sku}</Mono></TextLink></div>
+            :<div className="mist-row" style={{padding:'6px 22px 10px',gap:8,flexWrap:'wrap'}}><Button size="sm" icon={Archive} disabled={!version||busy||!!productBlocker} title={productBlocker||undefined} onClick={()=>{setFailure('');setDialog('product');}}>转为产品档案</Button>{productBlocker&&<span className="mist-note">{productBlocker}</span>}</div>}<CardFooter><span className="mist-note">{version?.archivedAt?`本版已留档 · ${new Date(version.archivedAt).toLocaleDateString()}`:'本版尚未留档'}</span><Button size="sm" disabled={!version||busy||!!version.archivedAt} onClick={()=>setDialog('archive')}>成果留档</Button></CardFooter></Card>
       </div>
     </div>
     <Dialog open={dialog==='confirm'} onClose={()=>!busy&&setDialog(null)} icon={form.result==='rejected'?X:CircleCheck} tone={form.result==='rejected'?'bad':form.result==='needs_adjustment'?'warn':'ok'} title={`记录 ${version?.label||''}：${resultLabel[form.result]}？`} description="本次决定只记录在当前准确版本；原有报告和历史记录继续保留。" footer={<>{recovery}<Button variant="quiet" disabled={busy} onClick={()=>setDialog(null)}>取消</Button><Button variant={form.result==='rejected'?'danger':'primary'} loading={busy} onClick={()=>void act('confirm')}>确认提交</Button></>}><KeyValue items={[{label:'实际确认人',value:form.confirmer},{label:'组织',value:form.organization},{label:'确认依据',value:form.basis}]} /></Dialog>
@@ -203,6 +220,7 @@ export function DevDetailPage(){
       {failure&&<Banner tone="bad" title="尚未保存">{failure}</Banner>}
       <Field label={decision.kind==='rework'?'整改要求':'放弃原因'} required={decision.kind==='abandon'} full><TextArea value={decision.note} onChange={event=>setDecision(previous=>({...previous,note:event.target.value}))} placeholder={decision.kind==='rework'?'例如：袖长按 QC 意见改短 1cm':'例如：工厂工艺无法达到要求'} /></Field>
     </Dialog>
+    <ToProductDialog open={dialog==='product'} version={version} busy={busy} failure={failure} onClose={()=>setDialog(null)} onSubmit={input=>void toProduct(input)} />
     {state&&<NewRoundDialog open={dialog==='round'} initial={roundInitial} state={state} dev={dev} busy={busy} failure={failure} factoryOptions={developmentFactoryOptions(state,dev.values.factories,fabricDomain?'fabric':'garment')} onClose={()=>{setDialog(null);setRoundInitial(undefined);}} onAddFactory={()=>setFactoryDialog(true)} onSubmit={input=>void createRound(input)} onUpload={uploadRoundFiles}/>}
     <Dialog open={dialog==='revise'} onClose={()=>!busy&&setDialog(null)} title={`基于 ${version?.label||''} 发起新一版`} description="原版与其确认、报告继续保留。" footer={<>{recovery}<Button variant="quiet" onClick={()=>setDialog(null)}>取消</Button><Button variant="primary" loading={busy} disabled={!note.trim()} onClick={()=>void act('revise')}>建立新版本</Button></>}><Field label="本次修改要求" required><TextArea value={note} onChange={event=>setNote(event.target.value)} /></Field></Dialog>
     <Dialog open={dialog==='archive'} onClose={()=>!busy&&setDialog(null)} title={`将 ${version?.label||''} 留档？`} description="按当前版本记录保存成果，保留所依据的实物、报告和需求方决定。" footer={<>{recovery}<Button variant="quiet" onClick={()=>setDialog(null)}>取消</Button><Button variant="primary" loading={busy} onClick={()=>void act('archive')}>确认留档</Button></>} />

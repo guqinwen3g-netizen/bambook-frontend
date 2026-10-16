@@ -118,7 +118,7 @@ function base(root:MistState,context:MistContext,input:{fileIds?:string[];note?:
 function put<T extends RecordBase>(rows:T[],row:T,old?:T){if(old)rows[rows.indexOf(old)]=row;else rows.unshift(row);}
 function history(root:MistState,ctx:MistContext,kind:string,id:string,text:string,fileIds:string[]=[]){root.events.unshift({id:ctx.id(),entityType:kind,entityId:id,actor:ctx.actorName,at:ctx.now,text,fileIds});}
 function supplierRef(m:MarketState,id:string,now:string|false){if(!id)return '';const s=find(m.suppliers,id,'供应商');const unavailable=now?supplierUnavailableReason(s,supplierBusinessDay(now)):'';if(unavailable)fail(unavailable,'PRECONDITION');return s.id;}
-function validateSource(root:MistState,devId:string,versionId:string,pass=false){if(!devId&&!versionId)return;const d=find(root.devs,devId,'来源开发案'),v=find(root.versions,versionId,'来源版本');if(v.devId!==d.id||!d.versionIds.includes(v.id))fail('来源版本不属于该开发案');if(pass&&v.qc?.result!=='pass')fail('只有正式 QC 通过的准确版本可以转产品档案','PRECONDITION');}
+function validateSource(root:MistState,devId:string,versionId:string,pass=false){if(!devId&&!versionId)return;const d=find(root.devs,devId,'来源开发案'),v=find(root.versions,versionId,'来源版本');if(v.devId!==d.id||!d.versionIds.includes(v.id))fail('来源版本不属于该开发案');if(pass&&(!v.qc||v.qc.result==='reject'||v.qcDecision))fail('只有 QC 通过或有保留通过的准确版本可以转产品档案','PRECONDITION');}
 function productRefs(m:MarketState,ids:unknown){const unique=arr(ids||[],'产品');unique.forEach(id=>{if(find(m.products,id,'产品').status!=='active')fail('已归档产品不可用于新活动');});return unique;}
 /** 报价计价单位：面料只能 米 / 码 / 公斤，成衣只能 件 / 套；不换算、不预填。辅料等其他类别不在两个板块内，不限定。 */
 export const QUOTE_UNITS={fabric:['米','码','公斤'],garment:['件','套']} as const;

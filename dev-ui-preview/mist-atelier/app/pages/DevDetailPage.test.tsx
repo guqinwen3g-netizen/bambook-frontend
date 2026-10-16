@@ -177,3 +177,28 @@ describe('BB-DEV-7 QC gate on the detail page',()=>{
     await mount();expect(host.textContent).toContain('历次 QC');expect(host.textContent).toContain('第一次不通过');expect(host.textContent).toContain('整改复检 · 改袖长');expect(button('提交复检')!.disabled).toBe(false);expect(button('保存确认')!.disabled).toBe(true);
   });
 });
+
+describe('BB-DEV-10 version links and product conversion',()=>{
+  const button=(text:string)=>[...document.querySelectorAll('button')].find(item=>item.textContent?.trim()===text) as HTMLButtonElement|undefined;
+  it('converts a conditionally passed version without customer confirmation, using the version factory as supplier',async()=>{
+    const st=bridge.current.state;st.market={suppliers:[{id:'sup-b',name:'工厂 vb'}],products:[],quotations:[]};const v=st.versions.find((row:any)=>row.id==='vb');v.qc={...v.qc,result:'conditional',opinion:'袖口需关注'};
+    await mount('vb');expect(button('转为产品档案')!.disabled).toBe(false);await click('转为产品档案');expect(document.body.textContent).toContain('袖口需关注');
+    await fill('公司产品编码','GA-R2B');await click('建立产品档案');
+    expect(bridge.current.run).toHaveBeenCalledWith({type:'market.product.fromVersion',payload:{devId:'dev-a',versionId:'vb',sku:'GA-R2B',supplierId:'sup-b'}});
+  });
+  it('blocks conversion without a passing QC and shows the reason',async()=>{
+    const v=bridge.current.state.versions.find((row:any)=>row.id==='va');v.qc={...v.qc,result:'reject'};await mount('va');
+    expect(button('转为产品档案')!.disabled).toBe(true);expect(host.textContent).toContain('本版 QC 不通过，不能转为产品档案');
+  });
+  it('shows the archive number with a link and lists the exact sample, QC task, quotation and order of this version only',async()=>{
+    const st=bridge.current.state;
+    st.market={suppliers:[],products:[{id:'prod-1',sku:'GA-2711',name:'实际档案',sourceDevId:'dev-a',sourceVersionId:'vb'}],quotations:[{id:'q-1',code:'QT-0001',lines:[{sourceVersionId:'vb'}],convertedOrderId:'o-2'},{id:'q-2',code:'QT-OTHER',lines:[{sourceVersionId:'va'}]}]};
+    st.fulfillment={samples:[{id:'s-1',code:'SM-0001',name:'R2-B 实物',source:{kind:'version',devId:'dev-a',versionId:'vb'}},{id:'s-2',code:'SM-OTHER',name:'其他',source:{kind:'version',devId:'dev-a',versionId:'va'}}],qcTasks:[{id:'t-1',code:'QC-T-1',kind:'sample',factory:'工厂 vb',source:{kind:'version',devId:'dev-a',versionId:'vb'}}]};
+    st.orders=[{id:'o-1',code:'SO-0001',customerId:'customer-a'},{id:'o-2',code:'SO-0002',customerId:'customer-a'},{id:'o-3',code:'SO-UNRELATED',customerId:'customer-a'}];st.orderLines=[{id:'l-1',orderId:'o-1',sourceVersionId:'vb'}];
+    await mount('vb');const text=host.textContent||'';
+    for(const code of ['GA-2711','SM-0001','QC-T-1','QT-0001','SO-0001','SO-0002'])expect(text).toContain(code);
+    for(const code of ['SM-OTHER','QT-OTHER','SO-UNRELATED'])expect(text).not.toContain(code);
+    expect(button('转为产品档案')).toBeUndefined();
+    await act(async()=>[...host.querySelectorAll('button')].find(item=>item.textContent?.trim()==='GA-2711')!.click());expect(go).toHaveBeenCalledWith('products','prod-1');
+  });
+});
