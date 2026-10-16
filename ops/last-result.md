@@ -1,21 +1,20 @@
-request: f34ea8ec1cf1b8812fc60e7f8fc7ca81c86f70d9
-request-sha256: d4e7d3f267ed47c008300ea46319b8b818952ae8eca8253836f7c21d5c1c5b25
+request: 5e1c388ee46a36001f07f35edc38bdc5edb5d683
+request-sha256: cae3fff357ec86a8c0d20a259244d88429fd6c1039a44bef197f20f511b8f09d
 exit: 0
-seconds: 4
-finished: 2026-10-16T03:26:39Z
-run: https://github.com/guqinwen3g-netizen/bambook-main/actions/runs/38845525383
+seconds: 23
+finished: 2026-10-16T03:28:21Z
+run: https://github.com/guqinwen3g-netizen/bambook-main/actions/runs/38845638282
 ---
-current: /srv/bambook-dev/releases/66a540b2f7c377d987be62f16020dd7fbcccce4d
-bambook-dev-mist.service
-bambook-dev.service
-3: 公司管理员（全部权限，配置平台 AI）
-4: 面料业务主管（审批人）
-5: 面料一组组长（业务员）
-6: 面料一组业务员
-7: 财务专员
-8: 面料 QC
-9: 物流与单证专员
-# Bambook 开发环境测试账号（仅开发环境；不要提交或转发）
-127.0.0.1:8082
-127.0.0.1:8080
-127.0.0.1:8081
+admin token: ok
+/api/admin/users -> 200 {"users":29,"pending":0,"departments":7}
+/api/admin/roles -> 200 {"roles":18,"names":["业务员","销售主管","财务","领导","QC","后勤","总经理","logistics","production_manager","factory","Owner","Admin","Manager","Merchandiser","Finance","Sales","Viewer","Agent Operator"]}
+/api/admin/audit-logs?limit=3 -> 200 {"total":51,"actions":["login","login","login"]}
+/api/hr/personnel -> 200 {"people":18,"departments":[{"name":"业务部","parentId":true,"attrs":[]},{"name":"后勤部","parentId":true,"attrs":[]},{"name":"总公司","parentId":false,"attrs":[]},{"name":"总经办","parentId":true,"attrs":[]},{"name":"行政人事部","parentId":true,"attrs":[]},{"name":"财务部","pare
+/api/hr/teams -> 200 {"teams":[{"name":"成衣三组","department":"业务部","memberCount":5},{"name":"成衣二组","department":"业务部","memberCount":5},{"name":"成衣一组","department":"业务部","memberCount":5},{"name":"面料二组","department":"业务部","memberCount":4},{"name":"面料一组","depart
+sales token: ok
+/api/admin/users -> 403 {"ok":null,"error":"FORBIDDEN"}
+/api/hr/personnel -> 403 {"ok":null,"error":"FORBIDDEN","people":0}
+js: /assets/index-DCjuEUpW.js
+打开搜索结果页查看全部
+本地工作区没有公司组织架构
+注册申请待审批
