@@ -14,7 +14,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: "${{ github.event.head_commit.message == 'ops: observe capacity upload read-only' && 'bambook-capacity-observe' || 'bambook-dev-ops' }}"
+  group: "${{ github.event.head_commit.message == 'ops: observe capacity upload read-only' && 'bambook-capacity-observe' || github.event.head_commit.message == 'ops: execute bounded isolated capacity trial' && 'bambook-development-delivery' || 'bambook-dev-ops' }}"
   cancel-in-progress: false
 
 env:
@@ -55,7 +55,7 @@ jobs:
           test -s "$RUNNER_TEMP/request.sh" || { echo '::error::ops/request.sh is empty'; exit 1; }
           # The independent observation lane accepts only this fixed read-only probe.
           if [ "$OBSERVE_ONLY" = true ]; then
-            test "$(sha256sum "$RUNNER_TEMP/request.sh" | cut -d' ' -f1)" = "faef192636add8c0c3adfd111b07fda21e15c568a4771e8806bc1924ea66f2c8"
+            test "$(sha256sum "$RUNNER_TEMP/request.sh" | cut -d' ' -f1)" = "2008186eb95871aa4515f63adcf1ef5a981b4acbba46d8d39d3ad582f9c6774d"
           fi
           echo "sha256=$(sha256sum "$RUNNER_TEMP/request.sh" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
           source_sha=$(sed -nE 's/^# capacity-source-main: ([0-9a-f]{40})$/\1/p' "$RUNNER_TEMP/request.sh")
