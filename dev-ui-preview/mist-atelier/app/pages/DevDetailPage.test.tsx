@@ -138,3 +138,42 @@ describe('fabric exact version detail',()=>{
 it('keeps rejected fabric sample input and feedback inside the still-open dialog',async()=>{
  bridge.current.state.devs=[{...record,values:{...record.values,domain:'fabric',sampleForm:'米样',sampleUnit:'米'}}];bridge.current.state.versions[0]={...bridge.current.state.versions[0],qc:null,returnedAt:null,size:''};bridge.current.run.mockRejectedValueOnce(new Error('来源版本已更新，请核对'));await mount();await click('登记返样');await fill('实物编号','保留实物编号');await fill('数量 / 长度','1.25');await click('保存返样');const modal=document.querySelector('[role="dialog"]')!;expect(modal.textContent).toContain('来源版本已更新，请核对');expect(modal.textContent).toContain('返样尚未保存');expect([...modal.querySelectorAll('input')].some(i=>i.value==='1.25')).toBe(true);
 });
+
+describe('BB-DEV-7 QC gate on the detail page',()=>{
+  const fail=(state:any,id:string,opinion='袖长超差 1.5cm')=>{const v=state.versions.find((row:any)=>row.id===id);v.qc={...v.qc,result:'reject',opinion};};
+  const button=(text:string)=>[...document.querySelectorAll('button')].find(item=>item.textContent?.trim()===text) as HTMLButtonElement|undefined;
+  it('blocks confirmation on a failed QC and offers rework, resample and abandon for garments',async()=>{
+    fail(bridge.current.state,'va');await mount();
+    expect(host.textContent).toContain('QC 不通过 · 不能记录确认');expect(host.textContent).toContain('袖长超差 1.5cm');
+    expect(button('保存确认')!.disabled).toBe(true);expect(button('整改复检')).toBeTruthy();expect(button('重新打样')).toBeTruthy();expect(button('放弃本版')).toBeTruthy();
+    expect(button('更新报告')!.disabled).toBe(true);
+    await click('整改复检');await fill('整改要求','袖长改短');await click('确认整改复检');
+    expect(bridge.current.run).toHaveBeenCalledWith({type:'development.qc.decide',payload:{devId:'dev-a',versionId:'va',decision:'rework',note:'袖长改短'}});
+  });
+  it('requires an abandon reason and keeps other versions confirmable',async()=>{
+    fail(bridge.current.state,'va');await mount();await click('放弃本版');
+    expect(button('确认放弃本版')!.disabled).toBe(true);await fill('放弃原因','工厂能力不足');await click('确认放弃本版');
+    expect(bridge.current.run).toHaveBeenCalledWith({type:'development.qc.decide',payload:{devId:'dev-a',versionId:'va',decision:'abandon',note:'工厂能力不足'}});
+    await act(async()=>root!.unmount());root=undefined;host.remove();
+    const v=bridge.current.state.versions.find((row:any)=>row.id==='va');v.qcDecision={kind:'abandon',note:'工厂能力不足',decidedAt:'2026-10-16T00:00:00Z',decidedBy:'业务员'};
+    await mount();expect(host.textContent).toContain('本版已放弃 · 不采用');expect(host.textContent).toContain('不采用');
+    await click('R2-B-1');expect(host.textContent).not.toContain('本版已放弃');expect(button('整改复检')).toBeUndefined();
+  });
+  it('fabric failures have no rework; resample pre-fills the QC opinion into a new round',async()=>{
+    fail(bridge.current.state,'va','克重偏低 20g');bridge.current.state.devs[0].values={...bridge.current.state.devs[0].values,domain:'fabric',sampleForm:'米样',sampleUnit:'米'};bridge.current.state.rounds=[];bridge.current.state.market={suppliers:[]};
+    await mount();expect(button('整改复检')).toBeUndefined();await click('重新打样');
+    const textarea=[...document.querySelectorAll('label')].find(item=>item.querySelector('.mist-field-label')?.textContent?.replace('*','')==='本轮共同要求')!.querySelector('textarea')!;
+    expect(textarea.value).toContain('克重偏低 20g');expect(document.body.textContent).toContain('重新打样 · 来源 R1-A-1 QC 不通过');
+    const submit=[...document.querySelectorAll('button')].find(item=>item.textContent?.startsWith('建立 '))!;await act(async()=>submit.click());
+    expect(bridge.current.run).toHaveBeenCalledWith(expect.objectContaining({type:'development.round.create',payload:expect.objectContaining({devId:'dev-a',factories:['工厂 va'],referenceVersionIds:['va'],resampleFromVersionId:'va'})}));
+  });
+  it('shows 需关注 with the QC opinion for a conditional pass and still allows confirmation',async()=>{
+    const v=bridge.current.state.versions.find((row:any)=>row.id==='va');v.qc={...v.qc,result:'conditional',opinion:'领口略紧，量产前确认'};
+    await mount();expect(host.textContent).toContain('需关注 · QC 有保留通过');expect(host.textContent).toContain('领口略紧，量产前确认');
+    await fill('实际确认人','客户');await fill('确认时间','2026-10-13T15:10');await fill('确认依据','邮件');expect(button('保存确认')!.disabled).toBe(false);
+  });
+  it('shows every earlier QC after a rework and offers a re-inspection',async()=>{
+    const v=bridge.current.state.versions.find((row:any)=>row.id==='va');v.qcHistory=[{...v.qc,result:'reject',opinion:'第一次不通过',decision:{kind:'rework',note:'改袖长',decidedAt:'2026-10-14T00:00:00Z',decidedBy:'业务员'}}];v.qc=null;
+    await mount();expect(host.textContent).toContain('历次 QC');expect(host.textContent).toContain('第一次不通过');expect(host.textContent).toContain('整改复检 · 改袖长');expect(button('提交复检')!.disabled).toBe(false);expect(button('保存确认')!.disabled).toBe(true);
+  });
+});

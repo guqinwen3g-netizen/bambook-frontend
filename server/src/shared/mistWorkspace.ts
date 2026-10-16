@@ -53,7 +53,14 @@ export type MistVersion = {
   confirmationDraft?: Omit<MistConfirmation, 'id' | 'recordedAt' | 'recordedBy'>;
   /** 所属轮次（BB-DEV-2 起建立的版本才有；历史版本按原版本号展示）。 */
   roundId?: string; factoryLetter?: string;
+  /** 历次 QC（整改复检前的结论保留在这里，最新结论仍在 qc）。 */
+  qcHistory?: MistQcRecord[];
+  /** QC 不通过后的处理：整改复检（仅成衣）/ 重新打样（开新一轮）/ 放弃本版。 */
+  qcDecision?: MistQcDecision;
 };
+export type MistQcDecisionKind = 'rework' | 'resample' | 'abandon';
+export type MistQcDecision = { kind: MistQcDecisionKind; note: string; decidedAt: string; decidedBy: string; roundId?: string };
+export type MistQcRecord = MistQc & { decision?: MistQcDecision };
 /** 开发轮次：一批共同要求，可派给多家工厂；每家工厂在本轮形成一个大版本 R{轮次}-{字母}。 */
 export type MistRound = {
   id: string; devId: string; number: number; requirements: string; fileIds: string[];
@@ -183,7 +190,8 @@ export type MistCommand = FulfillmentCommand | MarketCommand | PlatformCommand |
   | { type: 'development.saveConfirmationDraft'; payload: { devId: string; versionId: string; draft: Omit<MistConfirmation, 'id' | 'recordedAt' | 'recordedBy'> } }
   | { type: 'development.revise'; payload: { devId: string; versionId: string; note: string } }
   | { type: 'development.archive'; payload: { devId: string; versionId: string } }
-  | { type: 'development.round.create'; payload: { devId: string; factories: string[]; requirements: string; fileIds?: string[]; referenceVersionIds?: string[]; targetDate: string } }
+  | { type: 'development.round.create'; payload: { devId: string; factories: string[]; requirements: string; fileIds?: string[]; referenceVersionIds?: string[]; targetDate: string; /** QC 不通过后“重新打样”：记录来源版本的处理决定 */ resampleFromVersionId?: string } }
+  | { type: 'development.qc.decide'; payload: { devId: string; versionId: string; decision: 'rework' | 'abandon'; note: string } }
   | { type: 'fabric.create'; payload: { name: string; request: string; owner: string; due: string } }
   | { type: 'fabric.answer'; payload: { id: string; answer: string; fileIds: string[] } }
   | { type: 'fabric.confirm'; payload: { id: string; approved: boolean; note: string } }
@@ -406,8 +414,11 @@ function updateDev(state: MistState, dev: MistDev, context: MistContext) {
   else if(latest?.result==='approved'){dev.stage=4;dev.state='已认可 · 待留档';dev.tone='ok';}
   else if(latest?.result==='rejected'){dev.stage=3;dev.state='不采用';dev.tone='bad';}
   else if(latest?.result==='needs_adjustment'){dev.stage=3;dev.state='待改版';dev.tone='warn';}
+  else if(version?.qcDecision?.kind==='abandon'){dev.stage=2;dev.state='本版不采用';dev.tone='bad';}
+  else if(version?.qcDecision?.kind==='resample'){dev.stage=2;dev.state='QC 不通过 · 已重新打样';dev.tone='bad';}
   else if(version?.qc?.result==='reject'){dev.stage=2;dev.state='QC 不通过';dev.tone='bad';}
   else if(version?.qc){dev.stage=3;dev.state=version.qc.result==='conditional'?'有保留通过 · 待确认':'待需求方确认';dev.tone='accent';}
+  else if(version?.returnedAt&&version.qcHistory?.length){dev.stage=2;dev.state='整改中 · 待复检';dev.tone='warn';}
   else if(version?.returnedAt){dev.stage=2;dev.state='QC 待评审';dev.tone='warn';}
   else if(version){dev.stage=1;dev.state=developmentDomain(dev.values)==='fabric'?'待工厂试样':'工厂制作中';dev.tone='neutral';}
   else {dev.stage=0;dev.state='开发计划';dev.tone='neutral';}
@@ -572,6 +583,8 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
       const [dev,version]=versionOf(state,p.devId,p.versionId);
       if(version.archivedAt)throw new MistCommandError('PRECONDITION','本版已留档，请通过新版本继续记录');
       if(!version.returnedAt)throw new MistCommandError('PRECONDITION','请先记录本版实际返样');
+      if(!version.qc)throw new MistCommandError('PRECONDITION','本版尚未完成 QC 评审，QC 通过或有保留通过后才能记录需求方确认');
+      if(version.qc.result==='reject')throw new MistCommandError('PRECONDITION','本版最新 QC 不通过，不能记录需求方确认；请选择整改复检、重新打样或放弃本版');
       if(!['approved','needs_adjustment','rejected'].includes(p.result))throw new MistCommandError('VALIDATION','确认结论无效');
       version.confirmations.push({id:context.id(),result:p.result,confirmer:text(p.confirmer,'实际确认人',true,120),organization:text(p.organization,'所属组织',false,240),confirmedAt:instant(p.confirmedAt,context),basis:text(p.basis,'确认依据'),originalText:text(p.originalText,'需求方原文',false),recordedAt:context.now,recordedBy:context.actorName});
       delete version.confirmationDraft;updateDev(state,dev,context);
@@ -590,6 +603,9 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
       const [dev,v]=versionOf(state,p.devId,p.versionId);
       if(v.archivedAt)throw new MistCommandError('PRECONDITION','本版已留档，请通过新版本继续记录');
       if(!v.returnedAt)throw new MistCommandError('PRECONDITION','请先记录实物返样');
+      if(v.qcDecision)throw new MistCommandError('PRECONDITION',v.qcDecision.kind==='abandon'?'本版已放弃，不能再记录 QC':'本版已转为重新打样，请在新一轮版本上记录 QC');
+      if(v.qc?.result==='reject')throw new MistCommandError('PRECONDITION','本版 QC 不通过；成衣请先选择整改复检后再提交复检，面料请重新打样或放弃本版');
+      if(v.confirmations.length)throw new MistCommandError('PRECONDITION','本版已有需求方确认记录，不能改写 QC');
       if((p.domain||'garment')!==developmentDomain(dev.values))throw new MistCommandError('VALIDATION','QC专业权限域与准确开发版本不一致');
       if(developmentDomain(dev.values)==='fabric'&&p.qc?.measurements?.length)throw new MistCommandError('VALIDATION','面料开发不套成衣尺寸公差，请填写面料实测');
       const fabricMeasurements=p.qc?.fabricMeasurements||[];if(!Array.isArray(fabricMeasurements)||fabricMeasurements.length>200)throw new MistCommandError('VALIDATION','面料实测最多支持200行');
@@ -605,6 +621,7 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
         return{point:text(item.point,label+'部位',true,120),standard:measured(item.standard,label+'标准'),actual:measured(item.actual,label+'实测'),tolerance:measured(item.tolerance,label+'公差')};
       });
       if(p.qc.appearanceDefects!==undefined&&(!Number.isSafeInteger(p.qc.appearanceDefects)||p.qc.appearanceDefects<0))throw new MistCommandError('VALIDATION','外观缺陷数量须为非负整数');
+      if(v.qc)v.qcHistory=[...(v.qcHistory||[]),v.qc];
       v.qc={result:p.qc.result,reviewer:text(p.qc.reviewer,'评审人',true,120),reviewedAt:instant(p.qc.reviewedAt,context),report:text(p.qc.report,'报告编号',true,120),opinion:text(p.qc.opinion,'专业意见'),measurements:facts,...(developmentDomain(dev.values)==='fabric'?{fabricMeasurements:fabricFacts}:{}),...(p.qc.appearanceDefects===undefined?{}:{appearanceDefects:p.qc.appearanceDefects})};
       updateDev(state,dev,context);event(state,context,'development',dev.id,'记录 '+v.label+' QC评审',{view:'development/detail',id:dev.id,versionId:v.id},'qc');result={devId:dev.id,versionId:v.id};break;
     }
@@ -613,7 +630,7 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
       if(!Number.isInteger(p.stage)||p.stage<0||p.stage>4)throw new MistCommandError('VALIDATION','阶段无效');
       if(p.stage>=1&&!v)throw new MistCommandError('PRECONDITION','请先指定工厂并建立样品版本');
       if(p.stage>=2&&!v?.returnedAt)throw new MistCommandError('PRECONDITION','请先记录实际返样');
-      if(p.stage>=3&&!v?.qc)throw new MistCommandError('PRECONDITION','请先完成本版QC评审');
+      if(p.stage>=3&&(!v?.qc||v.qc.result==='reject'))throw new MistCommandError('PRECONDITION','本版 QC 通过或有保留通过后才能进入需求方确认');
       if(p.stage===4&&v?.confirmations.at(-1)?.result!=='approved')throw new MistCommandError('PRECONDITION','本版尚未获得需求方认可');
       dev.stage=p.stage;dev.updatedAt=context.now;event(state,context,'development',dev.id,'进入 '+STAGES[p.stage]);result={devId:dev.id};break;
     }
@@ -623,9 +640,31 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
       updateDev(state,dev,context);
       event(state,context,'development',dev.id,'创建改版 '+version.label,{view:'development/detail',id:dev.id,versionId:version.id});result={devId:dev.id,versionId:version.id,roundId:round.id};break;
     }
+    case 'development.qc.decide': {
+      const [dev,v]=versionOf(state,p.devId,p.versionId);
+      if(v.archivedAt)throw new MistCommandError('PRECONDITION','本版已留档，请通过新版本继续记录');
+      if(v.qc?.result!=='reject')throw new MistCommandError('PRECONDITION','只有最新 QC 不通过的版本才需要选择处理方式');
+      if(v.qcDecision)throw new MistCommandError('PRECONDITION','本版已选择处理方式');
+      if(p.decision!=='rework'&&p.decision!=='abandon')throw new MistCommandError('VALIDATION','处理方式无效；重新打样请开新一轮');
+      const decision:MistQcDecision={kind:p.decision,note:text(p.note||'','处理说明',false),decidedAt:context.now,decidedBy:context.actorName};
+      if(p.decision==='rework'){
+        if(developmentDomain(dev.values)==='fabric')throw new MistCommandError('VALIDATION','面料开发没有整改复检，请重新打样或放弃本版');
+        v.qcHistory=[...(v.qcHistory||[]),{...v.qc,decision}];v.qc=null;
+      }else v.qcDecision=decision;
+      updateDev(state,dev,context);
+      event(state,context,'development',dev.id,(p.decision==='rework'?'整改复检 ':'放弃 ')+v.label,{view:'development/detail',id:dev.id,versionId:v.id},'qc');
+      result={devId:dev.id,versionId:v.id};break;
+    }
     case 'development.round.create': {
       const dev=find(state.devs,p.devId,'开发案');
-      const {round,versions}=createRound(state,dev,p,context);updateDev(state,dev,context);
+      const source=p.resampleFromVersionId?state.versions.find(row=>row.id===p.resampleFromVersionId&&row.devId===dev.id):undefined;
+      if(p.resampleFromVersionId){
+        if(!source)throw new MistCommandError('VALIDATION','重新打样的来源版本不存在');
+        if(source.qc?.result!=='reject'||source.qcDecision)throw new MistCommandError('PRECONDITION','只有 QC 不通过且尚未处理的版本才能重新打样');
+      }
+      const {round,versions}=createRound(state,dev,p,context);
+      if(source)source.qcDecision={kind:'resample',note:text(p.requirements,'本轮要求'),decidedAt:context.now,decidedBy:context.actorName,roundId:round.id};
+      updateDev(state,dev,context);
       event(state,context,'development',dev.id,'开启第 '+round.number+' 轮：'+versions.map(v=>v.label).join('、'),{view:'development/detail',id:dev.id,versionId:versions[0].id});
       result={devId:dev.id,roundId:round.id,versionId:versions[0].id,versionIds:versions.map(v=>v.id)};break;
     }
