@@ -10,6 +10,8 @@ Bambook 是公司内部业务系统，覆盖开发与寻样、报价、订单、
 
 ## 当前工作
 
+本批交付：开发轮次 / 版本 / 通知单 / 面料多形态与寄样（[PR #112](https://github.com/guqinwen3g-netizen/bambook-main/pull/112)）、订单来源 / 规格数量 / 出运与取消（[PR #108](https://github.com/guqinwen3g-netizen/bambook-main/pull/108)）已完成隔离本地页面与接口复核；并发保存（[PR #111](https://github.com/guqinwen3g-netizen/bambook-main/pull/111)）已交付。准确合入、验证范围和后续事项以各 PR 与 Notion 原总控为准；不代表正式环境发布或全公司业务验收完成。
+
 > **新 Agent 接手入口**：先读当前版本的 [长期工作与验证规则](AGENTS.md)，再读所认领任务的范围和验收条件。流程规则统一在 AGENTS.md 维护；[交接文档](docs/HANDOFF.md) 保留历史上下文，旧状态、测试覆盖和候选事项须按当前 GitHub 与代码核对。
 
 **现行开工方式（用户 2026-10-16 确认）**：完整任务包全部做完、本地自测通过后，一次性提交一个 PR 并交接，实施 Agent 随即结束本批工作，不主动查询、不检查、不等待或轮询 CI 结果；系统自动跑 CI，后续独立复核、失败处理和合入由总协调接手。本轮 Agent 已全部停止，以下分工统一生效；下一轮只向用户确认空闲且有额度的 Agent 派发完整任务包。旧任务单、交接或模板中让实施 Agent 等待 CI、验收或合入的冲突要求不再执行。详细分工与合入门槛见 [AGENTS.md](AGENTS.md)。
