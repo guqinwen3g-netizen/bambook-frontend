@@ -6,6 +6,7 @@
 import type { MistDev, MistState, MistVersion } from './mistWorkspace';
 import { developmentDomain } from './mistDevelopmentDomain';
 import { developmentClosure } from './mistDevelopmentRounds';
+import { DEVELOPMENT_BILLING_LOCK } from './mistDevelopmentBilling';
 
 export type MistSampleRef = { sampleId: string; code: string; form: string; unit: string };
 export type MistSampleFee = { amount: number; currency: string };
@@ -29,6 +30,7 @@ export const sampleRef = (sample: VersionSample): MistSampleRef => ({ sampleId: 
 export function sampleFormBlocker(state: MistState, dev: MistDev, version: MistVersion): string | null {
   if (developmentDomain(dev.values) !== 'fabric') return '只有面料版本可以追加实物形态';
   if (version.minor) return '小版本沿用大版本实物，不登记新实物';
+  if (dev.billing?.request) return DEVELOPMENT_BILLING_LOCK;
   if (developmentClosure(state, dev)?.kind === 'cancelled') return '开发案已取消';
   if (version.qcDecision?.kind === 'abandon') return '本版已放弃';
   if (!version.returnedAt || !developmentVersionSamples(state, version).length) return '请先登记本版返样';
@@ -36,6 +38,7 @@ export function sampleFormBlocker(state: MistState, dev: MistDev, version: MistV
 }
 /** 寄样的阻断原因；可以寄样时返回 null。 */
 export function sampleDispatchBlocker(state: MistState, dev: MistDev, version: MistVersion): string | null {
+  if (dev.billing?.request) return DEVELOPMENT_BILLING_LOCK;
   if (developmentClosure(state, dev)?.kind === 'cancelled') return '开发案已取消';
   const samples = developmentVersionSamples(state, version);
   if (!samples.length) return '本版还没有入库实物';

@@ -100,3 +100,15 @@ it('records an FX lock and a settlement against it, moving both account balances
  const table=getByRole(host,'table',{name:'公司银行账户'});expect(table.textContent).toContain('4,600.00 USD');expect(table.textContent).toContain('2,841.20 CNY');
  expect(getByRole(host,'table',{name:'锁汇与结汇记录'}).textContent).toContain('剩余 600.00 USD');
 });
+it('BB-DEV-9 lists pending development billing requests and issues invoices linked back to the development',async()=>{
+ const request={id:'rq',requestedAt:'2026-10-16T00:00:00Z',requestedBy:'业务员',billTo:'客户',lines:[{kind:'making' as const,refId:'s',versionId:'v',versionLabel:'R1-A-1',label:'制作费 · 米样 SMP-1',amount:120,currency:'EUR'}],totals:[{currency:'EUR',amount:120}],state:'pending' as const,invoiceIds:[]};
+ store.value.state.devs=[{id:'dev-a',code:'DEV-A',name:'测试开发',style:'',owner:'业务员',customer:'客户',customerId:'customer',due:'2026-10-30',dueRel:'',stage:4,state:'待财务开票',tone:'warn',ver:'',fac:1,img:'clay',factory:'',sample:'',fabric:'',goal:'',currentVersionId:'',versionIds:[],values:{charged:true,factories:['工厂']} as any,fileIds:[],createdAt:'',updatedAt:'',billing:{makingFees:[],request}}];
+ render();
+ expect(host.textContent).toContain('开发费用待开票');expect(host.textContent).toContain('120.00 EUR');
+ await click('开票');input('到期日','2026-11-15');await click('确认开票');
+ const issued=store.value.state.invoices.find((invoice:any)=>invoice.devId==='dev-a');
+ expect(issued).toMatchObject({code:expect.stringMatching(/^DI-\d{4}-0001$/),orderId:'',order:'DEV-A',customer:'客户',amount:120,open:120,currency:'EUR'});
+ expect(store.value.state.devs[0].billing.request.state).toBe('invoiced');expect(host.textContent).not.toContain('开发费用待开票');
+ act(()=>{route={view:'payment-vouchers',id:issued.id};render();});
+ await click('打开开发案');expect(go).toHaveBeenCalledWith('development/detail','dev-a');
+});
