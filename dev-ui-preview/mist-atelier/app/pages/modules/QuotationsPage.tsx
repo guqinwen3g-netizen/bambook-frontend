@@ -6,6 +6,7 @@ import type { MistState } from '../../../../../server/src/shared/mistWorkspace';
 import { developmentDomain } from '../../../../../server/src/shared/mistDevelopmentDomain';
 import { marketBusinessDate, quotationConversionBlockerText, quotationConversionBlockers, quotationNeedsApproval, quoteLineFamily, quotationVersions, type MarketQuotation } from '../../../../../server/src/shared/mistMarket';
 import { quoteMoqStatus, quoteSpecItems } from '../../../../../server/src/shared/mistQuotationSpecs';
+import { lineBelowMarginFloor } from '../../../../../server/src/shared/mistQuotationMarginFloor';
 import { useMistWorkspace } from '../../runtime/workspace';
 import { useMistSession } from '../../runtime/auth';
 import { useNav } from '../../nav';
@@ -164,7 +165,7 @@ function QuotationDetail({ q, state, all, day, me, can, canOrder, canApprove, lo
   const stage = quotationStage(q), flags = quotationFlags(all, q, day), versions = quotationVersions(state.market, q), next = all.find(x => x.previousId === q.id);
   const needsApproval = quotationNeedsApproval(q), approved = q.approval?.status === 'approved', expired = q.validUntil < day;
   const writeReason = !can ? '没有报价写权限' : false;
-  const sendReason = writeReason || (q.approval?.status === 'pending' ? '审批中，等待业务负责人决定' : needsApproval && !approved ? '低于成本或成本待核，须先取得业务审批' : expired ? '已过有效期，请修改有效期后再发送' : false);
+  const sendReason = writeReason || (q.approval?.status === 'pending' ? '审批中，等待业务负责人决定' : needsApproval && !approved ? '低于成本、低于最低毛利率或成本待核，须先取得业务审批' : expired ? '已过有效期，请修改有效期后再发送' : false);
   const reviewer = q.approval?.status === 'pending' && q.approval.reviewerId === me;
   const blockers = stage === 'accepted' ? quotationConversionBlockers(state, q) : [];
   const convertReason = !canOrder ? '没有订单写权限' : blockers.length ? `${quotationConversionBlockerText(blockers[0])}${blockers.length > 1 ? `，另有 ${blockers.length - 1} 个条目同样未认可` : ''}` : false;
@@ -173,7 +174,7 @@ function QuotationDetail({ q, state, all, day, me, can, canOrder, canApprove, lo
   const banner: { tone: Tone; title: string; text: string } =
     stage === 'pending' ? { tone: 'warn', title: '待业务审批', text: `${shortWhen(q.approval!.submittedAt)} 提交；审批通过前不能发送给客户。` }
     : stage === 'draft' ? (q.approval?.status === 'rejected' ? { tone: 'bad', title: '审批已退回', text: `意见：${q.approval.note || '—'}。修订草稿后可重新提交。` }
-      : needsApproval && !approved ? { tone: 'warn', title: '草稿 · 须先审批', text: '有条目低于成本或成本待核实，提交业务审批并通过后才能发送。' }
+      : needsApproval && !approved ? { tone: 'warn', title: '草稿 · 须先审批', text: '有条目低于成本、低于最低毛利率或成本待核实，提交业务审批并通过后才能发送。' }
       : { tone: 'neutral', title: approved ? '草稿 · 审批已通过' : '草稿', text: '核对条目与条款后发送给客户，再在此登记发送方式与对象。' })
     : stage === 'sent' ? { tone: expired ? 'bad' : 'accent', title: expired ? '已过有效期 · 待处理' : '已发送 · 等待客户反馈', text: expired ? '客户仍有意向时请新建版本续期；否则标记为已失效。' : `有效期至 ${q.validUntil}。客户回复后登记接受或未接受。` }
     : stage === 'accepted' ? { tone: 'ok', title: '客户已接受 · 待转订单', text: '核对交期与负责人后转为订单草稿，条目单位与单价原样带入。' }
@@ -225,7 +226,7 @@ function QuotationDetail({ q, state, all, day, me, can, canOrder, canApprove, lo
         <small className="mist-muted"><Mono>{l.style}</Mono>{l.specification ? ' · ' + l.specification : ''}</small>
         {specItems.length > 0 && <small className="mist-muted" data-quote-specs>{specItems.map((it, k) => <span key={it.label}>{k ? ' · ' : ''}{it.label} <span className={it.missing ? 'mist-tone-warn' : undefined}>{it.value}</span></span>)}</small>}
         {moq.state !== 'none' && moq.state !== 'met' && <div className="mist-row" style={{ gap: 6, flexWrap: 'wrap' }} data-quote-moq={moq.state}>{moq.state === 'below' && <Pill tone="warn">低于 MOQ</Pill>}<small className="mist-muted">{moq.text}</small></div>}
-        <div className="mist-row" style={{ gap: 8, flexWrap: 'wrap' }}><span className="mist-num">{l.qty} {l.unit} × {l.price} = {q.currency} {l.amount}</span><span className="mist-spacer" />{m === null ? <span className="mist-muted">成本待核</span> : <span className={m < 0 ? 'mist-tone-bad mist-num' : 'mist-num mist-muted'}>毛利 {m}%</span>}</div>
+        <div className="mist-row" style={{ gap: 8, flexWrap: 'wrap' }}><span className="mist-num">{l.qty} {l.unit} × {l.price} = {q.currency} {l.amount}</span><span className="mist-spacer" />{lineBelowMarginFloor(l) && <span data-margin-floor-breach><Pill tone="warn">{`低于最低毛利率 ${l.marginFloor!.minMarginPercent}%（V${l.marginFloor!.version}）`}</Pill></span>}{m === null ? <span className="mist-muted">成本待核</span> : <span className={m < 0 ? 'mist-tone-bad mist-num' : 'mist-num mist-muted'}>毛利 {m}%</span>}</div>
       </div>; })}</div>
       <span className="mist-note">毛利参考 = (单价 − 成本) / 单价，仅按已记录条目成本，不是实际订单利润。专业核算从准确条目进入；历史行业基准、汇率换算与 AI 尚未接入。</span>
     </DetailBlock>
