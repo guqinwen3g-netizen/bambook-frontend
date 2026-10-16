@@ -122,7 +122,7 @@ describe('market action audit regressions',()=>{
  });
  it('takes product version provenance from the archive and rejects the wrong order family',()=>{
   const {ctx,s}=setup(),demo=createMistState(ctx);s.devs=demo.devs;s.versions=demo.versions;const v=s.versions.find(v=>v.qc?.result==='pass')!;
-  const p=run(s,{type:'market.product.fromVersion',payload:{devId:v.devId,versionId:v.id,sku:'VER-1'}},ctx).id!,id=run(s,{type:'market.quotation.save',payload:{input:quoteInput(p)}},ctx).id!;
+  const p=run(s,{type:'market.product.fromVersion',payload:{devId:v.devId,versionId:v.id,sku:'VER-1'}},ctx).id!,base=quoteInput(p),id=run(s,{type:'market.quotation.save',payload:{input:{...base,lines:base.lines.map(l=>({...l,unit:s.market.products.find(x=>x.id===p)!.unit}))}}},ctx).id!;
   expect(s.market.quotations[0].lines[0]).toMatchObject({sourceDevId:v.devId,sourceVersionId:v.id});
   run(s,{type:'market.quotation.submit',payload:{id}},ctx);run(s,{type:'market.quotation.decide',payload:{id,decision:'approved',note:'已核对'}},{...ctx,actorId:'leader'});run(s,{type:'market.quotation.status',payload:{id,status:'Sent',evidence:'已交付'}},ctx);run(s,{type:'market.quotation.status',payload:{id,status:'Accepted',evidence:'已接受'}},ctx);
   expect(()=>run(s,{type:'market.quotation.convert',payload:{id,type:'fabric',due:'2026-12-01',owner:'业务员'}},ctx)).toThrow(/类型与报价来源/);
