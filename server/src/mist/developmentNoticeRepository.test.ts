@@ -68,6 +68,14 @@ describe('BB-DEV-4 试样通知单',()=>{
   const replay=await repo.execute(testActor(),workspaceId,{requestId:'n2',expectedRevision:revision-1,command:{type:'development.notice.generate',payload:{devId,versionId:version('R2-A').id}}} as never);
   expect(replay.replayed).toBe(true);expect(renderPdf).toHaveBeenCalledTimes(2);
  });
+ it('reports a renderer failure as a confirmed rejection without persisting and allows a later retry',async()=>{
+  const before=structuredClone(state()),beforeRevision=db.workspaces.get(workspaceId).revision;
+  renderPdf.mockRejectedValueOnce(new Error('browser unavailable'));
+  await expect(notice('render-fail','R2-A')).rejects.toMatchObject({status:422,code:'DEVELOPMENT_NOTICE_PDF_UNAVAILABLE'});
+  expect(state()).toEqual(before);expect(db.workspaces.get(workspaceId).revision).toBe(beforeRevision);expect(await names()).toHaveLength(0);
+  await notice('render-retry','R2-A');
+  expect(developmentNotices(version('R2-A')).map(item=>item.seq)).toEqual([1]);expect(await names()).toHaveLength(1);
+ });
  it.each([{html:'<h1>client</h1>'},{snapshot:{extraRequirements:'伪造'}},{fileId:'forged'}])('refuses client overrides %j before render or persistence',async forged=>{
   const before=structuredClone(state());await expect(notice('forged','R2-A',forged)).rejects.toMatchObject({status:422});
   expect(renderPdf).not.toHaveBeenCalled();expect(state()).toEqual(before);expect(await names()).toHaveLength(0);

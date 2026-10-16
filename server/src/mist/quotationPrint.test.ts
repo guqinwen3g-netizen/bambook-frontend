@@ -68,7 +68,7 @@ describe('BB-QUO-6 正式报价单',()=>{
  });
  it('blocks generation until the company profile header is filled; legacy quotations without records stay readable',()=>{
   const {ctx,s}=setup(false),id=saveQuote(s,ctx,'2.50');
-  expect(()=>prepareQuotationDocumentSnapshot(s,{id,draft:true},ctx)).toThrow(/公司档案/);
+  expect(()=>prepareQuotationDocumentSnapshot(s,{id,draft:true},ctx)).toThrow(/公司资料/);
   expect(quotationDocuments(s.market.quotations[0])).toEqual([]);
   const html=renderQuotationDocumentHtml({...prepareQuotationDocumentSnapshot({...s,settings:{...s.settings,companyProfile:company}} as MistState,{id,draft:true},ctx),note:'<script>x</script>'});
   expect(html).not.toContain('<script>x');
