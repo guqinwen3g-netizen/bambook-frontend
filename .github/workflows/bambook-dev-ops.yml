@@ -75,10 +75,12 @@ jobs:
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$(git -C capacity-source rev-parse HEAD)" = "$SOURCE_SHA"
           # Source only: no credentials, node_modules, build output or running application data.
-          git -C capacity-source archive --format=tar "$SOURCE_SHA" | gzip -1 | \
-            timeout 120 ssh -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
-              -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts" -i "$RUNNER_TEMP/ops_key" \
-              "$DEV_USER@$DEV_HOST" "umask 077; root=/var/tmp/bambook-ci-capacity-$SOURCE_SHA; test ! -e \$root && mkdir -m 700 \$root && mkdir \$root/source && tar -xzf - -C \$root/source"
+          git -C capacity-source archive --format=tar "$SOURCE_SHA" | gzip -1 > "$RUNNER_TEMP/capacity-source.tar.gz"
+          digest=$(sha256sum "$RUNNER_TEMP/capacity-source.tar.gz" | cut -d' ' -f1)
+          echo "capacity source sha=$SOURCE_SHA archive-sha256=$digest bytes=$(stat -c%s "$RUNNER_TEMP/capacity-source.tar.gz")"
+          timeout 120 ssh -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts" -i "$RUNNER_TEMP/ops_key" \
+            "$DEV_USER@$DEV_HOST" "umask 077; root=/var/tmp/bambook-ci-capacity-$SOURCE_SHA; test ! -e \$root && mkdir -m 700 \$root && mkdir \$root/source && cat > \$root/source.tar.gz && echo '$digest  '\$root/source.tar.gz | sha256sum -c - && echo '$digest' > \$root/source.sha256 && tar -xzf \$root/source.tar.gz -C \$root/source && rm \$root/source.tar.gz" < "$RUNNER_TEMP/capacity-source.tar.gz"
       - name: Run request on development server
         id: run
         run: |
