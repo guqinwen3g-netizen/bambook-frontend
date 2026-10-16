@@ -52,7 +52,7 @@ sudo cat /srv/bambook-dev/shared/test-accounts.txt   # 7 个测试账号（仅�
 
 容量脚本为 `scripts/ops/dev-ci-capacity.py`。准备独立 `/var/tmp/bambook-ci-capacity-<SHA>` 与私有 evidence 目录，以运维账号启动 supervisor；worker 限 2 CPU、2 GiB 内存、256 MiB swap，前端测试单 worker，空环境和不可用测试数据库地址，禁止访问开发部署目录及 PostgreSQL 数据目录。按当前 verify:mist 顺序执行同等检查覆盖；仅为容量测量，在代码断言失败后继续其余阶段，不重试到通过，任一失败仍判整轮失败。
 
-剩余内存低于 650 MiB、磁盘少于 10 GiB、swap 增长超 256 MiB、服务健康持续异常或达到超时边界即停止。结束清理本次源码、依赖、缓存和构建产物，私有测量证据不入库；按请求 SHA 读取回执。串行运维通道中排队的查询不是实时进度；先核对是否有部署/上传重叠，不把某次文件增长均速当作服务器带宽上限。没有完整实测证据，不永久改写 CI runner 配置。
+剩余内存低于 650 MiB、磁盘少于 10 GiB、swap 增长超 256 MiB、服务健康持续异常或达到超时边界即停止。结束清理本次源码、依赖、缓存和构建产物，私有测量证据不入库；按请求 SHA 读取回执。串行运维通道中排队的查询不是实时进度；需要并行观察时，只允许 `scripts/ops/dev-ci-capacity-observe.sh` 中被工作流 SHA-256 锁定的固定只读脚本走独立观察组，不允许任意运维命令并行；先核对是否有部署/上传重叠，不把某次文件增长均速当作服务器带宽上限。没有完整实测证据，不永久改写 CI runner 配置。
 
 ## 部署
 
