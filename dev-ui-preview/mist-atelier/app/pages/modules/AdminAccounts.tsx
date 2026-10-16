@@ -90,7 +90,7 @@ export function AdminAccounts() {
       else if (kind === 'enable') await organizationApi.updateAccount(account.id, { status: 'active' });
       else if (kind === 'reject') await organizationApi.reject(account.id, reason.trim());
       else { const result = await organizationApi.resetPassword(account.id); if (result.temporaryPassword) setTemporary({ name: account.displayName, password: result.temporaryPassword }); }
-      toast({ disable: '账号已停用，历史记录保留', enable: '账号已重新启用', reject: '已拒绝注册申请', reset: '密码已重置，对方下次登录须修改' }[kind]);
+      toast({ disable: '账号已停用，历史记录保留', enable: '账号已重新启用', reject: '已拒绝注册申请', reset: '密码已重置' }[kind]);
       setConfirm(null); setReason(''); await load();
     } catch (e) { toast(message(e, '操作未完成'), 'bad'); }
     finally { setBusy(false); }
@@ -134,7 +134,7 @@ export function AdminAccounts() {
         <FormGrid>
           <Field label="姓名" required><TextInput value={form.displayName} disabled={busy || form.mode === 'approve'} onChange={e => setForm({ ...form, displayName: e.target.value })} /></Field>
           <Field label="登录邮箱" required><TextInput type="email" value={form.email} disabled={busy || form.mode === 'approve'} onChange={e => setForm({ ...form, email: e.target.value })} /></Field>
-          {form.mode === 'create' && <Field label="初始密码" required hint="至少 8 位；对方登录后自行修改。"><TextInput type="password" autoComplete="new-password" value={form.password} disabled={busy} onChange={e => setForm({ ...form, password: e.target.value })} /></Field>}
+          {form.mode === 'create' && <Field label="初始密码" required hint="至少 8 位；对方登录后可在“设置 · 安全”中修改。"><TextInput type="password" autoComplete="new-password" value={form.password} disabled={busy} onChange={e => setForm({ ...form, password: e.target.value })} /></Field>}
           <Field label="任职部门" required hint="决定业务属性；小组须在同一部门。"><Select aria-label="任职部门" value={form.departmentId} disabled={busy} placeholder="选择部门" onChange={e => setForm({ ...form, departmentId: e.target.value })} options={departments} /></Field>
           <Field label="角色" required full hint="角色决定能做哪些动作；与部门业务属性同时满足才可办理。"><RolePicker roles={data.roles} value={form.roles} owner={owner} disabled={busy} onChange={roles => setForm({ ...form, roles })} /></Field>
           {form.mode !== 'edit' && envelope && <Field label="工作空间" full>{canGrant ? <Checkbox checked={form.grant} disabled={busy} onChange={grant => setForm({ ...form, grant })} label={`同时授权进入「${envelope.name}」`} /> : <span className="mist-note">你不是「{envelope.name}」的所有者；账号生效后请所有者授权。</span>}</Field>}
@@ -143,11 +143,11 @@ export function AdminAccounts() {
     </Drawer>
     <Dialog open={!!confirm} onClose={() => !busy && setConfirm(null)} tone={confirm?.kind === 'disable' || confirm?.kind === 'reject' ? 'bad' : 'warn'}
       title={confirm ? { disable: '停用账号', enable: '重新启用账号', reset: '重置密码', reject: '拒绝注册申请' }[confirm.kind] : ''}
-      description={confirm ? { disable: `${confirm.account.displayName} 将无法登录，已登录的会话随即失效；历史单据与小组记录保留。`, enable: `${confirm.account.displayName} 可以再次登录，角色与部门保持不变。`, reset: `将为 ${confirm.account.displayName} 生成临时密码，只显示一次，请当面或经内部渠道转交。`, reject: `${confirm.account.displayName} 的申请将被拒绝，请写明原因。` }[confirm.kind] : undefined}
+      description={confirm ? { disable: `${confirm.account.displayName} 将无法登录，已登录的会话随即失效；历史单据与小组记录保留。`, enable: `${confirm.account.displayName} 可以再次登录，角色与部门保持不变。`, reset: `将为 ${confirm.account.displayName} 生成临时密码，只显示一次，请当面或经内部渠道转交，并提醒对方登录后在“设置 · 安全”中修改。`, reject: `${confirm.account.displayName} 的申请将被拒绝，请写明原因。` }[confirm.kind] : undefined}
       footer={<div className="mist-row"><Button variant="primary" loading={busy} disabled={confirm?.kind === 'reject' && !reason.trim()} onClick={() => void decide()}>确认</Button><Button disabled={busy} onClick={() => setConfirm(null)}>取消</Button></div>}>
       {confirm?.kind === 'reject' && <Field label="拒绝原因" required><TextArea value={reason} onChange={e => setReason(e.target.value)} /></Field>}
     </Dialog>
-    <Dialog open={!!temporary} onClose={() => setTemporary(null)} title="临时密码" description={`${temporary?.name ?? ''} 下次登录须修改。关闭后不再显示。`} footer={<Button variant="primary" onClick={() => setTemporary(null)}>已转交</Button>}>
+    <Dialog open={!!temporary} onClose={() => setTemporary(null)} title="临时密码" description={`请转交 ${temporary?.name ?? ''}，并提醒其登录后在“设置 · 安全”中修改。关闭后不再显示。`} footer={<Button variant="primary" onClick={() => setTemporary(null)}>已转交</Button>}>
       <Mono>{temporary?.password}</Mono>
     </Dialog>
   </>;
