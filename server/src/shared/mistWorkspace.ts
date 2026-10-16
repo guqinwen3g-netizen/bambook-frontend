@@ -1,5 +1,5 @@
 import { MIST_FINANCE_SCOPES } from './mistFinancePermissions';
-import {developmentDomain,emptyFabricRequirements,fabricRequirementError,validFabricSample,type DevelopmentDomain,type FabricDevelopmentRequirements} from './mistDevelopmentDomain';
+import {developmentDomain,developmentInitiator,emptyFabricRequirements,fabricRequirementError,validFabricSample,type DevelopmentDomain,type DevelopmentInitiator,type DevelopmentRequestType,type FabricDevelopmentRequirements} from './mistDevelopmentDomain';
 import { relationHoldReason } from './mistRelationHold';
 import {assignFactoryLetters,nextRoundNumber,roundVersionLabel} from './mistDevelopmentRounds';
 import {createFulfillmentState,applyFulfillmentCommand,fulfillmentCommandPermission,getFulfillmentReviews,assertProductionTransition,type FulfillmentState,type FulfillmentCommand} from './mistFulfillment';
@@ -32,6 +32,9 @@ export type DevelopmentValues = {
   kind: 'new' | 'rev' | 'copy'; fabric: string; color: string; target: string;
   sizeBase: string; goal: string; factories: string[]; due: string;
   collaborators: string[]; sampleQuantity: number; sourceDevId?: string; sourceVersionId?: string;
+  /** 发起方（BB-DEV-1）：客户要求须有客户与要求类型；内部需求无客户，须有内部需求方。 */
+  initiator?: DevelopmentInitiator; requestType?: DevelopmentRequestType; requestNote?: string;
+  requester?: string; requesterId?: string; charged?: boolean;
 };
 export type MistFile = { id: string; name: string; mimeType: string; size: number; storageKey: string; createdAt: string; uploadedBy?: string; url?: string };
 export type MistDraft = { id: string; values: DevelopmentValues; fileIds: string[]; updatedAt: string };
@@ -298,7 +301,24 @@ function emptyValues(): DevelopmentValues {
 }
 function values(input: DevelopmentValues, complete: boolean): DevelopmentValues {
   const v = {...emptyValues(), ...input};
-  for (const key of ['name','customer','style','season','category','fabric','color','target','sizeBase','goal','due'] as const) v[key] = text(v[key], key, complete && (['name','customer'].includes(key)||(key==='style'&&developmentDomain(v)==='garment')));
+  if (v.initiator !== undefined && !['customer','internal'].includes(v.initiator)) throw new MistCommandError('VALIDATION','发起方无效');
+  const explicitInitiator = v.initiator !== undefined, internal = developmentInitiator(v) === 'internal';
+  if (explicitInitiator) v.initiator = developmentInitiator(v);
+  if (internal) v.customer = '';
+  for (const key of ['name','customer','style','season','category','fabric','color','target','sizeBase','goal','due'] as const) v[key] = text(v[key], key, complete && (key==='name'||(key==='customer'&&!internal)||(key==='style'&&developmentDomain(v)==='garment')));
+  if (internal) {
+    delete v.requestType; delete v.requestNote;
+    v.requester = text(v.requester ?? '', '内部需求方', complete, 120); v.requesterId = text(v.requesterId ?? '', '内部需求方账号', false, 200) || undefined;
+    if (!v.requesterId) delete v.requesterId;
+  } else {
+    delete v.requester; delete v.requesterId;
+    if (v.requestType !== undefined && !['replicate','design','other'].includes(v.requestType)) throw new MistCommandError('VALIDATION','客户要求类型无效');
+    if (complete && explicitInitiator && !v.requestType) throw new MistCommandError('VALIDATION','请选择客户要求类型：复刻、我方设计或其他');
+    v.requestNote = text(v.requestNote ?? '', '要求说明', complete && v.requestType === 'other', 2000);
+    if (!v.requestNote) delete v.requestNote;
+  }
+  if (v.charged === undefined) { if (explicitInitiator) v.charged = !internal; }
+  else if (typeof v.charged !== 'boolean') throw new MistCommandError('VALIDATION','是否收费格式无效');
   if (!['new','rev','copy'].includes(v.kind)) throw new MistCommandError('VALIDATION','开发类型无效');
   v.factories = strings(v.factories, '工厂'); v.collaborators = strings(v.collaborators, '协作人');
   if (v.due) v.due = date(v.due, '目标日期');
@@ -335,6 +355,19 @@ function addVersions(state: MistState, dev: MistDev, context: MistContext, round
     dev.versionIds.push(id);
     if (!dev.currentVersionId) dev.currentVersionId=id;
   });
+}
+/** 客户要求须对应唯一已有客户；内部需求不关联客户。 */
+function developmentCustomer(state: MistState, v: DevelopmentValues) {
+  if(developmentInitiator(v)==='internal')return undefined;
+  const customer=state.customers.find(c=>c.id===v.customer)||(state.customers.filter(c=>c.name===v.customer).length===1?state.customers.find(c=>c.name===v.customer):undefined);
+  if(!customer)throw new MistCommandError('VALIDATION','客户要求的开发须选择已有客户');
+  return customer;
+}
+/** 内部需求方从员工档案选择时，账号须存在且姓名一致。 */
+function assertRequester(state: MistState, v: DevelopmentValues) {
+  if(developmentInitiator(v)!=='internal'||!v.requesterId)return;
+  const employee=state.platform.employees.find(e=>e.id===v.requesterId);
+  if(!employee||employee.name!==v.requester)throw new MistCommandError('VALIDATION','所选内部需求方不在员工档案中');
 }
 type RoundInput = { factories: unknown; requirements: unknown; fileIds?: unknown; referenceVersionIds?: unknown; targetDate: unknown };
 function assertFabricFactories(state: MistState, factories: string[]) {
@@ -511,10 +544,9 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
       if(v.sourceVersionId){const source=find(state.versions,v.sourceVersionId,'来源版本');if(source.devId!==v.sourceDevId)throw new MistCommandError('VALIDATION','来源版本不属于准确来源开发案');}
       if(v.sourceDevId&&developmentDomain(find(state.devs,v.sourceDevId,'来源开发案').values)!==developmentDomain(v))throw new MistCommandError('VALIDATION','来源开发案业务域不同，请分别创建开发案');
       if(developmentDomain(v)==='fabric'){if(!v.factories.length)throw new MistCommandError('VALIDATION','请至少选择一家实际面料工厂');for(const name of v.factories){const matches=state.market.suppliers.filter(s=>s.name===name);if(matches.length!==1||matches[0].status!=='active'||!/面料|纺织|织造|染整|fabric|textile|weav|dye/i.test(matches[0].type+' '+matches[0].capabilities))throw new MistCommandError('VALIDATION','请选择当前有效且名称唯一的面料工厂');}if(!v.due)throw new MistCommandError('VALIDATION','请填写目标日期');}
-      const customer=state.customers.find(c=>c.id===v.customer)||(state.customers.filter(c=>c.name===v.customer).length===1?state.customers.find(c=>c.name===v.customer):undefined);
-      if(!customer)throw new MistCommandError('VALIDATION','请选择已有客户');
+      const customer=developmentCustomer(state,v);assertRequester(state,v);
       const id=context.id(), code='DEV-'+context.now.slice(0,4)+'-'+String(state.devs.length+1).padStart(4,'0');
-      const dev:MistDev={id,code,name:v.name,style:v.style,owner:context.actorName,due:v.due,dueRel:'',stage:0,state:'开发计划',tone:'neutral',ver:'—',fac:v.factories.length,img:developmentDomain(v)==='fabric'?'clay':v.category.includes('西装')?'suit':v.category.includes('Blazer')?'blazer':'coat',factory:v.factories[0]||'待定',sample:'—',fabric:v.fabric,goal:v.goal,customer:customer.name,customerId:customer.id,currentVersionId:null,versionIds:[],values:{...v,customer:customer.name},fileIds,createdAt:context.now,updatedAt:context.now};
+      const dev:MistDev={id,code,name:v.name,style:v.style,owner:context.actorName,due:v.due,dueRel:'',stage:0,state:'开发计划',tone:'neutral',ver:'—',fac:v.factories.length,img:developmentDomain(v)==='fabric'?'clay':v.category.includes('西装')?'suit':v.category.includes('Blazer')?'blazer':'coat',factory:v.factories[0]||'待定',sample:'—',fabric:v.fabric,goal:v.goal,customer:customer?.name||'',customerId:customer?.id||'',currentVersionId:null,versionIds:[],values:{...v,customer:customer?.name||''},fileIds,createdAt:context.now,updatedAt:context.now};
       state.devs.unshift(dev); if(v.factories.length)createRound(state,dev,{factories:v.factories,requirements:v.goal||v.name,targetDate:v.due||context.now.slice(0,10),fileIds:[]},context); updateDev(state,dev,context);
       if(p.draftId)state.drafts=state.drafts.filter(d=>d.id!==p.draftId);
       state.tasks.unshift({id:context.id(),title:'推进 '+dev.name,due:dev.due,done:false,kind:'development',target:{view:'development/detail',id:dev.id}});
@@ -524,10 +556,10 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
       const dev=find(state.devs,p.devId,'开发案');
       if(p.patch?.domain!==undefined&&p.patch.domain!==developmentDomain(dev.values))throw new MistCommandError('PRECONDITION','已有开发案不能改变业务域，请另建案');
       const v=values({...dev.values,domain:developmentDomain(dev.values),...p.patch},true);
-      const customer=state.customers.find(c=>c.id===v.customer)||(state.customers.filter(c=>c.name===v.customer).length===1?state.customers.find(c=>c.name===v.customer):undefined);
-      if(!customer)throw new MistCommandError('VALIDATION','请选择已有客户');
+      if(developmentInitiator(v)!==developmentInitiator(dev.values))throw new MistCommandError('PRECONDITION','已立项开发案不能改变发起方，请另建案');
+      const customer=developmentCustomer(state,v);assertRequester(state,v);
       if(developmentDomain(v)!==developmentDomain(dev.values))throw new MistCommandError('PRECONDITION','已有开发案不能改变业务域，请另建案');
-      dev.values=v; dev.name=v.name;dev.style=v.style;dev.customer=customer.name;dev.customerId=customer.id;dev.goal=v.goal;dev.fabric=v.fabric;dev.due=v.due;
+      dev.values={...v,customer:customer?.name||''}; dev.name=v.name;dev.style=v.style;dev.customer=customer?.name||'';dev.customerId=customer?.id||'';dev.goal=v.goal;dev.fabric=v.fabric;dev.due=v.due;
       if(!dev.versionIds.length&&v.factories.length)createRound(state,dev,{factories:v.factories,requirements:v.goal||v.name,targetDate:v.due||context.now.slice(0,10),fileIds:[]},context);
       updateDev(state,dev,context);event(state,context,'development',dev.id,'更新开发计划');result={devId:dev.id,versionId:dev.currentVersionId||undefined};break;
     }

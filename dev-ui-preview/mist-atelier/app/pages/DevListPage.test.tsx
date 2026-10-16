@@ -33,6 +33,13 @@ async function tab(label:string){await act(async()=>[...host.querySelectorAll<HT
 async function select(label:string,value:string){await act(async()=>[...host.querySelectorAll('button')].find(button=>button.textContent?.startsWith(label)&&button.hasAttribute('aria-haspopup'))!.click());await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')].find(button=>button.textContent===value)!.click());}
 
 describe('persisted workspace development list',()=>{
+  it('filters by initiator and category and clears both filters',async()=>{
+    const a=dev(1),b=dev(2);a.values={initiator:'internal',category:'大衣'} as any;b.values={initiator:'customer',category:'衬衫'} as any;bridge.current.state.devs=[a,b];
+    await mount();await select('发起方','内部需求');expect(host.textContent).toContain('实际开发 1');expect(host.textContent).not.toContain('实际开发 2');
+    await select('发起方','全部');await select('品类','衬衫');expect(host.textContent).toContain('实际开发 2');expect(host.textContent).not.toContain('实际开发 1');
+    await select('发起方','内部需求');expect(host.textContent).not.toContain('实际开发 2');
+    const clear=[...host.querySelectorAll<HTMLElement>('button,a')].find(button=>button.textContent==='清除筛选');expect(clear).toBeTruthy();await act(async()=>clear!.click());expect(host.textContent).toContain('实际开发 1');expect(host.textContent).toContain('实际开发 2');
+  });
   it('previews without navigation, then opens the selected actual ID and version',async()=>{
     await mount();const rows=host.querySelectorAll<HTMLElement>('.mist-tr');await act(async()=>rows[1].click());expect(go).not.toHaveBeenCalled();
     const open=[...host.querySelectorAll('button')].find(button=>button.textContent==='打开开发案')!;await act(async()=>open.click());expect(go).toHaveBeenCalledWith('development/detail','real-2',{versionId:'version-2'});
