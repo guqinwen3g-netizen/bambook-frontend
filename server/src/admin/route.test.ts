@@ -375,6 +375,27 @@ describe('admin route error guard（P1 DoS 面：假 ID P2025 → 404，异常 �
     expect(prisma.auditLog.create).not.toHaveBeenCalled();
   });
 
+  it('POST /users 与注册审批：非 owner 管理员不能授予 SuperAdmin，且不写账号', async () => {
+    const superRole = { id: 'role-super-admin', name: '超级管理员', isSystem: true };
+    const prisma: any = {
+      department: { findUnique: vi.fn().mockResolvedValue({ id: 'dept-1', parentId: 'company', status: 'active' }), findFirst: vi.fn().mockResolvedValue({ id: 'dept-1', parentId: 'company', status: 'active' }) },
+      userAccount: { findFirst: vi.fn().mockResolvedValue(null), findUnique: vi.fn().mockResolvedValue({ id: 'pending-1', status: 'pending', primaryDeptId: 'dept-1', metadata: {} }), create: vi.fn(), update: vi.fn() },
+      role: { findUnique: vi.fn().mockResolvedValue(superRole), findFirst: vi.fn().mockResolvedValue(superRole) },
+      userRole: { deleteMany: vi.fn(), create: vi.fn() },
+      auditLog: { create: vi.fn() },
+      $transaction: vi.fn(async (fn: any) => fn(prisma)),
+    };
+    const created = await request(makeApp(prisma)).post('/admin/users').set('Authorization', `Bearer ${plainAdminToken()}`)
+      .send({ displayName: '新人', email: 'new@example.com', password: 'secret-123', roles: ['role-super-admin'], departmentId: 'dept-1' });
+    expect(created.status).toBe(403);
+    const approved = await request(makeApp(prisma)).post('/admin/users/pending-1/approve').set('Authorization', `Bearer ${plainAdminToken()}`)
+      .send({ roles: ['role-super-admin'], departmentId: 'dept-1' });
+    expect(approved.status).toBe(403);
+    expect(prisma.userAccount.create).not.toHaveBeenCalled();
+    expect(prisma.userAccount.update).not.toHaveBeenCalled();
+    expect(prisma.userRole.create).not.toHaveBeenCalled();
+  });
+
   it('PATCH /users/:id/roles admin（非 owner）授予 SuperAdmin 角色 → 403（自我提权防线）', async () => {
     const userRole = {
       deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
