@@ -200,7 +200,7 @@ describe('BB-DEV-10 version links and product conversion',()=>{
     st.market={suppliers:[],products:[{id:'prod-1',sku:'GA-2711',name:'实际档案',sourceDevId:'dev-a',sourceVersionId:'vb'}],quotations:[{id:'q-1',code:'QT-0001',lines:[{sourceVersionId:'vb'}],convertedOrderId:'o-2'},{id:'q-2',code:'QT-OTHER',lines:[{sourceVersionId:'va'}]}]};
     st.fulfillment={samples:[{id:'s-1',code:'SM-0001',name:'R2-B 实物',source:{kind:'version',devId:'dev-a',versionId:'vb'}},{id:'s-2',code:'SM-OTHER',name:'其他',source:{kind:'version',devId:'dev-a',versionId:'va'}}],qcTasks:[{id:'t-1',code:'QC-T-1',kind:'sample',factory:'工厂 vb',source:{kind:'version',devId:'dev-a',versionId:'vb'}}]};
     st.orders=[{id:'o-1',code:'SO-0001',customerId:'customer-a'},{id:'o-2',code:'SO-0002',customerId:'customer-a'},{id:'o-3',code:'SO-UNRELATED',customerId:'customer-a'}];st.orderLines=[{id:'l-1',orderId:'o-1',sourceVersionId:'vb'}];
-    await mount('vb');const text=host.textContent||'';
+    await mount('vb');const text=[...host.childNodes].map(node=>{const copy=node.cloneNode(true) as HTMLElement;copy.querySelectorAll?.('[data-dev-billing]').forEach(item=>item.remove());return copy.textContent;}).join('');// 开发案级费用卡按整案列出实物，不属于本版关联范围。
     for(const code of ['GA-2711','SM-0001','QC-T-1','QT-0001','SO-0001','SO-0002'])expect(text).toContain(code);
     for(const code of ['SM-OTHER','QT-OTHER','SO-UNRELATED'])expect(text).not.toContain(code);
     expect(button('转为产品档案')).toBeUndefined();
@@ -266,5 +266,33 @@ describe('BB-DEV-6/8 fabric physical forms and dispatch on the version detail',(
   useFabric([{...metre,available:3}]);bridge.current.state.versions[0].dispatches=[{id:'d-1',sampleId:'s-m',sampleCode:'SMP-0002',form:'米样',unit:'米',quantity:2,recipient:'客户 Anna',trackingNo:'SF123',fee:null,note:'',movementId:'m-1',recordedAt:'2026-10-16T00:00:00Z',recordedBy:'业务员'}];
   await mount();expect(host.textContent).toContain('SF123');await click('补登费用');await fill('寄样费','28.50');await click('保存费用');
   expect(bridge.current.run).toHaveBeenCalledWith({type:'development.sample.dispatchFee',payload:{devId:'dev-a',versionId:'va',dispatchId:'d-1',fee:{amount:28.5,currency:'CNY'}}});
+ });
+});
+describe('BB-DEV-9 development fees and billing',()=>{
+ const metre={id:'s-m',code:'SMP-0002',name:'测试',category:'面料',form:'米样',unit:'米',quantity:5,available:5,location:'架B',size:'',color:'',source:{kind:'version',devId:'dev-a',versionId:'va'},fileIds:[],note:'',createdAt:'2026-10-12T00:00:00Z'};
+ const useCharged=(charged:boolean,billing?:object)=>{const st=bridge.current.state;st.devs=[{...record,values:{...record.values,charged},...(billing?{billing}:{})}];st.fulfillment={samples:[metre],sampleMovements:[],qcTasks:[]};st.invoices=[];};
+ const button=(text:string)=>[...document.querySelectorAll('button')].find(b=>b.textContent?.trim()===text);
+ it('records a making fee per physical sample and blocks billing until fees are complete',async()=>{
+  useCharged(true);await mount();
+  expect(host.textContent).toContain('开发费用');expect(host.textContent).toContain('费用尚未补齐');
+  expect(button('发起开票')!.disabled).toBe(true);
+  await click('登记制作费');await fill('制作费总额','120');await fill('币种','eur');await click('登记');
+  expect(bridge.current.run).toHaveBeenCalledWith({type:'development.fee.recordMaking',payload:{devId:'dev-a',sampleId:'s-m',amount:120,currency:'EUR'}});
+ });
+ it('sends one billing request once fees are complete and links issued invoices back',async()=>{
+  useCharged(true,{makingFees:[{sampleId:'s-m',versionId:'va',sampleCode:'SMP-0002',form:'米样',amount:120,currency:'EUR',recordedAt:'',recordedBy:''}]});await mount();
+  expect(host.textContent).toContain('120.00 EUR');
+  await click('发起开票');
+  expect(bridge.current.run).toHaveBeenCalledWith({type:'development.billing.request',payload:{devId:'dev-a'}});
+  await act(async()=>root!.unmount());host.remove();
+  useCharged(true,{makingFees:[],request:{id:'rq',requestedAt:'2026-10-16T00:00:00Z',requestedBy:'业务员',billTo:'客户',lines:[],totals:[{currency:'EUR',amount:120}],state:'invoiced',invoiceIds:['di'],invoicedBy:'财务'}});
+  bridge.current.state.invoices=[{id:'di',code:'DI-2026-0001',orderId:'',order:'DEV-A',customer:'客户',due:'2026-11-15',amount:120,open:0,currency:'EUR',devId:'dev-a'}];
+  await mount();
+  expect(host.textContent).toContain('已销账');expect(button('发起开票')).toBeUndefined();
+  await click('DI-2026-0001');expect(go).toHaveBeenCalledWith('payment-vouchers','di');
+ });
+ it('shows no billing entry for non-charged developments',async()=>{
+  useCharged(false);await mount();
+  expect(host.textContent).toContain('不收费开发');expect(button('发起开票')).toBeUndefined();expect(button('登记制作费')).toBeUndefined();
  });
 });

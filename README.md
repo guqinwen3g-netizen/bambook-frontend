@@ -1,4 +1,13 @@
-# Bambook · 项目现状与接力入口
+# Bambook 开发工作区
+
+应用源码、开发验证与维护记录，当前仍在持续开发和验收。
+
+- [协作与接续规则](AGENTS.md)
+- [文档导航](docs/README.md)
+- [工作停点与进度记录](docs/mist-atelier/LIVE-PROGRESS.md)
+
+<details>
+<summary>项目范围、当前工作与接力记录</summary>
 
 ## 项目是什么
 
@@ -36,6 +45,11 @@ AI 分为“工作助手”（桌面端本机、个人凭据，方案见 `docs/m
 继续完善公司端现有业务、补齐真实集成与验收缺口。具体下一批按用户确定的优先级推进，不把客户 / 供应商独立平台默认为本轮范围。
 
 下一轮按总协调明确的完整任务包开发、本地自测、一次 PR 并交接；CI、独立复核和合入由总协调收口。中途可推送任务分支保存进度，未完成成果注明停点与下一步。工作方式见 [AGENTS.md](AGENTS.md)，详细业务与技术资料按需从 [文档导航](docs/README.md) 查找。
+
+</details>
+
+<details>
+<summary>本地开发与验证说明</summary>
 
 ## 本地开发
 
@@ -81,3 +95,5 @@ npm run verify:mist
 包含当前 Mist UI/服务类型检查、前后端测试、构建及 Mist 规范检查。`.github/workflows/mist.yml` 对以 `main` 为目标的 PR、`main` 推送及手动执行提供同一检查：Node 版本读取 `.nvmrc`，使用前后端各自锁文件执行 `npm ci`，生成 Prisma client 后运行 `verify:mist`。工作流只读仓库，不迁移数据库、不调用生产服务、不部署。GitHub 上的实际结果以 Actions 为准，存在配置不代表远端已经通过。类型检查只覆盖当前 Mist 入口和服务依赖图，不代表历史目录或整个生产 API 无类型问题。
 
 本轮在 Linux / Node.js 22 完成前后端全新 `npm ci`；Node.js 24 安装服务端时遇到现有 `better-sqlite3` 原生构建兼容问题，暂不声明支持。现有依赖审计告警尚未消除，不能据此宣称生产发布就绪。最新功能与视觉验收边界见推进手册。
+
+</details>

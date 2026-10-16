@@ -3,6 +3,7 @@
  * 轮次 = 一批共同开发要求，可派给任意数量的工厂；某轮某工厂的实体成果是大版本 R{轮次}-{字母}。
  * 工厂字母在本案首次参与时分配，之后固定不变；历史版本号（如 R1-A-1）按原样保留、只读。
  */
+import { DEVELOPMENT_BILLING_LOCK } from './mistDevelopmentBilling';
 import type { MistDev, MistRound, MistState, MistVersion } from './mistWorkspace';
 import { developmentCharged, developmentDomain, validFabricSample } from './mistDevelopmentDomain';
 
@@ -79,11 +80,13 @@ export function developmentClosure(state: MistState, dev: MistDev): { kind: 'clo
   if (dev.closure?.kind === 'cancelled') return { kind: 'cancelled', label: '已取消' };
   if (dev.closure?.kind === 'archived') return { kind: 'archived', label: '已归档' };
   if (dev.closure?.kind === 'closed') return { kind: 'closed', label: '已结案' };
+  if (developmentCharged(dev.values) && dev.billing?.settledAt) return { kind: 'closed', label: '已最终结案' };
   if (!developmentCharged(dev.values) && state.versions.some(version => version.devId === dev.id && version.confirmations.at(-1)?.result === 'approved')) return { kind: 'closed', label: '已结案' };
   return null;
 }
 /** 开新一轮（含改版、重新打样）的阻断原因；可以开时返回 null。 */
 export function developmentRoundBlocker(state: MistState, dev: MistDev): string | null {
+  if (dev.billing?.request) return DEVELOPMENT_BILLING_LOCK;
   const closure = developmentClosure(state, dev);
   return closure ? `开发案${closure.label}，不能再开新一轮` : null;
 }

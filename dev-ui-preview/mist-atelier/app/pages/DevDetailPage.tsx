@@ -14,6 +14,8 @@ import { DevNoticeCard } from './DevNotices';
 import { DevRoundsCard, NewRoundDialog, RoundRequirementsDialog, versionQcFlag, type NewRoundInput } from './DevRounds';
 import { ToProductDialog, developmentVersionLinks, productConversionBlocker } from './DevVersionLinks';
 import { DevSampleFormsCard } from './DevSampleForms';
+import { DEVELOPMENT_BILLING_LOCK } from '../../../../server/src/shared/mistDevelopmentBilling';
+import { DevBillingCard } from './DevBilling';
 import { confirmationNeedsForms, developmentVersionSamples, sampleRef } from '../../../../server/src/shared/mistDevelopmentSamples';
 
 export function localConfirmationTime(date=new Date()){return Number.isNaN(date.getTime())?'':new Date(date.getTime()-date.getTimezoneOffset()*60_000).toISOString().slice(0,16);}
@@ -181,7 +183,7 @@ export function DevDetailPage(){
   const resampleRound=version?.qcDecision?.roundId?state?.rounds?.find(round=>round.id===version.qcDecision!.roundId):undefined;
   const roundBlocker=developmentRoundBlocker(state!,dev);
   const parentVersion=version&&state?minorParent(state,version):undefined,childMinors=version&&state?minorVersions(state,version):[],minorBlocker=version&&state?minorVersionBlocker(state,dev,version):'请先选择版本';
-  const sampleBlocker=version?.minor?`小版本沿用 ${parentVersion?.label||'大版本'} 实物，不登记新实物`:undefined,qcBlocker=version?.minor?`小版本沿用 ${parentVersion?.label||'大版本'} QC 结论`:childMinors.length?`已有小版本 ${childMinors.map(item=>item.label).join('、')} 沿用本版 QC 结论，不能改写`:undefined;
+  const sampleBlocker=version?.minor?`小版本沿用 ${parentVersion?.label||'大版本'} 实物，不登记新实物`:dev.billing?.request?DEVELOPMENT_BILLING_LOCK:undefined,qcBlocker=version?.minor?`小版本沿用 ${parentVersion?.label||'大版本'} QC 结论`:childMinors.length?`已有小版本 ${childMinors.map(item=>item.label).join('、')} 沿用本版 QC 结论，不能改写`:undefined;
   const openResample=()=>{if(!version?.qc)return;setFailure('');setRoundInitial({factories:[version.factory],referenceVersionIds:[version.id],requirements:`QC 意见（${version.label}）：${version.qc.opinion||'见 QC 报告'}`,targetDate:dev.due||'',fileIds:[],resampleFromVersionId:version.id});setDialog('round');};
   const openDecision=(kind:'rework'|'abandon')=>{setDecision({kind,note:''});setFailure('');setDialog('qcDecide');};
   const qcGate=!version?null:version.qcDecision?.kind==='abandon'?<Banner tone="bad" title="本版已放弃 · 不采用">{version.qcDecision.note||'未填写原因'}；其他版本不受影响。</Banner>
@@ -210,6 +212,7 @@ export function DevDetailPage(){
         </Card>
         {state&&<DevRoundsCard state={state} dev={dev} versionId={version?.id} busy={busy} onSelect={chooseVersion} onCreate={()=>{setFailure('');setRoundInitial(undefined);setDialog('round');}} onEditRequirements={round=>{setFailure('');setRoundEdit(round);}} onSync={target=>void syncRoundTask(target)}/>}
         {state&&version&&<DevSampleFormsCard state={state} dev={dev} version={version} disabled={busy||!!pending} run={run}/>}
+        {state&&<div data-dev-billing><DevBillingCard state={state} dev={dev} disabled={busy||!!pending} run={run}/></div>}
         {state&&version&&!version.minor&&<DevNoticeCard state={state} dev={dev} version={version} busy={busy} onGenerate={()=>void generateNotice()} onDownload={downloadNotice} onPrint={printNotice}/>}
         {fabricDomain&&<Card><CardHeader title="面料开发目标规格" sub="目标要求，不代表工厂分析或 QC 实测"/><KeyValue items={[{label:'分类',value:dev.values.category||'待核实'},{label:'本版工厂要求',value:version?.note||'待记录'},{label:'目标成分',value:fabricRequirements?.composition||'待工厂分析'},{label:'克重原值',value:`${fabricRequirements?.weightValue||'待分析'} ${fabricRequirements?.weightUnit||''}`},{label:'幅宽原值',value:`${fabricRequirements?.widthValue||'待分析'} ${fabricRequirements?.widthUnit||''}`},{label:'纱支 / 组织',value:`${fabricRequirements?.yarn||'待分析'} / ${fabricRequirements?.weave||'待分析'}`},{label:'用途 / 手感',value:`${fabricRequirements?.usage||'—'} / ${fabricRequirements?.handle||'—'}`},{label:'后整理 / 性能',value:`${fabricRequirements?.finish||'—'} / ${fabricRequirements?.performance||'—'}`}]}/></Card>}
         <Card id="mist-dev-goal"><CardHeader title="开发目标" /><p className="mist-sub" style={{padding:'10px 22px 20px',fontSize:13.5}}>{dev.goal||'尚未填写开发目标'}</p></Card>
