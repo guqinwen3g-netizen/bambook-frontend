@@ -3,7 +3,7 @@ import React from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { Banner, Button, Dialog, EmptyState, Field, FormGrid, Mono, SearchField, TextInput, useToast } from '../../../../components/mist';
 import type { MistOrder } from '../../../../server/src/shared/mistWorkspace';
-import type { MarketProduct, MarketQuotation, MarketState } from '../../../../server/src/shared/mistMarket';
+import { quotationConversionBlockerText, quotationConversionBlockers, type MarketProduct, type MarketQuotation, type MarketState } from '../../../../server/src/shared/mistMarket';
 import { developmentDomain } from '../../../../server/src/shared/mistDevelopmentDomain';
 import { useMistWorkspace } from '../runtime/workspace';
 import { useNav } from '../nav';
@@ -34,6 +34,9 @@ export function OrderSourceDialog({ open, onClose, type, customerId, canWrite }:
   const quotes = convertibleQuotations(state, type).filter(quote => !customerId || quote.customerId === customerId);
   const versions = (state?.versions || []).filter(version => !version.archivedAt && version.confirmations.some(row => row.result === 'approved')).map(version => ({ version, dev: state!.devs.find(dev => dev.id === version.devId) })).filter(row => row.dev && (developmentDomain(row.dev.values) === 'fabric' ? 'fabric' : 'garment') === type && (!customerId || row.dev.customerId === customerId));
   const products = (state?.market?.products || []).filter((product: MarketProduct) => product.status === 'active' && product.category === type);
+  const pickedQuote = kind === 'quotation' ? quotes.find(quote => quote.id === picked) : undefined;
+  const blockers = pickedQuote && state ? quotationConversionBlockers(state, pickedQuote) : [];
+  const blockReason = blockers.length ? `${quotationConversionBlockerText(blockers[0])}${blockers.length > 1 ? `，另有 ${blockers.length - 1} 个条目同样未认可` : ''}，不能转订单` : '';
   const customerName = (id: string) => state?.customers.find(row => row.id === id)?.name || '客户不可用';
   const match = (text: string) => !q || text.toLowerCase().includes(q.toLowerCase());
   const options: Array<{ kind: Kind; title: string; detail: string; count?: number }> = [
@@ -71,11 +74,12 @@ export function OrderSourceDialog({ open, onClose, type, customerId, canWrite }:
   const title = kind ? options.find(option => option.kind === kind)!.title : `新建${domainLabel}订单`;
   const footer = !kind ? <Button onClick={onClose}>取消</Button>
     : <><Button variant="quiet" icon={ArrowLeft} disabled={busy} onClick={() => { setKind(null); setFailure(''); }}>换一种来源</Button><span className="mist-spacer" />
-      {kind === 'quotation' ? <Button variant="primary" loading={busy} disabled={!canWrite || busy || !!w.pending} title={canWrite ? undefined : '当前账号没有订单写权限'} onClick={() => void convert()}>转为订单草稿</Button>
+      {kind === 'quotation' ? <Button variant="primary" loading={busy} disabled={!canWrite || busy || !!w.pending || !!blockReason} title={!canWrite ? '当前账号没有订单写权限' : blockReason || undefined} onClick={() => void convert()}>转为订单草稿</Button>
         : <Button variant="primary" disabled={!canWrite} onClick={continueDraft}>带入订单草稿</Button>}</>;
   return <Dialog open={open} onClose={() => { if (!busy) onClose(); }} title={title} description={kind ? undefined : '选择订单来源；无论哪种来源，都先生成订单草稿，补齐合同依据后提交主单审批。'} width={720} footer={footer}>
     {!canWrite && <Banner tone="warn" title="只读">当前账号没有订单写权限，可以查看来源但不能建立订单。</Banner>}
     {failure && <Banner tone="bad" title="尚未建立订单">{failure}</Banner>}
+    {blockReason && <Banner tone="warn" title="暂不能转订单"><span data-convert-blockers>{blockers.map(b => <span key={b.lineId} style={{ display: 'block' }}>{quotationConversionBlockerText(b)}</span>)}请先在开发模块记录需求方认可。</span></Banner>}
     {!kind && <div className="mist-col" role="group" aria-label="订单来源" style={{ gap: 8 }}>{options.map(option => {
       const empty = option.count === 0;
       return <button key={option.kind} type="button" className="mist-choice" style={ROW} disabled={!canWrite || empty} title={empty ? '没有可用的来源记录' : undefined} onClick={() => choose(option.kind)}>

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { getAllByRole, getByLabelText, getByRole } from '@testing-library/dom';
 import { MistRoot, ToastProvider } from '../../../../components/mist';
 import { applyMistCommand, createMistState, type MistState } from '../../../../server/src/shared/mistWorkspace';
+import { developmentDomain } from '../../../../server/src/shared/mistDevelopmentDomain';
 import { Nav, type Route } from '../nav';
 const store = vi.hoisted(() => ({ state: null as MistState | null, loading: false, error: '', workspace: { id: 'a' } as { id: string }, run: vi.fn(), refresh: vi.fn() }));
 const auth = vi.hoisted(() => ({ write: true }));
@@ -83,4 +84,21 @@ it('derives line stages and short shipment only from recorded facts', () => {
   expect(currentLineStage(stages)?.key).toBe('inspection');
   expect(currentLineStage(stages)?.target).toEqual({ view: 'qc-workbench', id: 'qp' });
   expect(lineShipping(s, line)).toMatchObject({ planned: 96, departed: 96, variance: -4, variancePercent: -4 });
+});
+
+it('BB-QUO-4: blocks converting a quotation whose development version lacks requester approval and explains which line/version', async () => {
+  const demo = createMistState(context, 'demo');
+  const version = demo.versions.find(v => !v.archivedAt && developmentDomain(demo.devs.find(d => d.id === v.devId)!.values) !== 'fabric')!;
+  const dev = demo.devs.find(d => d.id === version.devId)!;
+  store.state!.devs.push(dev); store.state!.versions.push({ ...version, confirmations: [] });
+  store.state!.market.quotations.push({ id: 'qt-2', code: 'QT-0043', customerId: 'customer-a', currency: 'USD', season: 'AW27', validUntil: '2026-10-31', deliveryTerms: 'FOB', paymentTerms: 'TT', status: 'Accepted', lines: [{ id: 'ql2', productId: '', sourceDevId: dev.id, sourceVersionId: version.id, name: '版本来源大衣', style: dev.style, specification: '', qty: '10', unit: '件', price: '64', amount: '640', cost: '' }], total: '640.00', deliveryEvidence: '', responseEvidence: '', approval: null, convertedOrderId: null, createdAt: '', updatedAt: '' } as never);
+  render({ view: 'orders' }, <OrderListPage />);
+  await click(getAllByRole(host, 'button', { name: '新建订单' })[0]);
+  await click(getByRole(getByRole(document.body, 'dialog'), 'button', { name: /从报价转单/ }));
+  await click(getByRole(document.body, 'radio', { name: /QT-0043/ }));
+  const submit = getByRole(document.body, 'button', { name: '转为订单草稿' });
+  expect(submit.hasAttribute('disabled')).toBe(true);
+  const text = document.body.querySelector('[data-convert-blockers]')?.textContent || '';
+  expect(text).toContain('版本来源大衣'); expect(text).toContain(version.label); expect(text).toContain('尚无需求方确认');
+  expect(store.run).not.toHaveBeenCalled();
 });

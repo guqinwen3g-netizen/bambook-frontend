@@ -282,7 +282,7 @@ function execute(root:MistState,command:MarketCommand,ctx:MistContext):MistComma
    result = {id:q.id}; break;
   }
   case 'market.quotation.status':{const q=find(m.quotations,command.payload.id,'报价'),next=one(command.payload.status,['Draft','Sent','Accepted','Rejected','Expired'],'报价状态');if(next==='Sent'){const held=relationHoldReason(root,{customerId:q.customerId});if(held)fail(held,'PRECONDITION');}const allowed:Record<MarketQuotation['status'],string[]>={Draft:['Sent'],Sent:['Accepted','Rejected','Expired'],Accepted:[],Rejected:[],Expired:[]};if(!allowed[q.status].includes(next))fail('不允许此报价状态转换','PRECONDITION');const evidence=str(command.payload.evidence,'实际操作凭据');if(next==='Sent'){if(q.approval?.status==='pending'||q.approval?.status==='rejected'||quotationNeedsApproval(q)&&q.approval?.status!=='approved')fail('此报价须先取得业务负责人审批','PRECONDITION');if(q.validUntil<marketBusinessDate(ctx.now))fail('报价已超过有效期');q.deliveryEvidence=evidence;}else{if(next==='Expired'&&q.validUntil>=marketBusinessDate(ctx.now))fail('报价尚未到期');q.responseEvidence=evidence;}q.status=next;q.updatedAt=ctx.now;result={id:q.id};break;}
-  case 'market.quotation.convert':{const q=find(m.quotations,command.payload.id,'报价');if(q.status!=='Accepted')fail('仅客户已接受的报价可转订单');if(q.convertedOrderId){find(root.orders,q.convertedOrderId,'已转订单');return {id:q.id,orderId:q.convertedOrderId};}{const held=relationHoldReason(root,{customerId:q.customerId});if(held)fail(held,'PRECONDITION');}const type=one(command.payload.type,['garment','fabric'],'订单类型');for(const line of q.lines){const product=line.productId?find(m.products,line.productId,'报价产品'):undefined;const family=product?.category||(line.sourceDevId?developmentDomain(find(root.devs,line.sourceDevId,'来源开发案').values)==='fabric'?'fabric':'garment':undefined);if(family&&family!==type)fail('订单类型与报价来源不一致，请按业务类型分别转单');}const due=day(command.payload.due,'订单交期'),owner=str(command.payload.owner,'负责人'),customer=find(root.customers,q.customerId,'客户');const id=ctx.id(),code=`SO-${type==='fabric'?'F':'G'}-${ctx.now.slice(0,4)}-${String(root.orders.length+1).padStart(4,'0')}`;
+  case 'market.quotation.convert':{const q=find(m.quotations,command.payload.id,'报价');if(q.status!=='Accepted')fail('仅客户已接受的报价可转订单');if(q.convertedOrderId){find(root.orders,q.convertedOrderId,'已转订单');return {id:q.id,orderId:q.convertedOrderId};}{const held=relationHoldReason(root,{customerId:q.customerId});if(held)fail(held,'PRECONDITION');}const type=one(command.payload.type,['garment','fabric'],'订单类型');for(const line of q.lines){const product=line.productId?find(m.products,line.productId,'报价产品'):undefined;const family=product?.category||(line.sourceDevId?developmentDomain(find(root.devs,line.sourceDevId,'来源开发案').values)==='fabric'?'fabric':'garment':undefined);if(family&&family!==type)fail('订单类型与报价来源不一致，请按业务类型分别转单');}{const blocked=quotationConversionBlockers(root,q);if(blocked.length)fail(`${blocked.map(quotationConversionBlockerText).join('；')}，不能转订单。请先在开发模块记录需求方认可`,'PRECONDITION');}const due=day(command.payload.due,'订单交期'),owner=str(command.payload.owner,'负责人'),customer=find(root.customers,q.customerId,'客户');const id=ctx.id(),code=`SO-${type==='fabric'?'F':'G'}-${ctx.now.slice(0,4)}-${String(root.orders.length+1).padStart(4,'0')}`;
    // Existing order consumers use numeric money; reject any value that cannot round-trip exactly.
    q.lines.forEach(l=>{if(decimal(String(Number(l.price)),'单价').minor!==decimal(l.price,'单价').minor||decimal(String(Number(l.qty)),'数量',4).minor!==decimal(l.qty,'数量',4).minor)fail('报价数量或金额超出现有订单可精确承接的范围');});
    root.orders.unshift({id,code,type,customerId:customer.id,customer:customer.name,season:q.season,lines:q.lines.length,qty:q.lines.reduce((n,l)=>n+Number(l.qty),0),amount:Number(q.total),currency:q.currency,due,progress:0,state:'待安排',tone:'neutral',owner,img:'coat',checklist:['装箱单草稿','唛头确认','尾期 QC 预约','报关资料','订舱'].map((label,index)=>({id:id+'-check-'+index,label,done:false,note:''})),handoffAt:null,createdAt:ctx.now,updatedAt:ctx.now});
@@ -295,3 +295,20 @@ function execute(root:MistState,command:MarketCommand,ctx:MistContext):MistComma
 
 /** 当前评级（最近一次）与当前生效状态，供列表与其它页面使用。 */
 export function supplierGrade(s:MarketSupplier){return s.ratings?.length?s.ratings[s.ratings.length-1]:undefined;}
+
+/** BB-QUO-4：转订单前，引用开发版本（非产品档案）的条目，其准确版本最新需求方确认必须为“认可”。 */
+export type QuoteConversionBlocker = { lineId:string; name:string; style:string; devCode:string; versionLabel:string; reason:string };
+const CONFIRMATION_GAP:Record<string,string>={needs_adjustment:'需求方要求调整',rejected:'需求方未认可'};
+export function quotationConversionBlockers(state:Pick<MistState,'devs'|'versions'>,q:Pick<MarketQuotation,'lines'>):QuoteConversionBlocker[]{
+  const out:QuoteConversionBlocker[]=[];
+  for(const line of q.lines){
+    if(line.productId||!line.sourceVersionId)continue;
+    const version=state.versions.find(v=>v.id===line.sourceVersionId);
+    const dev=state.devs.find(d=>d.id===(line.sourceDevId||version?.devId));
+    const latest=version?.confirmations.at(-1);
+    if(latest?.result==='approved')continue;
+    out.push({lineId:line.id,name:line.name,style:line.style,devCode:dev?.code||'',versionLabel:version?.label||line.sourceVersionId,reason:!version?'引用的开发版本不存在':latest?CONFIRMATION_GAP[latest.result]||'需求方未认可':'尚无需求方确认'});
+  }
+  return out;
+}
+export function quotationConversionBlockerText(b:QuoteConversionBlocker){return `条目「${b.name||b.style||'未命名'}」引用的开发版本 ${b.devCode?b.devCode+' ':''}${b.versionLabel} 尚未获得需求方认可（${b.reason}）`;}
