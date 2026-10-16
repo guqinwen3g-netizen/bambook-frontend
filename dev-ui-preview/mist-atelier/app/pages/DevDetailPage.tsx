@@ -4,13 +4,13 @@ import {developmentCharged,developmentDomain,developmentInitiator,developmentIni
 import { apiService } from '../../../../services/apiService';
 import { Archive, ArrowRight, Building2, CircleCheck, ClipboardList, Clock, Download, Ellipsis, FileCheck, FileText, History, Layers, PackageCheck, Paperclip, Pencil, Plus, ShieldCheck, Trash2, Users, X } from 'lucide-react';
 import { Avatar, BackLink, Banner, Button, Card, CardFooter, CardHeader, Checkbox, ChoiceCards, Dialog, EmptyState, Field, FormGrid, IconButton, IdentityHeader, KeyValue, MeasurementTable, MistPage, Mono, ObjectStage, Pill, RelatedList, Select, Stepper, SummaryNumbers, TextArea, TextInput, TextLink, Thumb, Timeline, UploadZone, useToast, type StepState } from '../../../../components/mist';
-import type { MistConfirmation, MistDev, MistQc, MistVersion } from '../../../../server/src/shared/mistWorkspace';
+import type { MistConfirmation, MistDev, MistQc, MistRound, MistVersion } from '../../../../server/src/shared/mistWorkspace';
 import { IMG, STAGES } from '../data';
 import { useMistWorkspace } from '../runtime/workspace';
 import { useNav } from '../nav';
 import { developmentFactoryOptions, InlineDevelopmentFactoryDialog } from './DevCreatePage';
 import { developmentRoundBlocker } from '../../../../server/src/shared/mistDevelopmentRounds';
-import { DevRoundsCard, NewRoundDialog, versionQcFlag, type NewRoundInput } from './DevRounds';
+import { DevRoundsCard, NewRoundDialog, RoundRequirementsDialog, versionQcFlag, type NewRoundInput } from './DevRounds';
 import { ToProductDialog, developmentVersionLinks, productConversionBlocker } from './DevVersionLinks';
 
 export function localConfirmationTime(date=new Date()){return Number.isNaN(date.getTime())?'':new Date(date.getTime()-date.getTimezoneOffset()*60_000).toISOString().slice(0,16);}
@@ -124,6 +124,17 @@ export function DevDetailPage(){
       if(live.current){setDialog(null);toast('新一轮已建立，之前各轮记录保持不变');if(id){setVersionId(id);go('development/detail',dev.id,{versionId:id,...(route.customerId?{customerId:route.customerId}:{})});}}}
     catch(cause){if(live.current)setFailure(cause instanceof Error?cause.message:'本轮尚未建立，原内容已保留');}finally{busyRef.current=false;if(live.current)setBusy(false);}
   };
+  const [roundEdit,setRoundEdit]=React.useState<MistRound|null>(null);
+  const saveRoundRequirements=async(requirements:string)=>{
+    if(!dev||!roundEdit||busyRef.current)return;busyRef.current=true;setBusy(true);setFailure('');
+    try{await run({type:'development.round.updateRequirements',payload:{devId:dev.id,roundId:roundEdit.id,requirements}});if(live.current){setRoundEdit(null);toast('共同要求已修改；各工厂任务需逐厂同步后才更新');}}
+    catch(cause){if(live.current)setFailure(cause instanceof Error?cause.message:'共同要求尚未保存，原内容已保留');}finally{busyRef.current=false;if(live.current)setBusy(false);}
+  };
+  const syncRoundTask=async(target:MistVersion)=>{
+    if(!dev||busyRef.current)return;busyRef.current=true;setBusy(true);setFailure('');
+    try{await run({type:'development.version.syncRequirements',payload:{devId:dev.id,versionId:target.id}});if(live.current)toast(`${target.label} 已同步共同要求`);}
+    catch(cause){if(live.current)toast(cause instanceof Error?cause.message:`${target.label} 尚未同步`);}finally{busyRef.current=false;if(live.current)setBusy(false);}
+  };
   const uploadRoundFiles=async(files:File[])=>{
     if(busyRef.current)return [];busyRef.current=true;setBusy(true);setFailure('');const ids:string[]=[];
     try{for(const file of files){if(file.size>50*1024*1024)throw Error(`${file.name} 超过 50MB`);ids.push((await uploadFile(file)).id);}}
@@ -168,7 +179,7 @@ export function DevDetailPage(){
           <KeyValue items={[{label:'工厂',value:version?.factory||'待安排'},{label:'样品',value:version?`${version.sample||'未登记'} · ${version.sampleQuantity} ${fabricDomain?version.sampleUnit||dev.values.sampleUnit||'单位待登记':'件'}`:'未建立版本'},...(fabricDomain?[{label:'实物形态',value:version?.sampleForm||dev.values.sampleForm||'待登记'}]:[{label:'尺码',value:version?.size||dev.values.sizeBase}]),{label:'面料',value:version?.fabric||dev.fabric}]} />
           <CardFooter><span className="mist-note">准确版本独立记录</span><span className="mist-spacer" /><Button size="sm" disabled={!version||busy} icon={PackageCheck} onClick={()=>setDialog('sample')}>登记返样</Button></CardFooter>
         </Card>
-        {state&&<DevRoundsCard state={state} dev={dev} versionId={version?.id} busy={busy} onSelect={chooseVersion} onCreate={()=>{setFailure('');setRoundInitial(undefined);setDialog('round');}}/>}
+        {state&&<DevRoundsCard state={state} dev={dev} versionId={version?.id} busy={busy} onSelect={chooseVersion} onCreate={()=>{setFailure('');setRoundInitial(undefined);setDialog('round');}} onEditRequirements={round=>{setFailure('');setRoundEdit(round);}} onSync={target=>void syncRoundTask(target)}/>}
         {fabricDomain&&<Card><CardHeader title="面料开发目标规格" sub="目标要求，不代表工厂分析或 QC 实测"/><KeyValue items={[{label:'分类',value:dev.values.category||'待核实'},{label:'本版工厂要求',value:version?.note||'待记录'},{label:'目标成分',value:fabricRequirements?.composition||'待工厂分析'},{label:'克重原值',value:`${fabricRequirements?.weightValue||'待分析'} ${fabricRequirements?.weightUnit||''}`},{label:'幅宽原值',value:`${fabricRequirements?.widthValue||'待分析'} ${fabricRequirements?.widthUnit||''}`},{label:'纱支 / 组织',value:`${fabricRequirements?.yarn||'待分析'} / ${fabricRequirements?.weave||'待分析'}`},{label:'用途 / 手感',value:`${fabricRequirements?.usage||'—'} / ${fabricRequirements?.handle||'—'}`},{label:'后整理 / 性能',value:`${fabricRequirements?.finish||'—'} / ${fabricRequirements?.performance||'—'}`}]}/></Card>}
         <Card id="mist-dev-goal"><CardHeader title="开发目标" /><p className="mist-sub" style={{padding:'10px 22px 20px',fontSize:13.5}}>{dev.goal||'尚未填写开发目标'}</p></Card>
         <Card id="mist-dev-sample"><CardHeader title="版本附件" />{files.length?files.map(file=><div className="mist-row" key={file!.id} style={{padding:'10px 22px'}}><FileText className="mist-icon" /><span>{file!.name}</span><span className="mist-spacer" /><TextLink icon={Download} onClick={()=>void downloadFile(file!).catch(cause=>setFailure(String(cause)))}>下载</TextLink></div>):<EmptyState compact title="本版暂无附件" />}</Card>
@@ -221,6 +232,7 @@ export function DevDetailPage(){
       <Field label={decision.kind==='rework'?'整改要求':'放弃原因'} required={decision.kind==='abandon'} full><TextArea value={decision.note} onChange={event=>setDecision(previous=>({...previous,note:event.target.value}))} placeholder={decision.kind==='rework'?'例如：袖长按 QC 意见改短 1cm':'例如：工厂工艺无法达到要求'} /></Field>
     </Dialog>
     <ToProductDialog open={dialog==='product'} version={version} busy={busy} failure={failure} onClose={()=>setDialog(null)} onSubmit={input=>void toProduct(input)} />
+    <RoundRequirementsDialog round={roundEdit} busy={busy} failure={roundEdit?failure:''} onClose={()=>setRoundEdit(null)} onSubmit={value=>void saveRoundRequirements(value)}/>
     {state&&<NewRoundDialog open={dialog==='round'} initial={roundInitial} state={state} dev={dev} busy={busy} failure={failure} factoryOptions={developmentFactoryOptions(state,dev.values.factories,fabricDomain?'fabric':'garment')} onClose={()=>{setDialog(null);setRoundInitial(undefined);}} onAddFactory={()=>setFactoryDialog(true)} onSubmit={input=>void createRound(input)} onUpload={uploadRoundFiles}/>}
     <Dialog open={dialog==='revise'} onClose={()=>!busy&&setDialog(null)} title={`基于 ${version?.label||''} 发起新一版`} description="原版与其确认、报告继续保留。" footer={<>{recovery}<Button variant="quiet" onClick={()=>setDialog(null)}>取消</Button><Button variant="primary" loading={busy} disabled={!note.trim()} onClick={()=>void act('revise')}>建立新版本</Button></>}><Field label="本次修改要求" required><TextArea value={note} onChange={event=>setNote(event.target.value)} /></Field></Dialog>
     <Dialog open={dialog==='archive'} onClose={()=>!busy&&setDialog(null)} title={`将 ${version?.label||''} 留档？`} description="按当前版本记录保存成果，保留所依据的实物、报告和需求方决定。" footer={<>{recovery}<Button variant="quiet" onClick={()=>setDialog(null)}>取消</Button><Button variant="primary" loading={busy} onClick={()=>void act('archive')}>确认留档</Button></>} />

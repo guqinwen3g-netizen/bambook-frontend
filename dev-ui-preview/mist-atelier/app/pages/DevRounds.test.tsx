@@ -30,6 +30,8 @@ async function click(text:string){const target=button(text);expect(target,text).
 async function check(group:string,label:string){const box=[...document.querySelectorAll(`[aria-label="${group}"] label.mist-check`)].find(item=>item.textContent?.startsWith(label))?.querySelector('input') as HTMLInputElement;expect(box,label).toBeTruthy();await act(async()=>box.click());}
 async function fill(label:string,value:string){const field=[...document.querySelectorAll('label')].find(item=>item.querySelector('.mist-field-label')?.textContent?.replace('*','')===label);const input=field?.querySelector('input,textarea') as HTMLInputElement;expect(input,label).toBeTruthy();await act(async()=>{const prototype=input.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(prototype,'value')!.set!.call(input,value);input.dispatchEvent(new Event('input',{bubbles:true}));});}
 const roundText=(number:number)=>document.querySelector(`[data-round="${number}"]`)?.textContent||'';
+const taskText=(label:string)=>document.querySelector(`[data-task="${label}"]`)?.textContent||'';
+async function fillIn(group:string,label:string,value:string){const field=[...document.querySelectorAll(`[aria-label="${group}"] label`)].find(item=>item.querySelector('.mist-field-label')?.textContent?.replace('*','')===label);const input=field?.querySelector('input,textarea') as HTMLInputElement;expect(input,group+label).toBeTruthy();await act(async()=>{const prototype=input.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(prototype,'value')!.set!.call(input,value);input.dispatchEvent(new Event('input',{bubbles:true}));});}
 
 describe('BB-DEV-2 round card and new-round dialog',()=>{
   it('opens R2 with only C and new D, previews R2-C / R2-D and keeps R1 unchanged',async()=>{
@@ -37,12 +39,27 @@ describe('BB-DEV-2 round card and new-round dialog',()=>{
     const r1=roundText(1);
     await click('开新一轮');
     expect(document.body.textContent).toContain('开启第 2 轮');
+    expect(document.querySelector('[aria-label="开新一轮步骤"] [aria-current="step"]')?.textContent).toContain('参考版本');
+    await check('参考版本','R1-C');await click('下一步：参与工厂');
     expect(button('请至少选择一家参与工厂')?.disabled).toBe(true);
-    await check('参考版本','R1-C');await check('参与工厂','C厂');await check('参与工厂','D厂');
+    await check('参与工厂','C厂');await check('参与工厂','D厂');
     expect(document.querySelector('[aria-label="参与工厂"]')?.textContent).toContain('D厂 · 首次参与');
+    await click('下一步：共同要求');
+    expect(button('请填写本轮共同要求')?.disabled).toBe(true);
     await fill('本轮共同要求','收腰 2cm');await fill('本轮目标日期','2026-11-10');
+    await click('下一步：逐厂要求');
+    expect(document.body.textContent).toContain('共同要求：收腰 2cm');
+    await fillIn('D厂 逐厂要求','差异要求','D 厂另改领型');await fillIn('D厂 逐厂要求','数量','2');await fillIn('D厂 逐厂要求','要求日期','2026-11-05');
+    await fillIn('C厂 逐厂要求','数量','0');
+    expect(button('C厂：样品数量须为正整数')?.disabled).toBe(true);
+    await fillIn('C厂 逐厂要求','数量','1');
+    await click('上一步');expect(document.body.textContent).toContain('本轮共同要求');await click('下一步：逐厂要求');
+    expect(document.body.textContent).toContain('D 厂另改领型');
     await click('建立 R2-C、R2-D');
-    expect(bridge.current.run).toHaveBeenCalledWith(expect.objectContaining({type:'development.round.create',payload:expect.objectContaining({devId,factories:['C厂','D厂'],requirements:'收腰 2cm',targetDate:'2026-11-10'})}));
+    expect(bridge.current.run).toHaveBeenCalledWith(expect.objectContaining({type:'development.round.create',payload:expect.objectContaining({devId,factories:['C厂','D厂'],requirements:'收腰 2cm',targetDate:'2026-11-10',factoryTasks:[
+      {factory:'C厂',extraRequirements:'',sampleForm:'样衣',sampleQuantity:1,sampleUnit:'件',dueDate:'2026-11-10'},
+      {factory:'D厂',extraRequirements:'D 厂另改领型',sampleForm:'样衣',sampleQuantity:2,sampleUnit:'件',dueDate:'2026-11-05'}]})}));
+    expect(taskText('R2-D')).toContain('样衣 2 件 · 要求 2026-11-05');expect(taskText('R2-D')).toContain('差异：D 厂另改领型');
     expect(roundText(2)).toContain('R2-C · C厂');expect(roundText(2)).toContain('R2-D · D厂');expect(roundText(2)).toContain('参考 R1-C');expect(roundText(2)).toContain('收腰 2cm');
     expect(roundText(1)).toBe(r1);
     expect(document.body.textContent).toContain('D D厂');
@@ -53,6 +70,27 @@ describe('BB-DEV-2 round card and new-round dialog',()=>{
     expect(newRoundError({factories:[],requirements:'x',fileIds:[],referenceVersionIds:[],targetDate:'2026-11-01'})).toContain('工厂');
     expect(newRoundError({factories:['A厂'],requirements:' ',fileIds:[],referenceVersionIds:[],targetDate:'2026-11-01'})).toContain('共同要求');
     expect(newRoundError({factories:['A厂'],requirements:'x',fileIds:[],referenceVersionIds:[],targetDate:''})).toContain('目标日期');
+  });
+});
+
+describe('BB-DEV-3 修改共同要求后逐厂同步',()=>{
+  it('shows 与共同要求不一致，可同步 on every factory task after editing, and updates only the synced one',async()=>{
+    const r1=roundText(1);expect(r1).not.toContain('与共同要求不一致');
+    await click('修改共同要求');expect(button('共同要求没有变化')?.disabled).toBe(true);
+    await fill('本轮共同要求','首轮：收腰 1cm');await click('保存共同要求');
+    expect(state.rounds!.find(r=>r.number===1)!.requirements).toBe('首轮：收腰 1cm');
+    for(const label of ['R1-A','R1-B','R1-C'])expect(taskText(label)).toContain('与共同要求不一致，可同步');
+    expect(state.versions.find(v=>v.label==='R1-A')!.task!.commonRequirements).toBe('首轮');
+    await click('同步 R1-A');
+    expect(bridge.current.run).toHaveBeenCalledWith(expect.objectContaining({type:'development.version.syncRequirements',payload:{devId,versionId:state.versions.find(v=>v.label==='R1-A')!.id}}));
+    expect(state.versions.find(v=>v.label==='R1-A')!.task!.commonRequirements).toBe('首轮：收腰 1cm');
+    expect(taskText('R1-A')).not.toContain('与共同要求不一致');expect(taskText('R1-B')).toContain('与共同要求不一致，可同步');
+  });
+  it('disables sync with the reason once that factory has returned its sample',async()=>{
+    apply({type:'development.round.updateRequirements',payload:{devId,roundId:state.rounds![0].id,requirements:'首轮改'}});
+    apply({type:'development.recordSample',payload:{devId,versionId:state.versions.find(v=>v.label==='R1-B')!.id,sample:'S',quantity:1,returnedAt:ctx.now}});
+    await act(async()=>{bridge.current={...bridge.current,state};render();});
+    expect(button('同步 R1-B')!.disabled).toBe(true);expect(taskText('R1-B')).toContain('R1-B 已返样，改要求请开新一轮');expect(button('同步 R1-A')!.disabled).toBe(false);
   });
 });
 

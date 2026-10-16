@@ -4,7 +4,7 @@
  * 工厂字母在本案首次参与时分配，之后固定不变；历史版本号（如 R1-A-1）按原样保留、只读。
  */
 import type { MistDev, MistRound, MistState, MistVersion } from './mistWorkspace';
-import { developmentCharged } from './mistDevelopmentDomain';
+import { developmentCharged, developmentDomain, validFabricSample } from './mistDevelopmentDomain';
 
 /** 第 n 个字母（0 → A，25 → Z，26 → AA）。 */
 export function factoryLetterAt(index: number): string {
@@ -92,4 +92,43 @@ export function duplicateRoundFactories(factories: unknown[]): string[] {
   const seen = new Set<string>(), duplicated = new Set<string>();
   for (const item of factories) { const name = typeof item === 'string' ? item.trim() : ''; if (!name) continue; if (seen.has(name)) duplicated.add(name); seen.add(name); }
   return [...duplicated];
+}
+
+/** BB-DEV-3：开新一轮时逐厂填写的任务（差异要求、样品形态、数量和单位、要求日期）。 */
+export type FactoryTaskInput = { factory: string; extraRequirements: string; sampleForm: string; sampleQuantity: number; sampleUnit: string; dueDate: string };
+/** 逐厂任务默认值：沿用开发案计划样品，要求日期默认本轮目标日期。 */
+export function defaultFactoryTask(dev: MistDev, factory: string, targetDate: string): FactoryTaskInput {
+  const fabric = developmentDomain(dev.values) === 'fabric';
+  return { factory, extraRequirements: '', sampleForm: dev.values.sampleForm || (fabric ? '' : '样衣'), sampleQuantity: dev.values.sampleQuantity || 1, sampleUnit: dev.values.sampleUnit || (fabric ? '' : '件'), dueDate: targetDate };
+}
+/** 逐厂任务校验（页面与服务端共用）；通过返回 null。 */
+export function factoryTaskError(dev: MistDev, task: Pick<FactoryTaskInput, 'factory' | 'sampleForm' | 'sampleQuantity' | 'sampleUnit' | 'dueDate'>): string | null {
+  const name = task.factory;
+  if (developmentDomain(dev.values) === 'fabric') { if (!validFabricSample(task.sampleQuantity, task.sampleForm, task.sampleUnit)) return `${name}：面料样品须写明形态与单位，米样按米，其他剪片类按整数份`; }
+  else {
+    if (!String(task.sampleForm || '').trim()) return `${name}：请填写样品形态`;
+    if (!Number.isInteger(task.sampleQuantity) || task.sampleQuantity <= 0) return `${name}：样品数量须为正整数`;
+    if (!String(task.sampleUnit || '').trim()) return `${name}：请填写样品单位`;
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(task.dueDate || '') || Number.isNaN(new Date(task.dueDate).getTime())) return `${name}：请填写要求日期`;
+  return null;
+}
+/** 版本说明：共同要求 + 本厂差异要求。 */
+export const factoryTaskNote = (common: string, extra: string) => extra.trim() ? `${common}\n本厂差异：${extra.trim()}` : common;
+/** 工厂任务与本轮共同要求是否一致：改共同要求后不自动覆盖，需逐厂同步。没有轮次的历史版本返回 null。 */
+export function factoryTaskSync(state: MistState, version: MistVersion): { round: MistRound; common: string; inSync: boolean } | null {
+  const round = version.roundId ? (state.rounds || []).find(item => item.id === version.roundId) : undefined;
+  if (!round) return null;
+  const common = version.task ? version.task.commonRequirements : version.note;
+  return { round, common, inSync: common === round.requirements };
+}
+/** 同步共同要求的阻断原因；可以同步时返回 null。 */
+export function factoryTaskSyncBlocker(state: MistState, dev: MistDev, version: MistVersion): string | null {
+  const closure = developmentClosure(state, dev);
+  if (closure) return `开发案${closure.label}，不能再改工厂任务`;
+  const sync = factoryTaskSync(state, version);
+  if (!sync) return '本版没有所属轮次，无需同步';
+  if (sync.inSync) return '本厂任务已与共同要求一致';
+  if (version.returnedAt) return `${version.label} 已返样，改要求请开新一轮`;
+  return null;
 }

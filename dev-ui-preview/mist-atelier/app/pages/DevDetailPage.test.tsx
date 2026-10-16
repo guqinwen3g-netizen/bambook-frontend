@@ -164,8 +164,9 @@ describe('BB-DEV-7 QC gate on the detail page',()=>{
     await mount();expect(button('整改复检')).toBeUndefined();await click('重新打样');
     const textarea=[...document.querySelectorAll('label')].find(item=>item.querySelector('.mist-field-label')?.textContent?.replace('*','')==='本轮共同要求')!.querySelector('textarea')!;
     expect(textarea.value).toContain('克重偏低 20g');expect(document.body.textContent).toContain('重新打样 · 来源 R1-A-1 QC 不通过');
+    await click('下一步：逐厂要求');
     const submit=[...document.querySelectorAll('button')].find(item=>item.textContent?.startsWith('建立 '))!;await act(async()=>submit.click());
-    expect(bridge.current.run).toHaveBeenCalledWith(expect.objectContaining({type:'development.round.create',payload:expect.objectContaining({devId:'dev-a',factories:['工厂 va'],referenceVersionIds:['va'],resampleFromVersionId:'va'})}));
+    expect(bridge.current.run).toHaveBeenCalledWith(expect.objectContaining({type:'development.round.create',payload:expect.objectContaining({devId:'dev-a',factories:['工厂 va'],referenceVersionIds:['va'],resampleFromVersionId:'va',factoryTasks:[expect.objectContaining({factory:'工厂 va',sampleForm:'米样',sampleUnit:'米'})]})}));
   });
   it('shows 需关注 with the QC opinion for a conditional pass and still allows confirmation',async()=>{
     const v=bridge.current.state.versions.find((row:any)=>row.id==='va');v.qc={...v.qc,result:'conditional',opinion:'领口略紧，量产前确认'};

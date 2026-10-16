@@ -1,7 +1,7 @@
 import { MIST_FINANCE_SCOPES } from './mistFinancePermissions';
 import {developmentDomain,developmentInitiator,emptyFabricRequirements,fabricRequirementError,validFabricSample,type DevelopmentDomain,type DevelopmentInitiator,type DevelopmentRequestType,type FabricDevelopmentRequirements} from './mistDevelopmentDomain';
 import { relationHoldReason } from './mistRelationHold';
-import {assignFactoryLetters,developmentRoundBlocker,duplicateRoundFactories,nextRoundNumber,roundVersionLabel} from './mistDevelopmentRounds';
+import {assignFactoryLetters,defaultFactoryTask,developmentClosure,developmentRoundBlocker,duplicateRoundFactories,factoryTaskError,factoryTaskNote,factoryTaskSync,factoryTaskSyncBlocker,nextRoundNumber,roundVersionLabel,type FactoryTaskInput} from './mistDevelopmentRounds';
 import {createFulfillmentState,applyFulfillmentCommand,fulfillmentCommandPermission,getFulfillmentReviews,assertProductionTransition,type FulfillmentState,type FulfillmentCommand} from './mistFulfillment';
 import {createMarketState,applyMarketCommand,marketCommandPermission,getMarketReviews,type MarketState,type MarketCommand} from './mistMarket';
 import {createCrmState,applyCrmCommand,crmCommandPermission,type CrmState,type CrmCommand} from './mistCrm';
@@ -57,7 +57,10 @@ export type MistVersion = {
   qcHistory?: MistQcRecord[];
   /** QC 不通过后的处理：整改复检（仅成衣）/ 重新打样（开新一轮）/ 放弃本版。 */
   qcDecision?: MistQcDecision;
+  /** 本厂在本轮的任务（BB-DEV-3）：建轮时复制的共同要求、差异要求与样品要求。改共同要求后需逐厂同步才更新。 */
+  task?: MistFactoryTask;
 };
+export type MistFactoryTask = { commonRequirements: string; extraRequirements: string; sampleForm: string; sampleQuantity: number; sampleUnit: string; dueDate: string; syncedAt: string; syncedBy: string };
 export type MistQcDecisionKind = 'rework' | 'resample' | 'abandon';
 export type MistQcDecision = { kind: MistQcDecisionKind; note: string; decidedAt: string; decidedBy: string; roundId?: string };
 export type MistQcRecord = MistQc & { decision?: MistQcDecision };
@@ -66,6 +69,8 @@ export type MistRound = {
   id: string; devId: string; number: number; requirements: string; fileIds: string[];
   referenceVersionIds: string[]; factories: string[]; targetDate: string;
   createdAt: string; createdBy: string;
+  /** 最近一次修改共同要求（不会自动覆盖已有工厂任务）。 */
+  requirementsUpdatedAt?: string; requirementsUpdatedBy?: string;
 };
 export type MistDev = {
   id: string; code: string; name: string; style: string; owner: string; due: string; dueRel: string;
@@ -192,7 +197,9 @@ export type MistCommand = FulfillmentCommand | MarketCommand | PlatformCommand |
   | { type: 'development.saveConfirmationDraft'; payload: { devId: string; versionId: string; draft: Omit<MistConfirmation, 'id' | 'recordedAt' | 'recordedBy'> } }
   | { type: 'development.revise'; payload: { devId: string; versionId: string; note: string } }
   | { type: 'development.archive'; payload: { devId: string; versionId: string } }
-  | { type: 'development.round.create'; payload: { devId: string; factories: string[]; requirements: string; fileIds?: string[]; referenceVersionIds?: string[]; targetDate: string; /** QC 不通过后“重新打样”：记录来源版本的处理决定 */ resampleFromVersionId?: string } }
+  | { type: 'development.round.create'; payload: { devId: string; factories: string[]; requirements: string; fileIds?: string[]; referenceVersionIds?: string[]; targetDate: string; /** QC 不通过后“重新打样”：记录来源版本的处理决定 */ resampleFromVersionId?: string; /** 逐厂差异要求、样品形态、数量和单位、要求日期；缺省按开发案计划样品与本轮目标日期 */ factoryTasks?: Array<Partial<FactoryTaskInput> & { factory: string }> } }
+  | { type: 'development.round.updateRequirements'; payload: { devId: string; roundId: string; requirements: string } }
+  | { type: 'development.version.syncRequirements'; payload: { devId: string; versionId: string } }
   | { type: 'development.close'; payload: { devId: string; kind: 'archived' | 'cancelled'; reason: string } }
   | { type: 'development.qc.decide'; payload: { devId: string; versionId: string; decision: 'rework' | 'abandon'; note: string } }
   | { type: 'fabric.create'; payload: { name: string; request: string; owner: string; due: string } }
@@ -380,9 +387,31 @@ function assertRequester(state: MistState, v: DevelopmentValues) {
   const employee=state.platform.employees.find(e=>e.id===v.requesterId);
   if(!employee||employee.name!==v.requester)throw new MistCommandError('VALIDATION','所选内部需求方不在员工档案中');
 }
-type RoundInput = { factories: unknown; requirements: unknown; fileIds?: unknown; referenceVersionIds?: unknown; targetDate: unknown };
+type RoundInput = { factories: unknown; requirements: unknown; fileIds?: unknown; referenceVersionIds?: unknown; targetDate: unknown; factoryTasks?: unknown };
 function assertFabricFactories(state: MistState, factories: string[]) {
   for(const name of factories){const matches=state.market.suppliers.filter(s=>s.name===name);if(matches.length!==1||matches[0].status!=='active'||!/面料|纺织|织造|染整|fabric|textile|weav|dye/i.test(matches[0].type+' '+matches[0].capabilities))throw new MistCommandError('VALIDATION','请选择当前有效且名称唯一的面料工厂');}
+}
+/** 逐厂任务：只接受本轮参与工厂、每厂一条；缺省值沿用开发案计划样品与本轮目标日期。 */
+function roundFactoryTasks(dev: MistDev, factories: string[], raw: unknown, targetDate: string, context: MistContext): Record<string, Omit<MistFactoryTask, 'commonRequirements'>> {
+  if(raw!==undefined&&!Array.isArray(raw))throw new MistCommandError('VALIDATION','逐厂要求格式无效');
+  const rows=(raw||[]) as Array<Record<string, unknown>>, given=new Map<string, Record<string, unknown>>();
+  for(const row of rows){
+    const factory=typeof row?.factory==='string'?row.factory.trim():'';
+    if(!factories.includes(factory))throw new MistCommandError('VALIDATION','逐厂要求只能填写本轮参与工厂'+(factory?'：'+factory:''));
+    if(given.has(factory))throw new MistCommandError('VALIDATION','同一工厂只能有一份逐厂要求：'+factory);
+    given.set(factory,row);
+  }
+  const result: Record<string, Omit<MistFactoryTask, 'commonRequirements'>> = {};
+  for(const factory of factories){
+    const base=defaultFactoryTask(dev,factory,targetDate), row=given.get(factory)||{};
+    const pick=(key:'extraRequirements'|'sampleForm'|'sampleUnit'|'dueDate')=>row[key]===undefined?base[key]:typeof row[key]==='string'?(row[key] as string).trim():(()=>{throw new MistCommandError('VALIDATION',factory+'：逐厂要求格式无效');})();
+    const quantity=row.sampleQuantity===undefined?base.sampleQuantity:Number(row.sampleQuantity);
+    const task={extraRequirements:text(pick('extraRequirements'),'差异要求',false),sampleForm:pick('sampleForm'),sampleQuantity:quantity,sampleUnit:pick('sampleUnit'),dueDate:pick('dueDate')};
+    // 缺省值（建案首轮、改版等未逐厂填写的入口）沿用开发案原有计划样品，不因历史数据缺形态而阻断。
+    const error=given.has(factory)?factoryTaskError(dev,{factory,...task}):null;if(error)throw new MistCommandError('VALIDATION',error);
+    result[factory]={...task,dueDate:date(task.dueDate,'要求日期'),syncedAt:context.now,syncedBy:context.actorName};
+  }
+  return result;
 }
 /** 建立新一轮：校验共同要求、参考版本与参与工厂，为首次参与的工厂固定字母，并逐厂建立 R{轮次}-{字母} 大版本。 */
 function createRound(state: MistState, dev: MistDev, input: RoundInput, context: MistContext) {
@@ -397,6 +426,7 @@ function createRound(state: MistState, dev: MistDev, input: RoundInput, context:
   const fileIds = files(state, (input.fileIds ?? []) as string[]);
   const referenceVersionIds = strings(input.referenceVersionIds ?? [], '参考版本');
   const references = referenceVersionIds.map(id => { const version = find(state.versions, id, '参考版本'); if(version.devId!==dev.id||!dev.versionIds.includes(id))throw new MistCommandError('VALIDATION','参考版本须属于本开发案'); return version; });
+  const tasks = roundFactoryTasks(dev, factories, input.factoryTasks, targetDate, context);
   const number = nextRoundNumber(state, dev), letters = assignFactoryLetters(state, dev, factories);
   const round: MistRound = { id: context.id(), devId: dev.id, number, requirements, fileIds, referenceVersionIds, factories, targetDate, createdAt: context.now, createdBy: context.actorName };
   state.rounds.push(round);
@@ -404,7 +434,8 @@ function createRound(state: MistState, dev: MistDev, input: RoundInput, context:
   for(const factory of factories){
     const base = references.find(version => version.factory===factory) || references[0];
     const id = context.id(), requirementsCopy = fabric ? (base?.fabricRequirements || dev.values.fabricRequirements) : undefined;
-    const version: MistVersion = {...(requirementsCopy?{fabricRequirements:JSON.parse(JSON.stringify(requirementsCopy))}:{}),id,devId:dev.id,label:roundVersionLabel(number,letters[factory]),factory,sample:'',sampleQuantity:dev.values.sampleQuantity,size:fabric?'':(base?.size??dev.values.sizeBase),fabric:base?.fabric??dev.values.fabric,img:base?.img??dev.img,fileIds:[...new Set([...(base?.fileIds??dev.fileIds),...fileIds])],returnedAt:null,qc:null,confirmations:[],archivedAt:null,note:requirements,roundId:round.id,factoryLetter:letters[factory]};
+    const task:MistFactoryTask={...tasks[factory],commonRequirements:requirements};
+    const version: MistVersion = {...(requirementsCopy?{fabricRequirements:JSON.parse(JSON.stringify(requirementsCopy))}:{}),id,devId:dev.id,label:roundVersionLabel(number,letters[factory]),factory,sample:'',sampleQuantity:task.sampleQuantity,size:fabric?'':(base?.size??dev.values.sizeBase),fabric:base?.fabric??dev.values.fabric,img:base?.img??dev.img,fileIds:[...new Set([...(base?.fileIds??dev.fileIds),...fileIds])],returnedAt:null,qc:null,confirmations:[],archivedAt:null,note:factoryTaskNote(requirements,task.extraRequirements),roundId:round.id,factoryLetter:letters[factory],task};
     state.versions.push(version); dev.versionIds.push(id); created.push(version);
   }
   dev.values.factories = [...new Set([...dev.values.factories, ...factories])];
@@ -683,6 +714,30 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
       updateDev(state,dev,context);
       event(state,context,'development',dev.id,'开启第 '+round.number+' 轮：'+versions.map(v=>v.label).join('、'),{view:'development/detail',id:dev.id,versionId:versions[0].id});
       result={devId:dev.id,roundId:round.id,versionId:versions[0].id,versionIds:versions.map(v=>v.id)};break;
+    }
+    case 'development.round.updateRequirements': {
+      const dev=find(state.devs,p.devId,'开发案'), closure=developmentClosure(state,dev);
+      if(closure)throw new MistCommandError('PRECONDITION','开发案'+closure.label+'，不能再改共同要求');
+      const round=(state.rounds||[]).find(row=>row.id===p.roundId&&row.devId===dev.id);
+      if(!round)throw new MistCommandError('NOT_FOUND','轮次不存在');
+      const requirements=text(p.requirements,'本轮共同要求');
+      if(requirements===round.requirements)throw new MistCommandError('PRECONDITION','共同要求没有变化');
+      round.requirements=requirements;round.requirementsUpdatedAt=context.now;round.requirementsUpdatedBy=context.actorName;
+      const pending=state.versions.filter(v=>v.roundId===round.id&&!factoryTaskSync(state,v)?.inSync).map(v=>v.label);
+      dev.updatedAt=context.now;
+      event(state,context,'development',dev.id,'修改第 '+round.number+' 轮共同要求'+(pending.length?'；待逐厂同步：'+pending.join('、'):''),{view:'development/detail',id:dev.id});
+      result={devId:dev.id,roundId:round.id};break;
+    }
+    case 'development.version.syncRequirements': {
+      const [dev,v]=versionOf(state,p.devId,p.versionId), blocked=factoryTaskSyncBlocker(state,dev,v);
+      if(blocked)throw new MistCommandError('PRECONDITION',blocked);
+      const round=factoryTaskSync(state,v)!.round;
+      const task:MistFactoryTask=v.task||{...defaultFactoryTask(dev,v.factory,round.targetDate),commonRequirements:'',sampleQuantity:v.sampleQuantity,syncedAt:'',syncedBy:''};
+      v.task={...task,commonRequirements:round.requirements,syncedAt:context.now,syncedBy:context.actorName};
+      v.note=factoryTaskNote(round.requirements,v.task.extraRequirements);
+      dev.updatedAt=context.now;
+      event(state,context,'development',dev.id,v.label+' 已同步第 '+round.number+' 轮共同要求',{view:'development/detail',id:dev.id,versionId:v.id});
+      result={devId:dev.id,versionId:v.id};break;
     }
     case 'development.archive': {
       const [dev,v]=versionOf(state,p.devId,p.versionId);

@@ -81,10 +81,10 @@ export function IdentityHeader({ thumb, meta, title, facts, actions }: { thumb?:
 }
 
 /** 阶段步进条（横向）：done 浅色勾、now 实心强调色、todo 灰、blocked 红。 */
-export function Stepper({ steps, onSelect }: { steps: Array<{ label: string; state: StepState; caption?: string }>; onSelect?: (index: number) => void }) {
+export function Stepper({ steps, onSelect, ariaLabel = '阶段' }: { steps: Array<{ label: string; state: StepState; caption?: string }>; onSelect?: (index: number) => void; ariaLabel?: string }) {
   const cap = { done: '已完成', now: '进行中', todo: '未开始', blocked: '受阻' } as const;
   return (
-    <Card as="nav" className="mist-stepper" aria-label="阶段" style={{ ['--mist-steps' as string]: steps.length }}>
+    <Card as="nav" className="mist-stepper" aria-label={ariaLabel} style={{ ['--mist-steps' as string]: steps.length }}>
       {steps.map((s, i) => (
         <button key={i} type="button" className="mist-step" data-state={s.state === 'todo' ? undefined : s.state} aria-current={s.state === 'now' ? 'step' : undefined} onClick={() => onSelect?.(i)}>
           <span className="mist-step-k">{s.state === 'done' ? <Icon icon={Check} size="sm" /> : String(i + 1).padStart(2, '0')}</span>
