@@ -66,6 +66,7 @@ describe('工作空间成员与岗位权限（服务端）',()=>{
   // 财务成员仍不能批准合同、不能改空间设置、不能管理成员、不能移入回收站
   await command(finance,id,fv.revision,'fulfillment.procurement.decide',{id:po.id,decision:'approved',note:'x'}).expect(403);
   await command(finance,id,fv.revision,'settings.update',{workspaceName:'改名'}).expect(403);
+  const deniedProfile=await command(finance,id,fv.revision,'settings.update',{companyProfile:{legalName:'越权写入'}}).expect(403);expect(JSON.stringify(deniedProfile.body)).toContain('所有者');
   await member(finance,id,fv.revision,'add','local-qc').expect(404);
   await finance.post(W+id+'/archive').send({requestId:'fin-archive',expectedRevision:fv.revision}).expect(404);
   // 财务登记供应商票据与付款

@@ -133,7 +133,7 @@ export function DocumentCenterPage() {
           { label: '电话 / 邮箱', value: [profile.phone, profile.email].filter(Boolean).join(' · ') || '未填写' }, { label: '税号', value: profile.taxId || '未填写' },
           { label: '海关编码', value: profile.customsCode || '未填写' }, { label: '开户行 / SWIFT', value: [profile.bankName, profile.swift].filter(Boolean).join(' · ') || '未填写' },
         ]} /> : <EmptyState icon={Building2} title="尚未填写公司抬头" description="CI / PL 的抬头、地址和收款银行取自设置中的公司资料。" compact />}
-        <div className="mist-row"><Button icon={Pencil} onClick={() => go('settings')}>在设置中维护公司资料</Button></div>
+        <div className="mist-row"><Button icon={Pencil} onClick={() => go('settings', undefined, { section: 'company' })}>在设置中维护公司资料</Button></div>
         <span className="mist-note">印章图样、编号规则预览与打印打包尚未接入；PI、样品单、试样通知与采购单在各自页面出具，单据中心暂不汇总。</span>
       </div></Card>
     : <>
