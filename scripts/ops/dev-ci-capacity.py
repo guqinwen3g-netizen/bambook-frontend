@@ -73,7 +73,7 @@ def supervisor():
         '-p','MemoryHigh=1792M','-p','MemorySwapMax=256M','-p','CPUQuota=200%',
         '-p','CPUWeight=20','-p','IOWeight=20','-p','TasksMax=160','-p','OOMPolicy=stop',
         '-p','Nice=10','-p','PrivateTmp=yes','-p','ProtectHome=yes','-p','ProtectSystem=strict',
-        '-p','ReadWritePaths='+str(ROOT)+' '+str(EVIDENCE),'-p','InaccessiblePaths=/srv/bambook-dev',
+        '-p','ReadWritePaths='+str(ROOT)+' '+str(EVIDENCE),'-p','InaccessiblePaths=/srv/bambook-dev /run/postgresql /var/lib/postgresql',
         '-p','NoNewPrivileges=yes','-p','RestrictSUIDSGID=yes',
         '/usr/bin/env','-i','PATH=/usr/local/bin:/usr/bin:/bin','LANG=C.UTF-8',
         '/usr/bin/python3',str(ROOT/'trial.py'),'worker',SHA]
@@ -125,4 +125,10 @@ def supervisor():
     return 0
 
 if __name__=='__main__':
-    sys.exit(worker() if sys.argv[1]=='worker' else supervisor())
+    try:
+        sys.exit(worker() if sys.argv[1]=='worker' else supervisor())
+    except Exception as error:
+        if sys.argv[1]!='worker':
+            subprocess.run(['sudo','-n','systemctl','stop',UNIT],check=False)
+            save('summary.json',{'sha':SHA,'exception':type(error).__name__+': '+str(error),'health':health(),'cleanup':'trial stopped; inspect scratch directory before removing'})
+        raise
