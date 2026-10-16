@@ -60,7 +60,7 @@ function makeApp(opts: { configRow?: any } = {}) {
     userAccount: { findFirst: vi.fn(async ({ where }: any) => {
       const ids: Record<string, string> = { u_admin: 'role-admin', u_owner: 'role-super-admin', u_viewer: 'viewer', u_merch: 'role-merchandiser', u_sales: 'role-sales' };
       const roleId = ids[where.id]; if (!roleId) return null;
-      const scopes = ['u_admin', 'u_owner'].includes(where.id) ? ['dictionary:write'] : [];
+      const scopes = ['u_admin', 'u_owner'].includes(where.id) ? ['dictionary:write', 'settings:system:read'] : [];
       return { id: where.id, status: 'active', deletedAt: null, primaryDeptId: 'company', primaryDepartment: null,
         roles: [{ roleId, role: { permissions: scopes.map(scope => ({ permission: { scope } })) } }] };
     }) },

@@ -18,11 +18,10 @@ import { physicalShipmentAllocationFingerprint } from './shipmentPhysicalConsume
 import { Router, Request, Response, NextFunction } from 'express';
 // ★ C2：运输方式标签收口到唯一真源（含 Pickup=客户自提 + 历史脏值归一）
 import { shippingMethodLabel } from '../shared/shippingMethod';
-import { requireRole, extractActorFromRequest } from '../auth/middleware';
+import { extractActorFromRequest } from '../auth/middleware';
 import { listCiInvoiceSourcesForShipment } from '../customs/ciInvoiceSource';
 import { createModuleAuthGuard, requireJwtForWrite } from '../auth/moduleGuard';
 import { requirePermission } from '../auth/permissionGuard';
-import type { AgentRole } from '../agent/types';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { loadUserWithRoles, buildLoadedAuthTokenPayload } from '../auth/tokenHelpers';
 import { hasScope } from '../auth/permissionService';
@@ -257,7 +256,6 @@ export function createShippingRouter(options: ShippingRouterOptions): Router {
   // 接收、装箱及登记实际离港。部门业务属性约束角色动作上限，
   // 不因业务人员能发起交接就授予专业出运权限。
   // 删除仍保留高风险角色限制；状态放行、QC及数量门禁在事务内复核。
-  const HIGH_RISK_ROLES: AgentRole[] = ['owner', 'admin', 'manager'];
   const requireWrite = requireJwtForWrite({ requireAuth, apiKeys });
   router.use(createBusinessCiRouter(prisma, requireWrite));
   router.use(createShipmentHandoffActualRouter(prisma, requireWrite, onDataChange));
@@ -976,7 +974,7 @@ export function createShippingRouter(options: ShippingRouterOptions): Router {
 
   // DELETE /api/v1/shipping/:id — soft delete
   // task ERP-P1-shipping-mutation-shared-service-foundation: route 只调 service
-  router.delete('/:id', requireRole(...HIGH_RISK_ROLES), async (req: Request, res: Response) => {
+  router.delete('/:id', requirePermission('business:delete'), async (req: Request, res: Response) => {
     const result = await deleteShipment({
       prisma, shipmentId: req.params.id,
       actorId: actorIdFromRequest(req), actor: (req as any).actor, ip: req.ip || null,
@@ -1069,7 +1067,7 @@ export function createShippingRouter(options: ShippingRouterOptions): Router {
   });
 
   // DELETE /api/v1/shipping/:id/allocations/:allocId — 删除分配
-  router.delete('/:id/allocations/:allocId', requireRole(...HIGH_RISK_ROLES), async (req: Request, res: Response) => {
+  router.delete('/:id/allocations/:allocId', requirePermission('business:delete'), async (req: Request, res: Response) => {
     try {
       if (await allocationRequiresPhysicalContract({ prisma, shipmentId: req.params.id, allocationId: req.params.allocId, actor: (req as any).actor ?? null })) {
         throw businessError('CONFLICT', '实际批次分配保留原历史，请取消未发运预留或通过原运单处理，不能直接删除。');

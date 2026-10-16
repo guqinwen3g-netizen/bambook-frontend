@@ -137,8 +137,9 @@ describe('isManualQuoteKey / 配置键', () => {
 describe('结构守卫：写入口有权限与审计', () => {
   const SRC = readFileSync(resolve(__dirname, '../marketQuoteRoute.ts'), 'utf8');
 
-  it('★ 写端点必须是 requireRole(owner/admin)（行情写错会让全公司看到错价）', () => {
-    expect(SRC).toContain("requireRole('owner', 'admin')");
+  it('★ 写端点必须走当前授权 + dictionary:write（矩阵仅 ADMIN/SUPER_ADMIN 持有；行情写错会让全公司看到错价）', () => {
+    expect(SRC).toContain("createCurrentWriteActor(prisma), requirePermission('dictionary:write')");
+    expect(SRC).not.toContain("requireRole(");
   });
 
   it('★ 写操作必须带 actorId + reason（留痕）', () => {

@@ -58,8 +58,9 @@ describe('Auth guard restoration · finance', () => {
 });
 
 describe('Auth guard restoration · shipping', () => {
-  it('imports requireRole + destructures auth options', () => {
-    expect(SHIPPING).toContain("requireRole");
+  it('imports requirePermission + destructures auth options (legacy requireRole 已退役)', () => {
+    expect(SHIPPING).toContain("requirePermission");
+    expect(SHIPPING).not.toContain("requireRole(");
     expect(SHIPPING).toContain('requireAuth');
     expect(SHIPPING).toContain('apiKeys');
   });
@@ -68,10 +69,13 @@ describe('Auth guard restoration · shipping', () => {
     expect(SHIPPING).toContain('createModuleAuthGuard');
   });
 
-  it('high-risk DELETE /:id has requireRole', () => {
+  it('high-risk DELETE /:id + DELETE allocation have business:delete scope gate', () => {
     const delIdx = SHIPPING.indexOf("router.delete('/:id',");
     expect(delIdx).toBeGreaterThan(-1);
-    expect(SHIPPING.slice(delIdx, delIdx + 100)).toContain('requireRole');
+    expect(SHIPPING.slice(delIdx, delIdx + 100)).toContain("requirePermission('business:delete')");
+    const allocIdx = SHIPPING.indexOf("router.delete('/:id/allocations/:allocId',");
+    expect(allocIdx).toBeGreaterThan(-1);
+    expect(SHIPPING.slice(allocIdx, allocIdx + 120)).toContain("requirePermission('business:delete')");
   });
 });
 
@@ -106,11 +110,11 @@ describe('Auth guard restoration · email', () => {
     expect(EMAIL).toContain('createModuleAuthGuard');
   });
 
-  it('high-risk POST /outbox/:id/send + POST /sync have write gate（W-C 批三-F：升级为 requirePermission emails:write）', () => {
+  it('high-risk POST /outbox/:id/send + POST /sync have write gate（W-C 批三-F：升级为 requirePermission emails:write）; backfill on maintenance scope', () => {
     // W-C 批三-F（族 C）：S1 日常写端点从 legacy requireRole 升级为矩阵 scope 门
     // requirePermission('emails:write')（SALES/SALES_MANAGER 授权；写门禁仍存在且更细）。
-    // 批量维护面端点（backfill-links/classify-backfill）仍保留 legacy requireRole。
-    expect(EMAIL).toContain("requireRole(...HIGH_RISK_ROLES)");
+    // 批量维护面端点（backfill-links/classify-backfill）走 emails:maintenance:write（原 owner/admin/manager 组）。
+    expect(EMAIL).not.toContain("requireRole(");
     const sendIdx = EMAIL.indexOf("router.post('/outbox/:id/send',");
     expect(sendIdx).toBeGreaterThan(-1);
     expect(EMAIL.slice(sendIdx, sendIdx + 120)).toContain("requirePermission('emails:write')");
@@ -119,7 +123,10 @@ describe('Auth guard restoration · email', () => {
     expect(EMAIL.slice(syncIdx, syncIdx + 120)).toContain("requirePermission('emails:write')");
     const backfillIdx = EMAIL.indexOf("router.post('/backfill-links',");
     expect(backfillIdx).toBeGreaterThan(-1);
-    expect(EMAIL.slice(backfillIdx, backfillIdx + 120)).toContain('requireRole(...HIGH_RISK_ROLES)');
+    expect(EMAIL.slice(backfillIdx, backfillIdx + 120)).toContain("requirePermission('emails:maintenance:write')");
+    const classifyIdx = EMAIL.indexOf("router.post('/classify-backfill',");
+    expect(classifyIdx).toBeGreaterThan(-1);
+    expect(EMAIL.slice(classifyIdx, classifyIdx + 120)).toContain("requirePermission('emails:maintenance:write')");
   });
 });
 

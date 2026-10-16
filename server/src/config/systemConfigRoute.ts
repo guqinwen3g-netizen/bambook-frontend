@@ -15,14 +15,14 @@
  *   GET  /company.exporterProfile/history — 仅 owner/admin；SystemConfigHistory 倒序列表
  *
  * 错误语义（对齐 moqRoute/adminRoute 既有格式）：
- *   401 { error:'UNAUTHORIZED' } — 未登录（requireAuth/requireRole 中间件）
- *   403 { error:'FORBIDDEN' }    — 权限不足（requireRole 中间件）
+ *   401 { error:'UNAUTHORIZED' } — 未登录（requireAuth / createCurrentWriteActor）
+ *   403 { error:'FORBIDDEN' }    — 权限不足（requirePermission 中间件）
  *   400 { error:'VALIDATION_FAILED' | 'REASON_REQUIRED' } — payload 校验失败 / 银行字段变更缺理由
  */
 
 import { Router, Request, Response } from 'express';
 import type { PrismaClient } from '@prisma/client';
-import { requireAuth, requireRole } from '../auth/middleware';
+import { requireAuth } from '../auth/middleware';
 import { createCurrentWriteActor } from '../auth/currentWriteActor';
 import { requirePermission } from '../auth/permissionGuard';
 import { logger } from '../lib/logger';
@@ -132,10 +132,11 @@ export function createSystemConfigRouter(options: SystemConfigRouterOptions): Ro
   // ── PUT /company.exporterProfile — 仅 SUPER_ADMIN/ADMIN（legacy: owner/admin）──
   // Current rolePermissionMatrix SystemSettings.write is dictionary:write. The
   // older document's settings:write is absent from PERMISSION_SCOPES; do not
-  // invent it or silently grant new authority. Keep the documented role AND cap.
+  // invent it or silently grant new authority. dictionary:write is held exactly by
+  // ADMIN/SUPER_ADMIN (the former owner/admin role gate), so the cap alone is the gate.
   router.put(
     `/${EXPORTER_PROFILE_CONFIG_KEY}`,
-    createCurrentWriteActor(options.prisma), requireRole('owner', 'admin'), requirePermission('dictionary:write'),
+    createCurrentWriteActor(options.prisma), requirePermission('dictionary:write'),
     async (req: Request, res: Response) => {
       try {
         const body = req.body || {};
@@ -203,7 +204,7 @@ export function createSystemConfigRouter(options: SystemConfigRouterOptions): Ro
   // ── GET /company.exporterProfile/history — 仅 SUPER_ADMIN/ADMIN；createdAt 倒序 ──
   router.get(
     `/${EXPORTER_PROFILE_CONFIG_KEY}/history`,
-    ...(requireAuthEnabled ? [requireRole('owner', 'admin')] : []),
+    ...(requireAuthEnabled ? [createCurrentWriteActor(options.prisma), requirePermission('settings:system:read')] : []),
     async (req: Request, res: Response) => {
       try {
         const rawLimit = Number(req.query.limit);

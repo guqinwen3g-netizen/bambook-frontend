@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import crypto from 'crypto';
 import { createAuthService } from '../auth/service';
-import { requireRole } from '../auth/middleware';
+import { requirePermission } from '../auth/permissionGuard';
 import { invalidateAccountStatusCache } from '../auth/accountStatusGuard';
 import { createModuleAuthGuard } from '../auth/moduleGuard';
 import { buildAuditLogQuery } from '../audit/entityQuery';
@@ -151,10 +151,10 @@ export function createAdminRouter(options: AdminRouterOptions) {
   // 统一认证守卫：JWT（走 jwt.verify 验签）优先，API-Key 次之
   router.use(createModuleAuthGuard({ requireAuth, apiKeys }));
 
-  // 所有 admin 路由要求 owner/admin 角色（requireRole 走 jwt.verify 验签，比 requireJwtForWrite 更严格；
+  // 所有 admin 路由要求 users:admin 权限点（原 owner/admin 角色组；写类 scope，API-Key 不足以通过；
   // API-Key 即使通过 moduleGuard 也会因无 actor 在此处被挡 → 401）
   if (requireAuth) {
-    router.use(requireRole('owner', 'admin'));
+    router.use(requirePermission('users:admin'));
   }
 
   // Explicit main-order approval authorities; never infer fabric/garment scope
