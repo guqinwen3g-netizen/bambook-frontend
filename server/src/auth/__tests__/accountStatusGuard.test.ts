@@ -98,3 +98,36 @@ describe('REQ2-13 · accountStatusGuard（停用即时失效）', () => {
     expect((await request(app).get('/probe').set(auth(t))).status).toBe(401);
   });
 });
+
+describe('会话撤销与强制改密', () => {
+  beforeEach(() => { invalidateAccountStatusCache('u1'); });
+  const app = (metadata: any) => {
+    const prisma: any = { userAccount: { findUnique: vi.fn().mockResolvedValue({ status: 'active', deletedAt: null, metadata }) } };
+    const a = express();
+    a.use(createAccountStatusGuard(prisma));
+    a.get('/probe', (_req, res) => res.json({ ok: true }));
+    a.post('/api/orders', (_req, res) => res.json({ ok: true }));
+    a.post('/api/auth/change-password', (_req, res) => res.json({ ok: true }));
+    return a;
+  };
+  const tokenAt = (iat: number) => jwt.sign({ userId: 'u1', roles: ['owner'], iat }, SECRET);
+
+  it('令牌签发早于 sessionsRevokedAt → 401 SESSION_REVOKED；之后签发的令牌放行', async () => {
+    const at = new Date('2026-10-16T04:00:00Z');
+    const a = app({ sessionsRevokedAt: at.toISOString() });
+    const old = await request(a).get('/probe').set(auth(tokenAt(Math.floor(at.getTime() / 1000) - 60)));
+    expect(old.status).toBe(401); expect(old.body.error).toBe('SESSION_REVOKED');
+    invalidateAccountStatusCache('u1');
+    const fresh = await request(a).get('/probe').set(auth(tokenAt(Math.floor(at.getTime() / 1000) + 5)));
+    expect(fresh.status).toBe(200);
+  });
+
+  it('待强制改密：可读、可走 /api/auth/*，其它写操作 403 PASSWORD_CHANGE_REQUIRED', async () => {
+    const a = app({ forceChangePassword: true });
+    const t = tokenOf('u1');
+    expect((await request(a).get('/probe').set(auth(t))).status).toBe(200);
+    const write = await request(a).post('/api/orders').set(auth(t));
+    expect(write.status).toBe(403); expect(write.body.error).toBe('PASSWORD_CHANGE_REQUIRED');
+    expect((await request(a).post('/api/auth/change-password').set(auth(t))).status).toBe(200);
+  });
+});

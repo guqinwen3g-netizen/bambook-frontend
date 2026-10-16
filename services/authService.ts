@@ -403,6 +403,18 @@ export async function changePassword(currentPassword: string, newPassword: strin
   }
 }
 
+/** 退出所有设备：服务器使此前签发的全部令牌失效（含当前会话），随后需重新登录。 */
+export async function logoutAllSessions(): Promise<void> {
+  const res = await fetchAuth('/auth/logout-all', {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    credentials: 'include',
+    body: '{}',
+  }, { fallbackToOmitCredentials: true });
+  const data = await readJsonResponse(res);
+  if (!res.ok) throw new Error(data.message || data.error || `Logout-all failed (HTTP ${res.status})`);
+}
+
 export async function updateMyProfile(input: { avatarUrl?: string | null; displayName?: string }): Promise<AuthUser> {
   const epoch = authMutationEpoch; const token = getStoredAuthToken(); const base = getAuthApiBase();
   const refresh = authRefreshSequence;

@@ -9,6 +9,7 @@ import { ROLE_ID_TO_LEGACY_AGENT_ROLE } from './permissionService';
 import { buildLoadedAuthTokenPayload, loadUserWithRoles, serializeAuthUser } from './tokenHelpers';
 import { createLoginRateLimiter } from './loginRateLimiter';
 import { pickRequestToken } from './middleware';
+import { invalidateAccountStatusCache } from './accountStatusGuard';
 
 type AuthRouterOptions = {
   prisma: PrismaClient;
@@ -324,6 +325,29 @@ export function createAuthRouter(options: AuthRouterOptions) {
     return res.json({ ok: true });
   });
 
+  // 退出所有设备：写入 sessionsRevokedAt，此前签发的令牌（含本次请求所用）全部失效。
+  router.post('/logout-all', async (req: Request, res: Response) => {
+    const token = pickRequestToken(req);
+    if (!token) return res.status(401).json({ ok: false, error: 'UNAUTHORIZED', message: 'Not logged in.' });
+    let userId: string;
+    try { userId = auth.verifyToken(token).userId; } catch { return res.status(401).json({ ok: false, error: 'UNAUTHORIZED', message: 'Token expired or invalid.' }); }
+    if (!userId) return res.status(401).json({ ok: false, error: 'UNAUTHORIZED', message: 'Not logged in.' });
+    try {
+      const user = await options.prisma.userAccount.findUnique({ where: { id: userId }, select: { metadata: true } });
+      if (!user) return res.status(404).json({ ok: false, error: 'NOT_FOUND', message: 'User not found.' });
+      const metadata = (user.metadata && typeof user.metadata === 'object' && !Array.isArray(user.metadata)) ? user.metadata as Record<string, unknown> : {};
+      const at = new Date().toISOString();
+      await options.prisma.userAccount.update({ where: { id: userId }, data: { metadata: { ...metadata, sessionsRevokedAt: at } as any } });
+      invalidateAccountStatusCache(userId);
+      await options.prisma.auditLog.create({ data: { id: `alog_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, actorId: userId, action: 'logout_all_sessions', targetType: 'UserAccount', targetId: userId, ip: req.ip } });
+      res.clearCookie(COOKIE_NAME, { path: '/' });
+      return res.json({ ok: true, revokedAt: at });
+    } catch (err) {
+      logger.error('[auth] logout-all failed', { error: (err as Error).message });
+      return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR', message: '未能退出所有设备，请重试。' });
+    }
+  });
+
   router.patch('/me', async (req: Request, res: Response) => {
     // 取凭证走全仓唯一那份规则：显式 Bearer 优先。此处曾写作 cookie 优先（与业务路由相反），
     // 于是同一会话里"屏面显示的身份"（这里）和"数据判决的身份"（middleware）可以判给两个人。
@@ -430,6 +454,7 @@ export function createAuthRouter(options: AuthRouterOptions) {
       // 管理员重置密码时在 metadata 标了 forceChangePassword；本人改密后清除该标记。
       const metadata = (user.metadata && typeof user.metadata === 'object' && !Array.isArray(user.metadata)) ? user.metadata as Record<string, unknown> : null;
       await options.prisma.userAccount.update({ where: { id: payload.userId }, data: { passwordHash: newHash, ...(metadata?.forceChangePassword ? { metadata: { ...metadata, forceChangePassword: false, passwordChangedAt: new Date().toISOString() } as any } : {}) } });
+      invalidateAccountStatusCache(payload.userId);
       return res.json({ ok: true });
     } catch {
       return res.status(401).json({ ok: false, error: 'UNAUTHORIZED', message: 'Token expired or invalid.' });
