@@ -311,11 +311,18 @@ export class MistRepository {
         let blobSettled = true;
         if (stored) {
           blobSettled = false;
-          // A confirmed rollback removes its blob. Unknown commit outcomes retain
-          // the private blob until the durable request receipt can be checked.
+          // A competing copy can own this request receipt while referencing a
+          // different file. Check the durable workspace before retaining this
+          // attempt's blob; never delete a committed attachment or guess after
+          // an unavailable/unknown commit result.
           try {
             const receipt = await this.prisma.mistCommandReceipt.findUnique({ where: { workspaceId_requestId: { workspaceId, requestId: input.requestId } } });
-            if (!receipt) { await this.files.remove(workspaceId, stored); blobSettled = true; }
+            const durable = receipt && retryableTransaction(error)
+              ? await this.transact(db => db.mistWorkspace.findFirst({ where: { id: workspaceId } })) as MistWorkspaceRow | null
+              : null;
+            if (!receipt || durable && Array.isArray(durable.state.files) && !durable.state.files.some(file => file.id === stored!.id)) {
+              await this.files.remove(workspaceId, stored); blobSettled = true;
+            }
           } catch { /* Do not delete a potentially committed attachment. */ }
         }
         if (!retryableTransaction(error)) throw error;

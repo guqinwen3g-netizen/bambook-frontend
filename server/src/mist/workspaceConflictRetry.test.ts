@@ -174,6 +174,21 @@ describe('多人保存冲突自动重试：只在最新状态上重新执行可�
     expect(await stored(id)).toHaveLength(1); expect(requestReceiptCount(db)).toBe(3);
   });
 
+  it('相同上传请求竞争时清理回滚尝试的文件，只保留成功回执引用的一个文件', async () => {
+    const flaky = new FlakyDatabase(), repo = repoFor(flaky), id = await sharedWorkspace(repo, flaky);
+    const input = { requestId: 'same-upload', expectedRevision: 0 };
+    const file = { name: 'same.txt', mimeType: 'text/plain', bytes: Buffer.from('same content') };
+    let winner: Awaited<ReturnType<MistRepository['upload']>> | undefined;
+    flaky.failures = 1;
+    // 同一个请求属于同一个身份；竞争者使用同一账号模拟另一个连接。
+    flaky.beforeFailure = async () => { winner = await repo.upload(owner, id, input, file); };
+    const replay = await repo.upload(owner, id, input, file);
+    expect(replay).toMatchObject({ replayed: true, receipt: winner!.receipt });
+    expect(flaky.workspaces.get(id).state.files).toHaveLength(1);
+    expect(await stored(id)).toEqual([winner!.receipt.result.id]);
+    expect(requestReceiptCount(flaky)).toBe(2);
+  });
+
   it('本地运行时使用同一套合并与重放规则，并在重启后保留', async () => {
     const local = new MistLocalDatabase(path.join(root, 'local-store')); await local.ready;
     const repo = repoFor(local), workspace = await repo.create(owner, { name: '本地并发', seed: 'empty' });
