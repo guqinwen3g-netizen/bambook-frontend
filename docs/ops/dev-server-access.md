@@ -46,6 +46,14 @@ sudo cat /srv/bambook-dev/shared/test-accounts.txt   # 7 个测试账号（仅�
 
 服务：`bambook-dev`（主 API）、`bambook-dev-mist`（Mist 工作空间 API）；前面是 nginx。以 `systemctl list-units 'bambook*'` 与 `ss -ltnp` 为准。
 
+## 隔离 CI 容量试跑（不注册 runner）
+
+仅在用户授权开发服务器试跑后使用。运维请求首行可写 `# capacity-source-main: <40位 main SHA>`，通道核对它仍是最新 main 后传输受控文件；排除非本轮验证输入的历史文档、Electron 打包图标和旧地图数据，保留全部测试/规格文件、Mist 规则清单及当前构建入口。后端源码从相同 SHA 的既有开发发布目录按逐文件 SHA-256 清单复制到隔离目录，不复制环境文件、依赖或运行数据；发布源不匹配即停止。传输包及断点前缀均校验 SHA-256，不向服务器保存仓库凭据。
+
+容量脚本为 `scripts/ops/dev-ci-capacity.py`。准备独立 `/var/tmp/bambook-ci-capacity-<SHA>` 与私有 evidence 目录，以运维账号启动 supervisor；worker 限 2 CPU、2 GiB 内存、256 MiB swap，前端测试单 worker，空环境和不可用测试数据库地址，禁止访问开发部署目录及 PostgreSQL 数据目录。按当前 verify:mist 顺序执行同等检查覆盖；仅为容量测量，在代码断言失败后继续其余阶段，不重试到通过，任一失败仍判整轮失败。
+
+剩余内存低于 650 MiB、磁盘少于 10 GiB、swap 增长超 256 MiB、服务健康持续异常或达到超时边界即停止。结束清理本次源码、依赖、缓存和构建产物，私有测量证据不入库；按请求 SHA 读取回执。串行运维通道中排队的查询不是实时进度；先核对是否有部署/上传重叠，不把某次文件增长均速当作服务器带宽上限。没有完整实测证据，不永久改写 CI runner 配置。
+
 ## 部署
 
 见 `Bambook development delivery` 工作流（PR #26、#33）：
