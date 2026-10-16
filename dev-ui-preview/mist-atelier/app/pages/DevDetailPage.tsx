@@ -14,6 +14,7 @@ import { DevNoticeCard } from './DevNotices';
 import { DevRoundsCard, NewRoundDialog, RoundRequirementsDialog, versionQcFlag, type NewRoundInput } from './DevRounds';
 import { ToProductDialog, developmentVersionLinks, productConversionBlocker } from './DevVersionLinks';
 import { DevSampleFormsCard } from './DevSampleForms';
+import { DevBillingCard } from './DevBilling';
 import { confirmationNeedsForms, developmentVersionSamples, sampleRef } from '../../../../server/src/shared/mistDevelopmentSamples';
 
 export function localConfirmationTime(date=new Date()){return Number.isNaN(date.getTime())?'':new Date(date.getTime()-date.getTimezoneOffset()*60_000).toISOString().slice(0,16);}
@@ -210,6 +211,7 @@ export function DevDetailPage(){
         </Card>
         {state&&<DevRoundsCard state={state} dev={dev} versionId={version?.id} busy={busy} onSelect={chooseVersion} onCreate={()=>{setFailure('');setRoundInitial(undefined);setDialog('round');}} onEditRequirements={round=>{setFailure('');setRoundEdit(round);}} onSync={target=>void syncRoundTask(target)}/>}
         {state&&version&&<DevSampleFormsCard state={state} dev={dev} version={version} disabled={busy||!!pending} run={run}/>}
+        {state&&<div data-dev-billing><DevBillingCard state={state} dev={dev} disabled={busy||!!pending} run={run}/></div>}
         {state&&version&&!version.minor&&<DevNoticeCard state={state} dev={dev} version={version} busy={busy} onGenerate={()=>void generateNotice()} onDownload={downloadNotice} onPrint={printNotice}/>}
         {fabricDomain&&<Card><CardHeader title="面料开发目标规格" sub="目标要求，不代表工厂分析或 QC 实测"/><KeyValue items={[{label:'分类',value:dev.values.category||'待核实'},{label:'本版工厂要求',value:version?.note||'待记录'},{label:'目标成分',value:fabricRequirements?.composition||'待工厂分析'},{label:'克重原值',value:`${fabricRequirements?.weightValue||'待分析'} ${fabricRequirements?.weightUnit||''}`},{label:'幅宽原值',value:`${fabricRequirements?.widthValue||'待分析'} ${fabricRequirements?.widthUnit||''}`},{label:'纱支 / 组织',value:`${fabricRequirements?.yarn||'待分析'} / ${fabricRequirements?.weave||'待分析'}`},{label:'用途 / 手感',value:`${fabricRequirements?.usage||'—'} / ${fabricRequirements?.handle||'—'}`},{label:'后整理 / 性能',value:`${fabricRequirements?.finish||'—'} / ${fabricRequirements?.performance||'—'}`}]}/></Card>}
         <Card id="mist-dev-goal"><CardHeader title="开发目标" /><p className="mist-sub" style={{padding:'10px 22px 20px',fontSize:13.5}}>{dev.goal||'尚未填写开发目标'}</p></Card>

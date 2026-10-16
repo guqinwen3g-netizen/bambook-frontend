@@ -1,5 +1,5 @@
 import { MIST_FINANCE_SCOPES } from './mistFinancePermissions';
-import {developmentDomain,developmentInitiator,emptyFabricRequirements,fabricRequirementError,validFabricSample,type DevelopmentDomain,type DevelopmentInitiator,type DevelopmentRequestType,type FabricDevelopmentRequirements} from './mistDevelopmentDomain';
+import {developmentCharged,developmentDomain,developmentInitiator,emptyFabricRequirements,fabricRequirementError,validFabricSample,type DevelopmentDomain,type DevelopmentInitiator,type DevelopmentRequestType,type FabricDevelopmentRequirements} from './mistDevelopmentDomain';
 import { relationHoldReason } from './mistRelationHold';
 import {assignFactoryLetters,defaultFactoryTask,developmentClosure,developmentRoundBlocker,duplicateRoundFactories,factoryTaskError,factoryTaskNote,factoryTaskSync,factoryTaskSyncBlocker,minorVersionBlocker,minorVersionLabel,minorVersions,nextRoundNumber,roundVersionLabel,type FactoryTaskInput} from './mistDevelopmentRounds';
 import {createFulfillmentState,applyFulfillmentCommand,fulfillmentCommandPermission,getFulfillmentReviews,assertProductionTransition,type FulfillmentState,type FulfillmentCommand} from './mistFulfillment';
@@ -11,6 +11,7 @@ import {createPlatformState,applyPlatformCommand,platformCommandPermission,getPl
 import type {MistCreditDocumentIssue} from './mistCreditDocuments';
 import {developmentNoticeBlocker,developmentNoticeContent,developmentNoticeFingerprint,developmentNoticeNo,type DevNoticeArtifact,type DevNoticeRecord,type DevNoticeSnapshot} from './mistDevelopmentNotice';
 import type {MistReviewTask} from './mistReview';
+import {billingRequestBlocker,billingTotals,developmentBillTo,developmentBillingSettled,developmentBillingStage,developmentFeeSummary,developmentSamplesOf,makingFeeBlocker,type MistDevBilling} from './mistDevelopmentBilling';
 import {confirmationNeedsForms,developmentVersionSamples,sampleDispatchBlocker,sampleFormBlocker,sampleRef,type MistSampleDispatch,type MistSampleFee,type MistSampleRef} from './mistDevelopmentSamples';
 import {assertOrderLineSource,type OrderLineSource} from './mistOrderSource';
 import {lineQuantityFromBreakdown,type OrderLineBreakdown} from './mistOrderBreakdown';
@@ -96,6 +97,8 @@ export type MistDev = {
   factoryLetters?: Record<string, string>;
   /** 开发案级结束：取消 / 归档（手工，须写原因）；不收费开发案认可即结案按派生规则判断。 */
   closure?: { kind: 'closed' | 'archived' | 'cancelled'; at: string; by: string; reason: string };
+  /** BB-DEV-9：开发费用（制作费）、开票申请与销账结案；只有收费案使用。 */
+  billing?: MistDevBilling;
 };
 export type MistFabric = { id: string; code: string; name: string; owner: string; due: string; state: string; tone: MistTone; sub: string; request: string; answer: string; confirmed: boolean; fileIds: string[] };
 export type MistOrderLine = { id: string; orderId: string; name: string; style: string; img: MistImage; qty: number; unit: string; price: number; made: number; qc: number };
@@ -164,7 +167,9 @@ export function mistBankAccountBalances(state: Pick<MistState,'receipts'|'paymen
   const known = new Set((state.bankAccounts || []).map(a => a.id));
   return { accounts, unassigned: { receipts: state.receipts.filter(r => !r.accountId || !known.has(r.accountId)).length, payments: state.payments.filter(x => !x.accountId || !known.has(x.accountId)).length } };
 }
-export type MistInvoice = { id: string; code: string; orderId: string; order: string; customer: string; due: string; amount: number; open: number; currency: string; voidedAt?: string; voidReason?: string; voidedBy?: string; voidedById?: string; voidSourceDocumentId?: string };
+export type MistInvoice = { id: string; code: string; orderId: string; order: string; customer: string; due: string; amount: number; open: number; currency: string; voidedAt?: string; voidReason?: string; voidedBy?: string; voidedById?: string; voidSourceDocumentId?: string;
+  /** BB-DEV-9：开发费用应收票据回链来源开发案（这类票据没有订单，orderId 为空）。 */
+  devId?: string };
 /** Void preserves the original face value while removing the invoice from current receivables. */
 export function isActiveMistInvoice(invoice: Pick<MistInvoice, 'voidedAt'>): boolean { return !invoice.voidedAt; }
 export type MistAllocation = { id: string; receiptId: string; invoiceId: string; amount: number; currency: string; createdAt: string; actor: string; payerBasis?:string };
@@ -218,6 +223,9 @@ export type MistCommand = FulfillmentCommand | MarketCommand | PlatformCommand |
   | { type: 'development.version.addSampleForm'; payload: { devId: string; versionId: string; form: string; quantity: number; unit: string; location?: string; color?: string; note?: string } }
   | { type: 'development.sample.dispatch'; payload: { devId: string; versionId: string; sampleId: string; quantity: number; recipient: string; trackingNo?: string; fee?: MistSampleFee | null; note?: string; sourceLocation?: string } }
   | { type: 'development.sample.dispatchFee'; payload: { devId: string; versionId: string; dispatchId: string; fee: MistSampleFee } }
+  | { type: 'development.fee.recordMaking'; payload: { devId: string; sampleId: string; amount: number; currency: string } }
+  | { type: 'development.billing.request'; payload: { devId: string } }
+  | { type: 'finance.developmentInvoice.issue'; payload: { devId: string; requestId: string; due: string } }
   | { type: 'development.version.recordMinor'; payload: { devId: string; versionId: string; change: string } }
   | { type: 'development.close'; payload: { devId: string; kind: 'archived' | 'cancelled'; reason: string } }
   | { type: 'development.qc.decide'; payload: { devId: string; versionId: string; decision: 'rework' | 'abandon'; note: string } }
@@ -412,6 +420,15 @@ function confirmationSamples(state: MistState, dev: MistDev, version: MistVersio
   if(picked.some(s=>!s))throw new MistCommandError('VALIDATION','确认形态必须是本版的准确实物');
   return picked.map(s=>sampleRef(s!));
 }
+/** BB-DEV-9：销账结果回到开发案——核销到零时记“已最终结案”，冲回后恢复待收款（保留动态记录）。 */
+function syncDevelopmentBilling(state: MistState, context: MistContext) {
+  for(const dev of state.devs){
+    if(dev.billing?.request?.state!=='invoiced')continue;
+    const settled=developmentBillingSettled(state,dev);
+    if(settled&&!dev.billing.settledAt){dev.billing.settledAt=context.now;updateDev(state,dev,context);event(state,context,'development',dev.id,'开发费用已收款销账，开发案已最终结案',{view:'development/detail',id:dev.id});}
+    else if(!settled&&dev.billing.settledAt){delete dev.billing.settledAt;updateDev(state,dev,context);event(state,context,'development',dev.id,'开发费用核销已冲回，恢复待收款',{view:'development/detail',id:dev.id});}
+  }
+}
 function versionOf(state: MistState, devId: string, versionId: string): [MistDev, MistVersion] {
   const dev = find(state.devs,devId,'开发案'), version = find(state.versions,versionId,'版本');
   if (version.devId !== dev.id || !dev.versionIds.includes(version.id)) throw new MistCommandError('VALIDATION','版本不属于当前开发案');
@@ -498,10 +515,13 @@ function updateDev(state: MistState, dev: MistDev, context: MistContext) {
   dev.fac=dev.values.factories.length; dev.factory=version?.factory || dev.values.factories[0] || '待定';
   dev.ver=version?.label || '—'; dev.sample=version?.sample || '—'; dev.updatedAt=context.now;
   const latest=version?.confirmations.at(-1);
+  const billing=developmentBillingStage(state,dev);
   if(dev.closure?.kind==='cancelled'){dev.state='已取消';dev.tone='neutral';}
   else if(dev.closure?.kind==='archived'){dev.state='已归档';dev.tone='neutral';}
+  else if(billing?.label==='已最终结案'){dev.stage=4;dev.state='已最终结案';dev.tone='ok';}
+  else if(billing&&dev.billing?.request){dev.stage=4;dev.state=billing.label;dev.tone=billing.tone;}
   else if(version?.archivedAt){dev.stage=4;dev.state='成果已留档';dev.tone='ok';}
-  else if(latest?.result==='approved'){dev.stage=4;dev.state='已认可 · 待留档';dev.tone='ok';}
+  else if(latest?.result==='approved'){dev.stage=4;dev.state=billing?'已认可 · 待发起开票':'已认可 · 已结案';dev.tone='ok';}
   else if(latest?.result==='rejected'){dev.stage=3;dev.state='不采用';dev.tone='bad';}
   else if(latest?.result==='needs_adjustment'){dev.stage=3;dev.state='待改版';dev.tone='warn';}
   else if(version?.qcDecision?.kind==='abandon'){dev.stage=2;dev.state='本版不采用';dev.tone='bad';}
@@ -610,6 +630,7 @@ export function mistCommandPermission(command: MistCommand): string | null {
   if(command.type==='development.recordQc')return command.payload.domain==='fabric'?'qc:fabric_chain:write':'qc:garment_chain:write';
   if(command.type.startsWith('development.')||command.type.startsWith('fabric.')||command.type==='files.add')return 'products:write';
   if(command.type.startsWith('order.')||command.type.startsWith('production.'))return 'orders:write';
+  if(command.type==='finance.developmentInvoice.issue')return MIST_FINANCE_SCOPES.invoice;
   if(command.type==='finance.importReceipts'||command.type==='finance.payment.save'||command.type==='finance.payment.reverse'||command.type==='finance.account.save'||command.type==='finance.account.assign'||command.type.startsWith('finance.fx.'))return MIST_FINANCE_SCOPES.voucher;
   if(command.type==='finance.reconcile'||command.type==='finance.acceptSuggestions'||command.type==='finance.allocation.reverse')return MIST_FINANCE_SCOPES.reconcile;
   if(command.type.startsWith('finance.'))throw new MistCommandError('VALIDATION','未知财务操作');
@@ -842,6 +863,48 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
       row.fee=sampleFee(p.fee);row.feeRecordedAt=context.now;row.feeRecordedBy=context.actorName;dev.updatedAt=context.now;
       event(state,context,'development',dev.id,v.label+' 补登寄样费 '+row.fee.amount+' '+row.fee.currency+'（'+row.sampleCode+'）');
       result={devId:dev.id,versionId:v.id,id:row.id};break;
+    }
+    case 'development.fee.recordMaking': {
+      const dev=find(state.devs,p.devId,'开发案'), blocked=makingFeeBlocker(state,dev,p.sampleId);
+      if(blocked)throw new MistCommandError('PRECONDITION',blocked);
+      const sample=developmentSamplesOf(state,dev).find(s=>s.id===p.sampleId)!, fee=sampleFee({amount:p.amount,currency:p.currency});
+      const versionId=sample.source.kind==='version'?sample.source.versionId:'';
+      (dev.billing||={makingFees:[]}).makingFees.push({sampleId:sample.id,versionId,sampleCode:sample.code,form:sample.form,amount:fee.amount,currency:fee.currency,recordedAt:context.now,recordedBy:context.actorName});
+      dev.updatedAt=context.now;
+      event(state,context,'development',dev.id,'登记制作费 '+sample.form+' '+sample.code+'：'+fee.amount+' '+fee.currency);
+      result={devId:dev.id,id:sample.id};break;
+    }
+    case 'development.billing.request': {
+      const dev=find(state.devs,p.devId,'开发案'), blocked=billingRequestBlocker(state,dev);
+      if(blocked)throw new MistCommandError('PRECONDITION',blocked);
+      const summary=developmentFeeSummary(state,dev), id=context.id(), taskId=context.id();
+      (dev.billing||={makingFees:[]}).request={id,requestedAt:context.now,requestedBy:context.actorName,billTo:developmentBillTo(dev),lines:summary.lines,totals:summary.totals,state:'pending',invoiceIds:[],taskId};
+      // 财务待办落到财务应收区（顶部“开发费用待开票”列表），不用开发案 ID 冒充票据或流水目标。
+      state.tasks.unshift({id:taskId,title:'为 '+dev.code+' 开具开发费用发票（'+summary.totals.map(t=>t.amount+' '+t.currency).join(' + ')+'）',due:context.now.slice(0,10),done:false,kind:'finance',target:{view:'payment-vouchers'}});
+      updateDev(state,dev,context);
+      event(state,context,'development',dev.id,'发起开发费用开票：'+summary.totals.map(t=>t.amount+' '+t.currency).join(' + ')+' → '+dev.billing.request.billTo,{view:'development/detail',id:dev.id});
+      result={devId:dev.id,id};break;
+    }
+    case 'finance.developmentInvoice.issue': {
+      const dev=find(state.devs,p.devId,'开发案'), request=dev.billing?.request;
+      if(!request||request.id!==p.requestId)throw new MistCommandError('NOT_FOUND','开票申请不存在',404);
+      if(request.state!=='pending')throw new MistCommandError('CONFLICT','本开票申请已开票，请勿重复开票',409);
+      if(!developmentCharged(dev.values))throw new MistCommandError('PRECONDITION','不收费开发不开票');
+      if(dev.closure?.kind==='cancelled')throw new MistCommandError('PRECONDITION','开发案已取消');
+      const due=date(p.due,'到期日'), year=context.now.slice(0,4);
+      // 开票按申请时冻结的明细；与当前合计不一致说明快照被改动，不开票。
+      if(JSON.stringify(billingTotals(request.lines))!==JSON.stringify(request.totals))throw new MistCommandError('PRECONDITION','开票明细与合计不一致，请核对后重新发起');
+      for(const total of request.totals){
+        const id=context.id(), seq=state.invoices.filter(i=>i.code.startsWith('DI-'+year+'-')).length+1, code='DI-'+year+'-'+String(seq).padStart(4,'0');
+        state.invoices.push({id,code,orderId:'',order:dev.code,customer:request.billTo,due,amount:total.amount,open:total.amount,currency:total.currency,devId:dev.id});
+        request.invoiceIds.push(id);
+        event(state,context,'invoice',id,'开具开发费用发票 '+code+'（'+dev.code+'）：'+total.amount+' '+total.currency,{view:'payment-vouchers',id});
+      }
+      request.state='invoiced';request.invoicedAt=context.now;request.invoicedBy=context.actorName;
+      for(const task of state.tasks)if(task.id===request.taskId)task.done=true;
+      updateDev(state,dev,context);
+      event(state,context,'development',dev.id,'财务已开具开发费用发票 '+state.invoices.filter(i=>request.invoiceIds.includes(i.id)).map(i=>i.code).join('、'),{view:'development/detail',id:dev.id});
+      result={devId:dev.id,id:request.invoiceIds[0]};break;
     }
     case 'development.version.recordMinor': {
       const [dev,parent]=versionOf(state,p.devId,p.versionId), blocked=minorVersionBlocker(state,dev,parent);
@@ -1099,6 +1162,7 @@ export function applyMistCommand(original: MistState, command: MistCommand, cont
     default: throw new MistCommandError('VALIDATION','未知操作');
   }
   recalculate(state);
+  syncDevelopmentBilling(state,context);
   return {state,result};
 }
 

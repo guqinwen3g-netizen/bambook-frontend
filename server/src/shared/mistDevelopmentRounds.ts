@@ -79,6 +79,7 @@ export function developmentClosure(state: MistState, dev: MistDev): { kind: 'clo
   if (dev.closure?.kind === 'cancelled') return { kind: 'cancelled', label: '已取消' };
   if (dev.closure?.kind === 'archived') return { kind: 'archived', label: '已归档' };
   if (dev.closure?.kind === 'closed') return { kind: 'closed', label: '已结案' };
+  if (developmentCharged(dev.values) && dev.billing?.settledAt) return { kind: 'closed', label: '已最终结案' };
   if (!developmentCharged(dev.values) && state.versions.some(version => version.devId === dev.id && version.confirmations.at(-1)?.result === 'approved')) return { kind: 'closed', label: '已结案' };
   return null;
 }
