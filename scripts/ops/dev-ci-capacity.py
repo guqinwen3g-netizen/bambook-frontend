@@ -113,7 +113,7 @@ def supervisor():
     subprocess.run(['sudo','-n','systemctl','stop',UNIT],check=False)
     final_health=health()
     summary={'sha':SHA,'started':True,'seconds':round(time.monotonic()-start,2),'stop_reason':reason,
-        'baseline_available':initial['MemAvailable'],'minimum_available':min_available,'memory_peak':peak,'swap_growth':max_swap,
+        'archive_sha256':(ROOT/'source.sha256').read_text().strip(),'baseline_available':initial['MemAvailable'],'minimum_available':min_available,'memory_peak':peak,'swap_growth':max_swap,
         'disk_growth':max_growth,'baseline_health':baseline,'final_health':final_health,'unit_status':unit_status,'worker':worker_result,
         'evidence':str(EVIDENCE),'cleanup':'pending'}
     save('summary.json',summary)
