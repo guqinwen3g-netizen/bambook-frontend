@@ -786,6 +786,14 @@ function physicalCapacity(root: MistState, line: ShipmentLine): number {
 }
 function checkPhysicalReservation(root: MistState, line: ShipmentLine, excludeShipmentId?: string) { const capacity = physicalCapacity(root, line); const reserved = sum(root.fulfillment.shipments.filter(s => s.id !== excludeShipmentId && s.state !== 'cancelled').flatMap(s => s.lines.filter(l => l.lineId === line.lineId && l.productionId === line.productionId).map(l => l.quantity))); if (sum([reserved, line.quantity]) > capacity)
     fail('本次与已有预留超过该来源分支实际交付数量'); }
+/** 订单条款可能在排单后经审批更新，准备与离港时仍须按最新上限核对全部有效出运。 */
+function assertCurrentShipmentTolerance(root: MistState, shipment: FulfillmentShipment) {
+    for (const lineId of new Set(shipment.lines.map(line => line.lineId))) {
+        const line = get(root.orderLines, lineId, '来源条目'), order = get(root.orders, line.orderId, '订单');
+        const cumulative = sum(root.fulfillment.shipments.filter(item => item.state !== 'cancelled').flatMap(item => item.lines.filter(row => row.lineId === lineId).map(row => row.quantity)));
+        assertShipmentWithinTolerance(line, order.governance?.contract, cumulative);
+    }
+}
 function sourceQuality(root: MistState, line: ShipmentLine) {
     physicalCapacity(root, line);
     const production = root.productions.filter(p => p.lineId === line.lineId && p.id === line.productionId);
@@ -1366,6 +1374,7 @@ export function applyFulfillmentCommand(root: MistState, command: FulfillmentCom
                 if (sum(f.packing.filter(a => a.shipmentId === s.id && a.lineId === line.lineId && a.productionId === line.productionId).map(a => a.quantity)) !== line.quantity)
                     fail('装箱数量未匹配计划');
             }
+            assertCurrentShipmentTolerance(root, s);
             requiredShipmentDocuments(root, s);
             s.state = 'ready';
             audit(root, ctx, 'shipment', s.id, '单据准备完毕，返回业务发送', { view: 'shipments', id: s.id });
@@ -1389,6 +1398,7 @@ export function applyFulfillmentCommand(root: MistState, command: FulfillmentCom
             if (!f.customs.some(c => c.shipmentId === s.id && c.status === 'cleared'))
                 fail('出口清关尚未完成');
             s.lines.forEach(l => { assertMistOrderApproved(root, l.orderId); assertMistOrderDeposit(root, l.orderId); sourceQuality(root, l); requireSampleRole(root, get(root.productions, l.productionId!, '准确生产分支'), 'shipping', s.id); checkPhysicalReservation(root, l, s.id); });
+            assertCurrentShipmentTolerance(root, s);
             requiredShipmentDocuments(root, s);
             const at = instant(p.at, ctx, '实际离港/起飞时间');
             if (at < s.documentsSentAt!)

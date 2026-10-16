@@ -124,3 +124,31 @@ it('BB-ORD-6 blocks a shipment above the over-ship cap until an over-ship reques
  (f.root.orderLines[0] as unknown as {overShips:{quantity:number}[]}).overShips[0].quantity=12;
  expect(shipment(f,12)).toBeTruthy();
 });
+
+
+it.each(['ready','depart'] as const)('rechecks a tightened over-shipment limit before %s',stage=>{
+ const f=setup();
+ const ctx={...f.ctx,authority:{...f.ctx.authority,orderReviewerIds:{garment:['reviewer'],fabric:['reviewer']}}};
+ const gov=(command:any,actor=ctx)=>Object.assign(f.root,applyMistCommand(f.root,command,actor).state);
+ const initial=f.root.orders[0],first=f.root.orderLines[0];
+ gov({type:'order.governance.saveDraft',payload:{orderId:initial.id,input:{...initial.governance!.contract,overPercent:10},lines:[{id:first.id,name:first.name,style:first.style,img:first.img,qty:first.qty,unit:first.unit,price:first.price},{id:'line-other',name:'另一条目',style:'OTHER',img:'coat',qty:10,unit:'件',price:12}],reason:'两条目订单'}});
+ gov({type:'order.governance.submit',payload:{orderId:initial.id}});
+ gov({type:'order.governance.decide',payload:{id:initial.id,decision:'approved',note:'通过'}},{...ctx,actorId:'reviewer'});
+ const o=f.root.orders[0];
+ f.root.productions.push({id:'tolerance-branch',code:'PROD-T',orderId:o.id,lineId:f.root.orderLines[0].id,order:o.code,name:'衬衫',factory:'已确认工厂',qty:11,due:'2026-11-01',pct:100,img:'coat',col:'done'});
+ terms(f);const id=shipment(f,11),line=f.root.fulfillment.shipments[0].lines[0];
+ const task=f.run({type:'fulfillment.qc.request',payload:{source:{kind:'orderLine',orderId:line.orderId,lineId:line.lineId,productionId:line.productionId},domain:'garment',kind:'production',factory:'工厂',location:'现场',contact:'',due:'2026-10-13'}}).id!;
+ f.run({type:'fulfillment.qc.claim',payload:{id:task,domain:'garment'}});
+ f.run({type:'fulfillment.qc.report',payload:{id:task,domain:'garment',result:'pass',report:'FINAL',opinion:'实物通过',measurements:[],sizeChecks:[{size:'M',inspected:1,result:'pass',evidence:'实际抽检'}],fileIds:[],reviewedAt:f.ctx.now}});
+ f.run({type:'fulfillment.shipments.pack',payload:{id,lines:[{lineId:line.lineId,productionId:line.productionId,carton:'1',quantity:11,netWeight:1,grossWeight:2,volume:1,note:''}]}});
+ for(const kind of ['CI','PL'] as const){const d=document(f,id,kind);f.run({type:'fulfillment.documents.issue',payload:{id:d}});}
+ f.run({type:'fulfillment.shipments.ready',payload:{id}});
+ if(stage==='depart'){f.run({type:'fulfillment.shipments.sent',payload:{id,at:f.ctx.now}});f.root.fulfillment.customs.push({shipmentId:id,status:'cleared'} as never);}
+ const order=f.root.orders[0];
+ gov({type:'order.governance.saveDraft',payload:{orderId:order.id,input:{...order.governance!.contract,overPercent:0},reason:'客户收紧溢装'}});
+ gov({type:'order.governance.submit',payload:{orderId:order.id}});
+ gov({type:'order.governance.decide',payload:{id:order.id,decision:'approved',note:'确认新溢装上限'}},{...ctx,actorId:'reviewer'});
+ const before=structuredClone(f.root);
+ expect(()=>f.run(stage==='ready'?{type:'fulfillment.shipments.ready',payload:{id}}:{type:'fulfillment.shipments.depart',payload:{id,at:f.ctx.now,evidence:'离港',fileIds:[]}})).toThrow('超出允许溢装');
+ expect(f.root).toEqual(before);
+});
