@@ -163,13 +163,27 @@ function keptMarginFloor(old:MarketQuotation,family:QuoteFamily):{floor:FrozenMa
 }
 /**
  * 已保存条目保存时所属板块，只看条目上保存时冻结的事实，不从产品档案当前类别回推（类别可合法修改）：
- * 冻结底价线的板块 → 保存时记录的 family（null=当时不属两板块）→ 历史无字段条目按已保存单位推断
- * （保存时服务端已按板块校验单位，米/码/公斤=面料、件/套=成衣，两组不重叠）；单位不在两板块内视为无板块。
+ * 冻结底价线的板块 → 保存时记录的 family（null=当时不属两板块）。缺少 family 的条目不推断（不按单位猜），
+ * 返回 undefined：编辑时按新加入板块取当日适用底价线。旧数据由 backfillQuoteLineFamilies 统一补齐。
  */
 export function savedLineFamily(x:Pick<MarketQuoteLine,'marginFloor'|'family'|'unit'>):QuoteFamily|undefined{
  if(x.marginFloor)return x.marginFloor.family;
- if(x.family!==undefined)return x.family||undefined;
- const u=(x.unit||'').trim();return (Object.keys(QUOTE_UNITS) as QuoteFamily[]).find(k=>(QUOTE_UNITS[k] as readonly string[]).includes(u));
+ return x.family||undefined;
+}
+/**
+ * 一次性数据更新（开发 / 测试环境均为模拟数据，按新规则统一改数据，不保留旧数据兼容推断）：
+ * 给缺少 family、也没有冻结底价线的报价条目，按条目来源（产品档案 / 开发案）当前类别写入板块事实；
+ * 辅料等不属两板块的写 null；来源已不存在的保持缺省（编辑时按新加入板块取当日底价线）。幂等：已有 family 的条目不改。
+ */
+export function backfillQuoteLineFamilies(root:{devs:Array<{id:string;values:{domain?:'fabric'|'garment';category?:string}}>},m:{products:MarketProduct[];quotations:MarketQuotation[]}):number{
+ let changed=0;
+ for(const q of m.quotations||[])for(const l of q.lines||[]){
+  if(l.family!==undefined||l.marginFloor)continue;
+  const known=l.productId?m.products.some(p=>p.id===l.productId):!!(l.sourceDevId&&root.devs.some(d=>d.id===l.sourceDevId));
+  if(!known)continue;
+  l.family=quoteLineFamily(root,m,l)??null;changed++;
+ }
+ return changed;
 }
 /** 审批详情里的条目来源：产品档案款号或“开发案编号 / 准确版本号”，查不到时退回原始编号。 */
 function quoteLineSourceLabel(root:MistState,m:MarketState,l:MarketQuoteLine){

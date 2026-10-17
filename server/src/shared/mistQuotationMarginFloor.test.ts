@@ -1,6 +1,6 @@
 import {describe,it,expect} from 'vitest';
-import {createMistState,type MistContext,type MistState} from './mistWorkspace';
-import {createMarketState,applyMarketCommand,marketCommandPermission,quotationNeedsApproval,quotationMarginFloorBreaches,type MarketState,type MarketCommand} from './mistMarket';
+import {createMistState,normalizeMistState,type MistContext,type MistState} from './mistWorkspace';
+import {createMarketState,applyMarketCommand,backfillQuoteLineFamilies,marketCommandPermission,quotationNeedsApproval,quotationMarginFloorBreaches,type MarketState,type MarketCommand} from './mistMarket';
 import {developmentDomain} from './mistDevelopmentDomain';
 import {applicableMarginFloor,lineBelowMarginFloor,quoteLineMarginPercent} from './mistQuotationMarginFloor';
 const setup=()=>{let n=0;const ctx:MistContext={id:()=>`mf-${++n}`,now:'2026-10-13T08:00:00.000Z',actorName:'总领导',actorId:'boss',authority:{supplier:{},businessReviewerId:'leader'}};const s=createMistState(ctx,'empty') as MistState&{market:MarketState};s.market=createMarketState(ctx,s);s.customers.push({id:'c',name:'客户',code:'C',country:'CN',city:'',industry:'',owner:'业务员',grade:'',currency:'USD',terms:'',incoterm:'',categories:'',creditLimit:0,since:'2026-01-01'} as never);return {ctx,s};};
@@ -135,20 +135,39 @@ describe('BB-QUO-3 最低毛利率底价线',()=>{
   const freshId=run(s,{type:'market.quotation.save',payload:{input:{...quote(p),lines:[fabricLine]}}},ctx).id!,fresh=s.market.quotations.find(x=>x.id===freshId)!;
   expect(fresh.lines[0].marginFloor).toMatchObject({family:'fabric',version:1});expect(quotationNeedsApproval(fresh)).toBe(true);
  });
- it('legacy lines without a saved family are judged by their saved unit, never by the product’s current category',()=>{
+ it('lines without a saved family are never inferred from their unit: an edit takes the current floor for all five units',()=>{
+  for(const [category,unit] of [['garment','件'],['garment','套'],['fabric','米'],['fabric','码'],['fabric','公斤']] as const){
+   const {ctx,s}=setup();const p=run(s,{type:'market.product.save',payload:{input:{...garment,category,unit}}},ctx).id!;
+   const line={...quote(p).lines[0],unit},id=run(s,{type:'market.quotation.save',payload:{input:{...quote(p),lines:[line]}}},ctx).id!;
+   const q=()=>s.market.quotations.find(x=>x.id===id)!;expect(q().lines[0].marginFloor).toBeUndefined();
+   delete q().lines[0].family; // 未经数据更新、缺少板块事实的条目
+   run(s,{type:'market.marginFloor.set',payload:{family:category,minMarginPercent:'15',effectiveFrom:'2026-10-13',reason:'定价'}},ctx);
+   run(s,{type:'market.quotation.save',payload:{id,input:{...quote(p),lines:[line],note:'改备注'}}},ctx);
+   expect(q().lines[0].marginFloor).toMatchObject({family:category,version:1,minMarginPercent:'15'});expect(quotationNeedsApproval(q())).toBe(true);
+  }
+ });
+ it('backfillQuoteLineFamilies writes the source’s family once (product, development, trimming → null), skips missing sources and frozen lines, and is idempotent',()=>{
+  const {ctx,s}=setup();
+  const g=run(s,{type:'market.product.save',payload:{input:garment}},ctx).id!,f=run(s,{type:'market.product.save',payload:{input:{...garment,sku:'F1',category:'fabric',unit:'米'}}},ctx).id!,t=run(s,{type:'market.product.save',payload:{input:{...garment,sku:'T1',category:'trimming' as const}}},ctx).id!;
+  const ids=[g,f,t].map(p=>run(s,{type:'market.quotation.save',payload:{input:{...quote(p),lines:[{...quote(p).lines[0],unit:p===f?'米':'件'}]}}},ctx).id!);
+  const lines=ids.map(id=>s.market.quotations.find(x=>x.id===id)!.lines[0]);
+  lines.forEach(l=>delete l.family);
+  s.devs.push({id:'dev-x',values:{domain:'fabric'}} as never);
+  const devLine={...lines[0],id:'l-dev',productId:'',sourceDevId:'dev-x',sourceVersionId:'v'},gone={...lines[0],id:'l-gone',productId:'missing'},frozen={...lines[0],id:'l-frozen',marginFloor:{id:'x',family:'garment',version:1,minMarginPercent:'15',effectiveFrom:'2026-10-01'}} as typeof lines[0];
+  delete (frozen as {family?:unknown}).family;
+  s.market.quotations[0].lines.push(devLine,gone,frozen);
+  expect(backfillQuoteLineFamilies(s,s.market)).toBe(4);
+  expect(lines.map(l=>l.family)).toEqual(['garment','fabric',null]);
+  const byId=(id:string)=>s.market.quotations[0].lines.find(l=>l.id===id)!;
+  expect(byId('l-dev').family).toBe('fabric');expect(byId('l-gone').family).toBeUndefined();expect(byId('l-frozen').family).toBeUndefined();
+  expect(backfillQuoteLineFamilies(s,s.market)).toBe(0);
+ });
+ it('normalizeMistState applies the backfill, so a pre-update garment line without floor keeps no floor after the first floor is set',()=>{
   const {ctx,s}=setup();const p=run(s,{type:'market.product.save',payload:{input:garment}},ctx).id!;
-  const a=run(s,{type:'market.quotation.save',payload:{input:quote(p)}},ctx).id!,b=run(s,{type:'market.quotation.save',payload:{input:quote(p)}},ctx).id!;
-  const q=(id:string)=>s.market.quotations.find(x=>x.id===id)!;
-  q(a).lines.forEach(l=>delete l.family);q(b).lines.forEach(l=>delete l.family); // 模拟本字段上线前保存的历史报价
-  // 类别未变：历史“件”条目=成衣当时无底线 → 之后设成衣 15% 不追溯。
-  setFloor(s,ctx,'15');
-  run(s,{type:'market.quotation.save',payload:{id:a,input:{...quote(p),note:'改备注'}}},ctx);
-  expect(q(a).lines[0].marginFloor).toBeUndefined();expect(quotationNeedsApproval(q(a))).toBe(false);
-  // 类别改为面料：历史“件”条目不是面料 → 面料是新加入板块，取当前面料 20%。
-  run(s,{type:'market.marginFloor.set',payload:{family:'fabric',minMarginPercent:'20',effectiveFrom:'2026-10-13',reason:'面料定价'}},ctx);
-  run(s,{type:'market.product.save',payload:{id:p,input:{...garment,category:'fabric',unit:'米'}}},ctx);
-  run(s,{type:'market.quotation.save',payload:{id:b,input:{...quote(p),lines:[{...quote(p).lines[0],unit:'米'}]}}},ctx);
-  expect(q(b).lines[0].marginFloor).toMatchObject({family:'fabric',version:1,minMarginPercent:'20'});expect(quotationNeedsApproval(q(b))).toBe(true);
+  const id=run(s,{type:'market.quotation.save',payload:{input:quote(p)}},ctx).id!;const q=()=>s.market.quotations.find(x=>x.id===id)!;
+  delete q().lines[0].family;normalizeMistState(s,ctx);expect(q().lines[0].family).toBe('garment');
+  setFloor(s,ctx,'15');run(s,{type:'market.quotation.save',payload:{id,input:{...quote(p),note:'改备注'}}},ctx);
+  expect(q().lines[0].marginFloor).toBeUndefined();expect(quotationNeedsApproval(q())).toBe(false);
  });
  it('a line saved outside both families (trimming) records family null; after the product becomes garment the edit takes the current garment floor',()=>{
   const {ctx,s}=setup();const p=run(s,{type:'market.product.save',payload:{input:{...garment,category:'trimming' as const}}},ctx).id!;
