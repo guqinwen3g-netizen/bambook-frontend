@@ -53,12 +53,23 @@ it('hides the customs-cleared option without customs:clear and explains that log
   session.denied.add('customs:clear');render('cus-s');
   const detail=host.querySelector('[data-customs-detail="cus-s"]') as HTMLElement;
   expect(queryByRole(detail,'button',{name:'登记海关放行'})).toBeNull();
-  expect(getByRole(detail,'button',{name:'更正申报信息'})).toBeTruthy();
-  expect(detail.textContent).toContain('清关完成须由后勤/单证登记');
+  expect(queryByRole(detail,'button',{name:'更正申报信息'})).toBeNull();
+  expect(detail.textContent).toContain('申报与清关须由后勤/单证登记');
   session.denied.delete('customs:clear');store.state={...store.state!};render('cus-s');
   const allowed=host.querySelector('[data-customs-detail="cus-s"]') as HTMLElement;
   expect(getByRole(allowed,'button',{name:'登记海关放行'})).toBeTruthy();
-  expect(allowed.textContent).not.toContain('清关完成须由后勤/单证登记');
+  expect(getByRole(allowed,'button',{name:'更正申报信息'})).toBeTruthy();
+  expect(allowed.textContent).not.toContain('申报与清关须由后勤/单证登记');
+});
+
+it('hides the declare action on drafts without customs:clear',()=>{
+  const f=store.state!.fulfillment;f.shipments.push(shipment('s'));f.packing.push(pack('s',10));f.customs.push(customs('s','draft'));
+  session.denied.add('customs:clear');render('cus-s');
+  const detail=host.querySelector('[data-customs-detail="cus-s"]') as HTMLElement;
+  expect(queryByRole(detail,'button',{name:'登记已申报'})).toBeNull();
+  expect(detail.textContent).toContain('申报与清关须由后勤/单证登记');
+  session.denied.delete('customs:clear');store.state={...store.state!};render('cus-s');
+  expect(getByRole(host.querySelector('[data-customs-detail="cus-s"]') as HTMLElement,'button',{name:'登记已申报'})).toBeTruthy();
 });
 
 it('lists shipments still awaiting a customs record and creates the draft from that row',async()=>{

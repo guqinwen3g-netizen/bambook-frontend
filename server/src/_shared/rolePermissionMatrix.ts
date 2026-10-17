@@ -166,7 +166,7 @@ export const PERMISSION_SCOPES = {
   'shipments:approve': '发货放行审批（大货最终放行）',
   'customs:read': '报关单证/外贸单证查看',
   'customs:write': '单证签发/修正案创建',
-  'customs:clear': '登记出口清关完成（海关放行事实；仅后勤/单证与领导）',
+  'customs:clear': '登记出口申报与清关完成（海关申报/放行事实；仅后勤/单证与领导）',
   'customs:admin': '单证模板/公司抬头签章配置',
   'qc:read': '质检工作台/疵点记录查看',
   'qc:write': 'QC疵点录入/QC结果登记',

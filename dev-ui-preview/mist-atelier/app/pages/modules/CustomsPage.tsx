@@ -217,13 +217,13 @@ function CustomsDetail({ record: c, state, can, canClear, canInvoices, locked, o
     <div className="mist-row" style={{ flexWrap: 'wrap' }}><Pill tone={CUSTOMS_TONE[c.status]}>{CUSTOMS_LABEL[c.status]}</Pill>{s && <Pill>{s.domain === 'fabric' ? '面料业务' : '成衣业务'}</Pill>}{s && <Pill>{MODE_LABEL[s.mode]}</Pill>}{flags.map(flag => <Pill key={flag.key} tone={flag.key === 'unpacked' ? 'warn' : 'bad'}>{flag.label}</Pill>)}</div>
     <Banner tone={next.tone} title={next.title}>{next.text}</Banner>
     {can && c.status !== 'cleared' && <ActionBar busy={locked} actions={[
-      { label: '登记已申报', icon: Stamp, onClick: onDeclare, primary: true, reason: baseReason, hidden: c.status !== 'draft' },
+      { label: '登记已申报', icon: Stamp, onClick: onDeclare, primary: true, reason: baseReason, hidden: c.status !== 'draft' || !canClear },
       { label: '编辑报关资料', icon: Pencil, onClick: onEdit, reason: baseReason, hidden: c.status !== 'draft' },
       // 已清关（海关放行）是后勤/单证专属事实：无 customs:clear 时不提供该选项，服务端同样拒绝。
       { label: '登记海关放行', icon: Stamp, onClick: onRelease, primary: true, reason: baseReason, hidden: c.status !== 'submitted' || !canClear },
-      { label: '更正申报信息', icon: Pencil, onClick: onDeclare, reason: baseReason, hidden: c.status !== 'submitted' },
+      { label: '更正申报信息', icon: Pencil, onClick: onDeclare, reason: baseReason, hidden: c.status !== 'submitted' || !canClear },
     ] as ReasonedAction[]} />}
-    {c.status === 'submitted' && !canClear && <span className="mist-note" data-customs-clear-hint>清关完成须由后勤/单证登记</span>}
+    {(c.status === 'draft' || c.status === 'submitted') && !canClear && <span className="mist-note" data-customs-clear-hint>申报与清关须由后勤/单证登记</span>}
     {c.status === 'cleared' && <span className="mist-note">已放行记录不可覆盖；如需更正，请先在海关办理改单后补充附件说明。</span>}
     <Facts items={[
       { label: '出运', value: s ? <TextLink onClick={onShipment}>{s.code}</TextLink> : '出运不可用' },

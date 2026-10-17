@@ -128,16 +128,20 @@ describe('A · 清关完成只能由后勤/单证登记', () => {
     expect(departmentAuthorization(user(['logistics']), ['role-logistics'], ['customs:clear']).permissions).toEqual(['customs:clear']);
     expect(departmentAuthorization({}, ['role-super-admin'], ['customs:clear']).permissions).toEqual(['customs:clear']);
   });
-  it('命令权限映射：草稿/已申报仍是 customs:write，已清关要求 customs:clear', () => {
+  it('命令权限映射：草稿仍是 customs:write，已申报/已清关要求 customs:clear', () => {
     expect(mistCommandPermission(customs('s', 'draft'))).toBe('customs:write');
-    expect(mistCommandPermission(customs('s', 'submitted'))).toBe('customs:write');
+    expect(mistCommandPermission(customs('s', 'submitted'))).toBe(FULFILLMENT_CUSTOMS_CLEAR_SCOPE);
     expect(mistCommandPermission(customs('s', 'cleared'))).toBe(FULFILLMENT_CUSTOMS_CLEAR_SCOPE);
   });
-  it('业务员可保存草稿和已申报；直接或从已申报改为已清关都被服务端拒绝且不改状态', () => {
+  it('业务员只能保存草稿；登记已申报、直接或从已申报改为已清关都被服务端拒绝且不改状态', () => {
     const f = gate();
     const id = String(f.run(customs(f.shipmentId, 'draft')).id);
     expect(f.state.fulfillment.customs[0].status).toBe('draft');
-    f.run(customs(f.shipmentId, 'submitted', id));
+    const draft = structuredClone(f.state);
+    expect(() => f.run(customs(f.shipmentId, 'submitted', id))).toThrow('登记已申报须由后勤/单证办理');
+    expect(() => f.run(customs(f.shipmentId, 'submitted', id), { ...f.sales, can: undefined })).toThrow(expect.objectContaining({ code: 'FORBIDDEN' }));
+    expect(f.state).toEqual(draft);
+    f.run(customs(f.shipmentId, 'submitted', id), f.logistics);
     expect(f.state.fulfillment.customs[0].status).toBe('submitted');
     const before = structuredClone(f.state);
     expect(() => f.run(customs(f.shipmentId, 'cleared', id))).toThrow('清关完成须由后勤/单证登记');
@@ -149,12 +153,12 @@ describe('A · 清关完成只能由后勤/单证登记', () => {
     expect(() => fresh.run(customs(fresh.shipmentId, 'cleared'))).toThrow(expect.objectContaining({ code: 'FORBIDDEN' }));
     expect(fresh.state.fulfillment.customs).toHaveLength(0);
   });
-  it('后勤可把已申报登记为已清关，已清关记录不可再被覆盖', () => {
+  it('后勤可登记已申报再登记为已清关，已清关记录不可再被覆盖', () => {
     const f = gate();
-    const id = String(f.run(customs(f.shipmentId, 'submitted')).id);
+    const id = String(f.run(customs(f.shipmentId, 'submitted'), f.logistics).id);
     f.run(customs(f.shipmentId, 'cleared', id), f.logistics);
     expect(f.state.fulfillment.customs[0]).toMatchObject({ status: 'cleared', clearedAt: '2026-10-13', evidence: '海关放行回执' });
-    expect(() => f.run(customs(f.shipmentId, 'submitted', id))).toThrow('已清关记录不可覆盖');
+    expect(() => f.run(customs(f.shipmentId, 'submitted', id), f.logistics)).toThrow('已清关记录不可覆盖');
   });
 });
 

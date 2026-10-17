@@ -596,8 +596,8 @@ export function fulfillmentCommandPermission(command: FulfillmentCommand): strin
         return 'orders:write';
     if (command.type.startsWith('fulfillment.shipments.'))
         return 'shipments:write';
-    // 登记“已清关”是后勤/单证的专属事实；草稿与已申报仍是报关单证写权限。
-    if (command.type === 'fulfillment.customs.save' && command.payload?.status === 'cleared')
+    // 登记“已申报/已清关”是后勤/单证的专属事实；草稿仍是报关单证写权限。
+    if (command.type === 'fulfillment.customs.save' && ['submitted', 'cleared'].includes(command.payload?.status))
         return FULFILLMENT_CUSTOMS_CLEAR_SCOPE;
     if (command.type.startsWith('fulfillment.customs.') || command.type.startsWith('fulfillment.documents.'))
         return 'customs:write';
@@ -1446,6 +1446,8 @@ export function applyFulfillmentCommand(root: MistState, command: FulfillmentCom
             if (!['draft', 'submitted', 'cleared'].includes(p.status))
                 fail('报关状态无效');
             // 不依赖命令映射：处理逻辑内按执行账号实时权限再核一次，缺少权限上下文同样拒绝。
+            if (p.status === 'submitted' && !ctx.can?.(FULFILLMENT_CUSTOMS_CLEAR_SCOPE))
+                throw new MistCommandError('FORBIDDEN', '登记已申报须由后勤/单证办理', 403);
             if (p.status === 'cleared' && !ctx.can?.(FULFILLMENT_CUSTOMS_CLEAR_SCOPE))
                 throw new MistCommandError('FORBIDDEN', '清关完成须由后勤/单证登记', 403);
             const id = old?.id || ctx.id(), fileIds = files(root, p.fileIds);
