@@ -1,5 +1,5 @@
 /** Business records for Mist platform modules. No legacy or fabricated identities. */
-import { MistCommandError, mistMoneyMinor, lineAmount, assertMistOrderApproved, isActiveMistInvoice, type MistContext, type MistState, type MistCommandResult } from './mistWorkspace';
+import { MistCommandError,mistOrderOwnerIds, mistMoneyMinor, lineAmount, assertMistOrderApproved, isActiveMistInvoice, type MistContext, type MistState, type MistCommandResult } from './mistWorkspace';
 import type { MistReviewTask } from './mistReview';
 import { applyRiskCommand, getRiskReviews, riskCommandPermission, type RiskCommand, type RiskRecord } from './mistRisk';
 import { appendClaimCreditSourceVersion, assertCreditSourceVersions, canonicalCreditDocument, assertCreditDocumentIssue, type MistCreditPrintVersion, type MistCreditDocumentIssue } from './mistCreditDocuments';
@@ -70,7 +70,7 @@ function claimDecisionReturn(root:Root,claim:PlatformClaim,row:PlatformClaimDisp
  const kind=(approved?'claim-execution:':'claim-revision:')+row.id;
  completeClaimWork(root,claim.id,(approved?'claim-revision:':'claim-execution:')+row.id);
  const existing=root.tasks.find(task=>task.kind===kind&&task.target.view==='claims'&&task.target.id===claim.id),title=(approved?'生成售后履行单据':'按意见修订售后处置')+' · '+claim.code+' · '+type;
- if(existing){existing.title=title;existing.due='';existing.done=false;}else root.tasks.unshift({id:c.id(),title,due:'',done:false,kind,target});
+ if(existing){existing.title=title;existing.due='';existing.done=false;}else root.tasks.unshift({id:c.id(),title,due:'',done:false,kind,target,assigneeIds:row.requesterId?[row.requesterId]:mistOrderOwnerIds(root,claim.orderId)});
 }
 export function calculatePlatformBom(lines:PlatformBomLine[],labor:number,overhead:number){if(!Array.isArray(lines)||!lines.length||lines.length>200)fail('请填写1至200条物料');let total=BigInt("0");for(const line of lines){if(!line||typeof line!=='object'||Array.isArray(line))fail('物料格式无效');text(line.description,'物料');text(line.unit,'单位');const q=dec(line.quantity,'用量',true),w=dec(line.wastagePercent,'损耗'),cost=dec(line.unitCost,'单价');if(w>BigInt("1000000"))fail('损耗率不得超过100%');const effective=rounded(q*(BigInt("1000000")+w),BigInt("1000000"));total+=rounded(effective*cost,BigInt("10000"));}return amount4(total+dec(labor,'人工成本')+dec(overhead,'费用'));}
 /** Track B established basis: net cost × (1 + markup + commission); four-decimal half-up steps. */

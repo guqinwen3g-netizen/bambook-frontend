@@ -55,7 +55,7 @@ export function applyCrmCommand(root: MistState, command: CrmCommand, context: M
       let link: CrmLink | null = null;
       if (p.link) { if (!Object.keys(CRM_LINK_LABEL).includes(p.link.kind)) fail('关联对象类型无效'); link = { kind: p.link.kind, id: text(p.link.id, '关联对象', true, 200) }; if (!crmLinkTarget(root, c.id, link)) fail('关联对象不属于该客户', 'NOT_FOUND'); }
       const id = context.id(); let nextTaskId = '';
-      if (nextDate) { nextTaskId = context.id(); root.tasks.unshift({ id: nextTaskId, title: `跟进客户：${c.name}`, due: nextDate, done: false, kind: 'crm-follow-up', target: { view: 'crm', id: c.id, customerId: c.id } }); }
+      if (nextDate) { nextTaskId = context.id(); root.tasks.unshift({ id: nextTaskId, title: `跟进客户：${c.name}`, due: nextDate, done: false, kind: 'crm-follow-up', target: { view: 'crm', id: c.id, customerId: c.id }, assigneeIds: context.actorId ? [context.actorId] : [] }); }
       root.crm.followUps.unshift({ id, customerId: c.id, method: p.method, content, at: new Date(stamp).toISOString(), nextDate, nextTaskId, link, actor: context.actorName, createdAt: context.now });
       log(root, context, c.id, `记录${CRM_METHOD_LABEL[p.method]}跟进${nextDate ? `，下次跟进 ${nextDate}` : ''}`); return { id };
     }

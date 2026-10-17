@@ -9,7 +9,7 @@ import { useMistSession } from '../runtime/auth';
 import { useMistWorkspace } from '../runtime/workspace';
 import { visibleMistNotifications } from '../runtime/notificationPreferences';
 import { useOptionalMistReviews } from '../runtime/reviews';
-import { mistWorkQueue, mistEmailFollowUpTaskIds } from '../runtime/workQueue';
+import { mistWorkQueue, mistMyTasks, mistEmailFollowUpTaskIds, type MistWorkOptions } from '../runtime/workQueue';
 import type { View } from '../../../../types';
 
 function dateKey(value: Date) { return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`; }
@@ -38,8 +38,10 @@ export function HomePage() {
   React.useEffect(() => { setTaskDialog(false); setSelectedTask(''); setReportVersion(null); setStatView(null); setError(''); operation.current = false; }, [scope]);
   React.useEffect(() => { const update = () => setToday(dateKey(new Date())); const timer = window.setInterval(update, 60000); window.addEventListener('focus', update); return () => { window.clearInterval(timer); window.removeEventListener('focus', update); }; }, []);
   const days = weekDays(today), weekStart = days[0].key, weekEnd = days[6].key;
-  const allTasks = (state?.tasks ?? []).filter(task => !task.done);
   const reviews = useOptionalMistReviews(), waitingReviews = reviews?.rows.filter(row => row.canDecide).length ?? 0;
+  // 与侧栏同一口径：只列指定给我或我岗位的事项，「N 件事」= 侧栏「我的工作」数字。
+  const workOptions: MistWorkOptions = { canRead: view => session.canAccessView(view as View), can: permission => session.hasPermission(permission), me: session.user?.id ?? '', reviews: reviews?.rows, today, workspaceId: workspace.workspace?.id };
+  const allTasks = mistMyTasks(state, workOptions);
   const inRange = (date: string) => !date || (range === 'today' ? date <= today : date <= weekEnd);
   const tasks = allTasks.filter(task => inRange(task.due)).slice().sort((a, b) => sort === 'title' ? a.title.localeCompare(b.title, 'zh-CN') : (a.due || '9999').localeCompare(b.due || '9999') || a.title.localeCompare(b.title, 'zh-CN'));
   const focus = tasks[0];
@@ -55,7 +57,7 @@ export function HomePage() {
     finally { if (alive.current && activeScope.current === current) operation.current = false; }
   };
   const emailTasks = mistEmailFollowUpTaskIds(state);
-  const queue = mistWorkQueue(state, { canRead: view => session.canAccessView(view as View), me: session.user?.id ?? '', reviews: reviews?.rows, today });
+  const queue = mistWorkQueue(state, workOptions);
   const queueRows: TaskItem[] = queue.map(item => ({ id: item.id, when: item.when, urgent: item.urgent, title: item.title, meta: item.meta, status: { tone: item.urgent ? 'warn' : 'accent', label: item.sourceLabel } }));
   const taskRows: TaskItem[] = [...queueRows, ...tasks.map(task => ({ id: task.id, when: !task.due ? '未定期限' : task.due < today ? '已逾期' : task.due === today ? '今天' : task.due.slice(5), urgent: !!task.due && task.due <= today,
     title: task.title, meta: [emailTasks.has(task.id) ? '邮件跟进' : task.kind === 'development' ? '开发事项' : '工作事项', state?.devs.find(dev=>dev.id===task.target.id)?.code||state?.orders.find(order=>order.id===task.target.id)?.code, task.target.versionId ? state?.versions.find(v => v.id === task.target.versionId)?.label : undefined].filter(Boolean).join(' · '),
@@ -77,7 +79,7 @@ export function HomePage() {
     onClick: () => void run(async () => { const bound=scope;await workspace.run({ type: 'notification.read', payload: { id: notification.id } }); if(alive.current&&activeScope.current===bound)go(notification.target.view, notification.target.id, notification.target); }) }));
   if (!brief.length) (state?.events.slice().sort((a, b) => b.at.localeCompare(a.at)).slice(0, 3) ?? []).forEach(event => brief.push({ strong: event.actor, text: event.text, onClick: () => openAI(`说明这条工作记录：${event.text}`) }));
   if (!brief.length) brief.push({ strong: '暂无工作动态', text: '创建开发案或推进工作后，这里会显示对应记录。', onClick: () => go('development/new') });
-  const beginTask = () => { const task = tasks[0] ?? state?.tasks[0]; setSelectedTask(task?.id ?? ''); setTaskDone(task?.done ?? false); setTaskDialog(true); };
+  const beginTask = () => { const task = tasks[0] ?? allTasks[0]; setSelectedTask(task?.id ?? ''); setTaskDone(task?.done ?? false); setTaskDialog(true); };
   const chosenTask = state?.tasks.find(task => task.id === selectedTask);
   const dateLabel = new Date(`${today}T12:00:00`).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
   return (
@@ -112,7 +114,7 @@ export function HomePage() {
         </Card>
       </section>
       <Dialog open={taskDialog} onClose={() => setTaskDialog(false)} title="任务状态" footer={<><Button variant="quiet" onClick={() => setTaskDialog(false)}>关闭</Button><Button variant="primary" disabled={busy || !chosenTask || chosenTask.done === taskDone} onClick={() => void run(async () => { await workspace.run({ type: 'task.complete', payload: { id: selectedTask, done: taskDone } }); if (alive.current && activeScope.current === scope) setTaskDialog(false); }, taskDone ? '已完成事项' : '已重新打开事项')}>保存状态</Button></>}>
-        <FormGrid cols={1}><Field label="事项"><Select aria-label="选择事项" value={selectedTask} onChange={event => { const task = state?.tasks.find(item => item.id === event.target.value); setSelectedTask(event.target.value); setTaskDone(task?.done ?? false); }} options={(state?.tasks ?? []).map(task => ({ value: task.id, label: task.title }))} /></Field><Switch label="已完成" checked={taskDone} disabled={busy} onChange={setTaskDone} /></FormGrid>
+        <FormGrid cols={1}><Field label="事项"><Select aria-label="选择事项" value={selectedTask} onChange={event => { const task = state?.tasks.find(item => item.id === event.target.value); setSelectedTask(event.target.value); setTaskDone(task?.done ?? false); }} options={(chosenTask && !allTasks.includes(chosenTask) ? [chosenTask, ...allTasks] : allTasks).map(task => ({ value: task.id, label: task.title }))} /></Field><Switch label="已完成" checked={taskDone} disabled={busy} onChange={setTaskDone} /></FormGrid>
       </Dialog>
       <Dialog open={!!reportVersion} onClose={() => setReportVersion(null)} title={report?.qc?.report || 'QC 评审'}>
         {report?.qc ? <KeyValue items={[{ label: '版本', value: report.label }, { label: '评审人', value: report.qc.reviewer }, { label: '结论', value: ({ pass: '通过', conditional: '有保留通过', reject: '不通过' })[report.qc.result] }, { label: '评审时间', value: report.qc.reviewedAt }, { label: '意见', value: report.qc.opinion }]} /> : <EmptyState compact title="此版本没有可读取的评审记录" />}

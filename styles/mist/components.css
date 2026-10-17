@@ -289,6 +289,7 @@
    （里面可能直接放行内文字，不能改成 flex），用相邻块的上边距补齐；已经自带 flex / grid 排布的卡片内容区
    （mist-col、mist-season-timeline、行内 display）由它自己的 gap 负责，不再叠加。 */
 .mist-root :where(.mist-drawer-body, .mist-dialog-body, .mist-card-body:not(.mist-col, .mist-season-timeline, [style*="display"])) > :where(div:not(.mist-stack), p, section, article, aside, form, fieldset, ul, ol, dl, table, details, figure, header, footer, nav, h2, h3, h4) + :where(div:not(.mist-stack), p, section, article, aside, form, fieldset, ul, ol, dl, table, details, figure, header, footer, nav, h2, h3, h4) { margin-top: var(--mist-space-3); }
+.mist-root :where(.mist-drawer-body, .mist-dialog-body, .mist-card-body:not(.mist-col, .mist-season-timeline, [style*="display"])) > .mist-skel + .mist-skel { margin-top: var(--mist-space-2); }
 .mist-dialog-foot { display: flex; gap: 10px; justify-content: flex-end; padding: 18px 22px 22px; }
 
 .mist-menu { position: fixed; z-index: calc(var(--mist-z-overlay) + 2); min-width: 200px; padding: 6px; border-radius: var(--mist-r-lg); animation: mist-fade .15s both; }

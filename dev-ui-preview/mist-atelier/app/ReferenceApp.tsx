@@ -1,14 +1,14 @@
 import React from 'react';
-import { Bell, ClipboardList, Component, KeyRound, Layers, LogOut, Moon, Search, Settings2, ShieldCheck, Sparkles, SquareDashed } from 'lucide-react';
+import { Bell, ClipboardList, Component, KeyRound, Layers, ListTodo, LogOut, Moon, Search, Settings2, ShieldCheck, Sparkles, SquareDashed } from 'lucide-react';
 
 import {
-  AssistantDrawer, Banner, Button, Card, CardHeader, CommandPalette, Drawer, EmptyState, Field, KeyValue, TextInput, MistAppShell, MistPage, MistRoot, MistSidebarPresentation, MistTopbar, ToastProvider, MistDensityContext, useHotkey, useToast,
+  AssistantDrawer, Banner, TaskList, Button, Card, CardHeader, CommandPalette, Drawer, EmptyState, Field, KeyValue, TextInput, MistAppShell, MistPage, MistRoot, MistSidebarPresentation, MistTopbar, ToastProvider, MistDensityContext, useHotkey, useToast,
   type ChatMessage, type CommandItem, type Crumb, type NavSection, type ThemeMode,
 } from '../../../components/mist';
 import { getModuleByView, getPrimaryNavigationModules, groupPrimaryNavigationModules } from '../../../components/moduleRegistry';
 import { View } from '../../../types';
 import { MODULE_MAP } from './moduleMap';
-import { Nav, type Route, type RouteTarget } from './nav';
+import { Nav, useNav, type Route, type RouteTarget } from './nav';
 import { MistSessionProvider, useMistSession } from './runtime/auth';
 import { LegacyStartup } from '../../../components/mist/LegacyStartup';
 import { MistWorkspaceProvider, useMistWorkspace } from './runtime/workspace';
@@ -36,7 +36,7 @@ import { LocalAdminPanel } from './pages/modules/LocalAdminPanel';
 import { LocalMesPage } from './pages/modules/LocalMesPage';
 import { EmailsPage } from './pages/modules/EmailsPage';
 import { MistReviewButton, MistReviewProvider, useOptionalMistReviews } from './runtime/reviews';
-import { mistNavCounts } from './runtime/workQueue';
+import { mistMyWork, mistNavCounts, mistWorkModule, type MistWorkOptions } from './runtime/workQueue';
 import { ApprovalsPage } from './pages/ApprovalsPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { workspaceSearchRecords } from './runtime/search';
@@ -89,11 +89,27 @@ function useSections(): NavSection[] {
     ].filter(item => (item.id !== 'login' || !session.localMode) && (item.id !== 'system-settings' || session.canAccessView(View.SystemSettings))) }];
   }, [session.sessionKey, session.status, session.hasRole, session.canAccessView]);
 }
+/** 侧栏数字、模块页「待我处理」、首页合计共用同一口径（见 runtime/workQueue）。 */
+function useMyWorkOptions(): MistWorkOptions {
+  const session = useMistSession(), { workspace } = useMistWorkspace(), reviews = useOptionalMistReviews();
+  return { canRead: view => session.canAccessView(view as View), can: permission => session.hasPermission(permission), me: session.user?.id ?? '', reviews: reviews?.rows, today: platformBusinessDate(new Date()), workspaceId: workspace?.id };
+}
 function CountedSidebar({ sections, ...rest }: React.ComponentProps<typeof MistSidebarPresentation>) {
-  const session = useMistSession(), { state } = useMistWorkspace(), reviews = useOptionalMistReviews();
-  const counts = mistNavCounts(state, { canRead: view => session.canAccessView(view as View), me: session.user?.id ?? '', reviews: reviews?.rows, today: platformBusinessDate(new Date()) });
+  const { state } = useMistWorkspace(), counts = mistNavCounts(state, useMyWorkOptions());
   const counted = sections.map(section => ({ ...section, items: section.items.map(item => ({ ...item, count: counts[item.id] || undefined })) }));
   return <MistSidebarPresentation sections={counted} {...rest} />;
+}
+/** 模块首页顶部：本模块等我处理的事项（条数与侧栏数字一致），展开后可直接打开原业务。 */
+function ModuleWorkBar({ view }: { view: string }) {
+  const { state } = useMistWorkspace(), { go } = useNav(), [open, setOpen] = React.useState(false), today = platformBusinessDate(new Date());
+  const module = mistWorkModule(view), items = mistMyWork(state, useMyWorkOptions()).filter(item => item.module === module);
+  React.useEffect(() => setOpen(false), [module]);
+  if (!items.length || module === 'cockpit') return null;
+  return <><div data-mist-module-work={module}><Banner tone="accent" icon={ListTodo} title={`待我处理 ${items.length} 项`} actions={<Button size="sm" variant="secondary" onClick={() => setOpen(true)}>查看</Button>}>{items.slice(0, 2).map(item => item.title).join('；')}{items.length > 2 ? ' 等' : ''}</Banner></div>
+    <Drawer open={open} onClose={() => setOpen(false)} title={`待我处理 · ${items.length} 项`} sub="指定给我或我岗位的事项；办理后自动消失">
+      <TaskList items={items.map(item => ({ id: item.id, when: item.when, urgent: item.urgent || (!!item.at && item.at.slice(0, 10) < today && item.source === 'task'), title: item.title, meta: item.meta }))}
+        onOpen={row => { const item = items.find(entry => entry.id === row.id); if (item) { setOpen(false); go(item.target.view, item.target.id, item.target); } }} />
+    </Drawer></>;
 }
 const developmentCreateLabel = (section?: string) => DEVELOPMENT_LIST_TABS.find(tab => tab.value === (section === 'fabric' ? 'fabric' : 'garment'))!.create;
 function crumbsFor(route: Route, go: (view: string, id?: string) => void, objectLabel?: string, versionLabel?: string): Crumb[] {
@@ -274,7 +290,7 @@ function AppInner({ theme, setTheme }: { theme: ThemeMode; setTheme: (theme: The
         {workspace.pending && !workspace.saving && !(workspace.pending.kind==='mail-send'&&route.view==='emails') && <Banner tone="warn" title="上次操作的结果需要核对" actions={<Button loading={workspace.saving} onClick={()=>void workspace.recover().catch(report)}>核对原请求</Button>}>核对前会保留原请求，避免重复保存。{workspace.pending.kind==='upload'?'如尚未上传成功，请在原页面重新选择同一附件。':workspace.pending.kind==='mail-send'?'上次邮件发送未收到服务器回执；核对时使用原发送请求，已登记的不会重复投递。':''}</Banner>}
         {workspace.error && <Banner tone="bad" title={workspace.error} actions={<Button onClick={()=>void workspace.refresh()}>重新读取</Button>} />}
         {!permitted ? <EmptyState icon={ShieldCheck} title="没有查看权限" description="当前账号无法访问此业务。" action={<Button onClick={() => go('cockpit')}>返回我的工作</Button>} />
-          : Page ? <Page key={session.sessionKey + ':' + workspace.workspace?.id + ':' + (FULFILLMENT_PAGES[route.view]||MARKET_PAGES[route.view]||PLATFORM_PAGES[route.view]?route.view:JSON.stringify(route))} />
+          : Page ? <>{!route.id && !route.view.includes('/') && <ModuleWorkBar view={route.view} />}<Page key={session.sessionKey + ':' + workspace.workspace?.id + ':' + (FULFILLMENT_PAGES[route.view]||MARKET_PAGES[route.view]||PLATFORM_PAGES[route.view]?route.view:JSON.stringify(route))} /></>
           : <EmptyState title="没有找到此页面" action={<Button onClick={() => go('cockpit')}>返回我的工作</Button>} />}
       </MistAppShell>
       <CommandPalette open={palette} onClose={() => setPalette(false)} query={query} onQueryChange={setQuery} items={commands} />

@@ -203,7 +203,15 @@ export type MistCustomer = { id: string; name: string; code: string; country: st
 export type MistContact = { id: string; customerId: string; name: string; role: string; email: string; phone: string; tone: MistTone };
 export type MistEvent = { id: string; entityType: string; entityId: string; actor: string; at: string; text: string; fileIds: string[] };
 export type MistTarget = { view: string; id?: string; versionId?: string; customerId?: string; orderLineId?: string; productionId?: string };
-export type MistTask = { id: string; title: string; due: string; done: boolean; kind: string; target: MistTarget };
+/**
+ * 工作事项必须写明由谁处理：assigneeIds 为指定账号；permission 为「持有该权限的任何人」（岗位事项，如财务开票、后勤接手）。
+ * 两者都为空的事项不进入任何人的「我的工作」和侧栏数字。
+ */
+export type MistTask = { id: string; title: string; due: string; done: boolean; kind: string; target: MistTarget; assigneeIds: string[]; permission?: string };
+/** 后勤单证岗位：仅后勤单证持有「登记已申报/已清关」(customs:clear)；业务员也有 shipments:write，不能用它区分后勤。 */
+export const MIST_LOGISTICS_DUTY = 'customs:clear';
+/** 订单负责人账号（变更、取消、客诉后续由订单负责人跟进）。 */
+export function mistOrderOwnerIds(root: Pick<MistState, 'orders'>, orderId: string): string[] { const owner = root.orders.find(order => order.id === orderId)?.ownerId; return owner ? [owner] : []; }
 export type MistNotification = { id: string; title: string; detail: string; at: string; readAt: string | null; target: MistTarget; category?:'qc'|'shipping'|'suggestion'|'general' };
 export type MistCalendarEvent = { id: string; title: string; date: string; time: string; note: string; target?: MistTarget };
 export type MistCompanyProfile={legalName:string;englishName:string;address:string;englishAddress:string;phone:string;email:string;taxId:string;customsCode:string;bankName:string;bankAccount:string;swift:string;defaultCurrency:string};
@@ -643,7 +651,7 @@ export function createMistState(context: MistContext, seed: 'demo'|'empty' = 'de
     state.allocations.push({id:context.id(),receiptId,invoiceId:source.id,amount,currency:source.currency,createdAt:context.now,actor:'财务'});
   }
   state.contacts=Seed.CONTACTS.map((row,index)=>({...row,id:'contact-'+index,customerId:state.customers[0].id,phone:'',tone:row.tone as MistTone}));
-  state.tasks=state.devs.slice(0,4).map(dev=>({id:context.id(),title:dev.name,due:dev.due,done:false,kind:'development',target:{view:'development/detail',id:dev.id,versionId:dev.currentVersionId||undefined}}));
+  state.tasks=state.devs.slice(0,4).map(dev=>({id:context.id(),title:dev.name,due:dev.due,done:false,kind:'development',target:{view:'development/detail',id:dev.id,versionId:dev.currentVersionId||undefined},assigneeIds:dev.ownerId?[dev.ownerId]:[]}));
   state.calendar=[{id:context.id(),title:'秋冬首样评审',date:iso('10/12',context),time:'14:00',note:'顾言、沈禾、QC 许言 · 30 分钟',target:{view:'development/detail',id:state.devs[0].id}}];
   state.notifications=[{id:context.id(),category:'qc',title:'首样评审报告已回传',detail:'查看当前版本的专业评审结果。',at:context.now,readAt:null,target:{view:'development/detail',id:state.devs[0].id,versionId:state.devs[0].currentVersionId||undefined}}];
   seedEmailExamples(state,context);
@@ -719,7 +727,7 @@ function applyMistCommandUnbound(original: MistState, command: MistCommand, cont
       const dev:MistDev={id,code,name:v.name,style:v.style,owner:owner.name,ownerId:owner.id,due:v.due,dueRel:'',stage:0,state:'开发计划',tone:'neutral',ver:'—',fac:v.factories.length,img:developmentDomain(v)==='fabric'?'clay':v.category.includes('西装')?'suit':v.category.includes('Blazer')?'blazer':'coat',factory:v.factories[0]?factoryName(state,v.factories[0]):'待定',sample:'—',fabric:v.fabric,goal:v.goal,customer:customer?.name||'',customerId:customer?.id||'',currentVersionId:null,versionIds:[],values:{...v,customer:customer?.name||''},fileIds,createdAt:context.now,updatedAt:context.now};
       state.devs.unshift(dev); if(v.factories.length)createRound(state,dev,{factories:v.factories,requirements:v.goal||v.name,targetDate:v.due||context.now.slice(0,10),fileIds:[]},context); updateDev(state,dev,context);
       if(p.draftId)state.drafts=state.drafts.filter(d=>d.id!==p.draftId);
-      state.tasks.unshift({id:context.id(),title:'推进 '+dev.name,due:dev.due,done:false,kind:'development',target:{view:'development/detail',id:dev.id}});
+      state.tasks.unshift({id:context.id(),title:'推进 '+dev.name,due:dev.due,done:false,kind:'development',target:{view:'development/detail',id:dev.id},assigneeIds:dev.ownerId?[dev.ownerId]:[]});
       event(state,context,'development',id,'创建开发案 '+code,{view:'development/detail',id}); result={id,devId:id,versionId:dev.currentVersionId||undefined}; break;
     }
     case 'development.update': {
@@ -928,7 +936,7 @@ function applyMistCommandUnbound(original: MistState, command: MistCommand, cont
       const summary=developmentFeeSummary(state,dev), id=context.id(), taskId=context.id();
       (dev.billing||={makingFees:[]}).request={id,requestedAt:context.now,requestedBy:context.actorName,billTo:developmentBillTo(dev),lines:summary.lines,totals:summary.totals,state:'pending',invoiceIds:[],taskId};
       // 财务待办落到财务应收区（顶部“开发费用待开票”列表），不用开发案 ID 冒充票据或流水目标。
-      state.tasks.unshift({id:taskId,title:'为 '+dev.code+' 开具开发费用发票（'+summary.totals.map(t=>t.amount+' '+t.currency).join(' + ')+'）',due:context.now.slice(0,10),done:false,kind:'finance',target:{view:'payment-vouchers'}});
+      state.tasks.unshift({id:taskId,title:'为 '+dev.code+' 开具开发费用发票（'+summary.totals.map(t=>t.amount+' '+t.currency).join(' + ')+'）',due:context.now.slice(0,10),done:false,kind:'finance',target:{view:'payment-vouchers'},assigneeIds:[],permission:'invoices:write'});
       updateDev(state,dev,context);
       event(state,context,'development',dev.id,'发起开发费用开票：'+summary.totals.map(t=>t.amount+' '+t.currency).join(' + ')+' → '+dev.billing.request.billTo,{view:'development/detail',id:dev.id});
       result={devId:dev.id,id};break;
@@ -1014,7 +1022,7 @@ function applyMistCommandUnbound(original: MistState, command: MistCommand, cont
     }
     case 'order.handoff': {
       const o=assertMistOrderApproved(state,p.orderId);const readiness=o.checklist.filter(i=>['拟发范围确认','收货与贸易条款确认','收款条件核对'].includes(i.label));if(readiness.length!==3||!readiness.every(i=>i.done))throw new MistCommandError('PRECONDITION','请先核对拟发范围、收货贸易条款和收款条件');
-      if(!o.handoffAt){o.handoffAt=context.now;state.tasks.unshift({id:context.id(),title:'核对 '+o.code+' 出运交接',due:o.due,done:false,kind:'shipping',target:{view:'orders/detail',id:o.id}});event(state,context,'order',o.id,'交接后勤'+(p.note?'：'+text(p.note,'交接说明',false):''),{view:'orders/detail',id:o.id},'shipping');}
+      if(!o.handoffAt){o.handoffAt=context.now;state.tasks.unshift({id:context.id(),title:'核对 '+o.code+' 出运交接',due:o.due,done:false,kind:'shipping',target:{view:'orders/detail',id:o.id},assigneeIds:[],permission:MIST_LOGISTICS_DUTY});event(state,context,'order',o.id,'交接后勤'+(p.note?'：'+text(p.note,'交接说明',false):''),{view:'orders/detail',id:o.id},'shipping');}
       result={orderId:o.id};break;
     }
     case 'production.move': {

@@ -1,5 +1,5 @@
 /** Formal order approval and proposed commercial changes, independent of the Mist view layer. */
-import {MistCommandError,lineAmount,mistMoneyMinor,type MistContext,type MistState,type MistOrder,type MistOrderLine,type MistCommandResult} from './mistWorkspace';
+import {MistCommandError,mistOrderOwnerIds,lineAmount,mistMoneyMinor,type MistContext,type MistState,type MistOrder,type MistOrderLine,type MistCommandResult} from './mistWorkspace';
 import type {MistReviewTask} from './mistReview';
 import {ownerChangeText,resolveMember} from './mistAccounts';
 import {assertOrderLineSource,normalizeOrderLineSource} from './mistOrderSource';
@@ -108,7 +108,7 @@ export function applyOrderGovernanceCommand(root:MistState,command:OrderGovernan
   if(proposal)assertOrderChangeAllowed(root,order,s.lines,s.currency);
   if(!proposal)for(const line of s.lines)assertOrderLineSource(root,{type:order.type,customerId:order.customerId,internal:s.contract.kind==='internal'},line,line.name);const eligible=reviewers(context,order.type);if(!context.actorId||!eligible.length)fail('尚未配置当前业务域的有效订单审批负责人','PRECONDITION');
   const round:OrderGovernanceRound={id:context.id(),kind:proposal?'change':'initial',status:'pending',requesterId:context.actorId,reviewerIds:eligible,submittedAt:context.now,snapshot:s,reason:proposal?.reason||''};g.rounds.push(round);if(proposal)proposal.status='pending';else{g.status='pending';order.state='待主单审批';order.tone='warn';}
-  root.tasks.unshift({id:context.id(),title:'跟进订单主单审批 '+order.code,due:order.due,done:false,kind:'order-approval',target:{view:'orders/detail',id}});event(root,context,order,proposal?'提交订单变更审批':'提交订单主单审批');order.updatedAt=context.now;return{id,orderId:id,reviewId:'order:'+round.id};
+  root.tasks.unshift({id:context.id(),title:'跟进订单主单审批 '+order.code,due:order.due,done:false,kind:'order-approval',target:{view:'orders/detail',id},assigneeIds:[context.actorId]});event(root,context,order,proposal?'提交订单变更审批':'提交订单主单审批');order.updatedAt=context.now;return{id,orderId:id,reviewId:'order:'+round.id};
  }
  if(command.type!=='order.governance.decide')fail('未知订单治理操作');
  const round=[...g.rounds].reverse().find(r=>r.status==='pending');if(!round)fail('没有待决定的订单审批');
@@ -131,8 +131,7 @@ function closeLine(root:MistState,p:{orderId:string;lineId:string;reason:string}
  if(facts.open.length)fail(`该条目还有未离港的有效出运（${facts.open.map(s=>s.code).join('、')}），须先离港或取消后再结案`,'PRECONDITION');
  const range=toleranceRange(line.qty,g.contract),within=facts.departed>=range.min&&facts.departed<=range.max;
  const closure:OrderLineClosure={id:context.id(),status:within?'closed':'pending',quantity:facts.departed,ordered:line.qty,min:range.min,max:range.max,reason,requesterId:context.actorId||'',requesterName:context.actorName,requestedAt:context.now,reviewerIds:[]};
- if(!within){const eligible=reviewers(context,order.type).filter(id=>id!==context.actorId);if(!context.actorId||!eligible.length)fail('超出允许溢短装范围须审批，但尚未配置除申请人外的订单审批负责人','PRECONDITION');closure.reviewerIds=eligible;
-  root.tasks.unshift({id:context.id(),title:`审批条目结案 ${order.code} · ${line.style}（实际 ${facts.departed} / 订单 ${line.qty}）`,due:order.due,done:false,kind:'order-line-close:'+line.id,target:{view:'orders/detail',id:order.id,orderLineId:line.id}});}
+ if(!within){const eligible=reviewers(context,order.type).filter(id=>id!==context.actorId);if(!context.actorId||!eligible.length)fail('超出允许溢短装范围须审批，但尚未配置除申请人外的订单审批负责人','PRECONDITION');closure.reviewerIds=eligible;}
  else{closure.decidedBy=context.actorId;closure.decidedName=context.actorName;closure.decidedAt=context.now;}
  line.closure=closure;event(root,context,order,(within?'条目按实际结案：':'提交条目结案审批：')+`${line.style} 实际 ${facts.departed} / 订单 ${line.qty} ${line.unit}（允许 ${range.min}–${range.max}），${reason}；${CLOSE_SETTLEMENT_HINT}`);order.updatedAt=context.now;
  return{id:order.id,orderId:order.id,lineId:line.id,closure:closure.status,...(within?{}:{reviewId:'order-close:'+closure.id})};
@@ -146,7 +145,6 @@ function decideClosure(root:MistState,p:{id:string;decision:'approved'|'rejected
  if(!['approved','rejected'].includes(p.decision))fail('审批决定无效');const note=text(p.note,'审批意见',true);
  const facts=lineShipmentFacts(root,line.id);if(p.decision==='approved'&&(facts.open.length||facts.departed!==c!.quantity))fail('条目出运事实已变化，请退回后重新申请结案','CONFLICT');
  c!.status=p.decision==='approved'?'closed':'rejected';c!.decidedBy=context.actorId;c!.decidedName=context.actorName;c!.decidedAt=context.now;c!.note=note;
- root.tasks.filter(t=>t.kind==='order-line-close:'+line.id&&!t.done).forEach(t=>t.done=true);
  event(root,context,order,`条目结案审批${p.decision==='approved'?'通过':'退回'}：${line.style}，${note}`);root.notifications.unshift({id:context.id(),title:`${order.code} · ${line.style} 结案审批${p.decision==='approved'?'通过':'退回'}`,detail:note,at:context.now,readAt:null,target:{view:'orders/detail',id:order.id}});order.updatedAt=context.now;
  return{id:order.id,orderId:order.id,lineId:line.id,closure:c!.status};
 }
@@ -169,7 +167,6 @@ function requestOverShip(root:MistState,p:{orderId:string;lineId:string;quantity
  const eligible=reviewers(context,order.type).filter(id=>id!==context.actorId);if(!context.actorId||!eligible.length)fail('超量出运须审批，但尚未配置除申请人外的订单审批负责人','PRECONDITION');
  const r:OverShipRequest={id:context.id(),status:'pending',quantity:Math.round(quantity*10000)/10000,ordered:line.qty,max:limit.max,excess:Math.round((quantity-limit.max)*10000)/10000,reason,requesterId:context.actorId,requesterName:context.actorName,requestedAt:context.now,reviewerIds:eligible};
  line.overShips=[...(line.overShips||[]),r];
- root.tasks.unshift({id:context.id(),title:`审批超量出运 ${order.code} · ${line.style}（拟出 ${r.quantity} / 溢装上限 ${r.max}）`,due:order.due,done:false,kind:'order-overship:'+r.id,target:{view:'orders/detail',id:order.id,orderLineId:line.id}});
  event(root,context,order,`提交超量出运申请：${line.style} 拟累计出运 ${r.quantity} ${line.unit}（订单 ${line.qty}，溢装上限 ${r.max}，超出 ${r.excess}），${reason}`);order.updatedAt=context.now;
  return{id:order.id,orderId:order.id,lineId:line.id,reviewId:'order-overship:'+r.id};
 }
@@ -182,7 +179,6 @@ function decideOverShip(root:MistState,p:{id:string;decision:'approved'|'rejecte
  if(!r.reviewerIds.includes(context.actorId)||!reviewers(context,order.type).includes(context.actorId))fail('当前账号不在本次及当前有效审批名单','FORBIDDEN');
  if(!['approved','rejected'].includes(p.decision))fail('审批决定无效');const note=text(p.note,'审批意见',true);
  r.status=p.decision==='approved'?'approved':'rejected';r.decidedBy=context.actorId;r.decidedName=context.actorName;r.decidedAt=context.now;r.note=note;
- root.tasks.filter(t=>t.kind==='order-overship:'+r.id&&!t.done).forEach(t=>t.done=true);
  event(root,context,order,`超量出运审批${r.status==='approved'?'通过':'退回'}：${line.style} 累计可出 ${r.quantity} ${line.unit}，${note}`);root.notifications.unshift({id:context.id(),title:`${order.code} · ${line.style} 超量出运审批${r.status==='approved'?'通过':'退回'}`,detail:note,at:context.now,readAt:null,target:{view:'orders/detail',id:order.id}});order.updatedAt=context.now;
  return{id:order.id,orderId:order.id,lineId:line.id,overShip:r.status};
 }
@@ -233,7 +229,6 @@ function requestCancel(root:MistState,p:{orderId:string;reason:string},context:M
  const reason=text(p.reason,'取消原因',true,500),eligible=reviewers(context,order.type).filter(id=>id!==context.actorId);
  if(!context.actorId||!eligible.length)fail('取消订单须审批，但尚未配置除申请人外的订单审批负责人','PRECONDITION');
  const c:OrderCancellation={id:context.id(),status:'pending',reason,requesterId:context.actorId,requesterName:context.actorName,requestedAt:context.now,reviewerIds:eligible};g.cancellation=c;
- root.tasks.unshift({id:context.id(),title:`审批取消订单 ${order.code}`,due:order.due,done:false,kind:'order-cancel:'+c.id,target:{view:'orders/detail',id:order.id}});
  event(root,context,order,`提交取消订单申请：${reason}；审批期间订单锁定`);order.state='取消审批中';order.tone='warn';order.updatedAt=context.now;
  return{id:order.id,orderId:order.id,reviewId:'order-cancel:'+c.id};
 }
@@ -245,15 +240,14 @@ function decideCancel(root:MistState,p:{id:string;decision:'approved'|'rejected'
  if(!['approved','rejected'].includes(p.decision))fail('审批决定无效');const note=text(p.note,'审批意见',true);
  if(p.decision==='approved'){const blockers=orderCancelBlockers(root,order);if(blockers.length)fail(`${blockers.join('；')}，${ORDER_CANCEL_ALTERNATIVE}；请退回本申请`,'CONFLICT');}
  c!.status=p.decision;c!.decidedBy=context.actorId;c!.decidedName=context.actorName;c!.decidedAt=context.now;c!.note=note;
- root.tasks.filter(t=>t.kind==='order-cancel:'+c!.id&&!t.done).forEach(t=>t.done=true);
  let created=0;
  if(p.decision==='approved'){
   g.status='cancelled';g.termination={kind:'cancelled',reason:c!.reason,at:context.now,byId:context.actorId,byName:context.actorName};order.state='已取消';order.tone='bad';
   const impact=orderChangeImpact(root,order,[]);
   for(const line of impact.lines){
-   for(const x of line.purchases){root.tasks.unshift({id:context.id(),title:`订单 ${order.code} 已取消，请处理采购 ${x.code}（${line.label}）`,due:order.due,done:false,kind:`order-cancelled:${order.id}:purchase:${x.id}`,target:{view:'procurement',id:x.id,orderLineId:line.lineId}});created++;}
-   for(const x of line.productions){root.tasks.unshift({id:context.id(),title:`订单 ${order.code} 已取消，请处理生产 ${x.code}（${line.label}）`,due:order.due,done:false,kind:`order-cancelled:${order.id}:production:${x.id}`,target:{view:'production-board',productionId:x.id,orderLineId:line.lineId}});created++;}
-   for(const x of line.shipments.filter(s=>s.state!=='cancelled')){root.tasks.unshift({id:context.id(),title:`订单 ${order.code} 已取消，请处理出运 ${x.code}（${line.label}）`,due:order.due,done:false,kind:`order-cancelled:${order.id}:shipment:${x.id}`,target:{view:'shipments',id:x.id}});created++;}
+   for(const x of line.purchases){root.tasks.unshift({id:context.id(),title:`订单 ${order.code} 已取消，请处理采购 ${x.code}（${line.label}）`,due:order.due,done:false,kind:`order-cancelled:${order.id}:purchase:${x.id}`,target:{view:'procurement',id:x.id,orderLineId:line.lineId},assigneeIds:mistOrderOwnerIds(root,order.id)});created++;}
+   for(const x of line.productions){root.tasks.unshift({id:context.id(),title:`订单 ${order.code} 已取消，请处理生产 ${x.code}（${line.label}）`,due:order.due,done:false,kind:`order-cancelled:${order.id}:production:${x.id}`,target:{view:'production-board',productionId:x.id,orderLineId:line.lineId},assigneeIds:mistOrderOwnerIds(root,order.id)});created++;}
+   for(const x of line.shipments.filter(s=>s.state!=='cancelled')){root.tasks.unshift({id:context.id(),title:`订单 ${order.code} 已取消，请处理出运 ${x.code}（${line.label}）`,due:order.due,done:false,kind:`order-cancelled:${order.id}:shipment:${x.id}`,target:{view:'shipments',id:x.id},assigneeIds:mistOrderOwnerIds(root,order.id)});created++;}
   }
  }
  else if(order.state==='取消审批中'){order.state='已批准待履约';order.tone='ok';}

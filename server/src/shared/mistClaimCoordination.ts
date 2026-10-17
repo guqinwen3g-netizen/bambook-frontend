@@ -65,7 +65,7 @@ function supplier(root: MistState, id: string) { const row = (root as MistState 
 function claimOf(claims: ClaimLike[], id: string) { const row = claims.find(r => r.id === id); if (!row) fail('客诉案件不存在', 'NOT_FOUND'); return row!; }
 function recoveryOf(claims: ClaimLike[], id: string) { for (const claim of claims) { const row = claim.coordination?.recoveries.find(r => r.id === id); if (row) return { claim, row }; } return fail('工厂追偿记录不存在', 'NOT_FOUND'); }
 function emit(root: MistState, c: MistContext, claimId: string, message: string, fileIds: string[] = []) { root.events.unshift({ id: c.id(), entityType: 'claim', entityId: claimId, at: c.now, actor: c.actorName, text: message, fileIds: [...fileIds] }); }
-function task(root: MistState, c: MistContext, claimId: string, kind: string, title: string) { const existing = root.tasks.find(t => t.kind === kind && t.target.view === 'claims' && t.target.id === claimId); if (existing) { existing.title = title; existing.done = false; return; } root.tasks.unshift({ id: c.id(), title, due: '', done: false, kind, target: { view: 'claims', id: claimId } }); }
+function task(root: MistState, c: MistContext, claimId: string, kind: string, title: string, who: { assigneeIds?: string[]; permission?: string }) { const existing = root.tasks.find(t => t.kind === kind && t.target.view === 'claims' && t.target.id === claimId); if (existing) { existing.title = title; existing.done = false; return; } root.tasks.unshift({ id: c.id(), title, due: '', done: false, kind, target: { view: 'claims', id: claimId }, assigneeIds: who.assigneeIds ?? [], ...(who.permission ? { permission: who.permission } : {}) }); }
 function done(root: MistState, claimId: string, kind: string) { for (const t of root.tasks) if (t.kind === kind && t.target.view === 'claims' && t.target.id === claimId) t.done = true; }
 function notify(root: MistState, c: MistContext, claimId: string, title: string, detail: string) { root.notifications.unshift({ id: c.id(), title, detail, at: c.now, readAt: null, target: { view: 'claims', id: claimId }, category: 'general' }); }
 function claimFiles(root: MistState, ids: unknown) { if (!Array.isArray(ids) || ids.length > 50) fail('附件无效'); for (const id of ids) if (!root.files.some(f => f.id === id)) fail('附件不存在', 'NOT_FOUND'); return [...new Set(ids as string[])]; }
@@ -113,8 +113,8 @@ export function applyClaimCoordinationCommand(root: MistState, claims: ClaimLike
       const v = command.payload, claim = claimOf(claims, v.id); active(claim); const byId = actor(c), s = supplier(root, text(v.supplierId, '相关工厂'));
       const notice: ClaimNotice = { id: c.id(), at: c.now, by: c.actorName, byId, supplierId: s.id, supplierName: s.name, factoryChannel: text(v.factoryChannel, '通知工厂的实际方式', true, 200), note: text(v.note, '备注', false) };
       coordination(claim).notices.push(notice);
-      task(root, c, claim.id, 'claim-verify:' + claim.id, '质检核实客诉事实 · ' + claim.code);
-      task(root, c, claim.id, 'claim-factory:' + claim.id, '跟进工厂核实回复 · ' + claim.code + ' · ' + s.name);
+      task(root, c, claim.id, 'claim-verify:' + claim.id, '质检核实客诉事实 · ' + claim.code, { permission: 'qc:inspect' });
+      task(root, c, claim.id, 'claim-factory:' + claim.id, '跟进工厂核实回复 · ' + claim.code + ' · ' + s.name, { assigneeIds: [byId] });
       notify(root, c, claim.id, claim.code + ' · 新客诉待关注', '业务员 ' + c.actorName + ' 已通知质检、跟单与工厂（' + s.name + '）配合核实；通知工厂不代表认定责任或答应客户金额。');
       emit(root, c, claim.id, '通知相关人员：内部质检 / 负责人 / 跟单，工厂 ' + s.name + '（' + notice.factoryChannel + '）');
       return { id: notice.id, claimId: claim.id };
@@ -135,7 +135,7 @@ export function applyClaimCoordinationCommand(root: MistState, claims: ClaimLike
       if (coordination(claim).recoveries.some(r => r.supplierId === s.id && OPEN_RECOVERY.includes(r.state))) fail('该工厂已有一笔未落实的追偿，请在原记录上继续', 'CONFLICT');
       const row: ClaimRecovery = { id: c.id(), supplierId: s.id, supplierName: s.name, currency, requested: amount(v.requested, '要求工厂承担的金额'), basis: text(v.basis, '追偿依据'), state: 'Negotiating', createdAt: c.now, createdBy: c.actorName, createdById: byId, events: [{ at: c.now, by: c.actorName, action: 'open', note: '向工厂提出 ' + currency + ' ' + v.requested }] };
       coordination(claim).recoveries.push(row); done(root, claim.id, 'claim-factory:' + claim.id);
-      task(root, c, claim.id, 'claim-recovery:' + row.id, '跟进工厂补偿 · ' + claim.code + ' · ' + s.name);
+      task(root, c, claim.id, 'claim-recovery:' + row.id, '跟进工厂补偿 · ' + claim.code + ' · ' + s.name, { assigneeIds: [byId] });
       emit(root, c, claim.id, '向工厂 ' + s.name + ' 提出追偿 ' + currency + ' ' + row.requested);
       return { id: row.id, claimId: claim.id };
     }

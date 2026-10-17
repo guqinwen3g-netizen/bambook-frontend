@@ -2,7 +2,7 @@
  * 下限：每条目新数量 ≥ max(已完工登记数, 已排非取消出运数)；成衣有分色分码且完工按尺码登记时，每个尺码各色合计 ≥ 该尺码已完工数。
  * 现有完工/出运事实只记录到"条目 / 尺码"，没有按颜色记录，所以颜色维度无法单独设下限（如实说明，不臆造）。
  * 低于生产分配总量只提示"需同步调整生产分配"，不阻止；不自动改采购或生产数据。 */
-import {MistCommandError,type MistContext,type MistOrder,type MistState} from './mistWorkspace';
+import {MistCommandError,mistOrderOwnerIds,type MistContext,type MistOrder,type MistState} from './mistWorkspace';
 import {breakdownSizeTotals,type OrderLineBreakdown} from './mistOrderBreakdown';
 
 type ChangeLine={id:string;name:string;style:string;qty:number;unit:string;breakdown?:OrderLineBreakdown};
@@ -63,8 +63,8 @@ export function createOrderChangeTasks(root:MistState,context:MistContext,order:
  const changed=after.filter(line=>{const prior=before.find(l=>l.id===line.id);return prior&&(prior.qty!==line.qty||JSON.stringify(prior.breakdown||null)!==JSON.stringify(line.breakdown||null));});
  let created=0;
  for(const line of changed){const facts=orderLineFacts(root,line.id),prior=before.find(l=>l.id===line.id)!,what=`${prior.qty} → ${line.qty} ${line.unit}`;
-  for(const p of facts.purchases){const kind=`order-change-review:${order.id}:purchase:${p.id}`;root.tasks=root.tasks.filter(t=>!(t.kind===kind&&!t.done));root.tasks.unshift({id:context.id(),title:`订单 ${order.code} 数量已变更，请核对采购 ${p.code}（${line.style} ${what}）`,due:order.due,done:false,kind,target:{view:'procurement',id:p.id,orderLineId:line.id}});created++;}
-  for(const job of facts.productions){const kind=`order-change-review:${order.id}:production:${job.id}`;root.tasks=root.tasks.filter(t=>!(t.kind===kind&&!t.done));root.tasks.unshift({id:context.id(),title:`订单 ${order.code} 数量已变更，请核对生产 ${job.code}（${line.style} ${what}）`,due:order.due,done:false,kind,target:{view:'production-board',productionId:job.id,orderLineId:line.id}});created++;}
+  for(const p of facts.purchases){const kind=`order-change-review:${order.id}:purchase:${p.id}`;root.tasks=root.tasks.filter(t=>!(t.kind===kind&&!t.done));root.tasks.unshift({id:context.id(),title:`订单 ${order.code} 数量已变更，请核对采购 ${p.code}（${line.style} ${what}）`,due:order.due,done:false,kind,target:{view:'procurement',id:p.id,orderLineId:line.id},assigneeIds:mistOrderOwnerIds(root,order.id)});created++;}
+  for(const job of facts.productions){const kind=`order-change-review:${order.id}:production:${job.id}`;root.tasks=root.tasks.filter(t=>!(t.kind===kind&&!t.done));root.tasks.unshift({id:context.id(),title:`订单 ${order.code} 数量已变更，请核对生产 ${job.code}（${line.style} ${what}）`,due:order.due,done:false,kind,target:{view:'production-board',productionId:job.id,orderLineId:line.id},assigneeIds:mistOrderOwnerIds(root,order.id)});created++;}
  }
  return created;
 }

@@ -266,7 +266,7 @@ export function applyEmailCommand(root: MistState, command: EmailCommand, contex
       const row = message(root, String(p.id), context), owner = text(p.owner, '负责人', true, 80), note = text(p.note, '说明', false, 500), due = text(p.due, '截止日', true, 10);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) fail('截止日格式无效');
       const id = context.id(), target = { view: 'emails', id: row.id };
-      root.tasks.unshift({ id, title: `跟进邮件：${row.subject}`, due, done: false, kind: 'email-follow-up', target });
+      root.tasks.unshift({ id, title: `跟进邮件：${row.subject}`, due, done: false, kind: 'email-follow-up', target, assigneeIds: context.actorId ? [context.actorId] : [] });
       root.calendar.push({ id: context.id(), title: `邮件跟进 · ${row.subject}`, date: due, time: '', note: `${owner}${note ? ' · ' + note : ''} · 来源：${row.from.name || row.from.address}`, target });
       row.followUpTaskIds.push(id); log(root, context, row.id, `生成邮件跟进（${owner}，${due}）`); return { id };
     }
@@ -276,7 +276,7 @@ export function applyEmailCommand(root: MistState, command: EmailCommand, contex
       if (!row.links.some(item => sameLink(item, value))) fail('请先确认关联该业务对象', 'PRECONDITION');
       if (row.submissions.some(item => sameLink(item.link, value))) fail('已向该对象提交过这份资料', 'PRECONDITION');
       const target = emailLinkTarget(root, value)!, id = context.id();
-      root.tasks.unshift({ id, title: `复核邮件资料：${row.extracted.map(item => `${item.field} ${item.value}`).join('，')}`.slice(0, 180), due: context.now.slice(0, 10), done: false, kind: 'email-extraction-review', target: { view: target.view, id: target.id } });
+      root.tasks.unshift({ id, title: `复核邮件资料：${row.extracted.map(item => `${item.field} ${item.value}`).join('，')}`.slice(0, 180), due: context.now.slice(0, 10), done: false, kind: 'email-extraction-review', target: { view: target.view, id: target.id }, assigneeIds: context.actorId ? [context.actorId] : [] });
       row.submissions.push({ at: context.now, actor: context.actorName, link: value, taskId: id });
       log(root, context, row.id, `提交邮件抽取资料到${EMAIL_LINK_LABEL[value.kind]} ${target.label}（待复核，不改正式数据）`); return { id: row.id };
     }
