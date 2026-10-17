@@ -6,9 +6,10 @@ import { createMistRouter } from './route';
 import {createMistLocalRuntime,mistLocalRequested,assertMistLocalMode,type MistLocalRuntime} from './local';
 import {MistRepository,type MistContract} from './repository';
 import {MistPrivateFiles} from './files';
+import type {MailTransport} from './mail/transport';
 import * as mistContract from '../shared/mistWorkspace';
 import { AGENT_DELEGATION_HEADER } from './agentDelegation';
-export function createMistServer(prisma?: any,options:{local?:MistLocalRuntime;host?:string}={}) {
+export function createMistServer(prisma?: any,options:{local?:MistLocalRuntime;host?:string;mailTransport?:MailTransport}={}) {
   const app = express(); app.disable('x-powered-by');
   const host=options.host??process.env.MIST_HOST??'127.0.0.1';
   const local=options.local??(mistLocalRequested()?createMistLocalRuntime({host}):undefined);
@@ -32,7 +33,7 @@ export function createMistServer(prisma?: any,options:{local?:MistLocalRuntime;h
     });
     app.get('/api/mist/session',local.sessionGet);app.post('/api/mist/session',local.sessionPost);
     const repository=new MistRepository(local.database,mistContract as MistContract,new MistPrivateFiles(path.join(local.database.directory,'files')),local.authorize);
-    app.use('/api/mist',createMistRouter({repository,authenticate:local.authenticate,delegation:local.agentDelegation,delegationGuard:local.requestGuard}));
+    app.use('/api/mist',createMistRouter({repository,mailTransport:options.mailTransport,mailCredentialsRoot:process.env.MIST_MAIL_CREDENTIAL_DIR||path.join(local.database.directory,'mail-credentials'),authenticate:local.authenticate,delegation:local.agentDelegation,delegationGuard:local.requestGuard}));
   }else{
     if(!prisma)throw new Error('Mist server requires an explicit database outside local mode');
     const {createAuthRouter}=require('../auth/route') as typeof import('../auth/route');
@@ -43,7 +44,7 @@ export function createMistServer(prisma?: any,options:{local?:MistLocalRuntime;h
     // The local-identity session exists only in local mode. Answer 404 before authentication so the web app
     // detects server-account mode and shows sign-in (a 401 here made it fall back to the local-workspace screen).
     app.all('/api/mist/session', (_req, res) => { res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Local workspace session is not available on this server' } }); });
-    app.use('/api/mist', createMistRouter({ prisma,contract:mistContract as MistContract, filesRoot: process.env.MIST_FILES_DIR || path.resolve(__dirname, '../../private/mist-files') }));
+    app.use('/api/mist', createMistRouter({ prisma,mailTransport:options.mailTransport,contract:mistContract as MistContract, filesRoot: process.env.MIST_FILES_DIR || path.resolve(__dirname, '../../private/mist-files') }));
   }
   app.use((error: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     const tooLarge = error?.type === 'entity.too.large';

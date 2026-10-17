@@ -662,3 +662,212 @@ it('keeps unknown command recovery attached to its precise missing workspace ins
   expect(api.workspace).toBeNull(); expect(api.pending?.workspaceId).toBe(B); expect(calls.some(call => call.url === BASE + '/default')).toBe(false);
   expect(localStorage.getItem('bambook.mist.selected-workspace:actor-a')).toBe(A);
 });
+
+it('routes mail actions to the server mail endpoints and adopts the returned workspace; failures reload instead of guessing', async () => {
+  await mount();
+  intercept = request => {
+    if (!request.url.includes('/email/')) return undefined;
+    const value = clone(stores.get(A)!); value.revision++; value.state.settings.profileName = 'after-mail'; stores.set(A, value);
+    if (request.url.endsWith('/sends')) { (value.state as any).email.sends.unshift({ id: 'send-1', requestKey: 'abcdefgh12', accountId: 'acc', createdById: 'actor-a' }); stores.set(A, value); }
+    if (request.url.endsWith('/sends')) return response({ workspace: value, receipt: { requestId: 'mail-1', revision: value.revision, result: {} }, send: { id: 'send-1', status: 'unknown', message: '连接中断' } });
+    if (request.url.endsWith('/credential') && request.method === 'PUT') return failure(422, 'MAIL_AUTH_FAILED');
+    return response({ workspace: value, receipt: { requestId: 'mail-2', revision: value.revision, result: {} }, sync: { remaining: 0 } });
+  };
+  let result: any;
+  await act(async () => { result = await api.mail!({ kind: 'send', requestKey: 'abcdefgh12', input: { accountId: 'acc' } }); });
+  const sent = calls.filter(call => call.url.includes('/email/')).at(-1)!;
+  expect(sent.url).toBe(BASE + '/' + A + '/email/sends');
+  expect(JSON.parse(sent.init.body as string)).toEqual({ requestKey: 'abcdefgh12', input: { accountId: 'acc' } });
+  expect(result).toEqual({ send: { id: 'send-1', status: 'unknown', message: '连接中断' } });
+  expect(api.state?.settings.profileName).toBe('after-mail');
+  await act(async () => { await api.mail!({ kind: 'retry', sendId: 'send 1', confirmUnknown: true }); });
+  const retry = calls.filter(call => call.url.includes('/email/')).at(-1)!;
+  expect(retry.url).toBe(BASE + '/' + A + '/email/sends/send%201/retry');
+  expect(JSON.parse(retry.init.body as string)).toEqual({ confirmUnknown: true });
+  const before = calls.length;
+  await act(async () => { await expect(api.mail!({ kind: 'bind', accountId: 'acc', password: 'pw' })).rejects.toThrow('请求被拒绝'); });
+  expect(calls.slice(before).some(call => call.method === 'GET' && call.url.startsWith(BASE + '/' + A))).toBe(true);
+  expect(api.saving).toBe(false);
+});
+
+/** 合成发送服务：同一 requestKey 只登记、只投递一次；可选在登记后丢失响应、篡改回执字段，或像服务端“同内容未决记录”那样回到已有记录。 */
+function mailServer(options: { dropAfterCommit?: number; dropBeforeCommit?: number; dropOn?: number[]; foreignKey?: boolean; reject?: { status: number; code: string }; tamper?: Record<string, string>; sameContent?: boolean; alias?: boolean; status?: string } = {}) {
+  const deliveries: string[] = []; let posts = 0;
+  intercept = request => {
+    if (!(request.method === 'POST' && request.url.endsWith('/email/sends'))) return undefined;
+    posts++;
+    if (options.reject) return failure(options.reject.status, options.reject.code);
+    if (options.dropBeforeCommit && posts <= options.dropBeforeCommit) return Promise.reject(new TypeError('连接断开'));
+    const body = JSON.parse(request.init.body as string), value = clone(stores.get(A)!), sends = (value.state as any).email.sends as any[];
+    const same = (item: any) => item.accountId === body.input.accountId && item.subject === body.input.subject && item.to === body.input.to && item.body === (body.input.body || '');
+    let row = sends.find(item => item.requestKey === body.requestKey || (item.aliasKeys || []).includes(body.requestKey)), replayed = !!row, recoveredFor: string | undefined;
+    // 合成服务端的意图冲突：同一 key（含别名）内容不同则 409，不投递。
+    if (row && !options.foreignKey && !options.tamper && !same(row)) return failure(409, 'SEND_INTENT_CONFLICT');
+    if (row && row.requestKey !== body.requestKey) recoveredFor = body.requestKey;
+    if (!row && options.sameContent) { row = sends.find(same); replayed = !!row; }
+    // 合成服务端的别名登记：同内容未决记录（unknown / sending）回到原记录，并持久登记新 key。
+    if (!row && options.alias) { row = sends.find(item => same(item) && ['unknown', 'sending'].includes(item.status)); if (row) { row.aliasKeys = [...(row.aliasKeys || []), body.requestKey]; recoveredFor = body.requestKey; replayed = true; value.revision++; stores.set(A, value); } }
+    if (!row) { row = { id: 'send-' + (sends.length + 1), requestKey: options.foreignKey ? 'otherkey123' : body.requestKey, accountId: body.input.accountId, createdById: 'actor-a', to: body.input.to || '', cc: body.input.cc || '', bcc: body.input.bcc || '', subject: body.input.subject, body: body.input.body || '', status: options.status || 'sent', ...options.tamper }; sends.unshift(row); deliveries.push(body.requestKey); value.revision++; stores.set(A, value); }
+    if (options.dropAfterCommit && posts <= options.dropAfterCommit || options.dropOn?.includes(posts)) return Promise.reject(new TypeError('响应丢失'));
+    return response({ workspace: value, send: { id: row.id, status: row.status, ...(replayed ? { replayed: true } : {}), ...(recoveredFor ? { recovered: true, recoveredFor } : {}) } });
+  };
+  return { deliveries, posts: () => posts };
+}
+const sendAction = (requestKey = 'compose-key-0001', extra: Record<string, unknown> = {}) => ({ kind: 'send' as const, requestKey, input: { accountId: 'acc', to: 'buyer@preview.test', subject: '样品确认', body: '正文' }, ...extra });
+const stored = () => localStorage.getItem('bambook.mist.pending:actor-a');
+const claims = () => JSON.parse(localStorage.getItem('bambook.mist.mail-receipts:actor-a') || '[]').map((row: any) => [row.requestKey, row.sendId]);
+const sendPosts = () => calls.filter(call => call.method === 'POST' && call.url.endsWith('/email/sends')).length;
+const setSend = (id: string, patch: Record<string, unknown>) => { const value = clone(stores.get(A)!); Object.assign((value.state as any).email.sends.find((row: any) => row.id === id), patch); value.revision++; stores.set(A, value); };
+const remount = async () => { await act(async () => root.unmount()); root = createRoot(host); await mount(); };
+
+it('persists a send intent before posting and recovers a lost receipt after remount with the original key, delivering once', async () => {
+  await mount(); const server = mailServer({ dropAfterCommit: 1 }); let seen = '';
+  const inner = intercept!; intercept = request => { if (request.url.endsWith('/email/sends')) seen = stored() || ''; return inner(request); };
+  await act(async () => { const error = await capture(api.mail!(sendAction('compose-key-0001', { forwardOfId: 'msg-1' }))); expect(String(error)).toContain('发送结果尚未确认'); });
+  expect(JSON.parse(seen)).toMatchObject({ kind: 'mail-send', requestId: 'compose-key-0001', workspaceId: A, mail: { requestKey: 'compose-key-0001', forwardOfId: 'msg-1', input: { subject: '样品确认' } } });
+  expect(api.pending?.kind).toBe('mail-send'); expect(server.deliveries).toHaveLength(1);
+  await expect(api.mail!(sendAction('compose-key-0002'))).rejects.toThrow('待核对');
+  await expect(api.mail!({ kind: 'sync', accountId: 'acc' })).rejects.toThrow('待核对');
+  await act(async () => root.unmount()); root = createRoot(host); await mount();
+  expect(api.workspace?.id).toBe(A); expect(api.pending?.mail?.requestKey).toBe('compose-key-0001');
+  let recovered: any; await act(async () => { recovered = await api.recover(); });
+  expect(recovered.result.send).toMatchObject({ id: 'send-1', replayed: true });
+  const bodies = calls.filter(call => call.method === 'POST' && call.url.endsWith('/email/sends')).map(call => JSON.parse(call.init.body as string));
+  expect(bodies).toHaveLength(2); expect(bodies[1]).toEqual(bodies[0]);
+  expect(server.deliveries).toEqual(['compose-key-0001']); expect((api.state as any).email.sends.filter((row: any) => row.requestKey === 'compose-key-0001')).toHaveLength(1);
+  expect(api.pending).toBeNull(); expect(stored()).toBeNull();
+});
+
+it('sends a never-received draft intent exactly once on recovery and then allows a new explicit send', async () => {
+  await mount(); const server = mailServer({ dropBeforeCommit: 1 });
+  await act(async () => { await capture(api.mail!(sendAction('draft-d1-1700000000000', { draftId: 'd1' }))); });
+  expect(server.deliveries).toHaveLength(0); expect(api.pending?.mail?.draftId).toBe('d1');
+  await act(async () => { await api.recover(); });
+  expect(server.deliveries).toEqual(['draft-d1-1700000000000']); expect(api.pending).toBeNull();
+  let again: any; await act(async () => { again = await api.mail!(sendAction('compose-key-0003')); });
+  expect(again.send.status).toBe('sent'); expect(server.deliveries).toHaveLength(2);
+});
+
+it('keeps the intent when the receipt names another request, clears definitive rejections and keeps busy or uncertain ones', async () => {
+  await mount(); mailServer({ foreignKey: true });
+  await act(async () => { await expect(api.mail!(sendAction())).rejects.toThrow('与原请求不符'); });
+  expect(api.pending?.kind).toBe('mail-send'); expect(stored()).not.toBeNull();
+  localStorage.clear(); await act(async () => root.unmount()); root = createRoot(host); await mount();
+  mailServer({ reject: { status: 409, code: 'MAIL_BUSY' } });
+  await act(async () => { await capture(api.mail!(sendAction())); }); expect(api.pending?.kind).toBe('mail-send');
+  mailServer({ reject: { status: 409, code: 'SEND_INTENT_CONFLICT' } });
+  await act(async () => { await capture(api.recover()); }); expect(api.pending).toBeNull(); expect(stored()).toBeNull();
+});
+
+it('never stores credentials, refuses sends without durable storage, and hides a send intent from another account', async () => {
+  await mount(); let during: string | null = 'unset';
+  intercept = request => { if (request.url.endsWith('/credential')) { during = stored(); return response({ workspace: stores.get(A) }); } return undefined; };
+  await act(async () => { await api.mail!({ kind: 'bind', accountId: 'acc', password: 'secret-pw' }); });
+  expect(during).toBeNull(); expect(JSON.stringify({ ...localStorage })).not.toContain('secret-pw');
+  const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('存储不可用'); });
+  const server = mailServer(); await act(async () => { await expect(api.mail!(sendAction())).rejects.toThrow('本次尚未提交'); });
+  expect(server.posts()).toBe(0); spy.mockRestore();
+  mailServer({ dropAfterCommit: 1 }); await act(async () => { await capture(api.mail!(sendAction())); }); expect(api.pending?.kind).toBe('mail-send');
+  auth.session = { sessionKey: 'session-b', user: { id: 'actor-b' }, status: 'authenticated' }; await render(); await waitFor(() => api.workspace?.id === D);
+  expect(api.pending).toBeNull(); expect(localStorage.getItem('bambook.mist.pending:actor-b')).toBeNull();
+});
+
+it('closes each lost-receipt intent against its own receipt: A then B each deliver once and stay closed after restart', async () => {
+  await mount(); const server = mailServer({ dropOn: [1, 3] });
+  await act(async () => { await capture(api.mail!(sendAction('intent-a-0001'))); }); expect(api.pending?.mail?.requestKey).toBe('intent-a-0001');
+  await remount(); let first: any; await act(async () => { first = await api.recover(); });
+  expect(first.result.send).toMatchObject({ id: 'send-1', replayed: true }); expect(api.pending).toBeNull(); expect(claims()).toEqual([['intent-a-0001', 'send-1']]);
+  // 新意图 B：内容不同的新邮件，同样丢失回执。
+  await act(async () => { await capture(api.mail!(sendAction('intent-b-0001', { input: { accountId: 'acc', to: 'ops@preview.test', subject: '第二封确认', body: '正文二' } }))); });
+  const intentB = stored(); expect(api.pending?.mail?.requestKey).toBe('intent-b-0001');
+  await remount(); let second: any; await act(async () => { second = await api.recover(); });
+  expect(second.result.send).toMatchObject({ id: 'send-2', replayed: true }); expect(api.pending).toBeNull();
+  expect(claims()).toEqual([['intent-a-0001', 'send-1'], ['intent-b-0001', 'send-2']]);
+  expect(server.deliveries).toEqual(['intent-a-0001', 'intent-b-0001']);
+  // 重启后（结案已登记、待核对记录尚在）再核对：只读取原回执，不再提交发送。
+  localStorage.setItem('bambook.mist.pending:actor-a', intentB!); const before = sendPosts();
+  await remount(); expect(api.pending?.mail?.requestKey).toBe('intent-b-0001');
+  let again: any; await act(async () => { again = await api.recover(); });
+  expect(again.result.send).toMatchObject({ id: 'send-2' }); expect(sendPosts()).toBe(before); expect(api.pending).toBeNull();
+  expect(server.deliveries).toEqual(['intent-a-0001', 'intent-b-0001']);
+});
+
+it.each([
+  { name: 'wrong account', tamper: { accountId: 'other-acc' }, reason: '发件账号不一致' },
+  { name: 'wrong subject', tamper: { subject: '别的主题' }, reason: '主题不一致' },
+  { name: 'wrong recipients', tamper: { to: 'stranger@preview.test' }, reason: '收件人不一致' },
+])('stops at manual review for a receipt with the $name, without counting it sent or resending, also after restart', async ({ tamper, reason }) => {
+  await mount(); const server = mailServer({ dropAfterCommit: 1, tamper });
+  await act(async () => { await capture(api.mail!(sendAction())); }); expect(server.deliveries).toHaveLength(1);
+  await act(async () => { const error = await capture(api.recover()); expect(String(error)).toContain(reason); expect(String(error)).toContain('待人工核对'); });
+  expect(api.pending?.mail?.review).toContain(reason); expect(claims()).toEqual([]);
+  const posts = server.posts();
+  await act(async () => { expect(String(await capture(api.recover()))).toContain('待人工核对'); }); expect(server.posts()).toBe(posts);
+  await remount(); expect(api.pending?.mail?.review).toContain(reason);
+  await act(async () => { expect(String(await capture(api.recover()))).toContain('不会自动重发'); });
+  expect(server.posts()).toBe(posts); expect(server.deliveries).toHaveLength(1); expect(claims()).toEqual([]);
+  await act(async () => { await api.closeMailReview!(); }); expect(api.pending).toBeNull(); expect(stored()).toBeNull(); expect(server.posts()).toBe(posts);
+});
+
+it('refuses a receipt already claimed by another intent: not sent, not resent, same after restart', async () => {
+  await mount(); const server = mailServer({ dropAfterCommit: 1, sameContent: true });
+  await act(async () => { await capture(api.mail!(sendAction('intent-a-0001'))); });
+  await act(async () => { await api.recover(); }); expect(claims()).toEqual([['intent-a-0001', 'send-1']]);
+  // 新意图 B 与 A 内容相同，服务端回到 A 的记录：不能被 B 认领。
+  await act(async () => { const error = await capture(api.mail!(sendAction('intent-b-0001'))); expect(String(error)).toContain('已被其他发送意图认领'); });
+  expect(api.pending?.mail).toMatchObject({ requestKey: 'intent-b-0001' }); expect(api.pending?.mail?.review).toContain('已被其他发送意图认领');
+  const posts = server.posts();
+  await act(async () => { expect(String(await capture(api.recover()))).toContain('待人工核对'); });
+  await remount(); await act(async () => { expect(String(await capture(api.recover()))).toContain('待人工核对'); });
+  expect(server.posts()).toBe(posts); expect(server.deliveries).toEqual(['intent-a-0001']); expect(claims()).toEqual([['intent-a-0001', 'send-1']]);
+});
+
+it('stops at manual review instead of resending when the local closing ledger is unreadable', async () => {
+  await mount(); const server = mailServer({ dropAfterCommit: 1 });
+  await act(async () => { await capture(api.mail!(sendAction())); });
+  localStorage.setItem('bambook.mist.mail-receipts:actor-a', '{broken');
+  await act(async () => { expect(String(await capture(api.recover()))).toContain('结案记录格式无效'); });
+  expect(api.pending?.mail?.review).toContain('待人工核对'); expect(server.deliveries).toHaveLength(1);
+  expect(JSON.stringify({ ...localStorage })).not.toContain('password');
+});
+
+it.each([
+  { name: 'sent', patch: { status: 'sent' } },
+  { name: 'failed and superseded', patch: { status: 'failed', supersededById: 'send-9' } },
+])('closes a lost recovered B against server-confirmed A after A became $name, delivering once even after restart', async ({ patch }) => {
+  await mount(); const server = mailServer({ alias: true, status: 'unknown', dropOn: [2] });
+  let a: any; await act(async () => { a = await api.mail!(sendAction('intent-a-0001')); });
+  expect(a.send).toMatchObject({ id: 'send-1', status: 'unknown' }); expect(claims()).toEqual([['intent-a-0001', 'send-1']]); expect(server.deliveries).toHaveLength(1);
+  // B 与 A 同内容：服务端回到 A 并登记别名，但 B 的响应丢失
+  await act(async () => { await capture(api.mail!(sendAction('intent-b-0001'))); });
+  expect(api.pending?.mail?.requestKey).toBe('intent-b-0001'); expect(api.pending?.mail?.review).toBeUndefined(); expect(server.deliveries).toHaveLength(1);
+  const intentB = stored(); setSend('send-1', patch);
+  await remount(); let checked: any; await act(async () => { checked = await api.recover(); });
+  expect(checked.result.send).toMatchObject({ id: 'send-1', status: patch.status, recoveredFor: 'intent-b-0001' });
+  expect(api.pending).toBeNull(); expect(claims()).toEqual([['intent-a-0001', 'send-1'], ['intent-b-0001', 'send-1']]); expect(server.deliveries).toEqual(['intent-a-0001']);
+  // 重启后再核对：只读原回执，不提交发送
+  localStorage.setItem('bambook.mist.pending:actor-a', intentB!); const before = sendPosts();
+  await remount(); let again: any; await act(async () => { again = await api.recover(); });
+  expect(again.result.send).toMatchObject({ id: 'send-1', recoveredFor: 'intent-b-0001' }); expect(sendPosts()).toBe(before);
+  expect(api.pending).toBeNull(); expect(server.deliveries).toEqual(['intent-a-0001']);
+});
+
+it('accepts a directly received server-confirmed recovered A for B without manual review; a changed B replay is a conflict and not delivered', async () => {
+  await mount(); const server = mailServer({ alias: true, status: 'unknown' });
+  await act(async () => { await api.mail!(sendAction('intent-a-0001')); });
+  let b: any; await act(async () => { b = await api.mail!(sendAction('intent-b-0001')); });
+  expect(b.send).toMatchObject({ id: 'send-1', replayed: true, recovered: true, recoveredFor: 'intent-b-0001' });
+  expect(api.pending).toBeNull(); expect(stored()).toBeNull(); expect(claims()).toEqual([['intent-a-0001', 'send-1'], ['intent-b-0001', 'send-1']]);
+  await act(async () => { const error: any = await capture(api.mail!(sendAction('intent-b-0001', { input: { accountId: 'acc', to: 'buyer@preview.test', subject: '样品确认', body: '改过的正文' } }))); expect(error.code).toBe('SEND_INTENT_CONFLICT'); });
+  expect(api.pending).toBeNull(); expect(server.deliveries).toEqual(['intent-a-0001']);
+});
+
+it('stops at manual review when the receipt was created by another person: kept, not cleared, not resent', async () => {
+  await mount(); const server = mailServer({ dropAfterCommit: 1, tamper: { createdById: 'actor-z' } });
+  await act(async () => { await capture(api.mail!(sendAction())); });
+  await act(async () => { expect(String(await capture(api.recover()))).toContain('发送人不一致'); });
+  expect(api.pending?.mail?.review).toContain('发送人不一致'); expect(stored()).not.toBeNull(); expect(claims()).toEqual([]);
+  const posts = server.posts(); await remount();
+  await act(async () => { expect(String(await capture(api.recover()))).toContain('待人工核对'); });
+  expect(server.posts()).toBe(posts); expect(server.deliveries).toHaveLength(1); expect(stored()).not.toBeNull();
+});
