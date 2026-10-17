@@ -110,7 +110,7 @@ const archived=(row:MistWorkspaceRow)=>!!row.state.workspaceArchive;
 const localMode=(actor:TokenPayload)=>(actor as any).mistLocal===true&&process.env.MIST_LOCAL_WORKSPACE==='1'&&process.env.NODE_ENV!=='production';
 export class MistRepository {
   constructor(private readonly prisma: any, private readonly contract: MistContract, private readonly files: MistPrivateFiles, private readonly authorize: FreshAuthority = freshMistAuthority, private readonly now = () => new Date(), private readonly creditArchiveBuilder: (snapshot: MistCreditPrintSnapshot, options?: {draft?: boolean}) => Promise<PreparedCreditIssueArchive> = buildIssueArchive, private readonly quotationPdfRenderer?: (html: string) => Promise<PdfRenderResult>) {}
-  private context(actor: TokenPayload): MistContext { return { id: randomUUID, now: this.now().toISOString(), actorName: actor.displayName || actor.userId, actorId:actor.userId }; }
+  private context(actor: TokenPayload): MistContext { return { id: randomUUID, now: this.now().toISOString(), actorName: actor.displayName || actor.userId, actorId:actor.userId, can: scope => hasScope(actor, scope as any) }; }
   private async authorizeCompoundCommand(db: any, prior: TokenPayload, command?: MistCommand) {
     if (command?.type.startsWith('payable.')) for (const scope of payablesCommandPermissions(command as any).slice(1)) await this.authorize(db, prior, scope);
   }

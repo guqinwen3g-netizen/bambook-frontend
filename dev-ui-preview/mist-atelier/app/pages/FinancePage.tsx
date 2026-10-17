@@ -5,7 +5,7 @@ import React from 'react';
 import { ArrowRight, Download, Landmark, Link2, ShieldCheck, Sparkles, Upload } from 'lucide-react';
 import { Banner, Button, Card, CardFooter, CardHeader, DataTable, Dialog, Drawer, EmptyState, Facts, Field, FormGrid, KeyValue, MistPage, Mono, PageHeader, Pill, Select, SummaryBar, Tabs, TextInput, Tile, useToast, type Column } from '../../../../components/mist';
 import type { MistCommand, MistInvoice, MistReceipt, MistAllocation } from '../../../../server/src/shared/mistWorkspace';
-import { isActiveMistInvoice, mistCommandPermission, mistPaymentReverseBlock } from '../../../../server/src/shared/mistWorkspace';
+import { isActiveMistInvoice, isPendingFinanceMistInvoice, mistCommandPermission, mistPaymentReverseBlock } from '../../../../server/src/shared/mistWorkspace';
 import { fmt } from '../data';
 import { useNav } from '../nav';
 import { useMistWorkspace } from '../runtime/workspace';
@@ -236,4 +236,4 @@ export function FinancePage() {
     </Drawer>
   </MistPage>;
 }
-function ObjectInvoice({ item }: { item: MistInvoice }) { return <><Mono>{item.code}</Mono>{!isActiveMistInvoice(item)&&<Pill tone="bad">已作废</Pill>}<span className="mist-cell-sub">{item.order}</span></>; }
+function ObjectInvoice({ item }: { item: MistInvoice }) { return <><Mono>{item.code}</Mono>{!isActiveMistInvoice(item)&&<Pill tone="bad">已作废</Pill>}{isPendingFinanceMistInvoice(item)&&<Pill tone="accent">待财务确认</Pill>}<span className="mist-cell-sub">{item.order}</span></>; }

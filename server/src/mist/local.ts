@@ -73,6 +73,7 @@ export const MIST_LOCAL_PROFILES=[
   {id:'local-manager',name:'业务主管（测试审批人）',roleId:SYSTEM_ROLE_IDS.SALES_MANAGER},
   {id:'local-finance',name:'财务（测试）',roleId:SYSTEM_ROLE_IDS.FINANCE},
   {id:'local-qc',name:'质检（测试）',roleId:SYSTEM_ROLE_IDS.QC},
+  {id:'local-logistics',name:'后勤单证（测试）',roleId:SYSTEM_ROLE_IDS.LOGISTICS},
 ] as const;
 export function mistLocalPublicUser(profileId:string){const profile=MIST_LOCAL_PROFILES.find(p=>p.id===profileId);if(!profile)invalid('本地工作身份不存在',401);
   if(!('roleId' in profile))return{id:profile.id,displayName:profile.name,email:'',roles:['owner'],roleIds:['role-super-admin'],permissions:['*'],departmentIds:[],department:'本地工作空间',globalBusinessScope:true,authorizationLoaded:true,mistLocal:true};

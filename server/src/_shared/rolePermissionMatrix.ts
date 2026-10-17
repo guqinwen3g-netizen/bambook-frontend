@@ -166,6 +166,7 @@ export const PERMISSION_SCOPES = {
   'shipments:approve': '发货放行审批（大货最终放行）',
   'customs:read': '报关单证/外贸单证查看',
   'customs:write': '单证签发/修正案创建',
+  'customs:clear': '登记出口清关完成（海关放行事实；仅后勤/单证与领导）',
   'customs:admin': '单证模板/公司抬头签章配置',
   'qc:read': '质检工作台/疵点记录查看',
   'qc:write': 'QC疵点录入/QC结果登记',
@@ -658,6 +659,8 @@ const ADMIN_BASE: RolePermissionMatrix = {
   'production:read': true,
   'shipments:read': true,
   'customs:read': true,
+  // 领导可代为登记清关完成（与后勤/单证同列；部门门禁仍要求后勤部门或总经理）
+  'customs:clear': true,
   'qc:read': true,
   'aftersales:read': true,
   'procurement:read': true,
@@ -768,6 +771,8 @@ const LOGISTICS_BASE: RolePermissionMatrix = {
   'customs:write': true,
   // 单证模板/公司签章配置（GAP-R11 FinMan 位移）
   'customs:admin': true,
+  // 清关完成（海关放行）事实只由后勤/单证登记；业务员只能保存草稿/已申报
+  'customs:clear': true,
   // 保留既有跨流程协作能力；常规采购/库存由业务组经办，scope 不代表独立仓储岗位
   'procurement:read': true,
   'procurement:write': true,

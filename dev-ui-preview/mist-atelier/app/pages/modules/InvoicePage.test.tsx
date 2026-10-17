@@ -9,7 +9,7 @@ import {Nav} from '../../nav';
 const store=vi.hoisted(()=>({value:null as any,canWrite:true,csv:vi.fn()}));
 vi.mock('../../runtime/workspace',()=>({useMistWorkspace:()=>store.value}));
 vi.mock('../../runtime/auth',()=>({useMistSession:()=>({hasPermission:()=>store.canWrite})}));
-vi.mock('./ModuleWorkbench',()=>({downloadModuleCsv:store.csv}));
+vi.mock('./ModuleWorkbench',()=>({downloadModuleCsv:store.csv,ModuleEditorDialog:({spec}:any)=>spec?<div role="dialog" aria-label={spec.title}><button type="button" onClick={()=>void spec.submit({reason:'金额与合同不符'})}>{spec.submitLabel}</button></div>:null}));
 import {InvoicePage,invoiceAge,invoiceLedgerRows,invoiceSource,invoiceFinancialFacts} from './InvoicePage';
 let host:HTMLElement,root:Root,route:any;const go=vi.fn();
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;
@@ -34,3 +34,36 @@ it('shows unexplained historical balance differences without inventing a bank re
 it('exposes read-only finance results without source creation even to a business account',()=>{store.canWrite=false;render();expect(host.textContent).toContain('财务结果只读');expect(host.textContent).not.toContain('新建发票草稿');expect(store.value.run).not.toHaveBeenCalled();});
 
 it('preserves incoming customer scope and original-currency filters through list-detail return',async()=>{route={view:'invoices',section:'open',customerId:'customer'};render();select('票据币种','EUR');const row=[...host.querySelectorAll<HTMLElement>('[role="row"][tabindex]')].find(r=>r.textContent?.includes('CI-B'))!;await act(async()=>row.click());expect(go).toHaveBeenLastCalledWith('invoices','b',{section:'open',customerId:'customer'});await click('返回发票台账');expect(go).toHaveBeenLastCalledWith('invoices',undefined,{section:'open',customerId:'customer'});expect((getByRole(host,'combobox',{name:'票据币种'}) as HTMLSelectElement).value).toBe('EUR');expect(getByRole(host,'table',{name:'应收票据台账'}).textContent).not.toContain('CI-A');});
+
+const pendingCi=()=>{store.value.state.invoices.push({id:'p',code:'CI-P',orderId:'o',order:'ORDER',customer:'客户',due:'2000-01-01',amount:300,open:0,currency:'USD',financeStatus:'pending'});};
+it('queues a CI receivable as pending finance confirmation outside open balance, aging and reconciliation',async()=>{
+  pendingCi();
+  expect(invoiceLedgerRows(store.value.state).find(r=>r.id==='p')).toMatchObject({state:'pending',amount:300,open:0});
+  render();
+  expect(getByText(host,'待财务确认',{selector:'.mist-stat *'}).closest('.mist-stat')?.textContent).toContain('1');
+  expect(getByText(host,'未结票据').parentElement?.parentElement?.textContent).not.toContain('300.00');
+  await act(async()=>getByRole(getByRole(host,'group'),'button',{name:'待财务确认'}).click());
+  const table=getByRole(host,'table',{name:'应收票据台账'});
+  expect(table.textContent).toContain('CI-P');expect(table.textContent).not.toContain('CI-A');
+  route.id='p';render();
+  expect(host.textContent).toContain('不计入应收余额、账龄、报表与催收');
+  const collect=getByRole(host,'button',{name:'收款与核销'}) as HTMLButtonElement;
+  expect(collect.disabled).toBe(true);
+  await click('确认应收');
+  expect(store.value.run).toHaveBeenLastCalledWith({type:'finance.receivable.confirm',payload:{invoiceId:'p'}});
+  await click('驳回 CI');
+  await act(async()=>getByRole(getByRole(document.body,'dialog',{name:'驳回 CI 应收'}),'button',{name:'驳回并退回更正'}).click());
+  expect(store.value.run).toHaveBeenLastCalledWith({type:'finance.receivable.reject',payload:{invoiceId:'p',reason:'金额与合同不符'}});
+});
+it('does not offer confirm or reject to an account without finance invoice write permission',()=>{
+  pendingCi();store.canWrite=false;route.id='p';render();
+  expect(host.textContent).toContain('确认或驳回由财务处理');
+  expect(getAllByRole(host,'button').some(b=>b.textContent==='确认应收'||b.textContent==='驳回 CI')).toBe(false);
+  expect(store.value.run).not.toHaveBeenCalled();
+});
+it('shows the finance confirmation and rejection facts on the receivable',()=>{
+  pendingCi();Object.assign(store.value.state.invoices.at(-1),{financeStatus:'rejected',voidedAt:'2026-10-14T00:00:00Z',voidReason:'财务驳回：金额与合同不符',financeRejectedAt:'2026-10-14T00:00:00Z',financeRejectedBy:'财务',financeRejectReason:'金额与合同不符'});
+  route.id='p';render();
+  expect(host.textContent).toContain('财务驳回');expect(host.textContent).toContain('金额与合同不符');expect(host.textContent).toContain('CI 已退回后勤更正');
+  expect((getByRole(host,'button',{name:'收款与核销'}) as HTMLButtonElement).disabled).toBe(true);
+});

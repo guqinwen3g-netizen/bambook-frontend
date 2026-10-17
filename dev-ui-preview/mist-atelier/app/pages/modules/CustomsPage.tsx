@@ -3,7 +3,7 @@ import React from 'react';
 import { Download, FileText, Landmark, Pencil, Plus, Receipt, SearchX, Stamp } from 'lucide-react';
 import { Banner, Button, Card, CardHeader, Checklist, DataTable, Dropdown, EmptyState, Facts, MistPage, Mono, PageHeader, Pill, Pipeline, SearchField, Segmented, Tabs, TextLink, Toolbar, type Column, type Tone } from '../../../../../components/mist';
 import type { MistInvoice, MistOrder, MistState } from '../../../../../server/src/shared/mistWorkspace';
-import { isActiveMistInvoice } from '../../../../../server/src/shared/mistWorkspace';
+import { isRecognizedMistInvoice } from '../../../../../server/src/shared/mistWorkspace';
 import type { FulfillmentCustoms, FulfillmentShipment } from '../../../../../server/src/shared/mistFulfillment';
 import { useMistWorkspace } from '../../runtime/workspace';
 import { useMistSession } from '../../runtime/auth';
@@ -42,7 +42,7 @@ export function customsFlags(root: MistState, c: FulfillmentCustoms) {
 /** Export-rebate evidence that the workspace can actually show: customs release and collection of this shipment's issued CI receivables. */
 export function rebateEvidence(root: MistState, c: FulfillmentCustoms) {
   const cis = root.fulfillment.documents.filter(d => d.shipmentId === c.shipmentId && d.type === 'CI' && d.status === 'issued');
-  const invoices = cis.flatMap(d => { const invoice = d.invoiceId ? root.invoices.find(row => row.id === d.invoiceId) : undefined; return invoice && isActiveMistInvoice(invoice) ? [invoice] : []; });
+  const invoices = cis.flatMap(d => { const invoice = d.invoiceId ? root.invoices.find(row => row.id === d.invoiceId) : undefined; return invoice && isRecognizedMistInvoice(invoice) ? [invoice] : []; });
   const open = new Map<string, number>();
   for (const invoice of invoices) if (invoice.open > 0) open.set(invoice.currency, round((open.get(invoice.currency) || 0) + invoice.open));
   const released = c.status === 'cleared';
@@ -53,7 +53,7 @@ const openText = (open: Array<{ currency: string; amount: number }>) => open.map
 
 export function CustomsPage() {
   const { state, run, error, refresh, loading, saving, pending } = useMistWorkspace(), session = useMistSession(), { go, route } = useNav();
-  const can = session.hasPermission('customs:write'), canInvoices = session.hasPermission('invoices:read');
+  const can = session.hasPermission('customs:write'), canClear = session.hasPermission('customs:clear'), canInvoices = session.hasPermission('invoices:read');
   const [dialog, setDialog] = useRouteDraft<ModuleEditorSpec | null>(null);
   const [tabChoice, setTab] = React.useState<Tab>('declarations'), [domainChoice, setDomainChoice] = React.useState<Domain | null>(null);
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('all'), [flagFilter, setFlagFilter] = React.useState<FlagFilter>('all'), [query, setQuery] = React.useState('');
@@ -137,8 +137,8 @@ export function CustomsPage() {
       ? <EmptyState icon={Receipt} title="还没有可核对的退税资料" description="报关单登记为已申报或已放行后，会在这里核对放行与本票 CI 收汇。" />
       : <EmptyState icon={Stamp} title={invalidContext ? '来源出运不存在' : hasContext ? '本票还没有报关记录' : `还没有${domain === 'fabric' ? '面料' : '成衣'}报关记录`} description={invalidContext ? '请返回货运管理重新选择准确出运。' : '报关记录与出运一一对应：后勤接手出运后建立记录，向海关申报后登记报关单号，放行后登记放行日与依据。'} action={createButton && !invalidContext && eligible.length ? <Button icon={Plus} onClick={() => setDialog(createSpec())}>建立报关记录</Button> : undefined} />;
   const detail = selected && state
-    ? <CustomsDetail record={selected} state={state} can={can} canInvoices={canInvoices} locked={locked}
-        onEdit={() => setDialog(editSpec(selected))} onDeclare={() => setDialog(declareSpec(selected, selected.status === 'submitted'))} onRelease={() => setDialog(releaseSpec(selected))}
+    ? <CustomsDetail record={selected} state={state} can={can} canClear={canClear} canInvoices={canInvoices} locked={locked}
+        onEdit={() => setDialog(editSpec(selected))} onDeclare={() => setDialog(declareSpec(selected, selected.status === 'submitted'))} onRelease={() => { if (canClear) setDialog(releaseSpec(selected)); }}
         onAttach={ids => run({ type: 'fulfillment.customs.save', payload: payload(selected, { fileIds: ids }) })}
         onShipment={() => go('shipments', selected.shipmentId)} onDocuments={() => go('document-center', undefined, { section: selected.shipmentId })} onInvoice={id => go('invoices', id)} />
     : <EmptyState icon={Stamp} title="报关详情" description={loading ? '正在读取报关记录' : tab === 'rebate' ? '从列表选择一张报关单，查看放行、收汇与退税资料' : '从列表选择一条报关记录，查看申报、放行与装箱核对'} compact />;
@@ -195,8 +195,8 @@ export function CustomsPage() {
   </MistPage>;
 }
 
-function CustomsDetail({ record: c, state, can, canInvoices, locked, onEdit, onDeclare, onRelease, onAttach, onShipment, onDocuments, onInvoice }: {
-  record: FulfillmentCustoms; state: MistState; can: boolean; canInvoices: boolean; locked: boolean;
+function CustomsDetail({ record: c, state, can, canClear, canInvoices, locked, onEdit, onDeclare, onRelease, onAttach, onShipment, onDocuments, onInvoice }: {
+  record: FulfillmentCustoms; state: MistState; can: boolean; canClear: boolean; canInvoices: boolean; locked: boolean;
   onEdit: () => void; onDeclare: () => void; onRelease: () => void; onAttach: (ids: string[]) => Promise<unknown>; onShipment: () => void; onDocuments: () => void; onInvoice: (id: string) => void;
 }) {
   const f = state.fulfillment, s = f.shipments.find(row => row.id === c.shipmentId), flags = customsFlags(state, c);
@@ -219,9 +219,11 @@ function CustomsDetail({ record: c, state, can, canInvoices, locked, onEdit, onD
     {can && c.status !== 'cleared' && <ActionBar busy={locked} actions={[
       { label: '登记已申报', icon: Stamp, onClick: onDeclare, primary: true, reason: baseReason, hidden: c.status !== 'draft' },
       { label: '编辑报关资料', icon: Pencil, onClick: onEdit, reason: baseReason, hidden: c.status !== 'draft' },
-      { label: '登记海关放行', icon: Stamp, onClick: onRelease, primary: true, reason: baseReason, hidden: c.status !== 'submitted' },
+      // 已清关（海关放行）是后勤/单证专属事实：无 customs:clear 时不提供该选项，服务端同样拒绝。
+      { label: '登记海关放行', icon: Stamp, onClick: onRelease, primary: true, reason: baseReason, hidden: c.status !== 'submitted' || !canClear },
       { label: '更正申报信息', icon: Pencil, onClick: onDeclare, reason: baseReason, hidden: c.status !== 'submitted' },
     ] as ReasonedAction[]} />}
+    {c.status === 'submitted' && !canClear && <span className="mist-note" data-customs-clear-hint>清关完成须由后勤/单证登记</span>}
     {c.status === 'cleared' && <span className="mist-note">已放行记录不可覆盖；如需更正，请先在海关办理改单后补充附件说明。</span>}
     <Facts items={[
       { label: '出运', value: s ? <TextLink onClick={onShipment}>{s.code}</TextLink> : '出运不可用' },

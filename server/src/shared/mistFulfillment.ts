@@ -1,7 +1,7 @@
 /** Actual fulfillment records in the persisted Mist workspace. No fixture import. */
 import { DEVELOPMENT_BILLING_LOCK } from './mistDevelopmentBilling';
 import {developmentDomain} from './mistDevelopmentDomain';
-import { MistCommandError, lineAmount, mistMoneyMinor, assertMistOrderApproved, assertMistOrderDeposit, assertMistOrderOpen, isActiveMistInvoice } from './mistWorkspace';
+import { MistCommandError, lineAmount, mistMoneyMinor, assertMistOrderApproved, assertMistOrderDeposit, assertMistOrderOpen, isActiveMistInvoice, isRecognizedMistInvoice } from './mistWorkspace';
 import type { MistState, MistContext, MistCommandResult, MistQc, MistTarget, MistProduction } from './mistWorkspace';
 import type { MistReviewTask } from './mistReview';
 import { supplierBusinessDay, supplierUnavailableReason } from './mistSupplierStatus';
@@ -308,6 +308,8 @@ export type FulfillmentDocument = {
     actor: string;
     invoiceId?: string;
     externalIssue?: { issuer: string; at: string; evidence: string; recordedBy: string };
+    /** 财务驳回 CI 应收后退回草稿时的最近一次驳回事实。 */
+    financeRejection?: { reason: string; at: string; actor: string; invoiceId: string };
 };
 export type FulfillmentShippingTerms = {
     orderId: string;
@@ -569,6 +571,7 @@ export type FulfillmentCommand = {
     };
 } | ClaimInventoryCommand;
 export function createFulfillmentState(_context: MistContext, _rootState: unknown): FulfillmentState { return { warehouses:[],returnReceipts:[],receivedRecords:[],productionFacts: [], shippingTerms: [], samples: [], sampleMovements: [], qcTasks: [], qcReports: [], purchases: [], receipts: [], stock: [], stockMovements: [], shipments: [], packing: [], customs: [], documents: [] }; }
+export const FULFILLMENT_CUSTOMS_CLEAR_SCOPE = 'customs:clear';
 export function fulfillmentCommandPermission(command: FulfillmentCommand): string | null {
     if(command.type.startsWith('fulfillment.claimInventory.'))return claimInventoryPermission(command as ClaimInventoryCommand);
     if (command.type.startsWith('fulfillment.samples.'))
@@ -593,6 +596,9 @@ export function fulfillmentCommandPermission(command: FulfillmentCommand): strin
         return 'orders:write';
     if (command.type.startsWith('fulfillment.shipments.'))
         return 'shipments:write';
+    // 登记“已清关”是后勤/单证的专属事实；草稿与已申报仍是报关单证写权限。
+    if (command.type === 'fulfillment.customs.save' && command.payload?.status === 'cleared')
+        return FULFILLMENT_CUSTOMS_CLEAR_SCOPE;
     if (command.type.startsWith('fulfillment.customs.') || command.type.startsWith('fulfillment.documents.'))
         return 'customs:write';
     throw new MistCommandError('VALIDATION', '未知履约操作');
@@ -1439,6 +1445,9 @@ export function applyFulfillmentCommand(root: MistState, command: FulfillmentCom
                 fail('已清关记录不可覆盖');
             if (!['draft', 'submitted', 'cleared'].includes(p.status))
                 fail('报关状态无效');
+            // 不依赖命令映射：处理逻辑内按执行账号实时权限再核一次，缺少权限上下文同样拒绝。
+            if (p.status === 'cleared' && !ctx.can?.(FULFILLMENT_CUSTOMS_CLEAR_SCOPE))
+                throw new MistCommandError('FORBIDDEN', '清关完成须由后勤/单证登记', 403);
             const id = old?.id || ctx.id(), fileIds = files(root, p.fileIds);
             const row: FulfillmentCustoms = { id, shipmentId: s.id, code: old?.code || code('CUS', f.customs, ctx), status: p.status, declarationNo: text(p.declarationNo, '报关单号', p.status !== 'draft'), broker: text(p.broker, '报关行', p.status !== 'draft'), hsCode: text(p.hsCode, 'HS编码', p.status !== 'draft'), origin: text(p.origin, '原产地', p.status !== 'draft'), tradeMode: text(p.tradeMode, '成交方式', p.status !== 'draft'), declaredAt: day(p.declaredAt, '申报日', p.status !== 'draft'), clearedAt: day(p.clearedAt, '清关日', p.status === 'cleared'), evidence: text(p.evidence, '外部申报/清关依据', p.status === 'cleared'), fileIds, note: text(p.note, '备注', false) };
             if (row.clearedAt && row.declaredAt && row.clearedAt < row.declaredAt)
@@ -1499,7 +1508,8 @@ export function applyFulfillmentCommand(root: MistState, command: FulfillmentCom
                 if (issued + BigInt(mistMoneyMinor(amount)) > BigInt(mistMoneyMinor(order.amount)))
                     fail('CI金额超过来源订单尚未开票额度');
                 const id = ctx.id();
-                root.invoices.push({ id, code: d.number, orderId: order.id, order: order.code, customer: order.customer, due: d.dueDate, amount, open: amount, currency: order.currency });
+                // CI 只形成待财务确认的应收：确认前不计入余额、账龄、报表、催收，也不能核销。
+                root.invoices.push({ id, code: d.number, orderId: order.id, order: order.code, customer: order.customer, due: d.dueDate, amount, open: 0, currency: order.currency, financeStatus: 'pending', sourceDocumentId: d.id });
                 d.invoiceId = id;
             }
             d.status = 'issued';
@@ -1530,7 +1540,7 @@ export function applyFulfillmentCommand(root: MistState, command: FulfillmentCom
                 const claimIds = new Set((root.platform?.claims || []).filter(c => c.invoiceId === inv.id && c.state !== 'Cancelled').map(c => c.id));
                 const hasCredit = (root.platform?.credits || []).some(c => claimIds.has(c.claimId));
                 const hasCreditApplication = (root.platform?.creditApplications || []).some(a => a.invoiceId === inv.id);
-                if (inv.open !== inv.amount || root.allocations.some(a => a.invoiceId === inv.id) || claimIds.size || hasCredit || hasCreditApplication)
+                if ((isRecognizedMistInvoice(inv) && inv.open !== inv.amount) || root.allocations.some(a => a.invoiceId === inv.id) || claimIds.size || hasCredit || hasCreditApplication)
                     fail('CI已有收款、索赔或贷项事实，请先走财务更正');
                 inv.voidedAt = ctx.now;
                 inv.voidReason = reason;
