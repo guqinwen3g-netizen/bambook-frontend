@@ -612,13 +612,14 @@
 /* ════ 自适应溢出规则（全站共用） ════
  * 原则：内容永远不撑宽页面。
  * - flex / grid 子项可收缩（min-width: 0），长名称/备注换行（必要时 2 行截断），编号/金额不换行、溢出省略并悬停显示全文（title）。
- * - 数据表按自身宽度降级：放不下全部列 → 隐藏次要列（hideOnMobile）→ 仍放不下 → 卡片式堆叠；只有声明 minWidth 的表格才在表内横向滚动。
+ * - 数据表按自身宽度降级：放不下全部列 → 次要列（hideOnMobile）从右往左逐列隐藏 → 仍放不下 → 卡片式堆叠；只有声明 minWidth 的表格才在表内横向滚动。
  * - 页签 / 分段 / 步骤条 / 流程条是按设计的横向滑动区域，统一标记 data-mist-scroll="x"。
  */
 .mist-row[data-wrap] { flex-wrap: wrap; }
 .mist-btn:has(> .mist-row[data-wrap]) { height: auto; min-height: var(--mist-control-h); padding-block: 6px; }
-.mist-table[data-fit="compact"] > :is(.mist-thead, .mist-tr) { grid-template-columns: var(--mist-cols-compact); }
-.mist-table:is([data-fit="compact"], [data-fit="stack"]) > :is(.mist-thead, .mist-tr) > [data-hide-sm] { display: none; }
+.mist-table[data-fit="compact"] > :is(.mist-thead, .mist-tr) { grid-template-columns: var(--mist-cols-fit, var(--mist-cols)); }
+.mist-table[data-fit="compact"] > :is(.mist-thead, .mist-tr) > [data-fit-hidden] { display: none; }
+.mist-table[data-fit="stack"] > :is(.mist-thead, .mist-tr) > [data-hide-sm] { display: none; }
 .mist-table[data-fit="stack"] > .mist-thead { display: none; }
 .mist-table[data-fit="stack"] > .mist-tr { grid-template-columns: minmax(0, 1fr) fit-content(50%) !important; padding: 10px 14px; }
 .mist-thead > span, .mist-thead > button { min-width: 0; white-space: normal; line-height: 1.25; }
