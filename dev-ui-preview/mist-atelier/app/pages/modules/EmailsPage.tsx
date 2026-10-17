@@ -80,7 +80,7 @@ export function mailMatches(state: MistState, m: EmailMessage, scope: MailScope)
 }
 
 export function EmailsPage() {
-  const { state, run, error, refresh, recover, loading, saving, pending, mail: mailAction, downloadFile } = useMistWorkspace(), session = useMistSession(), { go, route } = useNav(), toast = useToast();
+  const { state, run, error, refresh, recover, loading, saving, pending, mail: mailAction, closeMailReview, downloadFile } = useMistWorkspace(), session = useMistSession(), { go, route } = useNav(), toast = useToast();
   const can = session.hasPermission('emails:write'), canAdmin = session.hasPermission('emails:admin'), locked = saving || !!pending;
   const me = session.user?.id != null ? String(session.user.id) : '';
   const email = state?.email || { accounts: [], messages: [], drafts: [], sends: [] };
@@ -197,6 +197,8 @@ export function EmailsPage() {
       if (sent.status !== 'sent' && !sent.replayed) openSend(sent.id);
     } catch (problem) { setFailure(problemText(problem, '发送结果仍待核对，请稍后再试')); }
   };
+  /** 待人工核对的发送：只关闭本机记录，不发送；关闭前由本人在已发送 / 待发送中核对。 */
+  const closeReview = async () => { setFailure(''); try { await closeMailReview?.(); toast('已关闭待人工核对记录，未发送任何邮件'); } catch (problem) { setFailure(problemText(problem, '记录未关闭，请重试')); } };
   const retrySend = async (row: EmailSend, confirmUnknown = false) => { const result = await callMail({ kind: 'retry', sendId: row.id, ...(confirmUnknown ? { confirmUnknown: true } : {}) }); if (result) reportSend(result); setConfirmResend(null); };
   const verifySend = async (row: EmailSend) => { const result = await callMail({ kind: 'verify', sendId: row.id }); if (result) reportSend(result, true); };
   const syncable = accounts.filter(a => isReal(a) && a.credentialSet && a.connection !== 'not_connected' && inAccount(a.id));
@@ -300,7 +302,10 @@ export function EmailsPage() {
       </>} />
     {!can && <div className="mist-section"><Banner tone="neutral" title="只读查看">你的账号没有邮件编辑权限，可以阅读邮件与业务关联，不能标记、关联、跟进或写邮件。</Banner></div>}
     {error && <div className="mist-section"><Banner tone="bad" title="邮箱未读取" actions={<Button onClick={() => void refresh()}>重试</Button>}>{error}</Banner></div>}
-    {mailPending && <div className="mist-section"><Banner tone="warn" icon={AlertTriangle} title={`上次发送「${String(mailPending.input.subject || '（无主题）')}」未收到服务器回执`} actions={<Button size="sm" variant="primary" loading={saving} disabled={saving} onClick={() => void checkPendingSend()}>核对发送结果</Button>}>
+    {mailPending?.review && <div className="mist-section"><Banner tone="bad" icon={AlertTriangle} title={`发送「${String(mailPending.input.subject || '（无主题）')}」待人工核对`} actions={<Button size="sm" loading={saving} disabled={saving || !closeMailReview} onClick={() => void closeReview()}>已人工核对，关闭记录</Button>}>
+      {mailPending.review}。这次发送不会被算作已发送，系统也不会再自动核对或重发。请在待发送 / 已发送中按发件账号、主题与收件人核对这封邮件；关闭记录不会发送任何邮件。
+    </Banner></div>}
+    {mailPending && !mailPending.review && <div className="mist-section"><Banner tone="warn" icon={AlertTriangle} title={`上次发送「${String(mailPending.input.subject || '（无主题）')}」未收到服务器回执`} actions={<Button size="sm" variant="primary" loading={saving} disabled={saving} onClick={() => void checkPendingSend()}>核对发送结果</Button>}>
       收件人：{[mailPending.input.to, mailPending.input.cc, mailPending.input.bcc].map(value => String(value || '').trim()).filter(Boolean).join('；') || '未填写'}。邮件可能已发出，也可能没有到达服务器。核对时使用原发送请求：已登记的只显示原记录、不会重复投递；服务器从未收到时才按原内容发送一次。核对完成前不能发起其他邮件操作。
     </Banner></div>}
     {failure && <div className="mist-section"><Banner tone="bad" title="操作未完成">{failure}</Banner></div>}

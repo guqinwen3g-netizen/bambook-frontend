@@ -668,7 +668,7 @@ it('routes mail actions to the server mail endpoints and adopts the returned wor
   intercept = request => {
     if (!request.url.includes('/email/')) return undefined;
     const value = clone(stores.get(A)!); value.revision++; value.state.settings.profileName = 'after-mail'; stores.set(A, value);
-    if (request.url.endsWith('/sends')) { (value.state as any).email.sends.unshift({ id: 'send-1', requestKey: 'abcdefgh12' }); stores.set(A, value); }
+    if (request.url.endsWith('/sends')) { (value.state as any).email.sends.unshift({ id: 'send-1', requestKey: 'abcdefgh12', accountId: 'acc' }); stores.set(A, value); }
     if (request.url.endsWith('/sends')) return response({ workspace: value, receipt: { requestId: 'mail-1', revision: value.revision, result: {} }, send: { id: 'send-1', status: 'unknown', message: '连接中断' } });
     if (request.url.endsWith('/credential') && request.method === 'PUT') return failure(422, 'MAIL_AUTH_FAILED');
     return response({ workspace: value, receipt: { requestId: 'mail-2', revision: value.revision, result: {} }, sync: { remaining: 0 } });
@@ -690,8 +690,8 @@ it('routes mail actions to the server mail endpoints and adopts the returned wor
   expect(api.saving).toBe(false);
 });
 
-/** 合成发送服务：同一 requestKey 只登记、只投递一次；可选在登记后丢失响应。 */
-function mailServer(options: { dropAfterCommit?: number; dropBeforeCommit?: number; foreignKey?: boolean; reject?: { status: number; code: string } } = {}) {
+/** 合成发送服务：同一 requestKey 只登记、只投递一次；可选在登记后丢失响应、篡改回执字段，或像服务端“同内容未决记录”那样回到已有记录。 */
+function mailServer(options: { dropAfterCommit?: number; dropBeforeCommit?: number; dropOn?: number[]; foreignKey?: boolean; reject?: { status: number; code: string }; tamper?: Record<string, string>; sameContent?: boolean } = {}) {
   const deliveries: string[] = []; let posts = 0;
   intercept = request => {
     if (!(request.method === 'POST' && request.url.endsWith('/email/sends'))) return undefined;
@@ -699,15 +699,18 @@ function mailServer(options: { dropAfterCommit?: number; dropBeforeCommit?: numb
     if (options.reject) return failure(options.reject.status, options.reject.code);
     if (options.dropBeforeCommit && posts <= options.dropBeforeCommit) return Promise.reject(new TypeError('连接断开'));
     const body = JSON.parse(request.init.body as string), value = clone(stores.get(A)!), sends = (value.state as any).email.sends as any[];
-    let row = sends.find(item => item.requestKey === body.requestKey), replayed = !!row;
-    if (!row) { row = { id: 'send-' + (sends.length + 1), requestKey: options.foreignKey ? 'otherkey123' : body.requestKey, subject: body.input.subject, status: 'sent' }; sends.unshift(row); deliveries.push(body.requestKey); value.revision++; stores.set(A, value); }
-    if (options.dropAfterCommit && posts <= options.dropAfterCommit) return Promise.reject(new TypeError('响应丢失'));
+    let row = sends.find(item => item.requestKey === body.requestKey) || (options.sameContent ? sends.find(item => item.accountId === body.input.accountId && item.subject === body.input.subject && item.to === body.input.to) : undefined), replayed = !!row;
+    if (!row) { row = { id: 'send-' + (sends.length + 1), requestKey: options.foreignKey ? 'otherkey123' : body.requestKey, accountId: body.input.accountId, to: body.input.to || '', cc: body.input.cc || '', bcc: body.input.bcc || '', subject: body.input.subject, status: 'sent', ...options.tamper }; sends.unshift(row); deliveries.push(body.requestKey); value.revision++; stores.set(A, value); }
+    if (options.dropAfterCommit && posts <= options.dropAfterCommit || options.dropOn?.includes(posts)) return Promise.reject(new TypeError('响应丢失'));
     return response({ workspace: value, send: { id: row.id, status: row.status, ...(replayed ? { replayed: true } : {}) } });
   };
   return { deliveries, posts: () => posts };
 }
 const sendAction = (requestKey = 'compose-key-0001', extra: Record<string, unknown> = {}) => ({ kind: 'send' as const, requestKey, input: { accountId: 'acc', to: 'buyer@preview.test', subject: '样品确认', body: '正文' }, ...extra });
 const stored = () => localStorage.getItem('bambook.mist.pending:actor-a');
+const claims = () => JSON.parse(localStorage.getItem('bambook.mist.mail-receipts:actor-a') || '[]').map((row: any) => [row.requestKey, row.sendId]);
+const sendPosts = () => calls.filter(call => call.method === 'POST' && call.url.endsWith('/email/sends')).length;
+const remount = async () => { await act(async () => root.unmount()); root = createRoot(host); await mount(); };
 
 it('persists a send intent before posting and recovers a lost receipt after remount with the original key, delivering once', async () => {
   await mount(); const server = mailServer({ dropAfterCommit: 1 }); let seen = '';
@@ -759,4 +762,63 @@ it('never stores credentials, refuses sends without durable storage, and hides a
   mailServer({ dropAfterCommit: 1 }); await act(async () => { await capture(api.mail!(sendAction())); }); expect(api.pending?.kind).toBe('mail-send');
   auth.session = { sessionKey: 'session-b', user: { id: 'actor-b' }, status: 'authenticated' }; await render(); await waitFor(() => api.workspace?.id === D);
   expect(api.pending).toBeNull(); expect(localStorage.getItem('bambook.mist.pending:actor-b')).toBeNull();
+});
+
+it('closes each lost-receipt intent against its own receipt: A then B each deliver once and stay closed after restart', async () => {
+  await mount(); const server = mailServer({ dropOn: [1, 3] });
+  await act(async () => { await capture(api.mail!(sendAction('intent-a-0001'))); }); expect(api.pending?.mail?.requestKey).toBe('intent-a-0001');
+  await remount(); let first: any; await act(async () => { first = await api.recover(); });
+  expect(first.result.send).toMatchObject({ id: 'send-1', replayed: true }); expect(api.pending).toBeNull(); expect(claims()).toEqual([['intent-a-0001', 'send-1']]);
+  // 新意图 B：内容不同的新邮件，同样丢失回执。
+  await act(async () => { await capture(api.mail!(sendAction('intent-b-0001', { input: { accountId: 'acc', to: 'ops@preview.test', subject: '第二封确认', body: '正文二' } }))); });
+  const intentB = stored(); expect(api.pending?.mail?.requestKey).toBe('intent-b-0001');
+  await remount(); let second: any; await act(async () => { second = await api.recover(); });
+  expect(second.result.send).toMatchObject({ id: 'send-2', replayed: true }); expect(api.pending).toBeNull();
+  expect(claims()).toEqual([['intent-a-0001', 'send-1'], ['intent-b-0001', 'send-2']]);
+  expect(server.deliveries).toEqual(['intent-a-0001', 'intent-b-0001']);
+  // 重启后（结案已登记、待核对记录尚在）再核对：只读取原回执，不再提交发送。
+  localStorage.setItem('bambook.mist.pending:actor-a', intentB!); const before = sendPosts();
+  await remount(); expect(api.pending?.mail?.requestKey).toBe('intent-b-0001');
+  let again: any; await act(async () => { again = await api.recover(); });
+  expect(again.result.send).toMatchObject({ id: 'send-2' }); expect(sendPosts()).toBe(before); expect(api.pending).toBeNull();
+  expect(server.deliveries).toEqual(['intent-a-0001', 'intent-b-0001']);
+});
+
+it.each([
+  { name: 'wrong account', tamper: { accountId: 'other-acc' }, reason: '发件账号不一致' },
+  { name: 'wrong subject', tamper: { subject: '别的主题' }, reason: '主题不一致' },
+  { name: 'wrong recipients', tamper: { to: 'stranger@preview.test' }, reason: '收件人不一致' },
+])('stops at manual review for a receipt with the $name, without counting it sent or resending, also after restart', async ({ tamper, reason }) => {
+  await mount(); const server = mailServer({ dropAfterCommit: 1, tamper });
+  await act(async () => { await capture(api.mail!(sendAction())); }); expect(server.deliveries).toHaveLength(1);
+  await act(async () => { const error = await capture(api.recover()); expect(String(error)).toContain(reason); expect(String(error)).toContain('待人工核对'); });
+  expect(api.pending?.mail?.review).toContain(reason); expect(claims()).toEqual([]);
+  const posts = server.posts();
+  await act(async () => { expect(String(await capture(api.recover()))).toContain('待人工核对'); }); expect(server.posts()).toBe(posts);
+  await remount(); expect(api.pending?.mail?.review).toContain(reason);
+  await act(async () => { expect(String(await capture(api.recover()))).toContain('不会自动重发'); });
+  expect(server.posts()).toBe(posts); expect(server.deliveries).toHaveLength(1); expect(claims()).toEqual([]);
+  await act(async () => { await api.closeMailReview!(); }); expect(api.pending).toBeNull(); expect(stored()).toBeNull(); expect(server.posts()).toBe(posts);
+});
+
+it('refuses a receipt already claimed by another intent: not sent, not resent, same after restart', async () => {
+  await mount(); const server = mailServer({ dropAfterCommit: 1, sameContent: true });
+  await act(async () => { await capture(api.mail!(sendAction('intent-a-0001'))); });
+  await act(async () => { await api.recover(); }); expect(claims()).toEqual([['intent-a-0001', 'send-1']]);
+  // 新意图 B 与 A 内容相同，服务端回到 A 的记录：不能被 B 认领。
+  await act(async () => { const error = await capture(api.mail!(sendAction('intent-b-0001'))); expect(String(error)).toContain('已被其他发送意图认领'); });
+  expect(api.pending?.mail).toMatchObject({ requestKey: 'intent-b-0001' }); expect(api.pending?.mail?.review).toContain('已被其他发送意图认领');
+  const posts = server.posts();
+  await act(async () => { expect(String(await capture(api.recover()))).toContain('待人工核对'); });
+  await remount(); await act(async () => { expect(String(await capture(api.recover()))).toContain('待人工核对'); });
+  expect(server.posts()).toBe(posts); expect(server.deliveries).toEqual(['intent-a-0001']); expect(claims()).toEqual([['intent-a-0001', 'send-1']]);
+});
+
+it('stops at manual review instead of resending when the local closing ledger is unreadable', async () => {
+  await mount(); const server = mailServer({ dropAfterCommit: 1 });
+  await act(async () => { await capture(api.mail!(sendAction())); });
+  localStorage.setItem('bambook.mist.mail-receipts:actor-a', '{broken');
+  await act(async () => { expect(String(await capture(api.recover()))).toContain('结案记录格式无效'); });
+  expect(api.pending?.mail?.review).toContain('待人工核对'); expect(server.deliveries).toHaveLength(1);
+  expect(JSON.stringify({ ...localStorage })).not.toContain('password');
 });

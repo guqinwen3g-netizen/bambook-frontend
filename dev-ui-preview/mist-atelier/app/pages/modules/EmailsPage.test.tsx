@@ -5,7 +5,7 @@ import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import {MistRoot,ToastProvider} from '../../../../../components/mist';
 import {createMistState,type MistState} from '../../../../../server/src/shared/mistWorkspace';
 import {Nav} from '../../nav';
-const store=vi.hoisted(()=>({state:null as MistState|null,loading:false,error:'',saving:false,pending:null as any,run:vi.fn(),refresh:vi.fn(),recover:vi.fn(),uploadFile:vi.fn(),downloadFile:vi.fn(),mail:vi.fn()}));
+const store=vi.hoisted(()=>({state:null as MistState|null,loading:false,error:'',saving:false,pending:null as any,run:vi.fn(),refresh:vi.fn(),recover:vi.fn(),uploadFile:vi.fn(),downloadFile:vi.fn(),mail:vi.fn(),closeMailReview:vi.fn()}));
 const session=vi.hoisted(()=>({denied:new Set<string>()}));
 vi.mock('../../runtime/workspace',()=>({useMistWorkspace:()=>store}));
 vi.mock('../../runtime/auth',()=>({useMistSession:()=>({user:{id:'sales',displayName:'顾言'},sessionKey:'s',hasPermission:(p:string)=>!session.denied.has(p),canAccessView:()=>true})}));
@@ -16,7 +16,7 @@ const ctx={id:()=>'id-'+(++n),now:'2026-10-14T02:00:00Z',actorName:'顾言'} as 
 function render(id?:string){act(()=>root.render(<MistRoot><ToastProvider><Nav.Provider value={{route:{view:'emails',id},go,theme:'light',toggleTheme:vi.fn(),openPalette:vi.fn(),openAI:vi.fn()}}><EmailsPage/></Nav.Provider></ToastProvider></MistRoot>));}
 const button=(label:string)=>[...document.querySelectorAll('button')].find(b=>b.textContent?.trim()===label) as HTMLButtonElement|undefined;
 async function click(node:HTMLElement){await act(async()=>node.click());}
-beforeEach(()=>{session.denied=new Set();store.state=createMistState(ctx,'demo');store.run.mockReset();store.run.mockResolvedValue({result:{}});store.mail.mockReset();store.recover.mockReset();store.pending=null;store.saving=false;store.downloadFile.mockReset();go.mockReset();host=document.createElement('div');document.body.append(host);root=createRoot(host);});
+beforeEach(()=>{session.denied=new Set();store.state=createMistState(ctx,'demo');store.run.mockReset();store.run.mockResolvedValue({result:{}});store.mail.mockReset();store.recover.mockReset();store.closeMailReview.mockReset();store.pending=null;store.saving=false;store.downloadFile.mockReset();go.mockReset();host=document.createElement('div');document.body.append(host);root=createRoot(host);});
 afterEach(()=>{act(()=>root.unmount());host.remove();});
 
 it('shows an honest empty state when no mailbox is connected',()=>{
@@ -266,4 +266,16 @@ it('a restored draft or forward intent reports an uncertain recovered result and
   await click(button('核对发送结果')!);render();
   expect(document.body.textContent).toContain('发送结果不确定');expect(document.body.textContent).toContain('系统不会自动重发');
   expect(host.textContent).toContain('草稿报价');
+});
+
+it('a send intent held for manual review never offers verification or resend; closing only clears the local record',async()=>{
+  const s=realState() as any;store.state=s;
+  store.pending=mailPending('intent-b-0001',{accountId:'acc-real',to:'buyer@partner.test',subject:'草稿报价'});
+  store.pending.mail.review='发送回执与原请求不符：该回执已被其他发送意图认领；不算已发送，也不会重发，已停在待人工核对';render();
+  expect(host.textContent).toContain('发送「草稿报价」待人工核对');expect(host.textContent).toContain('已被其他发送意图认领');
+  expect(button('核对发送结果')).toBeUndefined();
+  store.closeMailReview.mockImplementation(async()=>{store.pending=null;});
+  await click(button('已人工核对，关闭记录')!);render();
+  expect(store.closeMailReview).toHaveBeenCalledTimes(1);expect(store.recover).not.toHaveBeenCalled();expect(store.mail).not.toHaveBeenCalled();
+  expect(document.body.textContent).toContain('未发送任何邮件');expect(host.textContent).not.toContain('发送「草稿报价」待人工核对');expect(button('已人工核对，关闭记录')).toBeUndefined();
 });
