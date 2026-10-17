@@ -6,7 +6,7 @@ import { MistRoot } from '../../../../components/mist';
 import { createMistState } from '../../../../server/src/shared/mistWorkspace';
 const seam = vi.hoisted(() => ({ workspace: null as any, session: null as any }));
 vi.mock('../runtime/workspace', () => ({ useMistWorkspace: () => seam.workspace }));
-vi.mock('../runtime/auth', () => ({ useMistSession: () => seam.session }));
+vi.mock('../runtime/auth', () => { const useMistSession = () => seam.session; return { useMistSession, useOptionalMistSession: useMistSession }; });
 import { WorkspaceMembers } from './WorkspaceMembers';
 import { AccessHiddenNotice } from './AccessHiddenNotice';
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;

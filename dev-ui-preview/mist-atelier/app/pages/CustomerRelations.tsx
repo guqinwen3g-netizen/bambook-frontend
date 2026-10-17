@@ -7,6 +7,8 @@ import { CRM_LINK_LABEL, CRM_METHOD_LABEL, CRM_STAGE_LABEL, crmLinkTarget, type 
 import { ModuleEditorDialog, type ModuleEditorSpec } from './modules/ModuleWorkbench';
 import { emptyOption, field, localNow, text } from './modules/fulfillmentKit';
 import { useMistWorkspace } from '../runtime/workspace';
+import { useOptionalMistSession } from '../runtime/auth';
+import { defaultMemberId, memberSelectOptions, workspaceMembers } from '../runtime/members';
 import { useNav } from '../nav';
 import { fmt } from '../data';
 
@@ -56,17 +58,18 @@ export function FollowUpPanel({ customer, state, can, compact }: { customer: Mis
 }
 
 export function OpportunityPanel({ customer, state, can }: { customer: MistCustomer; state: MistState; can: boolean }) {
-  const { run, saving } = useMistWorkspace(), { go } = useNav();
+  const { run, saving, workspace } = useMistWorkspace(), { go } = useNav(), session = useOptionalMistSession();
+  const members = workspaceMembers(workspace, state, session?.user);
   const [dialog, setDialog] = React.useState<ModuleEditorSpec | null>(null), [picked, setPicked] = React.useState<string | null>(null);
   const rows = state.crm.opportunities.filter(row => row.customerId === customer.id).sort((a, b) => Number(OPEN.includes(b.stage)) - Number(OPEN.includes(a.stage)) || a.expectedDate.localeCompare(b.expectedDate));
   const selected = rows.find(row => row.id === picked);
   const totals = openOpportunityTotals(rows);
   const pickOptions = (kind: 'development' | 'quotation' | 'order') => [emptyOption, ...linkOptions(state, customer.id, false).filter(option => option.value.startsWith(kind + ':')).map(option => ({ value: option.value.split(':').slice(1).join(':'), label: option.label }))];
   const editSpec = (row?: CrmOpportunity): ModuleEditorSpec => ({ title: row ? '编辑商机' : '新建商机', submitLabel: row ? '保存商机' : '建立商机', description: `${customer.name} · 金额按原币种记录，不与其他币种合计。`,
-    fields: [field('title', '商机名称'), field('domain', '业务板块', 'select', true, [{ value: 'garment', label: '成衣' }, { value: 'fabric', label: '面料' }]), { ...field('amount', '预计金额'), hint: '最多两位小数' }, field('currency', '币种', 'select', true, [...new Set([customer.currency, 'USD', 'EUR', 'GBP', 'CNY', 'HKD'])].map(value => ({ value, label: value }))), field('expectedDate', '预计成交日', 'date'), field('owner', '负责人'),
+    fields: [field('title', '商机名称'), field('domain', '业务板块', 'select', true, [{ value: 'garment', label: '成衣' }, { value: 'fabric', label: '面料' }]), { ...field('amount', '预计金额'), hint: '最多两位小数' }, field('currency', '币种', 'select', true, [...new Set([customer.currency, 'USD', 'EUR', 'GBP', 'CNY', 'HKD'])].map(value => ({ value, label: value }))), field('expectedDate', '预计成交日', 'date'), { ...field('ownerId', '负责人', 'select', true, memberSelectOptions(members, { current: row ? { id: row.ownerId, name: row.owner } : undefined })), hint: '按账号选择本空间成员' },
       { ...field('devId', '关联开发案', 'select', false, pickOptions('development')), hint: '从商机发起的开发，建好后在这里关联' }, field('quotationId', '关联报价', 'select', false, pickOptions('quotation')), { ...field('orderId', '关联订单', 'select', false, pickOptions('order')), hint: '标记“已下单”前须关联实际订单' }, field('note', '说明', 'textarea', false)],
-    initialValues: { title: row?.title || '', domain: row?.domain || 'garment', amount: row?.amount || '', currency: row?.currency || customer.currency, expectedDate: row?.expectedDate || '', owner: row?.owner || customer.owner, devId: row?.devIds[0] || '', quotationId: row?.quotationIds[0] || '', orderId: row?.orderIds[0] || '', note: row?.note || '' },
-    submit: async v => { const one = (key: string, keep: string[] = []) => { const value = text(v, key), rest = keep.slice(1); return value ? [value, ...rest.filter(id => id !== value)] : rest; }; const receipt = await run({ type: 'crm.opportunity.save', payload: { ...(row ? { id: row.id } : {}), input: { customerId: customer.id, title: text(v, 'title'), domain: text(v, 'domain') as CrmOpportunity['domain'], amount: text(v, 'amount'), currency: text(v, 'currency'), expectedDate: text(v, 'expectedDate'), owner: text(v, 'owner'), note: text(v, 'note'), devIds: one('devId', row?.devIds), quotationIds: one('quotationId', row?.quotationIds), orderIds: one('orderId', row?.orderIds) } } }); const id = receipt.result.id; if (typeof id === 'string') setPicked(id); } });
+    initialValues: { title: row?.title || '', domain: row?.domain || 'garment', amount: row?.amount || '', currency: row?.currency || customer.currency, expectedDate: row?.expectedDate || '', ownerId: row?.ownerId || (members.some(m => m.id === customer.ownerId) ? customer.ownerId : defaultMemberId(members, session?.user?.id)), devId: row?.devIds[0] || '', quotationId: row?.quotationIds[0] || '', orderId: row?.orderIds[0] || '', note: row?.note || '' },
+    submit: async v => { const one = (key: string, keep: string[] = []) => { const value = text(v, key), rest = keep.slice(1); return value ? [value, ...rest.filter(id => id !== value)] : rest; }; const receipt = await run({ type: 'crm.opportunity.save', payload: { ...(row ? { id: row.id } : {}), input: { customerId: customer.id, title: text(v, 'title'), domain: text(v, 'domain') as CrmOpportunity['domain'], amount: text(v, 'amount'), currency: text(v, 'currency'), expectedDate: text(v, 'expectedDate'), ownerId: text(v, 'ownerId'), note: text(v, 'note'), devIds: one('devId', row?.devIds), quotationIds: one('quotationId', row?.quotationIds), orderIds: one('orderId', row?.orderIds) } } }); const id = receipt.result.id; if (typeof id === 'string') setPicked(id); } });
   const stageSpec = (row: CrmOpportunity, stage: CrmStage): ModuleEditorSpec => ({ title: `${row.title} · ${stage === 'lost' ? '标记流失' : `推进到${CRM_STAGE_LABEL[stage]}`}`, submitLabel: stage === 'lost' ? '确认流失' : '确认推进', description: stage === 'won' ? '已关联实际订单，确认后商机结束。' : stage === 'lost' ? '流失后商机结束，原因会保留在阶段记录中。' : '阶段变更会留下记录。',
     fields: [{ ...field('note', stage === 'lost' ? '流失原因' : '说明', 'textarea', stage === 'lost' || (stage === 'quoting' && !row.quotationIds.length)), ...(stage === 'quoting' && !row.quotationIds.length ? { hint: '未关联报价时须说明报价依据' } : {}) }], initialValues: { note: '' },
     submit: v => run({ type: 'crm.opportunity.stage', payload: { id: row.id, stage, note: text(v, 'note') } }) });

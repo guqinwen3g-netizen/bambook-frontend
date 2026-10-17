@@ -9,7 +9,7 @@ const change = vi.hoisted(() => vi.fn());
 const logoutAll = vi.hoisted(() => vi.fn());
 const session = vi.hoisted(() => ({ user: { email: 'a@x.test', mustChangePassword: false } as any, refresh: vi.fn(), logout: vi.fn() }));
 vi.mock('../../../../services/authService', () => ({ changePassword: change, logoutAllSessions: logoutAll }));
-vi.mock('../runtime/auth', () => ({ useMistSession: () => session }));
+vi.mock('../runtime/auth', () => { const useMistSession = () => session; return { useMistSession, useOptionalMistSession: useMistSession }; });
 let root: Root, host: HTMLDivElement;
 beforeEach(async () => { (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true; change.mockReset(); session.refresh.mockReset(); session.logout.mockReset(); host = document.createElement('div'); document.body.appendChild(host); root = createRoot(host); await act(async () => root.render(<ToastProvider><ChangePasswordRow /></ToastProvider>)); });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); document.body.innerHTML = ''; });

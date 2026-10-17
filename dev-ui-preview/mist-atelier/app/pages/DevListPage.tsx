@@ -3,10 +3,12 @@ import React from 'react';
 import {developmentDomain,developmentInitiator,developmentInitiatorLabel} from '../../../../server/src/shared/mistDevelopmentDomain';
 import { apiService } from '../../../../services/apiService';
 import { ArrowRight, ChevronRight, Columns3, Download, Layers, List, Plus, SearchX } from 'lucide-react';
-import { Avatar, Banner, Button, Card, DataTable, Dialog, Dropdown, EmptyState, Facts, Field, FormGrid, Icon, Kanban, MistPage, Mono, ObjectCell, ObjectStage, PageHeader, Pagination, Pill, Pipeline, SearchField, Segmented, StageProgress, Tabs, TextArea, TextInput, TextLink, Thumb, Toolbar, UploadZone, useToast, type Column } from '../../../../components/mist';
+import { Avatar, Banner, Button, Card, DataTable, Dialog, Dropdown, EmptyState, Facts, Field, FormGrid, Icon, Kanban, MistPage, Mono, ObjectCell, ObjectStage, PageHeader, Pagination, Pill, Pipeline, SearchField, Segmented, StageProgress, Tabs, TextArea, Select, TextInput, TextLink, Thumb, Toolbar, UploadZone, useToast, type Column } from '../../../../components/mist';
 import type { MistDev, MistFabric } from '../../../../server/src/shared/mistWorkspace';
 import { IMG, STAGES, STAGE_COLORS } from '../data';
 import { useMistWorkspace } from '../runtime/workspace';
+import { useOptionalMistSession } from '../runtime/auth';
+import { defaultMemberId, memberSelectOptions, workspaceMembers } from '../runtime/members';
 import { useNav } from '../nav';
 import { DEVELOPMENT_LIST_TABS, SOURCING_CREATE_ID, developmentCreateTarget, developmentListTab, developmentListTarget, type DevelopmentListTab } from '../developmentEntry';
 
@@ -38,10 +40,10 @@ export function DevListPage(){
 }
 type StageFilter=number|'draft';
 function DevListTabPage({tab}:{tab:DevelopmentListTab}){
-  const {go,route}=useNav();const {state,loading,error,run,uploadFile,downloadFile,fileUrl,pending,recover,saving}=useMistWorkspace();const toast=useToast();
+  const {go,route}=useNav();const {state,loading,error,run,uploadFile,downloadFile,fileUrl,pending,recover,saving,workspace}=useMistWorkspace();const toast=useToast();const session = useOptionalMistSession();const members=workspaceMembers(workspace,state,session?.user);
   const [q,setQ]=React.useState(''),[stage,setStage]=React.useState<StageFilter>(-1),[owner,setOwner]=React.useState('all'),[customer,setCustomer]=React.useState('all'),[initiator,setInitiator]=React.useState('all'),[category,setCategory]=React.useState('all'),[mode,setMode]=React.useState<'list'|'board'>('list'),[selected,setSelected]=React.useState<string|null>(null),[page,setPage]=React.useState(1),[busy,setBusy]=React.useState(false),[failure,setFailure]=React.useState('');
   const domain=tab==='sourcing'?null:tab,tabConfig=DEVELOPMENT_LIST_TABS.find(item=>item.value===tab)!;
-  const [fabricOpen,setFabricOpen]=React.useState(false),[fabricId,setFabricId]=React.useState<string|null>(null),[fabricForm,setFabricForm]=React.useState({name:'',request:'',owner:'',due:'',answer:'',note:'',fileIds:[] as string[]});
+  const [fabricOpen,setFabricOpen]=React.useState(false),[fabricId,setFabricId]=React.useState<string|null>(null),[fabricForm,setFabricForm]=React.useState({name:'',request:'',ownerId:'',ownerName:'',due:'',answer:'',note:'',fileIds:[] as string[]});
   const live=React.useRef(true),busyRef=React.useRef(false);React.useEffect(()=>{live.current=true;return()=>{live.current=false;};},[]);
   const devs=state?.devs||[],fabrics=state?.fabrics||[],drafts=state?.drafts||[];
   const tabCounts=developmentTabCounts(devs,drafts,fabrics);
@@ -49,10 +51,10 @@ function DevListTabPage({tab}:{tab:DevelopmentListTab}){
   const categories=[...new Set([...domainDevs.map(dev=>dev.values.category),...domainDrafts.map(draft=>draft.values.category)].filter(Boolean))];
   const needle=q.trim().toLowerCase(),drafting=stage==='draft';
   // 同一套筛选口径：阶段计数、草稿计数与列表都基于同一组负责人 / 客户 / 发起方 / 品类 / 搜索条件。
-  const scoped=domainDevs.filter(dev=>(owner==='all'||dev.owner===owner)&&(customer==='all'||dev.customer===customer)&&(initiator==='all'||developmentInitiator(dev.values)===initiator)&&(category==='all'||dev.values.category===category)&&(!needle||`${dev.name}${dev.code}${dev.style}`.toLowerCase().includes(needle)));
+  const scoped=domainDevs.filter(dev=>(owner==='all'||dev.ownerId===owner)&&(customer==='all'||dev.customer===customer)&&(initiator==='all'||developmentInitiator(dev.values)===initiator)&&(category==='all'||dev.values.category===category)&&(!needle||`${dev.name}${dev.code}${dev.style}`.toLowerCase().includes(needle)));
   const filtered=scoped.filter(dev=>typeof stage!=='number'||stage<0||dev.stage===stage);
   const draftRows=domainDrafts.filter(draft=>(customer==='all'||draft.values.customer===customer)&&(initiator==='all'||developmentInitiator(draft.values)===initiator)&&(category==='all'||draft.values.category===category)&&(!needle||`${draft.values.name}${draft.values.style}${draft.values.customer}`.toLowerCase().includes(needle)));
-  const fabricRows=fabrics.filter(fabric=>(owner==='all'||fabric.owner===owner)&&(!needle||`${fabric.name}${fabric.code}${fabric.request}${fabric.answer}`.toLowerCase().includes(needle)));
+  const fabricRows=fabrics.filter(fabric=>(owner==='all'||fabric.ownerId===owner)&&(!needle||`${fabric.name}${fabric.code}${fabric.request}${fabric.answer}`.toLowerCase().includes(needle)));
   const pages=Math.max(1,Math.ceil(filtered.length/10)),currentPage=Math.min(page,pages),rows=filtered.slice((currentPage-1)*10,currentPage*10),sel=rows.find(dev=>dev.id===selected)||rows[0];
   React.useEffect(()=>setPage(1),[q,stage,owner,customer,initiator,category]);
   const switchTab=(next:DevelopmentListTab)=>{if(next===tab)return;const target=developmentListTarget(next);go(target.view,target.id,target.target);};
@@ -63,11 +65,11 @@ function DevListTabPage({tab}:{tab:DevelopmentListTab}){
   const mediaUrl=mediaFile?fileUrl(mediaFile):'', [picture,setPicture]=React.useState<string>(),[pictureError,setPictureError]=React.useState(false),[pictureRetry,setPictureRetry]=React.useState(0);
   React.useEffect(()=>{let active=true,objectUrl='';const controller=new AbortController();setPicture(undefined);setPictureError(false);if(mediaUrl)void fetch(mediaUrl,{headers:apiService.getAuthHeaders(),credentials:'include',signal:controller.signal}).then(response=>{if(!response.ok)throw Error('图片读取失败');return response.blob();}).then(blob=>{if(active){objectUrl=URL.createObjectURL(blob);setPicture(objectUrl);}}).catch(()=>{if(active)setPictureError(true);});return()=>{active=false;controller.abort();if(objectUrl)URL.revokeObjectURL(objectUrl);};},[mediaUrl,pictureRetry]);
   const open=(dev:MistDev)=>go('development/detail',dev.id,{versionId:dev.currentVersionId||undefined});
-  const owners=[...new Set((tab==='sourcing'?fabrics:domainDevs).map(item=>item.owner).filter(Boolean))];
+  const owners=[...new Map((tab==='sourcing'?fabrics:domainDevs).filter(item=>item.ownerId).map(item=>[item.ownerId,item.owner] as const)).entries()];
   const move=async(id:string,column:string)=>{if(busyRef.current)return;busyRef.current=true;setBusy(true);setFailure('');try{await run({type:'development.move',payload:{devId:id,stage:Number(column)}});if(live.current)toast(`已更新开发阶段：${STAGES[Number(column)]}`);}catch(cause){if(live.current)setFailure(cause instanceof Error?cause.message:'阶段未变更');}finally{busyRef.current=false;if(live.current)setBusy(false);}};
-  const showFabric=(fabric?:MistFabric)=>{setFabricId(fabric?.id||null);setFabricForm({name:fabric?.name||'',request:fabric?.request||'',owner:fabric?.owner||state?.settings.profileName||'',due:fabric?.due||'',answer:fabric?.answer||'',note:'',fileIds:fabric?.fileIds||[]});setFailure('');setFabricOpen(true);};
+  const showFabric=(fabric?:MistFabric)=>{setFabricId(fabric?.id||null);setFabricForm({name:fabric?.name||'',request:fabric?.request||'',ownerId:fabric?.ownerId||defaultMemberId(members,session?.user?.id),ownerName:fabric?.owner||'',due:fabric?.due||'',answer:fabric?.answer||'',note:'',fileIds:fabric?.fileIds||[]});setFailure('');setFabricOpen(true);};
   const saveFabric=async(action:'create'|'answer'|'approve'|'return')=>{if(busyRef.current)return;busyRef.current=true;setBusy(true);setFailure('');try{
-    if(action==='create')await run({type:'fabric.create',payload:{name:fabricForm.name,request:fabricForm.request,owner:fabricForm.owner,due:fabricForm.due}});
+    if(action==='create')await run({type:'fabric.create',payload:{name:fabricForm.name,request:fabricForm.request,ownerId:fabricForm.ownerId,due:fabricForm.due}});
     else if(action==='answer'&&fabricId)await run({type:'fabric.answer',payload:{id:fabricId,answer:fabricForm.answer,fileIds:fabricForm.fileIds}});
     else if(fabricId)await run({type:'fabric.confirm',payload:{id:fabricId,approved:action==='approve',note:fabricForm.note}});
     if(live.current){closeFabric();toast(action==='create'?'寻样任务已创建':action==='answer'?'寻样答复已保存':action==='approve'?'寻样结果已确认':'已提交补充要求');}
@@ -93,7 +95,7 @@ function DevListTabPage({tab}:{tab:DevelopmentListTab}){
     <Tabs value={tab} onChange={value=>switchTab(value)} options={DEVELOPMENT_LIST_TABS.map(item=>({value:item.value,label:item.label,count:tabCounts[item.value]}))} />
     <Toolbar right={domain&&!drafting?<Segmented ariaLabel="视图" value={mode} onChange={value=>setMode(value as 'list'|'board')} options={[{value:'list',icon:List,ariaLabel:'列表视图'},{value:'board',icon:Columns3,ariaLabel:'看板视图'}]} />:undefined}>
       <SearchField value={q} onChange={setQ} placeholder={tab==='sourcing'?'面料需求、编号或答复':drafting?'草稿名称、客户款号或客户':'名称、客户款式或编号'} />
-      {!drafting&&<Dropdown label="负责人" value={owner} onChange={setOwner} options={[{value:'all',label:'全部'},...owners.map(name=>({value:name,label:name}))]} />}
+      {!drafting&&<Dropdown label="负责人" value={owner} onChange={setOwner} options={[{value:'all',label:'全部'},...owners.map(([id,name])=>({value:id,label:owners.filter(([,other])=>other===name).length>1?`${name} · ${id}`:name}))]} />}
       {domain&&<Dropdown label="客户" value={customer} onChange={setCustomer} options={[{value:'all',label:'全部客户'},...(state?.customers.map(item=>({value:item.name,label:item.name}))||[])]} />}
       {domain&&<Dropdown label="发起方" value={initiator} onChange={setInitiator} options={[{value:'all',label:'全部'},{value:'customer',label:'客户要求'},{value:'internal',label:'内部需求'}]} />}
       {domain&&<Dropdown label={domain==='fabric'?'面料分类':'品类'} value={category} onChange={setCategory} options={[{value:'all',label:'全部'},...categories.map(name=>({value:name,label:name}))]} />}
@@ -117,11 +119,11 @@ function DevListTabPage({tab}:{tab:DevelopmentListTab}){
       </div>
       </>}
     </>}
-    <Dialog open={fabricOpen} onClose={()=>{if(!busy)closeFabric();}} title={fabricId?'面料寻样详情':'新建面料寻样'} description={selectedFabric?.code} footer={<>{recovery}<Button variant="quiet" disabled={busy} onClick={closeFabric}>关闭</Button>{fabricId?<>{!selectedFabric?.confirmed&&<><Button variant="quiet" loading={busy} disabled={!fabricForm.answer.trim()} onClick={()=>void saveFabric('answer')}>保存寻样答复</Button><Button variant="quiet" disabled={busy||!fabricForm.note.trim()} onClick={()=>void saveFabric('return')}>补充要求</Button><Button variant="primary" loading={busy} disabled={!selectedFabric?.answer} onClick={()=>void saveFabric('approve')}>确认结果</Button></>}</>:<Button variant="primary" loading={busy} disabled={!fabricForm.name.trim()||!fabricForm.request.trim()||!fabricForm.owner.trim()} onClick={()=>void saveFabric('create')}>创建寻样任务</Button>}</>}>
+    <Dialog open={fabricOpen} onClose={()=>{if(!busy)closeFabric();}} title={fabricId?'面料寻样详情':'新建面料寻样'} description={selectedFabric?.code} footer={<>{recovery}<Button variant="quiet" disabled={busy} onClick={closeFabric}>关闭</Button>{fabricId?<>{!selectedFabric?.confirmed&&<><Button variant="quiet" loading={busy} disabled={!fabricForm.answer.trim()} onClick={()=>void saveFabric('answer')}>保存寻样答复</Button><Button variant="quiet" disabled={busy||!fabricForm.note.trim()} onClick={()=>void saveFabric('return')}>补充要求</Button><Button variant="primary" loading={busy} disabled={!selectedFabric?.answer} onClick={()=>void saveFabric('approve')}>确认结果</Button></>}</>:<Button variant="primary" loading={busy} disabled={!fabricForm.name.trim()||!fabricForm.request.trim()||!fabricForm.ownerId} onClick={()=>void saveFabric('create')}>创建寻样任务</Button>}</>}>
       {failure&&<Banner tone="bad" title="寻样操作未完成">{failure}</Banner>}
       <FormGrid>
         <Field label="面料需求" required><TextInput readOnly={!!fabricId} value={fabricForm.name} onChange={event=>setFabricForm(form=>({...form,name:event.target.value}))} /></Field>
-        <Field label="负责人" required><TextInput readOnly={!!fabricId} value={fabricForm.owner} onChange={event=>setFabricForm(form=>({...form,owner:event.target.value}))} /></Field>
+        <Field label="负责人" required hint={fabricId?undefined:'按账号选择本空间成员'}>{fabricId?<TextInput readOnly value={fabricForm.ownerName} />:<Select aria-label="负责人" value={fabricForm.ownerId} placeholder="选择负责人" onChange={event=>setFabricForm(form=>({...form,ownerId:event.target.value}))} options={memberSelectOptions(members)} />}</Field>
         <Field label="目标日期"><TextInput readOnly={!!fabricId} type="date" value={fabricForm.due} onChange={event=>setFabricForm(form=>({...form,due:event.target.value}))} /></Field>
         <Field label="具体要求" full required><TextArea readOnly={!!fabricId} value={fabricForm.request} onChange={event=>setFabricForm(form=>({...form,request:event.target.value}))} /></Field>
         {fabricId&&<><Field label="寻样答复" full><TextArea readOnly={selectedFabric?.confirmed} value={fabricForm.answer} onChange={event=>setFabricForm(form=>({...form,answer:event.target.value}))} /></Field><Field label="确认或补充说明" full><TextArea readOnly={selectedFabric?.confirmed} value={fabricForm.note} onChange={event=>setFabricForm(form=>({...form,note:event.target.value}))} /></Field></>}

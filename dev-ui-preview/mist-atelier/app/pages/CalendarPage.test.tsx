@@ -8,7 +8,7 @@ import { Nav } from '../nav';
 
 const bridge=vi.hoisted(()=>({current:null as any,sessionKey:'session-a'}));
 vi.mock('../runtime/workspace',()=>({useMistWorkspace:()=>bridge.current}));
-vi.mock('../runtime/auth',()=>({useMistSession:()=>({sessionKey:bridge.sessionKey})}));
+vi.mock('../runtime/auth', () => { const useMistSession = ()=>({sessionKey:bridge.sessionKey}); return { useMistSession, useOptionalMistSession: useMistSession }; });
 let root:Root|undefined,host:HTMLDivElement;const go=vi.fn();
 const today=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
 const originalTarget={view:'development/detail',id:'dev-a',versionId:'original-version'};

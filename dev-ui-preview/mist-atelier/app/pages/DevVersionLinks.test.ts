@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { applyMistCommand, createMistState, type DevelopmentValues, type MistCommand, type MistContext } from '../../../../server/src/shared/mistWorkspace';
 import { developmentVersionLinks } from './DevVersionLinks';
+import { withTestFactories } from '../../../../server/src/shared/__tests__/utils/devFactories';
 
 /** 同一开发案 R1-A / R1-B 两版均 QC 通过、转产品档案，并进入同一报价（两条目各引用一版），报价走到客户已接受。 */
 function fixture() {
   let n = 0; const ctx: MistContext = { id: () => `dl-${++n}`, now: '2026-10-16T09:00:00Z', actorName: '测试业务员', actorId: 'sales', authority: { supplier: {}, businessReviewerId: 'leader' } };
-  let state = createMistState(ctx, 'empty');
+  let state = withTestFactories(createMistState(ctx, 'empty'));
   state.customers.push({ id: 'c', name: '测试客户', code: 'C', country: '', city: '', industry: '', owner: '', grade: '', currency: 'USD', terms: '', incoterm: '', categories: '', creditLimit: 0, since: '' });
   const run = (command: MistCommand, c: MistContext = ctx) => { const r = applyMistCommand(state, command, c); state = r.state; return r.result as Record<string, any>; };
   const values: DevelopmentValues = { initiator: 'customer', requestType: 'replicate', name: '双厂来样复刻', customer: 'c', style: 'ST-2', season: 'AW', category: '大衣', kind: 'new', fabric: '羊毛', color: '灰', target: '', sizeBase: 'M', goal: '按来样复刻', factories: ['A厂', 'B厂'], due: '2026-10-30', collaborators: [], sampleQuantity: 1 };
@@ -24,7 +25,7 @@ function fixture() {
   run({ type: 'market.quotation.status', payload: { id: quoteId, status: 'Accepted', evidence: '接受' } });
   const quote = () => state.market.quotations.find(q => q.id === quoteId)!;
   const lineOf = (versionId: string) => quote().lines.find(line => line.sourceVersionId === versionId)!.id;
-  const convert = (versionIds: string[]) => run({ type: 'market.quotation.convert', payload: { id: quoteId, type: 'garment', due: '2026-12-01', owner: '业务员', lineIds: versionIds.map(lineOf) } }).orderId as string;
+  const convert = (versionIds: string[]) => run({ type: 'market.quotation.convert', payload: { id: quoteId, type: 'garment', due: '2026-12-01', ownerId: 'sales', lineIds: versionIds.map(lineOf) } }).orderId as string;
   const links = (versionId: string) => developmentVersionLinks(state, state.versions.find(v => v.id === versionId));
   return { a, b, quoteId, quote, convert, links, get state() { return state; } };
 }

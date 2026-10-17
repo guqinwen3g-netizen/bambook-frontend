@@ -9,7 +9,7 @@ import { platformBusinessDate } from '../../../../server/src/shared/mistPlatform
 import { Nav } from '../nav';
 const store = vi.hoisted(() => ({ value: null as any }));
 vi.mock('../runtime/workspace', () => ({ useMistWorkspace: () => store.value }));
-vi.mock('../runtime/auth', () => ({ useMistSession: () => ({ hasPermission: (scope: string) => store.value?.canWrite !== false && (!store.value?.permissions || store.value.permissions.includes(scope)) }) }));
+vi.mock('../runtime/auth', () => { const useMistSession = () => ({ hasPermission: (scope: string) => store.value?.canWrite !== false && (!store.value?.permissions || store.value.permissions.includes(scope)) }); return { useMistSession, useOptionalMistSession: useMistSession }; });
 import { FinancePayables } from './FinancePayables';
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 let host: HTMLElement, root: Root, route: { view: string; id?: string; section?: string };

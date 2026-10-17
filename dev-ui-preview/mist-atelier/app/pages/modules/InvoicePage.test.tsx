@@ -8,7 +8,7 @@ import {createMistState} from '../../../../../server/src/shared/mistWorkspace';
 import {Nav} from '../../nav';
 const store=vi.hoisted(()=>({value:null as any,canWrite:true,csv:vi.fn()}));
 vi.mock('../../runtime/workspace',()=>({useMistWorkspace:()=>store.value}));
-vi.mock('../../runtime/auth',()=>({useMistSession:()=>({hasPermission:()=>store.canWrite})}));
+vi.mock('../../runtime/auth', () => { const useMistSession = ()=>({hasPermission:()=>store.canWrite}); return { useMistSession, useOptionalMistSession: useMistSession }; });
 vi.mock('./ModuleWorkbench',()=>({downloadModuleCsv:store.csv,ModuleEditorDialog:({spec}:any)=>spec?<div role="dialog" aria-label={spec.title}><button type="button" onClick={()=>void spec.submit({reason:'金额与合同不符'})}>{spec.submitLabel}</button></div>:null}));
 import {InvoicePage,invoiceAge,invoiceLedgerRows,invoiceSource,invoiceFinancialFacts} from './InvoicePage';
 let host:HTMLElement,root:Root,route:any;const go=vi.fn();

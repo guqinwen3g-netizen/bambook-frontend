@@ -6,7 +6,7 @@ import { createMistState, applyMistCommand, type MistCommand } from '../../../..
 import { MistRoot, ToastProvider } from '../../../../components/mist';
 const seam = vi.hoisted(() => ({ value: null as any, nav: null as any, session: { sessionKey: 'one', user: { id: 'owner', displayName: '认证姓名' } } }));
 vi.mock('../runtime/workspace', () => ({ useMistWorkspace: () => seam.value }));
-vi.mock('../runtime/auth', () => ({ useMistSession: () => seam.session }));
+vi.mock('../runtime/auth', () => { const useMistSession = () => seam.session; return { useMistSession, useOptionalMistSession: useMistSession }; });
 vi.mock('../nav', () => ({ useNav: () => seam.nav }));
 import { SettingsPage } from './SettingsPage';
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;

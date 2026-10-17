@@ -9,7 +9,7 @@ import {ModuleWorkbench,moduleEditorSections,type ModuleEditorSpec} from './Modu
 
 const bridge=vi.hoisted(()=>({workspace:null as any,route:{view:'test-ledger'} as any,go:vi.fn()}));
 vi.mock('../../runtime/workspace',()=>({useMistWorkspace:()=>bridge.workspace}));
-vi.mock('../../runtime/auth',()=>({useMistSession:()=>({status:'authenticated',sessionKey:'test-session',user:{id:'test-user'},hasPermission:()=>true,canAccessView:()=>true})}));
+vi.mock('../../runtime/auth', () => { const useMistSession = ()=>({status:'authenticated',sessionKey:'test-session',user:{id:'test-user'},hasPermission:()=>true,canAccessView:()=>true}); return { useMistSession, useOptionalMistSession: useMistSession }; });
 vi.mock('../../nav',()=>({useNav:()=>({route:bridge.route,go:bridge.go})}));
 
 type Row={id:string;name:string;detail:string};

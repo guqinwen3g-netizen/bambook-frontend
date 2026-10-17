@@ -6,16 +6,16 @@ import { getAllByRole, getByLabelText, getByRole } from '@testing-library/dom';
 import { MistRoot, ToastProvider } from '../../../../components/mist';
 import { applyMistCommand, createMistState, type MistState } from '../../../../server/src/shared/mistWorkspace';
 import { Nav, type Route } from '../nav';
-const store = vi.hoisted(() => ({ state: null as MistState | null, loading: false, error: '', workspace: { id: 'a' } as { id: string }, run: vi.fn(), refresh: vi.fn() }));
+const store = vi.hoisted(() => ({ state: null as MistState | null, loading: false, error: '', workspace: { id: 'a', ownerId: 'u' } as { id: string; ownerId?: string }, run: vi.fn(), refresh: vi.fn() }));
 vi.mock('../runtime/workspace', () => ({ useMistWorkspace: () => store }));
-vi.mock('../runtime/auth', () => ({ useMistSession: () => ({ status: 'authenticated', sessionKey: 's', user: { id: 'u', displayName: '业务员甲' }, hasPermission: () => true }) }));
+vi.mock('../runtime/auth', () => { const useMistSession = () => ({ status: 'authenticated', sessionKey: 's', user: { id: 'u', displayName: '业务员甲' }, hasPermission: () => true }); return { useMistSession, useOptionalMistSession: useMistSession }; });
 import { OrderCreatePage } from './OrderCreatePage';
 import { OrderLineFulfillment } from './OrderLineFulfillment';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let host: HTMLElement, root: Root, sequence = 0;
 const go = vi.fn();
-const context = { id: () => `id-${++sequence}`, now: '2026-10-16T02:00:00.000Z', actorName: '业务员甲' };
+const context = { id: () => `id-${++sequence}`, now: '2026-10-16T02:00:00.000Z', actorName: '业务员甲', actorId: 'u' };
 function render(route: Route, page: React.ReactNode) { act(() => root.render(<MistRoot><ToastProvider><Nav.Provider value={{ route, go, openAI: vi.fn(), theme: 'light', toggleTheme: vi.fn(), openPalette: vi.fn() }}>{page}</Nav.Provider></ToastProvider></MistRoot>)); }
 function input(label: string | RegExp, value: string) {
   const node = getByLabelText(host, typeof label === 'string' ? new RegExp(`^${label.replace(/[()（）/]/g, m => '\\' + m)}\\s*\\*?$`) : label) as HTMLInputElement;

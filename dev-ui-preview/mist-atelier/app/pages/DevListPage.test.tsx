@@ -25,7 +25,7 @@ describe('development CSV',()=>{
 });
 
 let root:Root|undefined,host:HTMLDivElement;const go=vi.fn();
-const dev=(index:number):MistDev=>({id:`real-${index}`,code:`DEV-${index}`,name:`实际开发 ${index}`,style:`STYLE-${index}`,owner:index%2?'甲':'乙',customer:index%2?'客户 A':'客户 B',customerId:index%2?'a':'b',due:'2026-10-30',dueRel:'待交付',stage:1,state:'工厂制作中',tone:'neutral',ver:'R1-A-1',fac:1,img:'coat',factory:'实际工厂',sample:'未返样',fabric:'羊毛',goal:'实际需求',currentVersionId:`version-${index}`,versionIds:[`version-${index}`],values:{} as any,fileIds:[],createdAt:'2026-10-13T00:00:00Z',updatedAt:'2026-10-13T00:00:00Z'});
+const dev=(index:number):MistDev=>({id:`real-${index}`,code:`DEV-${index}`,name:`实际开发 ${index}`,style:`STYLE-${index}`,owner:index%2?'甲':'乙',ownerId:index%2?'user-a':'user-b',customer:index%2?'客户 A':'客户 B',customerId:index%2?'a':'b',due:'2026-10-30',dueRel:'待交付',stage:1,state:'工厂制作中',tone:'neutral',ver:'R1-A-1',fac:1,img:'coat',factory:'实际工厂',sample:'未返样',fabric:'羊毛',goal:'实际需求',currentVersionId:`version-${index}`,versionIds:[`version-${index}`],values:{} as any,fileIds:[],createdAt:'2026-10-13T00:00:00Z',updatedAt:'2026-10-13T00:00:00Z'});
 beforeEach(()=>{(globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;go.mockReset();bridge.current={state:{devs:[dev(1),dev(2)],drafts:[],fabrics:[],customers:[{name:'客户 A'},{name:'客户 B'}],settings:{workspaceName:'测试工作空间'},files:[]},loading:false,error:'',run:vi.fn(async()=>({requestId:'c-1',revision:1,result:{}})),uploadFile:vi.fn(),downloadFile:vi.fn()};});
 afterEach(async()=>{if(root)await act(async()=>root!.unmount());root=undefined;host?.remove();});
 /** 与 ReferenceApp 一致：go 写入路由，列表页按路由 section 选择页签。 */
@@ -66,7 +66,7 @@ describe('persisted workspace development list',()=>{
     bridge.current.state.devs=[{...dev(1),due,dueRel:'过时的种子日期'}];await mount();expect(host.textContent).toContain('1 天后');expect(host.textContent).not.toContain('过时的种子日期');
   });
   it('applies the fabric owner filter and hides inapplicable customer/view controls',async()=>{
-    bridge.current.state.fabrics=[{id:'f1',code:'SR-1',name:'甲的面料',owner:'甲',due:'2026-10-30',state:'寻样中',tone:'neutral',sub:'',request:'需求1',answer:''},{id:'f2',code:'SR-2',name:'乙的面料',owner:'乙',due:'2026-10-30',state:'寻样中',tone:'neutral',sub:'',request:'需求2',answer:''}];
+    bridge.current.state.fabrics=[{id:'f1',code:'SR-1',name:'甲的面料',owner:'甲',ownerId:'user-a',due:'2026-10-30',state:'寻样中',tone:'neutral',sub:'',request:'需求1',answer:''},{id:'f2',code:'SR-2',name:'乙的面料',owner:'乙',ownerId:'user-b',due:'2026-10-30',state:'寻样中',tone:'neutral',sub:'',request:'需求2',answer:''}];
     await mount();await tab('面料寻样');expect(host.querySelector('[aria-label="看板视图"]')).toBeNull();expect([...host.querySelectorAll('button')].some(button=>button.textContent?.startsWith('客户'))).toBe(false);
     await select('负责人','甲');expect(host.querySelectorAll('.mist-tr')).toHaveLength(1);expect(host.textContent).toContain('甲的面料');expect(host.textContent).not.toContain('乙的面料');
   });

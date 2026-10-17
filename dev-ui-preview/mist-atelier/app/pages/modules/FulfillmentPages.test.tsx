@@ -11,7 +11,7 @@ const exportFile=vi.hoisted(()=>vi.fn());
 vi.mock('./ModuleWorkbench',async()=>({...await vi.importActual('./ModuleWorkbench'),downloadModuleCsv:exportFile}));
 const api=vi.hoisted(()=>({listOutsourcingOrders:vi.fn()}));
 vi.mock('../../runtime/workspace',()=>({useMistWorkspace:()=>store}));
-vi.mock('../../runtime/auth',()=>({useMistSession:()=>({user:{id:'qc',displayName:'专业QC'},sessionKey:'session',hasPermission:()=>true,canAccessView:()=>true})}));
+vi.mock('../../runtime/auth', () => { const useMistSession = ()=>({user:{id:'qc',displayName:'专业QC'},sessionKey:'session',hasPermission:()=>true,canAccessView:()=>true}); return { useMistSession, useOptionalMistSession: useMistSession }; });
 vi.mock('../../../../../services/apiService',()=>({apiService:api}));
 import {FULFILLMENT_PAGES,QcWorkbenchPage,ProcurementPage,MesHistoryPage,ShipmentsPage,SamplesPage,InventoryPage} from './FulfillmentPages';
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;

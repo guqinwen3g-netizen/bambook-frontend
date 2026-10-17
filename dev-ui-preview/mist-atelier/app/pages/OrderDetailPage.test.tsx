@@ -14,7 +14,7 @@ import { OrderDetailPage } from './OrderDetailPage';
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let host: HTMLElement, root: Root, orderId: string;
 let sequence = 0;const go=vi.fn();
-const context = { id: () => `detail-${++sequence}`, now: '2026-10-13T02:00:00.000Z', actorName: '业务员甲' };
+const context = { id: () => `detail-${++sequence}`, now: '2026-10-13T02:00:00.000Z', actorName: '业务员甲', actorId: 'sales' };
 function render() {
   act(() => root.render(<MistRoot><ToastProvider><Nav.Provider value={{ route: { view: 'orders/detail', id: orderId }, go, openAI: vi.fn(), theme: 'light', toggleTheme: vi.fn(), openPalette: vi.fn() }}><OrderDetailPage /></Nav.Provider></ToastProvider></MistRoot>));
 }
@@ -22,7 +22,7 @@ beforeEach(() => {
   sequence = 0;go.mockClear();store.run.mockReset();
   const empty = createMistState(context, 'empty');
   empty.customers.push({ id: 'customer-a', code: 'C-A', name: '客户甲', country: '', city: '', industry: '', owner: '业务员甲', grade: 'A', currency: 'USD', terms: '', incoterm: '', categories: '', creditLimit: 0, since: '2026-01-01' });
-  const result = applyMistCommand(empty, { type: 'order.create', payload: { type: 'garment', customerId: 'customer-a', season: 'AW28', currency: 'USD', due: '2026-10-30', owner: '业务员甲', lines: [{ name: '精确金额条目', style: 'ROUND-01', img: 'coat', qty: 1.005, unit: '件', price: 1 }] } }, context);
+  const result = applyMistCommand(empty, { type: 'order.create', payload: { type: 'garment', customerId: 'customer-a', season: 'AW28', currency: 'USD', due: '2026-10-30', ownerId:'sales', lines: [{ name: '精确金额条目', style: 'ROUND-01', img: 'coat', qty: 1.005, unit: '件', price: 1 }] } }, context);
   store.state = result.state; orderId = result.result.orderId!;
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
 });
@@ -249,10 +249,15 @@ it('saves a proposed due date restored to the live date without losing the amend
 });
 
 it('keeps the owner-only shortcut for an approved order with no proposed change',async()=>{
-  lineEditorFixture('approved',4,12);render();await act(async()=>getByRole(host,'button',{name:/^编辑$/}).click());
-  await lineInput('负责人','业务员乙');await act(async()=>getByRole(document.body,'button',{name:/^保存$/}).click());
-  expect(store.run.mock.calls.at(-1)?.[0]).toEqual({type:'order.update',payload:{orderId,owner:'业务员乙'}});
-  expect(store.state!.orders[0].owner).toBe('业务员乙');expect(store.state!.orders[0].governance?.changeDraft).toBeUndefined();
+  const actor=lineEditorFixture('approved',4,12);const members=[{id:'sales',name:'业务员甲',active:true,groups:[]},{id:'sales-b',name:'业务员乙',active:true,groups:[]}];
+  store.state!.members=[{userId:'sales-b',name:'业务员乙',addedBy:'sales',addedByName:'业务员甲',addedAt:context.now}];(store as any).workspace={id:'w',ownerId:'sales'};
+  store.run.mockImplementation(async(command:Parameters<typeof applyMistCommand>[1])=>{const result=applyMistCommand(store.state!,command,{...actor,members});store.state=result.state;render();return{requestId:'owner',revision:1,result:result.result};});
+  render();await act(async()=>getByRole(host,'button',{name:/^编辑$/}).click());
+  const owner=getByLabelText(document.body,'负责人') as HTMLSelectElement;expect([...owner.options].map(o=>o.textContent)).toEqual(['业务员甲','业务员乙']);
+  await act(async()=>{Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value')!.set!.call(owner,'sales-b');owner.dispatchEvent(new Event('change',{bubbles:true}));});
+  await act(async()=>getByRole(document.body,'button',{name:/^保存$/}).click());
+  expect(store.run.mock.calls.at(-1)?.[0]).toEqual({type:'order.update',payload:{orderId,ownerId:'sales-b'}});
+  expect(store.state!.orders[0]).toMatchObject({owner:'业务员乙',ownerId:'sales-b'});expect(store.state!.events[0].text).toContain('负责人：业务员甲→业务员乙');delete (store as any).workspace;expect(store.state!.orders[0].governance?.changeDraft).toBeUndefined();
 });
 
 it('shows proposed order purpose, internal purpose and receiver changes even when the old PO remains recorded',()=>{

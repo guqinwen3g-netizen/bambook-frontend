@@ -7,7 +7,7 @@ import { MistRoot, ToastProvider } from '../../../../components/mist';
 import { Nav } from '../nav';
 const seam = vi.hoisted(() => ({ value: null as any, route: { view: 'notifications' } as any, session: { sessionKey: 'one', user: { id: 'owner', displayName: '当前员工' }, hasPermission: () => true, canAccessView: (_view: string): boolean => true } }));
 vi.mock('../runtime/workspace', () => ({ useMistWorkspace: () => seam.value }));
-vi.mock('../runtime/auth', () => ({ useMistSession: () => seam.session }));
+vi.mock('../runtime/auth', () => { const useMistSession = () => seam.session; return { useMistSession, useOptionalMistSession: useMistSession }; });
 import { NotificationsPage, notificationRows } from './NotificationsPage';
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 let root: Root | undefined, host: HTMLElement, count = 0;
