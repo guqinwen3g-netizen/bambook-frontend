@@ -14,7 +14,7 @@ const gatedContract: MistContract = {
   ...testContract,
   applyMistCommand: (state: any, command: any, context: any) => {
     if (command.type === 'settings.lock') { state.settings.locked = true; return { state, result: {} }; }
-    if (command.type === 'notes.confirm') { state.notes.find((note: any) => note.id === command.payload.id).confirmed = true; return { state, result: {} }; }
+    if (command.type === 'notes.confirm') { Object.assign(state.notes.find((note: any) => note.id === command.payload.id), { confirmed: true, confirmedBy: context.actorId }); return { state, result: {} }; }
     if (command.type === 'notes.add' && state.settings.locked) throw Object.assign(new Error('空间已锁定，不能新增'), { code: 'LOCKED', status: 409 });
     return testContract.applyMistCommand(state, command, context);
   },
@@ -116,14 +116,19 @@ describe('多人保存冲突自动重试：只在最新状态上重新执行可�
     expect(db.workspaces.get(id).revision).toBe(1); expect(requestReceiptCount(db)).toBe(2);
   });
 
-  it('业务条件被他人改变时按最新状态重新判断并拒绝；需要基于所见内容确认的命令不自动合并', async () => {
+  it('业务条件被他人改变时按最新状态重新判断并拒绝；确认类命令只在所办理记录未被改动时合并；正式单据不自动合并', async () => {
     const repo = repoFor(db), id = await sharedWorkspace(repo);
     const added = await repo.execute(owner, id, note('seed', 0));
     await repo.execute(owner, id, { requestId: 'lock', expectedRevision: 1, command: { type: 'settings.lock', payload: {} } });
     await expect(repo.execute(other, id, note('late', 1))).rejects.toMatchObject({ code: 'LOCKED' });
-    await expect(repo.execute(owner, id, { requestId: 'confirm', expectedRevision: 1, command: { type: 'notes.confirm', payload: { id: added.receipt.result.id } } })).rejects.toMatchObject({ code: 'REVISION_CONFLICT', message: expect.stringContaining('重新确认') });
+    // 期间他人只改了别的位置（空间设置）：确认这条记录在最新状态上执行。
+    await expect(repo.execute(owner, id, { requestId: 'confirm', expectedRevision: 1, command: { type: 'notes.confirm', payload: { id: added.receipt.result.id } } })).resolves.toMatchObject({ replayed: false, receipt: { revision: 3 } });
+    expect(db.workspaces.get(id).state.notes[0].confirmed).toBe(true);
+    // 同一记录已被他人改过：基于旧版本的确认被拒，要求刷新核对。
+    await expect(repo.execute(other, id, { requestId: 'confirm-again', expectedRevision: 2, command: { type: 'notes.confirm', payload: { id: added.receipt.result.id } } })).rejects.toMatchObject({ code: 'REVISION_CONFLICT', message: expect.stringContaining('同一记录') });
     await expect(repo.execute(owner, id, { requestId: 'notice', expectedRevision: 1, command: { type: 'development.notice.generate', payload: {} } } as any)).rejects.toMatchObject({ code: 'REVISION_CONFLICT', message: expect.stringContaining('重新确认') });
-    expect(db.workspaces.get(id).state.notes[0].confirmed).toBeUndefined(); expect(db.workspaces.get(id).revision).toBe(2);
+    await expect(repo.execute(owner, id, { requestId: 'doc', expectedRevision: 1, command: { type: 'market.quotation.document', payload: {} } } as any)).rejects.toMatchObject({ code: 'REVISION_CONFLICT', message: expect.stringContaining('重新确认') });
+    expect(db.workspaces.get(id).revision).toBe(3);
   });
 
   it('无法证明安全的落后版本照旧拒绝：缺少写入记录（成员变更）或落后过多', async () => {
@@ -138,7 +143,9 @@ describe('多人保存冲突自动重试：只在最新状态上重新执行可�
   it('可串行化冲突时用新事务重试：对方先提交的安全修改与本次修改都保留', async () => {
     const flaky = new FlakyDatabase(), repo = repoFor(flaky), id = await sharedWorkspace(repo, flaky);
     flaky.failures = 1; flaky.attempts = 0;
-    flaky.beforeFailure = async () => { await repo.execute(other, id, note('competitor', 0, '乙')); };
+    // 竞争者是另一个服务进程（另一个连接池）：不走本进程的写入队列，直接在库里抢先提交。
+    const competitor = repoFor(new Proxy(flaky, {}));
+    flaky.beforeFailure = async () => { await competitor.execute(other, id, note('competitor', 0, '乙')); };
     const result = await repo.execute(owner, id, note('mine', 0, '甲'));
     expect(result).toMatchObject({ replayed: false, receipt: { revision: 2 } });
     expect(flaky.workspaces.get(id).state.notes.map((item: any) => item.text)).toEqual(['乙', '甲']);
@@ -182,7 +189,8 @@ describe('多人保存冲突自动重试：只在最新状态上重新执行可�
     let winner: Awaited<ReturnType<MistRepository['upload']>> | undefined;
     flaky.failures = 1;
     // 同一个请求属于同一个身份；竞争者使用同一账号模拟另一个连接。
-    flaky.beforeFailure = async () => { winner = await repo.upload(owner, id, input, file); };
+    const competitor = repoFor(new Proxy(flaky, {}));
+    flaky.beforeFailure = async () => { winner = await competitor.upload(owner, id, input, file); };
     const replay = await repo.upload(owner, id, input, file);
     expect(replay).toMatchObject({ replayed: true, receipt: winner!.receipt });
     expect(flaky.workspaces.get(id).state.files).toHaveLength(1);

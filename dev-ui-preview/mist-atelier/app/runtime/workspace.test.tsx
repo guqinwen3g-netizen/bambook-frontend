@@ -9,7 +9,7 @@ import type { MistCommand, MistFile, MistRunReceipt, MistState, MistWorkspaceEnv
 const auth = vi.hoisted(() => ({ session: { sessionKey: 'session-a', user: { id: 'actor-a' }, status: 'authenticated' } }));
 vi.mock('./auth', () => ({ useMistSession: () => auth.session }));
 vi.mock('../../../../services/apiService', () => ({ apiService: { getAuthHeaders: () => ({ 'Content-Type': 'application/json', 'X-Test-Actor': auth.session.user.id }) } }));
-import { MistWorkspaceProvider, useMistWorkspace, workspaceAccessibleBy, type MistWorkspaceContext } from './workspace';
+import { MistWorkspaceProvider, shareStructure, useMistWorkspace, workspaceAccessibleBy, type MistWorkspaceContext } from './workspace';
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 const BASE = '/api/mist/workspaces';
@@ -109,6 +109,7 @@ beforeEach(() => {
     if (request.method === 'POST' && request.url === BASE) return create(request);
     if(request.url===BASE+'/archived')return response({workspaces:[...stores.values()].filter(item=>item.ownerId===request.actor&&item.state.workspaceArchive).map(item=>({id:item.id,name:item.name,revision:item.revision,archivedAt:item.state.workspaceArchive!.at}))});
     if (request.url === BASE) return response({ workspaces: [...stores.values()].filter(item => (item.ownerId === request.actor || item.state.memberIds?.includes(request.actor))&&!item.state.workspaceArchive).map(({ id, name, ownerId, access }) => ({ id, name, ownerId, access })) });
+    if (request.url.endsWith('/revision')) { const value = stores.get(request.url.slice(BASE.length + 1).split('/')[0]); return value && (value.ownerId === request.actor || value.state.memberIds?.includes(request.actor)) && !value.state.workspaceArchive ? response({ id: value.id, revision: value.revision }) : failure(404); }
     if (request.url.includes('/receipts/')) { const receipt = receipts.get(decodeURIComponent(request.url.split('/').at(-1)!)); return receipt ? response({ receipt }) : failure(404); }
     const id = request.url === BASE + '/default' ? [...stores.values()].find(item=>item.ownerId===request.actor&&!item.state.workspaceArchive)?.id : request.url.slice(BASE.length + 1);
     const value = id?stores.get(id):undefined; return value && (value.ownerId === request.actor || value.state.memberIds?.includes(request.actor))&&!value.state.workspaceArchive ? response({ workspace: value }) : failure(404);
@@ -367,6 +368,28 @@ it('refreshes a definitively conflicted command without remounting the draft or 
   expect(rejected).toMatchObject({code:'REVISION_CONFLICT'});expect(api.workspace?.revision).toBe(3);expect(api.state?.settings.theme).toBe('dark');expect(api.error).toBe('请求被拒绝');expect(api.pending).toBeNull();expect(api.saving).toBe(false);
   expect(host.querySelector('[aria-label="未保存确认依据"]')).toBe(control);expect(control.value).toBe('用户填写的客户确认');expect(posts()).toHaveLength(1);expect(JSON.parse(posts()[0].init.body as string).expectedRevision).toBe(0);
   await act(async()=>{await api.run(command(control.value));});expect(posts()).toHaveLength(2);expect(JSON.parse(posts()[1].init.body as string).expectedRevision).toBe(3);expect(api.workspace?.revision).toBe(4);expect(api.state?.settings.profileName).toBe('用户填写的客户确认');
+});
+
+it('shares unchanged records by reference and replaces only what changed',()=>{
+  const before={a:{id:'x',n:1},list:[{id:'1',v:1},{id:'2',v:2}],tags:['t']};
+  const after=shareStructure(before,clone({...before,list:[{id:'2',v:3},{id:'1',v:1}]}));
+  expect(after.a).toBe(before.a);expect(after.tags).toBe(before.tags);expect(after.list[1]).toBe(before.list[0]);expect(after.list[0]).not.toBe(before.list[1]);expect(after.list[0]).toEqual({id:'2',v:3});
+  expect(shareStructure(before,clone(before))).toBe(before);
+});
+
+it('quietly syncs others\' saves when the window regains focus, keeping drafts and unchanged records',async()=>{
+  function Draft(){const [value,setValue]=React.useState('');return <input aria-label="编辑中" value={value} onChange={event=>setValue(event.target.value)}/>;}
+  function CurrentForm(){const value=useMistWorkspace();return value.workspace?<Draft key={value.workspace.id}/>:null;}
+  await mount();await act(async()=>root.render(<MistWorkspaceProvider><Probe/><CurrentForm/></MistWorkspaceProvider>));
+  const control=host.querySelector<HTMLInputElement>('[aria-label="编辑中"]')!;
+  await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(control,'还没保存');control.dispatchEvent(new Event('input',{bubbles:true}));});
+  const orders=api.state!.orders,heads=()=>calls.filter(item=>item.url.endsWith('/revision')).length;
+  await act(async()=>{window.dispatchEvent(new Event('focus'));await new Promise(r=>setTimeout(r,0));});
+  expect(heads()).toBe(1);expect(api.workspace?.revision).toBe(0); // 版本没变：不读取完整内容
+  const updated=clone(stores.get(A)!);updated.revision=5;updated.state.settings.theme='dark';stores.set(A,updated);
+  await act(async()=>{window.dispatchEvent(new Event('focus'));await new Promise(r=>setTimeout(r,0));});
+  expect(api.workspace?.revision).toBe(5);expect(api.state?.settings.theme).toBe('dark');expect(api.state!.orders).toBe(orders);expect(api.error).toBe('');
+  expect(host.querySelector('[aria-label="编辑中"]')).toBe(control);expect(control.value).toBe('还没保存');expect(posts()).toHaveLength(0);
 });
 
 it('does not refresh on other definitive validation or permission rejections',async()=>{

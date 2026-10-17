@@ -45,6 +45,7 @@ export class MistLocalDatabase{
     },
     mistCommandReceipt:{
       findUnique:async({where}:any)=>{const pair=where.workspaceId_requestId;if(!pair)invalid('本地回执查询无效',500);return clone(store.receipts[JSON.stringify([pair.workspaceId,pair.requestId])]??null);},
+      findMany:async({where}:any)=>{const ids=where?.requestId?.in;if(typeof where?.workspaceId!=='string'||!Array.isArray(ids))invalid('本地回执查询无效',500);return ids.flatMap((requestId:string)=>{const row=store.receipts[JSON.stringify([where.workspaceId,requestId])];return row?[clone(row)]:[];});},
       create:async({data}:any)=>{const key=JSON.stringify([data.workspaceId,data.requestId]);if(store.receipts[key]||Object.values(store.receipts).some(row=>row.id===data.id))duplicate();store.receipts[key]=clone(data);return clone(data);},
     },
     businessSequence:{
@@ -56,7 +57,7 @@ export class MistLocalDatabase{
   async $transaction<T>(operation:(db:ReturnType<MistLocalDatabase['delegates']>)=>Promise<T>,_options?:unknown):Promise<T>{await this.ready;return serialized(this.directory,async()=>{const original=await this.readStore(),draft=structuredClone(original);const result=await operation(this.delegates(draft));if(JSON.stringify(draft)!==JSON.stringify(original))await this.persist(draft);return structuredClone(result);});}
   private async read<T>(operation:(db:ReturnType<MistLocalDatabase['delegates']>)=>Promise<T>){await this.ready;return serialized(this.directory,async()=>operation(this.delegates(await this.readStore())));}
   get mistWorkspace(){return{findFirst:(args:any)=>this.read(db=>db.mistWorkspace.findFirst(args)),findMany:(args:any={})=>this.read(db=>db.mistWorkspace.findMany(args)),findUnique:(args:any)=>this.read(db=>db.mistWorkspace.findUnique(args)),create:(args:any)=>this.$transaction(db=>db.mistWorkspace.create(args)),update:(args:any)=>this.$transaction(db=>db.mistWorkspace.update(args))};}
-  get mistCommandReceipt(){return{findUnique:(args:any)=>this.read(db=>db.mistCommandReceipt.findUnique(args)),create:(args:any)=>this.$transaction(db=>db.mistCommandReceipt.create(args))};}
+  get mistCommandReceipt(){return{findUnique:(args:any)=>this.read(db=>db.mistCommandReceipt.findUnique(args)),findMany:(args:any)=>this.read(db=>db.mistCommandReceipt.findMany(args)),create:(args:any)=>this.$transaction(db=>db.mistCommandReceipt.create(args))};}
   get businessSequence(){return{findUnique:(args:any)=>this.read(db=>db.businessSequence.findUnique(args)),upsert:(args:any)=>this.$transaction(db=>db.businessSequence.upsert(args)),update:(args:any)=>this.$transaction(db=>db.businessSequence.update(args))};}
   async $queryRawUnsafe(sql:string,..._parameters:unknown[]){return this.read(db=>db.$queryRawUnsafe(sql));}
   async health(){return this.read(async()=>({storage:'local-file',status:'ok'}));}
