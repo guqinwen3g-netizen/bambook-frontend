@@ -285,6 +285,10 @@
 .mist-dialog-h { display: flex; gap: 14px; padding: 22px 22px 0; align-items: flex-start; }
 .mist-dialog-h .mist-h2 + p { color: var(--mist-ink-2); font-size: var(--mist-text-md); margin-top: 6px; }
 .mist-dialog-body { padding: 16px 22px 4px; }
+/* 内容区叠放间距：Mist 组件不带外边距，块与块之间的距离由容器给出。抽屉 / 弹窗 / 卡片内容区是普通块级排版
+   （里面可能直接放行内文字，不能改成 flex），用相邻块的上边距补齐；已经自带 flex / grid 排布的卡片内容区
+   （mist-col、mist-season-timeline、行内 display）由它自己的 gap 负责，不再叠加。 */
+.mist-root :where(.mist-drawer-body, .mist-dialog-body, .mist-card-body:not(.mist-col, .mist-season-timeline, [style*="display"])) > :where(div:not(.mist-stack), p, section, article, aside, form, fieldset, ul, ol, dl, table, details, figure, header, footer, nav, h2, h3, h4) + :where(div:not(.mist-stack), p, section, article, aside, form, fieldset, ul, ol, dl, table, details, figure, header, footer, nav, h2, h3, h4) { margin-top: var(--mist-space-3); }
 .mist-dialog-foot { display: flex; gap: 10px; justify-content: flex-end; padding: 18px 22px 22px; }
 
 .mist-menu { position: fixed; z-index: calc(var(--mist-z-overlay) + 2); min-width: 200px; padding: 6px; border-radius: var(--mist-r-lg); animation: mist-fade .15s both; }

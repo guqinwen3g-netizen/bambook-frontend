@@ -13,13 +13,14 @@
  * 选项：--quick  --out <dir>  --widths 360,390  --themes light,dark  --only orders,risks  --workers 4
  *       --report-only（有问题也以 0 退出，用于产出修复前清单）  --selftest（只跑判定自检夹具）
  * 环境：MIST_OVERFLOW_BASE（默认 http://127.0.0.1:3001）、CHROMIUM（浏览器可执行文件路径）
+ * 同时检查贴边叠放（detectStacking：相邻卡片 / 提示条等「面」之间没有间距），类型记为 stack-touching，与溢出一样计入问题。
  * 输出：<out>/report.json 与 <out>/report.md
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
-import { detectOverflow } from './detect.mjs';
+import { detectOverflow, detectStacking } from './detect.mjs';
 import { selfTest } from './selftest.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -58,10 +59,11 @@ const STATES = [
   ...CREATE_VIEWS.map(v => ({ id: v + '+create', label: v + ' · 新建', url: '?view=' + v, actions: [{ create: true }] })),
   { id: 'cockpit+palette', label: '命令面板', url: '?view=cockpit', actions: [{ press: 'Control+k' }] },
   { id: 'cockpit+account', label: '账号抽屉', url: '?view=cockpit', actions: [{ click: '.mist-me' }] },
+  { id: 'cockpit+notifications', label: '通知抽屉', url: '?view=cockpit', actions: [{ click: '.mist-topbar [aria-label="通知"]' }] },
   { id: 'cockpit+assistant', label: '小竹助手抽屉', url: '?view=cockpit', actions: [{ click: '.mist-side-ai' }] },
 ];
 /** 快速回归：宽表 / 列表预览 / 单据详情 / 对象详情 / 模块工作台 / 新建 / 弹窗 / 抽屉各取代表。 */
-const QUICK_STATES = new Set(['cockpit', 'orders', 'orders#detail', 'development', 'development#detail', 'development/new', 'risks', 'risks#detail', 'risks+create', 'payment-vouchers', 'quotations', 'shipments', 'crm#detail', 'cockpit+palette', 'cockpit+account']);
+const QUICK_STATES = new Set(['cockpit', 'orders', 'orders#detail', 'development', 'development#detail', 'development/new', 'risks', 'risks#detail', 'risks+create', 'payment-vouchers', 'quotations', 'shipments', 'crm#detail', 'cockpit+palette', 'cockpit+account', 'cockpit+notifications']);
 
 async function ensureServer() {
   const ok = async () => { try { const r = await fetch(BASE + '/api/health', { signal: AbortSignal.timeout(2000) }); const b = await r.json(); return r.ok && b.mode === 'local'; } catch { return false; } };
@@ -144,6 +146,7 @@ async function scanState(context, state, theme) {
       await page.waitForTimeout(260);
       await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
       const result = await page.evaluate(detectOverflow, {});
+      result.issues.push(...(await page.evaluate(detectStacking, {})).issues);
       for (const issue of result.issues) found.push({ state: state.id, label: state.label, url: state.url, actions: state.actions, theme, width: w, ...issue });
       for (const d of result.designed) designed.push({ state: state.id, theme, width: w, ...d });
     }

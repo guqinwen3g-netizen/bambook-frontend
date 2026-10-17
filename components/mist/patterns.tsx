@@ -216,7 +216,7 @@ export function Kanban<T>({ columns, itemKey, renderCard, onMove, onOpen }: { co
   const dragRef = React.useRef<string | null>(null);
   const [over, setOver] = React.useState<string | null>(null);
   return (
-    <div className="mist-kanban" style={{ ['--mist-kb-cols' as string]: columns.length }}>
+    <div className="mist-kanban" data-mist-scroll="x" style={{ ['--mist-kb-cols' as string]: columns.length }}>
       {columns.map(c => (
         <section key={c.id} className="mist-kb-col" data-over={over === c.id || undefined}
           onDragOver={e => { if (onMove) { e.preventDefault(); setOver(c.id); } }} onDragLeave={() => setOver(null)}

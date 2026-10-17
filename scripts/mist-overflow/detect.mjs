@@ -134,3 +134,81 @@ export function detectOverflow(options = {}) {
   void flaggedEls;
   return { viewport: { w: vw, h: window.innerHeight }, issues, designed };
 }
+
+/**
+ * 贴边叠放判定（同样由 `page.evaluate(detectStacking)` 注入，必须自包含）。
+ *
+ * 「面」= 四边都有可见边框、非透明背景或投影（只有上 / 下分隔线的列表行不算），且圆角 ≥ 4px 的块级元素（卡片、通知、提示条、子卡片等）。
+ * 同一父元素下相邻的两个面，在排列方向上间距 < MIN_GAP（默认 4px）且另一方向大部分重叠 → `stack-touching`。
+ * 不算问题：衔接处两侧圆角都是 0（有意拼接成一组，如分段控件、表格行）、带 `data-mist-joined` 的容器、
+ * 绝对 / 固定定位、不可见元素、表格行与单元格。
+ */
+export function detectStacking(options = {}) {
+  const MIN_GAP = options.minGap ?? 4;
+  const MAX_ISSUES = options.maxIssues ?? 200;
+  const issues = [];
+  const styleOf = new Map();
+  const cs = el => { let s = styleOf.get(el); if (!s) { s = getComputedStyle(el); styleOf.set(el, s); } return s; };
+  const alpha = c => { const m = /rgba?\(([^)]+)\)/.exec(c || ''); if (!m) return c && c !== 'transparent' ? 1 : 0; const p = m[1].split(/[\s,/]+/).filter(Boolean); return p.length > 3 ? parseFloat(p[3]) : 1; };
+  const visible = el => { const s = cs(el); return s.display !== 'none' && s.visibility !== 'hidden' && el.getClientRects().length > 0 && !el.closest('details:not([open]) > :not(summary)'); };
+  const SKIP = new Set(['TR', 'TD', 'TH', 'TBODY', 'THEAD', 'TABLE', 'OPTION', 'LI']);
+  const surface = el => {
+    if (SKIP.has(el.tagName) || el.closest('svg')) return false;
+    const s = cs(el);
+    if (['absolute', 'fixed'].includes(s.position) || s.display.startsWith('inline') && s.display !== 'inline-block' && s.display !== 'inline-flex' && s.display !== 'inline-grid') return false;
+    const radius = Math.max(parseFloat(s.borderTopLeftRadius) || 0, parseFloat(s.borderBottomRightRadius) || 0);
+    if (radius < 4) return false;
+    const border = ['Top', 'Right', 'Bottom', 'Left'].every(k => parseFloat(s[`border${k}Width`]) > 0 && s[`border${k}Style`] !== 'none' && alpha(s[`border${k}Color`]) > 0.05);
+    const bg = alpha(s.backgroundColor) > 0.05 || (s.backgroundImage && s.backgroundImage !== 'none');
+    const shadow = s.boxShadow && s.boxShadow !== 'none';
+    if (!(border || bg || shadow)) return false;
+    const r = el.getBoundingClientRect();
+    return r.width >= 40 && r.height >= 16;
+  };
+  /** 无样式包裹层（只有一个可见子元素且尺寸一致）向下找到真正的面。 */
+  const face = el => {
+    for (let node = el, depth = 0; node && depth < 4; depth++) {
+      if (surface(node)) return node;
+      const kids = [...node.children].filter(visible);
+      if (kids.length !== 1) return null;
+      const a = node.getBoundingClientRect(), b = kids[0].getBoundingClientRect();
+      if (Math.abs(a.top - b.top) > 1 || Math.abs(a.bottom - b.bottom) > 1 || Math.abs(a.left - b.left) > 1 || Math.abs(a.right - b.right) > 1) return null;
+      node = kids[0];
+    }
+    return null;
+  };
+  const describe = el => {
+    const parts = [];
+    for (let node = el, depth = 0; node && node.nodeType === 1 && depth < 5; depth++, node = node.parentElement) {
+      let part = node.tagName.toLowerCase();
+      const classes = [...node.classList].filter(c => !/^(is-|_|css-)/.test(c)).slice(0, 2);
+      if (classes.length) part += '.' + classes.join('.');
+      const role = node.getAttribute('role'); if (role && !['presentation', 'none'].includes(role)) part += `[role=${role}]`;
+      parts.unshift(part);
+      if (node.classList.contains('mist-scroll') || node.getAttribute('role') === 'dialog') break;
+    }
+    return parts.join(' > ');
+  };
+  const snippet = el => (el?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+  const seen = new Set();
+  for (const parent of document.body.getElementsByTagName('*')) {
+    if (issues.length >= MAX_ISSUES) break;
+    if (parent.closest('[data-mist-joined]') || !visible(parent)) continue;
+    const kids = [...parent.children].filter(k => visible(k) && !['absolute', 'fixed'].includes(cs(k).position));
+    for (let i = 0; i + 1 < kids.length; i++) {
+      const a = face(kids[i]), b = face(kids[i + 1]);
+      if (!a || !b) continue;
+      const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect(), sa = cs(a), sb = cs(b);
+      const overlapX = Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left), overlapY = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top);
+      let axis = null, gap = 0;
+      if (overlapX > 0.5 * Math.min(ra.width, rb.width) && rb.top >= ra.top + ra.height / 2) { axis = 'y'; gap = rb.top - ra.bottom; if ((parseFloat(sa.borderBottomLeftRadius) || 0) + (parseFloat(sb.borderTopLeftRadius) || 0) === 0) continue; }
+      else if (overlapY > 0.5 * Math.min(ra.height, rb.height) && rb.left >= ra.left + ra.width / 2) { axis = 'x'; gap = rb.left - ra.right; if ((parseFloat(sa.borderTopRightRadius) || 0) + (parseFloat(sb.borderTopLeftRadius) || 0) === 0) continue; }
+      if (!axis || gap >= MIN_GAP || gap < -2) continue;
+      const selector = describe(b);
+      if (seen.has(selector + axis)) continue; seen.add(selector + axis);
+      const r = { x: Math.round(rb.left), y: Math.round(rb.top), w: Math.round(rb.width), h: Math.round(rb.height) };
+      issues.push({ kind: 'stack-touching', selector, text: snippet(b), over: Math.round(MIN_GAP - gap), rect: r, culprit: { selector: describe(a), text: snippet(a), over: Math.round(gap) }, axis });
+    }
+  }
+  return { issues };
+}
