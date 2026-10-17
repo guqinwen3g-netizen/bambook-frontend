@@ -31,6 +31,11 @@ describe('BB-QUO-4 转订单须开发版本已获需求方认可',()=>{
   v.confirmations=[{...base,id:'a',result:'approved'},{...base,id:'b',result:'needs_adjustment'}];const {id,type}=acceptedVersionQuote(s,ctx,v.id);
   expect(()=>convert(s,ctx,id,type)).toThrow(/需求方要求调整/);
  });
+ it('approval details name the exact development code and version label of each line',()=>{
+  const {ctx,s}=setup(),v=s.versions.find(x=>!x.archivedAt)!,dev=s.devs.find(d=>d.id===v.devId)!;const {id}=acceptedVersionQuote(s,ctx,v.id);
+  const detail=s.market.quotations.find(q=>q.id===id)!.approval!.details.find(d=>d.label.startsWith(dev.name))!;
+  expect(detail.value).toContain(`来源 开发 ${dev.code} / ${v.label}`);expect(detail.value).not.toContain(v.id);
+ });
  it('does not restrict product archive lines',()=>{
   const {ctx,s}=setup();const p=run(s,{type:'market.product.save',payload:{input:{sku:'P-Q4',name:'面料',category:'fabric',season:'AW26',supplierId:'',supplierCode:'',composition:'棉',specification:'150cm',color:'蓝',unit:'米',cost:'1.00',currency:'USD',sourceDevId:'',sourceVersionId:''}}},ctx).id!;
   const customerId=s.customers[0].id;const id=run(s,{type:'market.quotation.save',payload:{input:{customerId,currency:'USD',season:'AW26',validUntil:'2026-11-01',deliveryTerms:'FOB',paymentTerms:'T/T',lines:[{productId:p,sourceDevId:'',sourceVersionId:'',name:'面料',style:'P-Q4',specification:'150cm',qty:'3',unit:'米',price:'2.00',cost:'1.00'}]}}},ctx).id!;
