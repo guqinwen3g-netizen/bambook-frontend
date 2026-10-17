@@ -12,6 +12,7 @@ import { quotationDocumentBlocker, quotationDocuments, quotationFormalDocumentBl
 import { apiService } from '../../../../../services/apiService';
 import { useMistWorkspace } from '../../runtime/workspace';
 import { useMistSession } from '../../runtime/auth';
+import { defaultMemberId, memberSelectOptions, workspaceMembers } from '../../runtime/members';
 import { useNav } from '../../nav';
 import { ModuleEditorDialog, downloadModuleCsv, type ModuleEditorSpec } from './ModuleWorkbench';
 import { useRouteDraft } from './useRouteDraft';
@@ -68,6 +69,7 @@ export type QuotationWorkbenchProps = {
 
 export function QuotationWorkbench({ onCreate, onEdit, onRevise, attachments, history }: QuotationWorkbenchProps) {
   const { state, run, error, refresh, loading, saving, pending, downloadFile, fileUrl, workspace: activeWorkspace } = useMistWorkspace(), session = useMistSession(), { go, route } = useNav();
+  const members = workspaceMembers(activeWorkspace, state, session.user);
   const [domainChoice, setDomainChoice] = React.useState<QuoteDomain | null>(null), [stageFilter, setStageFilter] = React.useState<StageFilter>('all'), [flagFilter, setFlagFilter] = React.useState<FlagFilter>('all'), [query, setQuery] = React.useState('');
   const [picked, setPicked] = React.useState<string | null>(route.id || null), [drawer, setDrawer] = React.useState(!!route.id);
   const [dialog, setDialog] = useRouteDraft<ModuleEditorSpec | null>(null), [failure, setFailure] = useRouteDraft('');
@@ -117,14 +119,14 @@ export function QuotationWorkbench({ onCreate, onEdit, onRevise, attachments, hi
     return {
       title: `从 ${q.code} 创建订单`, submitLabel: '创建订单草稿',
       description: '只使用客户已接受的这一版报价；勾选本次转单的条目（须同一板块），数量、单位与单价原样带入订单草稿。未勾选的条目之后可再转另一张订单，或标记不再转。',
-      initialValues: { type: domain, due: '', owner: state?.settings.profileName || session.user?.displayName || '', ...Object.fromEntries(choices.map(c => ['line:' + c.line.id, !c.blocked && (!c.family || c.family === domain)])) },
+      initialValues: { type: domain, due: '', ownerId: defaultMemberId(members, session.user?.id), ...Object.fromEntries(choices.map(c => ['line:' + c.line.id, !c.blocked && (!c.family || c.family === domain)])) },
       fields: [
         ...choices.map(c => ({ key: 'line:' + c.line.id, label: `转入：${c.line.name} · ${c.line.qty} ${c.line.unit} × ${c.line.price}`, type: 'checkbox' as const, readonly: !!c.blocked, hint: c.blocked || (c.family ? (c.family === 'fabric' ? '面料条目' : '成衣条目') : undefined) })),
         { key: 'type', label: '订单类型', type: 'select', required: true, options: [{ value: 'garment', label: '成衣订单' }, { value: 'fabric', label: '面料订单' }] },
         { key: 'due', label: '本次订单交期', type: 'date', required: true },
-        { key: 'owner', label: '业务负责人', required: true },
+        { key: 'ownerId', label: '业务负责人', type: 'select', required: true, options: memberSelectOptions(members), hint: '按账号选择本空间成员' },
       ],
-      submit: async v => { const lineIds = checkedLines(v); if (!lineIds.length) throw new Error('请至少勾选一个条目'); const r = await run({ type: 'market.quotation.convert', payload: { id: q.id, type: v.type as QuoteDomain, due: String(v.due ?? ''), owner: String(v.owner ?? ''), lineIds } }); go('orders/detail', String((r.result as { orderId?: string }).orderId)); },
+      submit: async v => { const lineIds = checkedLines(v); if (!lineIds.length) throw new Error('请至少勾选一个条目'); const r = await run({ type: 'market.quotation.convert', payload: { id: q.id, type: v.type as QuoteDomain, due: String(v.due ?? ''), ownerId: String(v.ownerId ?? ''), lineIds } }); go('orders/detail', String((r.result as { orderId?: string }).orderId)); },
     };
   };
   const skipSpec = (q: MarketQuotation): ModuleEditorSpec => ({

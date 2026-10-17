@@ -1,14 +1,15 @@
 /** 客户关系切片：跟进记录与商机。只记录业务员实际登记的事实；商机金额按原币种保存，不跨币种汇总。 */
 import { MistCommandError, type MistContext, type MistState } from './mistWorkspace';
+import { ownerChangeText, resolveMember } from './mistAccounts';
 
 export type CrmFollowUpMethod = 'call' | 'email' | 'meeting' | 'visit' | 'im' | 'other';
 export type CrmLinkKind = 'development' | 'quotation' | 'order' | 'opportunity';
 export type CrmLink = { kind: CrmLinkKind; id: string };
 export type CrmFollowUp = { id: string; customerId: string; method: CrmFollowUpMethod; content: string; at: string; nextDate: string; nextTaskId: string; link: CrmLink | null; actor: string; createdAt: string };
 export type CrmStage = 'intent' | 'sampling' | 'quoting' | 'won' | 'lost';
-export type CrmOpportunity = { id: string; customerId: string; title: string; domain: 'garment' | 'fabric'; stage: CrmStage; amount: string; currency: string; expectedDate: string; owner: string; note: string; lossReason: string; devIds: string[]; quotationIds: string[]; orderIds: string[]; history: Array<{ at: string; actor: string; from: CrmStage | null; to: CrmStage; note: string }>; createdAt: string; updatedAt: string };
+export type CrmOpportunity = { id: string; customerId: string; title: string; domain: 'garment' | 'fabric'; stage: CrmStage; amount: string; currency: string; expectedDate: string; /** 负责人显示名快照；ownerId 为负责人账号。 */ owner: string; ownerId: string; note: string; lossReason: string; devIds: string[]; quotationIds: string[]; orderIds: string[]; history: Array<{ at: string; actor: string; from: CrmStage | null; to: CrmStage; note: string }>; createdAt: string; updatedAt: string };
 export type CrmState = { followUps: CrmFollowUp[]; opportunities: CrmOpportunity[] };
-export type CrmOpportunityInput = { customerId: string; title: string; domain: 'garment' | 'fabric'; amount: string; currency: string; expectedDate: string; owner: string; note: string; devIds: string[]; quotationIds: string[]; orderIds: string[] };
+export type CrmOpportunityInput = { customerId: string; title: string; domain: 'garment' | 'fabric'; amount: string; currency: string; expectedDate: string; ownerId: string; note: string; devIds: string[]; quotationIds: string[]; orderIds: string[] };
 export type CrmCommand =
   | { type: 'crm.followUp.save'; payload: { customerId: string; method: CrmFollowUpMethod; content: string; at: string; nextDate: string; link: CrmLink | null } }
   | { type: 'crm.opportunity.save'; payload: { id?: string; input: CrmOpportunityInput } }
@@ -65,9 +66,12 @@ export function applyCrmCommand(root: MistState, command: CrmCommand, context: M
       if (!['garment', 'fabric'].includes(input.domain)) fail('业务板块无效');
       const amount = text(input.amount, '预计金额', true, 20); if (!/^\d{1,12}(\.\d{1,2})?$/.test(amount)) fail('预计金额须为最多两位小数的非负数');
       const currency = text(input.currency, '币种', true, 3).toUpperCase(); if (!/^[A-Z]{3}$/.test(currency)) fail('币种格式无效');
-      const row: CrmOpportunity = { id: old?.id || context.id(), customerId: c.id, title: text(input.title, '商机名称', true, 160), domain: input.domain, stage: old?.stage || 'intent', amount, currency, expectedDate: day(input.expectedDate, '预计成交日', true), owner: text(input.owner, '负责人', true, 80), note: text(input.note, '说明', false, 2000), lossReason: old?.lossReason || '', devIds: ids(root, c.id, 'development', input.devIds), quotationIds: ids(root, c.id, 'quotation', input.quotationIds), orderIds: ids(root, c.id, 'order', input.orderIds), history: old?.history || [{ at: context.now, actor: context.actorName, from: null, to: 'intent', note: '建立商机' }], createdAt: old?.createdAt || context.now, updatedAt: context.now };
+      if ((input as Record<string, unknown>).owner !== undefined) fail('负责人须按账号选择');
+      const owner = old && input.ownerId === old.ownerId ? { id: old.ownerId, name: old.owner } : resolveMember(context, input.ownerId, '商机负责人');
+      const row: CrmOpportunity = { id: old?.id || context.id(), customerId: c.id, title: text(input.title, '商机名称', true, 160), domain: input.domain, stage: old?.stage || 'intent', amount, currency, expectedDate: day(input.expectedDate, '预计成交日', true), owner: owner.name, ownerId: owner.id, note: text(input.note, '说明', false, 2000), lossReason: old?.lossReason || '', devIds: ids(root, c.id, 'development', input.devIds), quotationIds: ids(root, c.id, 'quotation', input.quotationIds), orderIds: ids(root, c.id, 'order', input.orderIds), history: old?.history || [{ at: context.now, actor: context.actorName, from: null, to: 'intent', note: '建立商机' }], createdAt: old?.createdAt || context.now, updatedAt: context.now };
+      const ownerText = old && old.ownerId !== row.ownerId ? ' · ' + ownerChangeText('负责人', old.owner, owner.name) : '';
       if (old) Object.assign(old, row); else root.crm.opportunities.unshift(row);
-      log(root, context, c.id, `${old ? '更新' : '建立'}商机 ${row.title}`); return { id: row.id };
+      log(root, context, c.id, `${old ? '更新' : '建立'}商机 ${row.title}${ownerText}`); return { id: row.id };
     }
     case 'crm.opportunity.stage': {
       const row = root.crm.opportunities.find(item => item.id === command.payload.id) || fail('商机不存在', 'NOT_FOUND'), stage = command.payload.stage, note = text(command.payload.note, '说明', false, 1000);

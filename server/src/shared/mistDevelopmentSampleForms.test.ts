@@ -1,11 +1,12 @@
 import {describe,it,expect} from 'vitest';
+import { withTestFactories } from './__tests__/utils/devFactories';
 import {applyMistCommand,createMistState,mistCommandPermission,type DevelopmentValues,type MistContext,type MistCommand} from './mistWorkspace';
 import {emptyFabricRequirements} from './mistDevelopmentDomain';
 import {developmentVersionSamples} from './mistDevelopmentSamples';
 
 /** BB-DEV-6 面料版本多形态实物 / BB-DEV-8 版本详情寄样。 */
 function fixture(){
- let n=0;const ctx:MistContext={id:()=>`sf-${++n}`,now:'2026-10-16T09:00:00Z',actorName:'测试业务员'};let state=createMistState(ctx,'empty');
+ let n=0;const ctx:MistContext={id:()=>`sf-${++n}`,now:'2026-10-16T09:00:00Z',actorName:'测试业务员',actorId:'test-sales'};let state=withTestFactories(createMistState(ctx,'empty'));
  state.customers.push({id:'c',name:'测试客户',code:'C',country:'',city:'',industry:'',owner:'',grade:'',currency:'EUR',terms:'',incoterm:'',categories:'',creditLimit:0,since:''});
  state.market.suppliers.push({id:'f',code:'F',name:'测试面料厂',type:'面料工厂',capabilities:'织造',status:'active',country:'',address:'',capacity:0,capacityUnit:'米',leadDays:0,blockReason:'',contacts:[],fileIds:[],note:'',createdAt:ctx.now,updatedAt:ctx.now});
  const values:DevelopmentValues={domain:'fabric',name:'测试斜纹',customer:'c',style:'',season:'AW',category:'斜纹',kind:'new',fabric:'目标',color:'蓝灰',target:'2.50',targetCurrency:'EUR',targetUnit:'米',sizeBase:'',goal:'手感',factories:['测试面料厂'],due:'2026-11-01',collaborators:[],sampleQuantity:3,sampleForm:'色样',sampleUnit:'份',fabricRequirements:{...emptyFabricRequirements(),composition:'羊毛:100'}} as DevelopmentValues;

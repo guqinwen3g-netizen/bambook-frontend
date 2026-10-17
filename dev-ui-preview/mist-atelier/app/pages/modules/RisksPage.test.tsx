@@ -9,7 +9,7 @@ import { riskSignals, type RiskRecord } from '../../../../../server/src/shared/m
 
 const bridge = vi.hoisted(() => ({ current: null as any, perms: null as string[] | null, user: { id: 'demo-buyer', displayName: '沈禾' } }));
 vi.mock('../../runtime/workspace', () => ({ useMistWorkspace: () => bridge.current }));
-vi.mock('../../runtime/auth', () => ({ useMistSession: () => ({ user: bridge.user, hasPermission: (p: string) => bridge.perms === null || bridge.perms.includes(p), hasRole: () => false, canAccessView: () => true }) }));
+vi.mock('../../runtime/auth', () => { const useMistSession = () => ({ user: bridge.user, hasPermission: (p: string) => bridge.perms === null || bridge.perms.includes(p), hasRole: () => false, canAccessView: () => true }); return { useMistSession, useOptionalMistSession: useMistSession }; });
 let host: HTMLDivElement, root: Root | undefined, state: MistState; const go = vi.fn();
 beforeEach(() => {
   (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true; go.mockReset(); bridge.perms = null; bridge.user = { id: 'demo-buyer', displayName: '沈禾' };

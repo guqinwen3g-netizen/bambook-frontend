@@ -257,6 +257,8 @@ export function MistSessionProvider({children}:{children:React.ReactNode}) {
  return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 
+/** 可选会话：在没有会话上下文的嵌入 / 测试场景返回 null（仅用于展示与默认值，不用于权限判断）。 */
+export function useOptionalMistSession(): MistSession | null { return React.useContext(SessionContext); }
 export function useMistSession(): MistSession {
   const session = React.useContext(SessionContext);
   if (!session) throw new Error('useMistSession must be used inside MistSessionProvider');

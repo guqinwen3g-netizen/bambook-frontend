@@ -10,7 +10,7 @@ const ctx = vi.hoisted(() => ({
   sessionKey: 's', canChat: true,
   workspace: { id: 'w-1', name: '甲工作区' } as { id: string; name: string } | null,
 }));
-vi.mock('../../runtime/auth', () => ({ useMistSession: () => ({ sessionKey: ctx.sessionKey, user: ctx.user, hasPermission: (p: string) => p === 'ai:chat' && ctx.canChat }) }));
+vi.mock('../../runtime/auth', () => { const useMistSession = () => ({ sessionKey: ctx.sessionKey, user: ctx.user, hasPermission: (p: string) => p === 'ai:chat' && ctx.canChat }); return { useMistSession, useOptionalMistSession: useMistSession }; });
 vi.mock('../../runtime/workspace', () => ({ useMistWorkspace: () => ({ workspace: ctx.workspace }) }));
 vi.mock('../../../../../services/apiService', () => ({ apiService: { getAuthHeaders: () => ({ Authorization: 'Bearer personal' }) } }));
 

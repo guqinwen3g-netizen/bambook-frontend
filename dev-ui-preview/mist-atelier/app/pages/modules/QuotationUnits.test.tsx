@@ -9,7 +9,7 @@ import {createMarketState,applyMarketCommand} from '../../../../../server/src/sh
 import {developmentDomain} from '../../../../../server/src/shared/mistDevelopmentDomain';
 const bridge=vi.hoisted(()=>({current:null as any}));
 vi.mock('../../runtime/workspace',()=>({useMistWorkspace:()=>bridge.current}));
-vi.mock('../../runtime/auth',()=>({useMistSession:()=>({user:{id:'sales'},hasPermission:()=>true,hasRole:()=>false,canAccessView:()=>true})}));
+vi.mock('../../runtime/auth', () => { const useMistSession = ()=>({user:{id:'sales'},hasPermission:()=>true,hasRole:()=>false,canAccessView:()=>true}); return { useMistSession, useOptionalMistSession: useMistSession }; });
 let host:HTMLDivElement,root:Root|undefined;const go=vi.fn();
 beforeEach(()=>{(globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;go.mockReset();let next=0;const ctx:MistContext={id:()=>`unit-test-${++next}`,actorName:'业务员',now:'2026-10-16T00:00:00.000Z'};const state=createMistState(ctx);state.market=createMarketState(ctx,state);state.market.quotations=[];state.customers=[{id:'c1',name:'现有客户',code:'C1',country:'',city:'',industry:'',owner:'业务员',grade:'',currency:'USD',terms:'',incoterm:'',categories:'',creditLimit:0,since:''}];
  applyMarketCommand(state,{type:'market.product.save',payload:{input:{sku:'LEGACY-F',name:'旧单位面料',category:'fabric',season:'',supplierId:'',supplierCode:'',composition:'',specification:'',color:'',unit:'件',cost:'1.00',currency:'USD',sourceDevId:'',sourceVersionId:''}}} as any,ctx);

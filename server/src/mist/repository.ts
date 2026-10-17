@@ -10,6 +10,7 @@ import { hasScope } from '../auth/permissionService';
 import { isMember, isOwner, memberIds, members, MEMBER_PERSONAL_COMMANDS, projectState, canReadFile, canReadTarget, type MistWorkspaceAccess, type MistMemberLog } from './access';
 import { payablesCommandPermissions } from '../shared/mistPayables';
 import { MIST_LOCAL_PROFILES, mistLocalPublicUser } from './local';
+import { buildMemberDirectory, MIST_MEMBER_DIRECTORY_COMMANDS } from '../shared/mistAccounts';
 import { buildLoadedAuthTokenPayload, loadUserWithRoles } from '../auth/tokenHelpers';
 import { MistPrivateFiles, validateFileInput, type MistFileInput, type MistStoredFile } from './files';
 import { prepareMistBusinessNumbers } from './businessNumbers';
@@ -125,6 +126,13 @@ export class MistRepository {
     this.contract.normalizeMistState?.(row.state,this.context(actor));
     return { actor, row };
   }
+  /** 包 A：本次执行时的成员目录（所有者 + 授权成员，账号状态与业务组）。账号已停用 / 删除或查不到时记为停用（失败关闭）。 */
+  private async memberDirectory(db: any, row: MistWorkspaceRow, actor: TokenPayload) {
+    const ids = [row.ownerId, ...memberIds(row.state)], accounts = new Map<string, { name: string; active: boolean }>();
+    if (localMode(actor)) for (const profile of MIST_LOCAL_PROFILES) accounts.set(profile.id, { name: profile.name, active: true });
+    else if (typeof db.userAccount?.findMany === 'function') for (const user of await db.userAccount.findMany({ where: { id: { in: ids } }, select: { id: true, displayName: true, status: true, deletedAt: true } })) accounts.set(user.id, { name: user.displayName || user.id, active: user.status === 'active' && !user.deletedAt });
+    return buildMemberDirectory({ ownerId: row.ownerId, state: row.state, accounts });
+  }
   private transact<T>(run: (db: any) => Promise<T>): Promise<T> { return this.prisma.$transaction(run, { isolationLevel: 'Serializable', maxWait: 5000, timeout: 30000 }); }
   private emptyState(actor: TokenPayload) { return () => { const context = this.context(actor), state = this.contract.createMistState(context, 'empty'); this.contract.normalizeMistState?.(state, context); return state; }; }
   /** 返回给当前账号的工作空间：按其现有读权限裁剪，并附带访问说明。 */
@@ -168,7 +176,7 @@ export class MistRepository {
       if(target!.id===row.ownerId)fail('INVALID_INPUT','所有者本来就能进入此空间',400);
       const state:any=structuredClone(row.state),context=this.context(actor),ids=memberIds(state),list=members(state);
       if(input.action==='add'){if(ids.includes(target!.id))fail('MEMBER_EXISTS','该账号已被授权',409);state.memberIds=[...ids,target!.id];state.members=[...list,{userId:target!.id,name:target!.name,addedBy:actor.userId,addedByName:context.actorName,addedAt:context.now}];}
-      else{if(!ids.includes(target!.id))fail('MEMBER_NOT_FOUND','该账号当前没有被授权',409);state.memberIds=ids.filter(id=>id!==target!.id);state.members=list.filter(m=>m.userId!==target!.id);}
+      else{if(!ids.includes(target!.id))fail('MEMBER_NOT_FOUND','该账号当前没有被授权',409);state.memberIds=ids.filter(id=>id!==target!.id);state.members=list.filter(m=>m.userId!==target!.id);if(Array.isArray(state.memberGroups))state.memberGroups=state.memberGroups.filter((g:any)=>g.userId!==target!.id);}
       const log:MistMemberLog={id:context.id(),action:input.action,userId:target!.id,name:target!.name,actorId:actor.userId,actorName:context.actorName,at:context.now};
       state.memberLog=[log,...(Array.isArray(state.memberLog)?state.memberLog:[])];
       state.events.unshift({id:context.id(),entityType:'workspace',entityId:row.id,actor:context.actorName,at:context.now,text:(input.action==='add'?'授权账号进入工作空间：':'撤销账号的工作空间访问：')+target!.name,fileIds:[]});
@@ -271,6 +279,7 @@ export class MistRepository {
           if (type === 'notification.readAll') context.visibleNotificationIds = visible.notifications.map(item => item.id);
         }
         if(input.command) context.authority = await mistApprovalAuthority(db,actor,input.command.type);
+        if(input.command && MIST_MEMBER_DIRECTORY_COMMANDS.includes(input.command.type)) context.members = await this.memberDirectory(db,row,actor);
         const plan = input.command ? this.contract.getRequiredBusinessNumberPlan?.(row.state, input.command) ?? [] : [];
         const numbers = await prepareMistBusinessNumbers(db, row.state, plan, context.now);
         context.consumeBusinessNumber = prefix => numbers.consume(prefix);

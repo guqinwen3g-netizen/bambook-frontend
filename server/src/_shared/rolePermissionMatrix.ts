@@ -420,6 +420,7 @@ const SALES_BASE: RolePermissionMatrix = {
   'crm:read': true,
   'crm:write': true,
   'suppliers:read': true,
+  'suppliers:write': true, // P6：业务员可维护供应商档案 / 认证 / 联系人；评级与状态仍需 suppliers:admin
   'seasons:read': true,
   'seasons:write': true,
   'marketing:read': true,

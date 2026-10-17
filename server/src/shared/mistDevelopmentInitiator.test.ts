@@ -1,9 +1,10 @@
 import {describe,it,expect} from 'vitest';
+import { withTestFactories } from './__tests__/utils/devFactories';
 import {applyMistCommand,createMistState,type DevelopmentValues,type MistContext,type MistCommand} from './mistWorkspace';
 import {developmentCharged,developmentInitiatorLabel} from './mistDevelopmentDomain';
 
 function fixture(){
-  let n=0;const ctx:MistContext={id:()=>`in-${++n}`,now:'2026-10-16T09:00:00Z',actorName:'测试业务员'};let state=createMistState(ctx,'empty');
+  let n=0;const ctx:MistContext={id:()=>`in-${++n}`,now:'2026-10-16T09:00:00Z',actorName:'测试业务员',actorId:'test-sales'};let state=withTestFactories(createMistState(ctx,'empty'));
   state.customers.push({id:'c',name:'测试客户',code:'C',country:'',city:'',industry:'',owner:'',grade:'',currency:'EUR',terms:'',incoterm:'',categories:'',creditLimit:0,since:''});
   state.market.suppliers.push({id:'f',code:'F',name:'实际测试面料厂',type:'面料工厂',capabilities:'织造染整',status:'active',country:'',address:'',capacity:0,capacityUnit:'米',leadDays:0,blockReason:'',contacts:[],fileIds:[],note:'',createdAt:ctx.now,updatedAt:ctx.now});
   state.platform.employees.push({id:'emp-1',name:'林面料',department:'面料部',position:'面料开发',contact:'',startDate:'2026-01-01',note:'',active:true,history:[]});

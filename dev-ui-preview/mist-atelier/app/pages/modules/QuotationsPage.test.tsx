@@ -9,7 +9,7 @@ import { createMistState, type MistContext, type MistState } from '../../../../.
 
 const bridge = vi.hoisted(() => ({ current: null as any }));
 vi.mock('../../runtime/workspace', () => ({ useMistWorkspace: () => bridge.current }));
-vi.mock('../../runtime/auth', () => ({ useMistSession: () => ({ user: { id: 'demo-sales', displayName: '顾言' }, hasPermission: () => true, hasRole: () => false, canAccessView: () => true }) }));
+vi.mock('../../runtime/auth', () => { const useMistSession = () => ({ user: { id: 'demo-sales', displayName: '顾言' }, hasPermission: () => true, hasRole: () => false, canAccessView: () => true }); return { useMistSession, useOptionalMistSession: useMistSession }; });
 let host: HTMLDivElement, root: Root | undefined, state: MistState; const go = vi.fn();
 const code = (c: string) => state.market.quotations.find(q => q.code === c)!;
 beforeEach(() => {

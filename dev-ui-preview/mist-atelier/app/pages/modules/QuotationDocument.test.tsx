@@ -8,7 +8,7 @@ import { createMistState, type MistContext, type MistState } from '../../../../.
 
 const bridge = vi.hoisted(() => ({ current: null as any }));
 vi.mock('../../runtime/workspace', () => ({ useMistWorkspace: () => bridge.current }));
-vi.mock('../../runtime/auth', () => ({ useMistSession: () => ({ user: { id: 'demo-sales', displayName: '顾言' }, hasPermission: () => true, hasRole: () => false, canAccessView: () => true }) }));
+vi.mock('../../runtime/auth', () => { const useMistSession = () => ({ user: { id: 'demo-sales', displayName: '顾言' }, hasPermission: () => true, hasRole: () => false, canAccessView: () => true }); return { useMistSession, useOptionalMistSession: useMistSession }; });
 let host: HTMLDivElement, root: Root | undefined, state: MistState; const go = vi.fn();
 const ctx: MistContext = { id: (() => { let n = 0; return () => `q6-${++n}`; })(), actorName: '顾言', actorId: 'demo-sales', now: '2026-10-14T02:00:00.000Z' };
 const company = { legalName: '杭州竹语纺织有限公司', englishName: 'Hangzhou Bamboo Textile', address: '杭州', englishAddress: 'Hangzhou', phone: '', email: '', taxId: '', customsCode: '', bankName: '', bankAccount: '', swift: '', defaultCurrency: 'USD' };

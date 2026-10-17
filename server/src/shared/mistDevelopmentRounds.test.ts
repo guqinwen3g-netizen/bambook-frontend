@@ -1,9 +1,10 @@
 import {describe,it,expect} from 'vitest';
+import { withTestFactories } from './__tests__/utils/devFactories';
 import {applyMistCommand,createMistState,type DevelopmentValues,type MistContext,type MistCommand} from './mistWorkspace';
 import {developmentRoundViews,factoryLetterAt,parseVersionLabel} from './mistDevelopmentRounds';
 
 function fixture(){
-  let n=0;const ctx:MistContext={id:()=>`rd-${++n}`,now:'2026-10-16T09:00:00Z',actorName:'测试业务员'};let state=createMistState(ctx,'empty');
+  let n=0;const ctx:MistContext={id:()=>`rd-${++n}`,now:'2026-10-16T09:00:00Z',actorName:'测试业务员',actorId:'test-sales'};let state=withTestFactories(createMistState(ctx,'empty'));
   state.customers.push({id:'c',name:'测试客户',code:'C',country:'',city:'',industry:'',owner:'',grade:'',currency:'EUR',terms:'',incoterm:'',categories:'',creditLimit:0,since:''});
   const values:DevelopmentValues={name:'轮次测试大衣',customer:'c',style:'ST-1',season:'AW',category:'大衣',kind:'new',fabric:'羊毛',color:'灰',target:'',sizeBase:'M',goal:'首轮版型',factories:['A厂','B厂','C厂'],due:'2026-10-30',collaborators:[],sampleQuantity:1};
   const run=(command:MistCommand)=>{const r=applyMistCommand(state,command,ctx);state=r.state;return r.result;};
@@ -61,7 +62,7 @@ describe('BB-DEV-2 development rounds and fixed factory letters',()=>{
 
 describe('acceptance review #59: round creation boundaries',()=>{
   const setup=()=>{
-    let n=0;const ctx:MistContext={id:()=>`rv-${++n}`,now:'2026-10-16T10:00:00Z',actorName:'测试'};let state=createMistState(ctx,'empty');
+    let n=0;const ctx:MistContext={id:()=>`rv-${++n}`,now:'2026-10-16T10:00:00Z',actorName:'测试',actorId:'test-sales'};let state=withTestFactories(createMistState(ctx,'empty'));
     state.customers.push({id:'c',name:'客户',code:'C',country:'',city:'',industry:'',owner:'',grade:'',currency:'EUR',terms:'',incoterm:'',categories:'',creditLimit:0,since:''});
     const run=(command:MistCommand)=>{const r=applyMistCommand(state,command,ctx);state=r.state;return r.result;};
     const values:DevelopmentValues={initiator:'customer',requestType:'replicate',name:'边界测试',customer:'c',style:'B-1',season:'AW',category:'大衣',kind:'new',fabric:'羊毛',color:'灰',target:'',sizeBase:'M',goal:'首轮',factories:['A厂'],due:'2026-10-30',collaborators:[],sampleQuantity:1};

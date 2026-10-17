@@ -1,11 +1,12 @@
 import {describe,it,expect} from 'vitest';
+import { withTestFactories } from './__tests__/utils/devFactories';
 import {applyMistCommand,createMistState,type DevelopmentValues,type MistContext,type MistCommand} from './mistWorkspace';
 import {minorVersionBlocker,minorVersions} from './mistDevelopmentRounds';
 import {quotationConversionBlockers} from './mistMarket';
 import {developmentNoticeBlocker} from './mistDevelopmentNotice';
 
 function fixture(){
-  let n=0;const ctx:MistContext={id:()=>`mv-${++n}`,now:'2026-10-16T09:00:00Z',actorName:'测试业务员'};let state=createMistState(ctx,'empty');
+  let n=0;const ctx:MistContext={id:()=>`mv-${++n}`,now:'2026-10-16T09:00:00Z',actorName:'测试业务员',actorId:'test-sales'};let state=withTestFactories(createMistState(ctx,'empty'));
   state.customers.push({id:'c',name:'测试客户',code:'C',country:'',city:'',industry:'',owner:'',grade:'',currency:'EUR',terms:'',incoterm:'',categories:'',creditLimit:0,since:''});
   const values:DevelopmentValues={name:'小版本大衣',customer:'c',style:'ST-5',season:'AW',category:'大衣',kind:'new',fabric:'羊毛',color:'灰',target:'',sizeBase:'M',goal:'首轮版型',factories:['A厂'],due:'2026-10-30',collaborators:[],sampleQuantity:1};
   const run=(command:MistCommand)=>{const r=applyMistCommand(state,command,ctx);state=r.state;return r.result as Record<string,any>;};

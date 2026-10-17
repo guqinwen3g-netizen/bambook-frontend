@@ -8,7 +8,7 @@ function fixture(){
   const customer=state.customers[0],order=state.orders.find(o=>o.customerId===customer.id)!,other=state.orders.find(o=>o.customerId!==customer.id);
   return {run,customer,order,other,get state(){return state;}};
 }
-const opp=(customerId:string,patch={})=>({customerId,title:'春夏大衣补单',domain:'garment' as const,amount:'48000.00',currency:'usd',expectedDate:'2026-12-01',owner:'顾言',note:'',devIds:[],quotationIds:[],orderIds:[],...patch});
+const opp=(customerId:string,patch={})=>({customerId,title:'春夏大衣补单',domain:'garment' as const,amount:'48000.00',currency:'usd',expectedDate:'2026-12-01',ownerId:'sales',note:'',devIds:[],quotationIds:[],orderIds:[],...patch});
 
 describe('客户关系：跟进与商机',()=>{
   it('空白空间为空切片，命令需要关系写权限',()=>{
