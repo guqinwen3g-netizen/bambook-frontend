@@ -43,6 +43,33 @@ it('derives customs reminders and rebate evidence only from recorded shipment, p
   expect(rebateEvidence(st,e)).toMatchObject({collected:true,ready:2});
   st.invoices[0].voidedAt='2026-10-13T00:00:00Z';
   expect(rebateEvidence(st,e).collected).toBe(false);
+  // 待财务确认的 CI 应收 open=0 只是尚未入账，不能当作已收汇。
+  delete st.invoices[0].voidedAt;st.invoices[0].financeStatus='pending';
+  expect(rebateEvidence(st,e)).toMatchObject({collected:false,invoices:[]});
+});
+
+it('hides the customs-cleared option without customs:clear and explains that logistics must record it',()=>{
+  const f=store.state!.fulfillment;f.shipments.push(shipment('s'));f.packing.push(pack('s',10));f.customs.push(customs('s','submitted'));
+  session.denied.add('customs:clear');render('cus-s');
+  const detail=host.querySelector('[data-customs-detail="cus-s"]') as HTMLElement;
+  expect(queryByRole(detail,'button',{name:'登记海关放行'})).toBeNull();
+  expect(queryByRole(detail,'button',{name:'更正申报信息'})).toBeNull();
+  expect(detail.textContent).toContain('申报与清关须由后勤/单证登记');
+  session.denied.delete('customs:clear');store.state={...store.state!};render('cus-s');
+  const allowed=host.querySelector('[data-customs-detail="cus-s"]') as HTMLElement;
+  expect(getByRole(allowed,'button',{name:'登记海关放行'})).toBeTruthy();
+  expect(getByRole(allowed,'button',{name:'更正申报信息'})).toBeTruthy();
+  expect(allowed.textContent).not.toContain('申报与清关须由后勤/单证登记');
+});
+
+it('hides the declare action on drafts without customs:clear',()=>{
+  const f=store.state!.fulfillment;f.shipments.push(shipment('s'));f.packing.push(pack('s',10));f.customs.push(customs('s','draft'));
+  session.denied.add('customs:clear');render('cus-s');
+  const detail=host.querySelector('[data-customs-detail="cus-s"]') as HTMLElement;
+  expect(queryByRole(detail,'button',{name:'登记已申报'})).toBeNull();
+  expect(detail.textContent).toContain('申报与清关须由后勤/单证登记');
+  session.denied.delete('customs:clear');store.state={...store.state!};render('cus-s');
+  expect(getByRole(host.querySelector('[data-customs-detail="cus-s"]') as HTMLElement,'button',{name:'登记已申报'})).toBeTruthy();
 });
 
 it('lists shipments still awaiting a customs record and creates the draft from that row',async()=>{

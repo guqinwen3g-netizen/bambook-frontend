@@ -881,7 +881,9 @@ export function createShippingRouter(options: ShippingRouterOptions): Router {
 
   // Export customs is performed outside Bambook; logistics records the external
   // completion fact only after the linked, protected proof file has been archived.
-  router.post('/:id/export-declaration-completion', requirePermission('shipments:write'), requirePermission('customs:write'), async (req: Request, res: Response) => {
+  // The completion fact is the customs-cleared gate for actual departure, so it
+  // additionally requires customs:clear (logistics/documentation only).
+  router.post('/:id/export-declaration-completion', requirePermission('shipments:write'), requirePermission('customs:write'), requirePermission('customs:clear'), async (req: Request, res: Response) => {
     const completedAt = normalizeExportDeclarationCompletedAt(req.body?.completedAt);
     const evidenceDocumentId = typeof req.body?.evidenceDocumentId === 'string' ? req.body.evidenceDocumentId.trim() : '';
     const reference = typeof req.body?.reference === 'string' ? req.body.reference.trim() : '';

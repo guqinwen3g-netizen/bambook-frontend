@@ -1,5 +1,10 @@
 import {describe,expect,it} from 'vitest';
 import {applyMistCommand,createMistState,type MistCommand,type MistContext} from './mistWorkspace';
+import { isPendingFinanceMistInvoice, isRecognizedMistInvoice, mistCommandPermission } from './mistWorkspace';
+import { FULFILLMENT_CUSTOMS_CLEAR_SCOPE } from './mistFulfillment';
+import { DEFAULT_ROLE_PERMISSION_MATRIX, SYSTEM_ROLE_IDS, hasPermission } from '../_shared/rolePermissionMatrix';
+import { DEFAULT_ROLE_PERMISSION_MATRIX as FRONTEND_MATRIX } from '../../../lib/rolePermissionMatrix';
+import { departmentAuthorization } from '../auth/departmentAuthorization';
 
 /** Exercise the root dispatcher, including shared recalculation and transaction-clone semantics. */
 function fixture() {
@@ -63,7 +68,7 @@ describe('Mist cross-domain financial and shipment invariants',()=>{
   // A pre-fix stored snapshot might already be ready. Departure must independently recheck QC.
   f.state.fulfillment.shipments[0].state='ready';
   f.run({type:'fulfillment.shipments.sent',payload:{id:f.shipmentId,at:f.context.now}});
-  f.run({type:'fulfillment.customs.save',payload:{shipmentId:f.shipmentId,status:'cleared',declarationNo:'DECL1',broker:'报关行',hsCode:'6201',origin:'CN',tradeMode:'FOB',declaredAt:'2026-10-13',clearedAt:'2026-10-13',evidence:'放行回执',fileIds:['uploaded'],note:''}});
+  f.run({type:'fulfillment.customs.save',payload:{shipmentId:f.shipmentId,status:'cleared',declarationNo:'DECL1',broker:'报关行',hsCode:'6201',origin:'CN',tradeMode:'FOB',declaredAt:'2026-10-13',clearedAt:'2026-10-13',evidence:'放行回执',fileIds:['uploaded'],note:''}},{...f.context,can:scope=>scope==='customs:clear'});
   expect(()=>f.run({type:'fulfillment.shipments.depart',payload:{id:f.shipmentId,at:f.context.now,evidence:'离港回执',fileIds:['uploaded']}})).toThrow(/实际生产分支|生产QC/);
   expect(f.state.fulfillment.shipments[0].state).toBe('ready');
   expect(f.state.fulfillment.shipments[0].departedAt).toBeUndefined();
@@ -73,6 +78,7 @@ describe('Mist cross-domain financial and shipment invariants',()=>{
   const f=fixture(),ci=f.document('CI');
   f.run({type:'fulfillment.documents.issue',payload:{id:ci}});
   const invoiceId=f.state.fulfillment.documents.find(d=>d.id===ci)!.invoiceId!;
+  f.run({type:'finance.receivable.confirm',payload:{invoiceId}});
   const claim=f.run({type:'platform.claim.create',payload:{orderId:f.orderId,invoiceId,problem:'客户确认的瑕疵',fileIds:['uploaded']}}).id!;
   const disposition=f.run({type:'platform.claim.disposition',payload:{claimId:claim,kind:'Allowance',amount:20,quantity:0,unit:'',returnDisposition:'',basis:'双方确认折让',fileIds:['uploaded']}}).id!;
   f.run({type:'platform.claim.submit',payload:{id:disposition}});
@@ -90,4 +96,125 @@ describe('Mist cross-domain financial and shipment invariants',()=>{
   expect(()=>f.run({type:'platform.credit.refund',payload:{creditId,amount:0.01,date:'2026-10-13',reference:'重复付款'}})).toThrow(/超过/);
   expect(f.state.payments).toHaveLength(1);
  });
+});
+
+
+// ── 工单「跨岗位闭环权限修复」：清关完成门禁与 CI 应收财务确认 ──
+// 用真实角色矩阵模拟服务端 hasScope：业务员只拿到 SALES 的授权，后勤拿到 LOGISTICS 的授权。
+const roleCan = (roleId: string) => (scope: string) => hasPermission(roleId, scope as any);
+function gate() {
+  const f = fixture();
+  const sales: MistContext = { ...f.context, can: roleCan(SYSTEM_ROLE_IDS.SALES) };
+  const logistics: MistContext = { ...f.context, actorName: '单证', actorId: 'logistics', can: roleCan(SYSTEM_ROLE_IDS.LOGISTICS) };
+  const finance: MistContext = { ...f.context, actorName: '财务', actorId: 'finance', can: roleCan(SYSTEM_ROLE_IDS.FINANCE) };
+  const run = (command: MistCommand, actor = sales) => f.run(command, actor);
+  return { get state() { return f.state; }, run, sales, logistics, finance, shipmentId: f.shipmentId, document: f.document };
+}
+const customs = (shipmentId: string, status: 'draft' | 'submitted' | 'cleared', id?: string) => ({ type: 'fulfillment.customs.save', payload: { ...(id ? { id } : {}), shipmentId, status, declarationNo: 'DECL-1', broker: '报关行', hsCode: '6205', origin: 'CN', tradeMode: 'FOB', declaredAt: status === 'draft' ? '' : '2026-10-13', clearedAt: status === 'cleared' ? '2026-10-13' : '', evidence: status === 'cleared' ? '海关放行回执' : '', fileIds: [], note: '' } } as MistCommand);
+
+describe('A · 清关完成只能由后勤/单证登记', () => {
+  it('新权限 customs:clear 只授予后勤与管理，业务员/业务主管没有；前后端矩阵一致', () => {
+    for (const matrix of [DEFAULT_ROLE_PERMISSION_MATRIX, FRONTEND_MATRIX as any]) {
+      expect(matrix[SYSTEM_ROLE_IDS.LOGISTICS]['customs:clear']).toBe(true);
+      expect(matrix[SYSTEM_ROLE_IDS.ADMIN]['customs:clear']).toBe(true);
+      expect(matrix[SYSTEM_ROLE_IDS.SALES]['customs:clear']).not.toBe(true);
+      expect(matrix[SYSTEM_ROLE_IDS.SALES_MANAGER]['customs:clear']).not.toBe(true);
+    }
+    expect(hasPermission(SYSTEM_ROLE_IDS.SUPER_ADMIN, 'customs:clear')).toBe(true);
+  });
+  it('部门门禁：customs:clear 必须是后勤部门，业务部门即使被授权也被过滤', () => {
+    const user = (businessAttributes: string[]) => ({ primaryDepartment: { name: '部门', parentId: 'company', status: 'active', metadata: { businessAttributes } } });
+    expect(departmentAuthorization(user(['garment_business']), ['role-sales'], ['customs:clear']).permissions).toEqual([]);
+    expect(departmentAuthorization(user(['logistics']), ['role-logistics'], ['customs:clear']).permissions).toEqual(['customs:clear']);
+    expect(departmentAuthorization({}, ['role-super-admin'], ['customs:clear']).permissions).toEqual(['customs:clear']);
+  });
+  it('命令权限映射：草稿仍是 customs:write，已申报/已清关要求 customs:clear', () => {
+    expect(mistCommandPermission(customs('s', 'draft'))).toBe('customs:write');
+    expect(mistCommandPermission(customs('s', 'submitted'))).toBe(FULFILLMENT_CUSTOMS_CLEAR_SCOPE);
+    expect(mistCommandPermission(customs('s', 'cleared'))).toBe(FULFILLMENT_CUSTOMS_CLEAR_SCOPE);
+  });
+  it('业务员只能保存草稿；登记已申报、直接或从已申报改为已清关都被服务端拒绝且不改状态', () => {
+    const f = gate();
+    const id = String(f.run(customs(f.shipmentId, 'draft')).id);
+    expect(f.state.fulfillment.customs[0].status).toBe('draft');
+    const draft = structuredClone(f.state);
+    expect(() => f.run(customs(f.shipmentId, 'submitted', id))).toThrow('登记已申报须由后勤/单证办理');
+    expect(() => f.run(customs(f.shipmentId, 'submitted', id), { ...f.sales, can: undefined })).toThrow(expect.objectContaining({ code: 'FORBIDDEN' }));
+    expect(f.state).toEqual(draft);
+    f.run(customs(f.shipmentId, 'submitted', id), f.logistics);
+    expect(f.state.fulfillment.customs[0].status).toBe('submitted');
+    const before = structuredClone(f.state);
+    expect(() => f.run(customs(f.shipmentId, 'cleared', id))).toThrow('清关完成须由后勤/单证登记');
+    expect(f.state).toEqual(before);
+    // 缺少权限判定上下文时按拒绝处理（fail closed）。
+    expect(() => f.run(customs(f.shipmentId, 'cleared', id), { ...f.sales, can: undefined })).toThrow('清关完成须由后勤/单证登记');
+    expect(f.state.fulfillment.customs[0].status).toBe('submitted');
+    const fresh = gate();
+    expect(() => fresh.run(customs(fresh.shipmentId, 'cleared'))).toThrow(expect.objectContaining({ code: 'FORBIDDEN' }));
+    expect(fresh.state.fulfillment.customs).toHaveLength(0);
+  });
+  it('后勤可登记已申报再登记为已清关，已清关记录不可再被覆盖', () => {
+    const f = gate();
+    const id = String(f.run(customs(f.shipmentId, 'submitted'), f.logistics).id);
+    f.run(customs(f.shipmentId, 'cleared', id), f.logistics);
+    expect(f.state.fulfillment.customs[0]).toMatchObject({ status: 'cleared', clearedAt: '2026-10-13', evidence: '海关放行回执' });
+    expect(() => f.run(customs(f.shipmentId, 'submitted', id), f.logistics)).toThrow('已清关记录不可覆盖');
+  });
+});
+
+describe('B · CI 生成的应收须财务确认后才入账', () => {
+  const issue = (f: ReturnType<typeof gate>) => {
+    const documentId = f.document('CI');
+    const invoiceId = String(f.run({ type: 'fulfillment.documents.issue', payload: { id: documentId } } as MistCommand).invoiceId);
+    return { documentId, invoiceId };
+  };
+  const receipt = (f: ReturnType<typeof gate>, ref: string) => { f.run({ type: 'finance.importReceipts', payload: { receipts: [{ date: '2026-10-13', payer: '现有客户', amount: 10, currency: 'USD', ref }] } }, f.finance); return f.state.receipts.find(r => r.ref === ref)!.id; };
+
+  it('命令权限：确认/驳回需要财务应收写权限，业务员与后勤没有', () => {
+    expect(mistCommandPermission({ type: 'finance.receivable.confirm', payload: { invoiceId: 'x' } })).toBe('invoices:write');
+    expect(mistCommandPermission({ type: 'finance.receivable.reject', payload: { invoiceId: 'x', reason: 'r' } })).toBe('invoices:write');
+    expect(hasPermission(SYSTEM_ROLE_IDS.FINANCE, 'invoices:write')).toBe(true);
+    expect(hasPermission(SYSTEM_ROLE_IDS.SALES, 'invoices:write')).toBe(false);
+    expect(hasPermission(SYSTEM_ROLE_IDS.LOGISTICS, 'invoices:write')).toBe(false);
+  });
+  it('CI 签发后应收为待财务确认：不计余额、不计报表口径、不能核销', () => {
+    const f = gate(); const { invoiceId } = issue(f);
+    const invoice = f.state.invoices.find(i => i.id === invoiceId)!;
+    expect(invoice).toMatchObject({ financeStatus: 'pending', amount: 100, open: 0 });
+    expect(isPendingFinanceMistInvoice(invoice)).toBe(true);
+    expect(isRecognizedMistInvoice(invoice)).toBe(false);
+    expect(f.state.invoices.filter(isRecognizedMistInvoice).reduce((total, i) => total + i.amount, 0)).toBe(0);
+    const receiptId = receipt(f, 'PENDING-RECEIPT');
+    const before = structuredClone(f.state);
+    expect(() => f.run({ type: 'finance.reconcile', payload: { receiptId, invoiceId, amount: 10 } }, f.finance)).toThrow('应收待财务确认');
+    expect(f.state).toEqual(before);
+  });
+  it('财务确认后记录确认人/时间并计入应收，之后可以核销', () => {
+    const f = gate(); const { invoiceId } = issue(f);
+    f.run({ type: 'finance.receivable.confirm', payload: { invoiceId } }, f.finance);
+    const invoice = f.state.invoices.find(i => i.id === invoiceId)!;
+    expect(invoice).toMatchObject({ financeStatus: 'confirmed', financeConfirmedBy: '财务', financeConfirmedById: 'finance', financeConfirmedAt: f.sales.now, open: 100 });
+    expect(isRecognizedMistInvoice(invoice)).toBe(true);
+    expect(() => f.run({ type: 'finance.receivable.confirm', payload: { invoiceId } }, f.finance)).toThrow();
+    const receiptId = receipt(f, 'CONFIRMED-RECEIPT');
+    f.run({ type: 'finance.reconcile', payload: { receiptId, invoiceId, amount: 10 } }, f.finance);
+    expect(f.state.invoices.find(i => i.id === invoiceId)!.open).toBe(90);
+  });
+  it('财务驳回须填原因：应收不计入、CI 退回草稿可更正后重新签发', () => {
+    const f = gate(); const { documentId, invoiceId } = issue(f);
+    expect(() => f.run({ type: 'finance.receivable.reject', payload: { invoiceId, reason: '  ' } }, f.finance)).toThrow();
+    expect(f.state.invoices.find(i => i.id === invoiceId)!.financeStatus).toBe('pending');
+    f.run({ type: 'finance.receivable.reject', payload: { invoiceId, reason: '金额与合同不符' } }, f.finance);
+    const rejected = f.state.invoices.find(i => i.id === invoiceId)!;
+    expect(rejected).toMatchObject({ financeStatus: 'rejected', financeRejectReason: '金额与合同不符', financeRejectedById: 'finance', open: 0 });
+    expect(isRecognizedMistInvoice(rejected)).toBe(false);
+    const document = f.state.fulfillment.documents.find(d => d.id === documentId)!;
+    expect(document.status).toBe('draft');
+    expect(document.invoiceId).toBeUndefined();
+    expect(document.financeRejection).toMatchObject({ reason: '金额与合同不符', invoiceId });
+    expect(() => f.run({ type: 'finance.receivable.confirm', payload: { invoiceId } }, f.finance)).toThrow();
+    const reissued = String(f.run({ type: 'fulfillment.documents.issue', payload: { id: documentId } } as MistCommand).invoiceId);
+    expect(reissued).not.toBe(invoiceId);
+    expect(f.state.invoices.find(i => i.id === reissued)).toMatchObject({ financeStatus: 'pending', open: 0 });
+  });
 });

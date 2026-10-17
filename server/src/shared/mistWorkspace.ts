@@ -28,6 +28,8 @@ export type MistContext = {
   id: () => string; now: string; actorName: string; actorId?: string;
   /** 服务端从实时读投影生成，不能由命令 payload 扩大；不重构共享通知的数据模型。 */
   visibleNotificationIds?: string[];
+  /** 服务端按本次执行账号的实时有效权限生成；领域处理内二次校验用，缺省视为无权（失败关闭）。 */
+  can?: (scope: string) => boolean;
   consumeBusinessNumber?: (prefix: MistBusinessNumberPrefix) => string;
   creditDocumentIssue?: MistCreditDocumentIssue;
   authority?: { supplier: Record<string,{version:number;userIds:string[]}>; claimReviewerId?:string; businessReviewerId?:string; orderReviewerIds?:{garment:string[];fabric:string[]}; paymentReviewerIds?:string[]; /** 风险处理与审批：服务端按当前账号岗位权限与部门主管路由重建，不接受 payload。 */ risk?:{ all:boolean; orders:boolean; customers:boolean }; riskReviewerIds?:string[] };
@@ -171,9 +173,17 @@ export function mistBankAccountBalances(state: Pick<MistState,'receipts'|'paymen
 }
 export type MistInvoice = { id: string; code: string; orderId: string; order: string; customer: string; due: string; amount: number; open: number; currency: string; voidedAt?: string; voidReason?: string; voidedBy?: string; voidedById?: string; voidSourceDocumentId?: string;
   /** BB-DEV-9：开发费用应收票据回链来源开发案（这类票据没有订单，orderId 为空）。 */
-  devId?: string };
+  devId?: string;
+  /** CI 签发形成的应收须经财务确认：pending 待确认、confirmed 已确认、rejected 已驳回（同时作废、CI 退回草稿）。 */
+  financeStatus?: MistReceivableFinanceStatus; sourceDocumentId?: string;
+  financeConfirmedAt?: string; financeConfirmedBy?: string; financeConfirmedById?: string;
+  financeRejectedAt?: string; financeRejectedBy?: string; financeRejectedById?: string; financeRejectReason?: string };
+export type MistReceivableFinanceStatus = 'pending' | 'confirmed' | 'rejected';
 /** Void preserves the original face value while removing the invoice from current receivables. */
 export function isActiveMistInvoice(invoice: Pick<MistInvoice, 'voidedAt'>): boolean { return !invoice.voidedAt; }
+/** 已作废之外，CI 应收待财务确认或已驳回时也不计入余额、账龄、报表、催收与核销。 */
+export function isRecognizedMistInvoice(invoice: Pick<MistInvoice, 'voidedAt' | 'financeStatus'>): boolean { return isActiveMistInvoice(invoice) && invoice.financeStatus !== 'pending' && invoice.financeStatus !== 'rejected'; }
+export function isPendingFinanceMistInvoice(invoice: Pick<MistInvoice, 'voidedAt' | 'financeStatus'>): boolean { return isActiveMistInvoice(invoice) && invoice.financeStatus === 'pending'; }
 export type MistAllocation = { id: string; receiptId: string; invoiceId: string; amount: number; currency: string; createdAt: string; actor: string; payerBasis?:string };
 /**
  * 核销 / 付款冲回记录。原记录不删除不改写：核销冲回后原核销整条快照保存在 allocation 中、
@@ -241,6 +251,8 @@ export type MistCommand = FulfillmentCommand | MarketCommand | PlatformCommand |
   | { type: 'production.move'; payload: { id: string; col: MistProduction['col']; note?: string } }
   | { type: 'production.update'; payload: { id: string; pct: number; risk?: string; note?: string; startDate?: string; due?: string } }
   | { type: 'finance.importReceipts'; payload: { receipts: Array<{ date: string; payer: string; amount: number; currency: string; ref: string }> } }
+  | { type: 'finance.receivable.confirm'; payload: { invoiceId: string } }
+  | { type: 'finance.receivable.reject'; payload: { invoiceId: string; reason: string } }
   | { type: 'finance.reconcile'; payload: { receiptId: string; invoiceId: string; amount?: number; payerBasis?:string } }
   | { type: 'finance.acceptSuggestions'; payload: { receiptIds: string[] } }
   | { type: 'finance.payment.save'; payload: { date: string; payee: string; amount: number; currency: string; ref: string } }
@@ -536,7 +548,7 @@ function updateDev(state: MistState, dev: MistDev, context: MistContext) {
   else {dev.stage=0;dev.state='开发计划';dev.tone='neutral';}
 }
 function recalculate(state: MistState) {
-  for(const invoice of state.invoices) invoice.open=isActiveMistInvoice(invoice)?major(Math.max(0,mistMoneyMinor(invoice.amount)-state.allocations.filter(a=>a.invoiceId===invoice.id).reduce((s,a)=>s+mistMoneyMinor(a.amount),0)-platformCreditAppliedMinor(state,invoice.id))):0;
+  for(const invoice of state.invoices) invoice.open=isRecognizedMistInvoice(invoice)?major(Math.max(0,mistMoneyMinor(invoice.amount)-state.allocations.filter(a=>a.invoiceId===invoice.id).reduce((s,a)=>s+mistMoneyMinor(a.amount),0)-platformCreditAppliedMinor(state,invoice.id))):0;
   for(const receipt of state.receipts){
     receipt.remaining=major(Math.max(0,mistMoneyMinor(receipt.amount)-state.allocations.filter(a=>a.receiptId===receipt.id).reduce((s,a)=>s+mistMoneyMinor(a.amount),0)));
     if(receipt.remaining===0) receipt.state='matched';
@@ -633,6 +645,7 @@ export function mistCommandPermission(command: MistCommand): string | null {
   if(command.type.startsWith('development.')||command.type.startsWith('fabric.')||command.type==='files.add')return 'products:write';
   if(command.type.startsWith('order.')||command.type.startsWith('production.'))return 'orders:write';
   if(command.type==='finance.developmentInvoice.issue')return MIST_FINANCE_SCOPES.invoice;
+  if(command.type==='finance.receivable.confirm'||command.type==='finance.receivable.reject')return MIST_FINANCE_SCOPES.invoice;
   if(command.type==='finance.importReceipts'||command.type==='finance.payment.save'||command.type==='finance.payment.reverse'||command.type==='finance.account.save'||command.type==='finance.account.assign'||command.type.startsWith('finance.fx.'))return MIST_FINANCE_SCOPES.voucher;
   if(command.type==='finance.reconcile'||command.type==='finance.acceptSuggestions'||command.type==='finance.allocation.reverse')return MIST_FINANCE_SCOPES.reconcile;
   if(command.type.startsWith('finance.'))throw new MistCommandError('VALIDATION','未知财务操作');
@@ -1008,6 +1021,24 @@ function applyMistCommandUnbound(original: MistState, command: MistCommand, cont
       if(job.startDate&&job.startDate>job.due)throw new MistCommandError('VALIDATION','开始日期不得晚于交期');
       event(state,context,'production',job.id,'更新生产进度 '+pct+'%');result={id:job.id,orderId:job.orderId};break;
     }
+    case 'finance.receivable.confirm':
+    case 'finance.receivable.reject': {
+      const i=find(state.invoices,text(p.invoiceId,'应收'),'应收');
+      if(!isPendingFinanceMistInvoice(i))throw new MistCommandError('PRECONDITION',i.financeStatus==='confirmed'?'该应收已由财务确认':'仅待财务确认的应收可以确认或驳回');
+      if(command.type==='finance.receivable.confirm'){
+        i.financeStatus='confirmed';i.financeConfirmedAt=context.now;i.financeConfirmedBy=context.actorName;if(context.actorId)i.financeConfirmedById=context.actorId;
+        event(state,context,'invoice',i.id,'财务确认应收 '+i.code+'，计入应收余额',{view:'invoices',id:i.id});result={id:i.id};break;
+      }
+      const reason=text(p.reason,'驳回原因',true,500),f=state.fulfillment;
+      const docs=(f?.documents||[]).filter(d=>d.type==='CI'&&d.invoiceId===i.id&&d.status==='issued');
+      if(docs.length!==1)throw new MistCommandError('PRECONDITION','未找到唯一的来源 CI，不能驳回');
+      const d=docs[0],s=f.shipments.find(x=>x.id===d.shipmentId);
+      if(!s||s.state==='departed'||s.state==='cancelled')throw new MistCommandError('PRECONDITION','来源出运已离港或已取消，CI 不能退回修正，请走财务更正');
+      Object.assign(i,{financeStatus:'rejected',financeRejectedAt:context.now,financeRejectedBy:context.actorName,financeRejectReason:reason,voidedAt:context.now,voidReason:'财务驳回：'+reason,voidedBy:context.actorName,voidSourceDocumentId:d.id,open:0},context.actorId?{financeRejectedById:context.actorId,voidedById:context.actorId}:{});
+      d.status='draft';delete d.invoiceId;delete d.issuedAt;d.financeRejection={reason,at:context.now,actor:context.actorName,invoiceId:i.id};
+      if(s.state==='ready')s.state='preparing';delete s.documentsSentAt;
+      event(state,context,'invoice',i.id,'财务驳回应收 '+i.code+'：'+reason+'；CI 退回草稿待修正',{view:'invoices',id:i.id});result={id:i.id,documentId:d.id};break;
+    }
     case 'finance.importReceipts': {
       if(!Array.isArray(p.receipts)||!p.receipts.length||p.receipts.length>2000)throw new MistCommandError('VALIDATION','流水数量无效');
       let imported=0,skipped=0;
@@ -1022,9 +1053,10 @@ function applyMistCommandUnbound(original: MistState, command: MistCommand, cont
       let applied=0;
       for(const pair of pairs){
         const r=find(state.receipts,pair.receiptId,'到账流水'),i=state.invoices.find(v=>v.id===pair.invoiceId||v.code===pair.invoiceId);
-        if(command.type==='finance.acceptSuggestions'&&(!i||!isActiveMistInvoice(i)||(r.confidence||0)<80||r.remaining<=0||i.open<=0))continue;
+        if(command.type==='finance.acceptSuggestions'&&(!i||!isRecognizedMistInvoice(i)||(r.confidence||0)<80||r.remaining<=0||i.open<=0))continue;
         if(!i)throw new MistCommandError('VALIDATION','请选择发票');
         if(!isActiveMistInvoice(i))throw new MistCommandError('PRECONDITION','已作废发票不能核销');
+        if(isPendingFinanceMistInvoice(i))throw new MistCommandError('PRECONDITION','应收待财务确认，确认前不能登记收款核销');
         if(i.currency!==r.currency)throw new MistCommandError('VALIDATION','到账和发票币种不同');
         const samePayer=r.payer.trim().toLocaleLowerCase()===i.customer.trim().toLocaleLowerCase();
         if(command.type==='finance.acceptSuggestions'&&!samePayer)continue;

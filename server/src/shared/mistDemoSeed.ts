@@ -10,7 +10,7 @@ import { emptyFabricRequirements } from './mistDevelopmentDomain';
 import { demoFileRecord, type DemoFileTemplate } from './mistDemoFiles';
 import { riskSignals } from './mistRisk';
 
-export const DEMO_SEED_VERSION = 12;
+export const DEMO_SEED_VERSION = 13;
 export type DemoSeedFailure = { step: string; message: string };
 
 const DAY = 86400000;
@@ -30,7 +30,7 @@ export function seedDemoModules(initial: MistState, context: MistContext): { sta
     risk: { all: true, orders: true, customers: true }, riskReviewerIds: ['demo-reviewer'],
   };
   const actor = (actorName: string, actorId: string): MistContext => ({ ...context, actorName, actorId, authority });
-  const sales = actor('顾言', 'demo-sales'), buyer = actor('沈禾', 'demo-buyer'), reviewer = actor('周敏', 'demo-reviewer'), inspector = actor('许言', 'demo-qc'), warehouse = actor('陈晓', 'demo-warehouse');
+  const sales = actor('顾言', 'demo-sales'), buyer = actor('沈禾', 'demo-buyer'), reviewer = actor('周敏', 'demo-reviewer'), inspector = actor('许言', 'demo-qc'), warehouse: MistContext = { ...actor('陈晓', 'demo-warehouse'), can: scope => scope === 'customs:clear' }; // 演示后勤/单证岗：唯一登记清关完成的身份
   const run = (step: string, command: MistCommand, ctx: MistContext = sales): Record<string, unknown> | null => {
     try { const r = applyMistCommand(state, command, ctx); state = r.state; return r.result as Record<string, unknown>; }
     catch (e) { failures.push({ step, message: e instanceof Error ? e.message : String(e) }); return null; }
@@ -298,7 +298,9 @@ export function seedDemoModules(initial: MistState, context: MistContext): { sta
       run('customs 017', { type: 'fulfillment.customs.save', payload: { shipmentId: ship, declarationNo: '2200 2026 1004 9126 51', broker: '上海东航报关有限公司', hsCode: '6203.31', origin: '中国', tradeMode: '一般贸易', declaredAt: day(-5), clearedAt: day(-4), evidence: '海关放行通知', fileIds: [demoFile('customs-release', ship, '报关放行通知 SO-G-2026-017（演示）.pdf')], note: '', status: 'cleared' } }, warehouse);
       for (const [type, title] of [['CI', '商业发票'], ['PL', '装箱单']] as const) {
         const doc = id(run('document ' + type, { type: 'fulfillment.documents.save', payload: { shipmentId: ship, orderId: type === 'CI' ? order017.id : '', type, number: `${type}-2026-0417`, title: `${title} · SO-G-2026-017 第一批`, dueDate: type === 'CI' ? day(26) : '', content: type === 'CI' ? '500 件修身羊毛西装套装 · FOB 上海 · USD' : '100 箱 · 净重 480 kg · 毛重 540 kg · 5.75 m³', fileIds: [demoFile(type === 'CI' ? 'commercial-invoice' : 'packing-list', ship, `${type}-2026-0417 ${title}（演示）.pdf`)] } }, warehouse));
-        if (doc) run('document issue ' + type, { type: 'fulfillment.documents.issue', payload: { id: doc } }, warehouse);
+        const issued = doc ? run('document issue ' + type, { type: 'fulfillment.documents.issue', payload: { id: doc } }, warehouse) : null;
+        // CI 应收先待财务确认；演示中由财务确认后才计入应收余额。
+        if (type === 'CI' && typeof issued?.invoiceId === 'string') run('receivable confirm CI', { type: 'finance.receivable.confirm', payload: { invoiceId: issued.invoiceId } }, finance);
       }
       run('ready 017', { type: 'fulfillment.shipments.ready', payload: { id: ship } }, warehouse);
       run('documents sent 017', { type: 'fulfillment.shipments.sent', payload: { id: ship, at: at(-5, 9) } }, sales);

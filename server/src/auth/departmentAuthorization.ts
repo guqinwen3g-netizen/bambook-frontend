@@ -14,6 +14,8 @@ export function departmentAuthorization(user: any, roleIds: string[], grantedPer
     if (scope === 'qc:fabric_chain:write') return has('fabric_business', 'fabric_qc');
     if (scope === 'qc:garment_chain:write') return has('garment_business', 'garment_qc');
     if (scope === 'shipments:write' || scope === 'customs:write') return has('logistics');
+    // Recording the customs-cleared fact belongs to logistics/documentation staff only.
+    if (scope === 'customs:clear') return has('logistics');
     // Payment requests and business approvals belong to their original role gates.
     if (/^(invoices|vouchers):write$/.test(scope)) return has('finance');
     return true;

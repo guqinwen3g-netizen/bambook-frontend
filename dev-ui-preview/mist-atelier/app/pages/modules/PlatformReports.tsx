@@ -3,7 +3,7 @@ import React from 'react';
 import { Clock, Download, Package, Receipt, TrendingUp } from 'lucide-react';
 import { Banner, Button, Card, CardHeader, DataTable, EmptyState, Field, MistPage, PageHeader, Pill, Select, StatCard, StatGrid, Tabs, TextInput, Toolbar, type Column } from '../../../../../components/mist';
 import { platformBusinessDate } from '../../../../../server/src/shared/mistPlatform';
-import { isActiveMistInvoice, mistMoneyMinor, type MistState } from '../../../../../server/src/shared/mistWorkspace';
+import { isActiveMistInvoice, isRecognizedMistInvoice, mistMoneyMinor, type MistState } from '../../../../../server/src/shared/mistWorkspace';
 import { useMistWorkspace } from '../../runtime/workspace';
 import { useMistSession } from '../../runtime/auth';
 import { useNav } from '../../nav';
@@ -22,7 +22,7 @@ export function buildCustomerSales(state: MistState, from = '', to = '', currenc
   for (const o of orders) {
     const key = (o.customerId || o.customer) + '|' + o.currency, row = map.get(key) ?? { customerId: o.customerId, customer: o.customer, currency: o.currency, orders: 0, amount: 0, invoiced: 0, open: 0 };
     row.orders++; row.amount += minor(o.amount);
-    for (const i of state.invoices) if (i.orderId === o.id && isActiveMistInvoice(i) && i.currency === o.currency) { row.invoiced += minor(i.amount); row.open += minor(i.open); }
+    for (const i of state.invoices) if (i.orderId === o.id && isRecognizedMistInvoice(i) && i.currency === o.currency) { row.invoiced += minor(i.amount); row.open += minor(i.open); }
     map.set(key, row);
   }
   return [...map.entries()].map(([id, r]) => ({ id, customerId: r.customerId, customer: r.customer, currency: r.currency, orders: r.orders, amount: r.amount / 100, invoiced: r.invoiced / 100, received: (r.invoiced - r.open) / 100, open: r.open / 100 }))
