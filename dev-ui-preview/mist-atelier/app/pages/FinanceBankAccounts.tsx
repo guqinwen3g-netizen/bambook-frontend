@@ -1,6 +1,8 @@
 /** 公司银行账户台账：登记账户与期初、逐笔流水归属账户。余额 = 期初 + 已归属到账 − 已归属付款，按原币，不折算汇率。 */
 import React from 'react';
-import { Banner, Button, Dialog, Field, FormGrid, Select, TextInput, useToast } from '../../../../components/mist';
+import { Banner, Button, Card, CardHeader, DataTable, Dialog, EmptyState, Field, FormGrid, Pill, Select, TextInput, useToast } from '../../../../components/mist';
+import { readFxPeriodRates, type FxPeriodRate } from '../../../../server/src/shared/mistFxRates';
+import { ModuleEditorDialog, type ModuleEditorSpec } from './modules/ModuleWorkbench';
 import { MIST_FINANCE_SCOPES } from '../../../../server/src/shared/mistFinancePermissions';
 import { mistCommandPermission, mistFxLockUsage, mistFxRate, type MistBankAccount, type MistCommand, type MistFxRecord, type MistPayment, type MistReceipt, type MistState } from '../../../../server/src/shared/mistWorkspace';
 import { platformBusinessDate } from '../../../../server/src/shared/mistPlatform';
@@ -157,4 +159,32 @@ export function FxReverseDialog({ record, onClose }: { record: MistFxRecord; onC
       <Field label="冲回原因" required><TextInput aria-label="冲回原因" value={reason} onChange={e => setReason(e.target.value)} /></Field>
     </div>
   </Dialog>;
+}
+
+/** 月末汇率（报表暂估用）：每月每币种一条，依据必填；登错作废后重登。报表“月末暂估”口径取不晚于所选月份的最新一期。 */
+export function FxPeriodRatesCard() {
+  const { state, run, loading, saving, pending } = useMistWorkspace(), session = useMistSession();
+  const canWrite = session.hasPermission(MIST_FINANCE_SCOPES.voucher), busy = loading || saving || !!pending;
+  const [spec, setSpec] = React.useState<ModuleEditorSpec | null>(null);
+  const rows = [...readFxPeriodRates(state || {})].sort((a, b) => Number(!!a.voided) - Number(!!b.voided) || b.month.localeCompare(a.month) || a.currency.localeCompare(b.currency));
+  const currencies = [...new Set([...(state?.orders || []).map(o => o.currency), ...(state?.bankAccounts || []).map(a => a.currency)])].filter(c => c && c !== 'CNY').sort();
+  const lastMonth = (() => { const d = new Date(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - 1); return d.toISOString().slice(0, 7); })();
+  const add: ModuleEditorSpec = { title: '登记月末汇率', submitLabel: '登记', description: '用于报表“月末暂估”折算；通常取中国人民银行月末中间价或开户行月末牌价。每月每币种一条。',
+    fields: [{ key: 'month', label: '月份（YYYY-MM）', type: 'text', required: true }, { key: 'currency', label: '币种', type: 'select', required: true, options: (currencies.length ? currencies : ['USD', 'EUR']).map(c => ({ value: c, label: c })) },
+      { key: 'rate', label: '汇率（1 单位外币兑人民币）', type: 'text', required: true, hint: '最多 6 位小数，如 7.1234' }, { key: 'source', label: '依据', type: 'text', required: true, hint: '如：人民银行 2026-09-30 中间价' }],
+    initialValues: { month: lastMonth, currency: currencies[0] || 'USD', rate: '', source: '' },
+    submit: v => run({ type: 'fxrate.period.save', payload: { month: String(v.month || ''), currency: String(v.currency || ''), rate: String(v.rate || '').trim(), source: String(v.source || '') } }) };
+  const voidSpec = (r: FxPeriodRate): ModuleEditorSpec => ({ title: `作废 ${r.month} ${r.currency} 月末汇率`, submitLabel: '作废', description: '作废后保留记录，可重新登记正确汇率。', fields: [{ key: 'reason', label: '作废原因', type: 'textarea', required: true }], initialValues: { reason: '' },
+    submit: v => run({ type: 'fxrate.period.void', payload: { id: r.id, reason: String(v.reason || '') } }) });
+  return <Card>
+    <CardHeader title={`月末汇率 · ${rows.filter(r => !r.voided).length}`} sub="报表“月末暂估”口径用；结汇实际汇率另按结汇记录加权。" tools={canWrite ? <Button size="sm" disabled={busy} onClick={() => setSpec(add)}>登记月末汇率</Button> : undefined} />
+    <DataTable ariaLabel="月末汇率" rows={rows} rowKey={r => r.id} loading={loading} columns={[
+      { key: 'month', header: '月份', width: '100px', render: r => r.month },
+      { key: 'currency', header: '币种', width: '72px', render: r => r.currency },
+      { key: 'rate', header: '汇率', width: '110px', align: 'right', render: r => <span className="mist-num">{r.rate}</span> },
+      { key: 'source', header: '依据', width: 'minmax(160px,2fr)', hideOnMobile: true, render: r => <div className="mist-col" style={{ gap: 2 }}><span>{r.source}</span><small className="mist-muted">{r.actor} · {r.createdAt.slice(0, 10)}{r.voided ? ` · 作废：${r.voided.reason}` : ''}</small></div> },
+      { key: 'act', header: '', width: '90px', align: 'right', render: r => r.voided ? <Pill tone="neutral">已作废</Pill> : canWrite ? <Button size="sm" disabled={busy} onClick={() => setSpec(voidSpec(r))}>作废</Button> : null },
+    ]} empty={<EmptyState title="还没有月末汇率" description="每月初登记上月末各外币汇率，报表即可按月末暂估折算人民币毛利。" compact />} />
+    <ModuleEditorDialog spec={spec} onClose={() => setSpec(null)} />
+  </Card>;
 }

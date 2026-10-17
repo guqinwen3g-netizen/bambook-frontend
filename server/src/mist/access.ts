@@ -18,6 +18,9 @@ export const MIST_READ_SECTIONS: Section[] = [
   { key: 'receipts', label: '收款与核销', permissions: ['invoices:read', 'vouchers:read'], paths: [['receipts'], ['allocations']], entityTypes: ['finance', 'receipt'], views: ['receipts', 'payment-vouchers'] },
   { key: 'payments', label: '付款记录', permissions: ['vouchers:read'], paths: [['payments']], entityTypes: ['payment'], views: [] },
   { key: 'payables', label: '供应商票据与应付', permissions: ['invoices:read', 'vouchers:read'], paths: [['payables']], entityTypes: ['payable'], views: ['payables'] },
+  { key: 'treasury', label: '银行账户与锁汇结汇', permissions: ['vouchers:read'], paths: [['bankAccounts'], ['fxRecords']], entityTypes: [], views: [] },
+  // 月末汇率是公开牌价（人民银行中间价等），报表折算用，不按财务权限隐藏。
+  { key: 'fxPeriodRates', label: '月末汇率', permissions: [], paths: [['fxPeriodRates']], entityTypes: [], views: [] },
   { key: 'exportRebate', label: '出口退税', permissions: ['invoices:read'], paths: [['exportRebate']], entityTypes: ['rebate'], views: [] },
   { key: 'funding', label: '订单资金归属', permissions: ['finance:read', 'invoices:read', 'vouchers:read'], paths: [['orderFunding']], entityTypes: ['orderFunding'], views: ['funding'] },
   { key: 'relations', label: '客户与联系人', permissions: ['relations:read'], paths: [['customers'], ['contacts'], ['market', 'relations']], entityTypes: ['customer', 'relation'], views: ['customers', 'relations'] },
