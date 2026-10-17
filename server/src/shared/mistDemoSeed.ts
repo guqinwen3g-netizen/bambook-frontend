@@ -11,7 +11,7 @@ import { demoFileRecord, type DemoFileTemplate } from './mistDemoFiles';
 import { riskSignals } from './mistRisk';
 import { MIST_DEMO_ACCOUNTS } from './mistAccounts';
 
-export const DEMO_SEED_VERSION = 14;
+export const DEMO_SEED_VERSION = 15;
 export type DemoSeedFailure = { step: string; message: string };
 
 const DAY = 86400000;

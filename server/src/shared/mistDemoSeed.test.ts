@@ -12,6 +12,13 @@ describe('演示工作区数据', () => {
     expect(failures).toEqual([]);
     expect(state.settings.demoSeed).toEqual({ version: DEMO_SEED_VERSION, seededAt: '2026-10-14T02:00:00.000Z' });
   });
+  it('后勤已实际接手出运的订单，「核对出运交接」自动办结；经办人按岗位', () => {
+    const { state } = demo(), f = state.fulfillment;
+    const shipped = new Set(f.shipments.filter(s => s.state === 'departed').flatMap(s => s.lines.map(l => l.orderId)));
+    const checks = state.tasks.filter(t => t.kind === 'shipping' && t.target?.view === 'orders/detail' && shipped.has(t.target.id));
+    expect(checks.length).toBeGreaterThan(0);
+    expect(checks.every(t => t.done)).toBe(true);
+  });
   it('每个已完成前端的页面都有内容', () => {
     const { state } = demo(), m = state.market, f = state.fulfillment;
     const slices: Record<string, unknown[]> = {

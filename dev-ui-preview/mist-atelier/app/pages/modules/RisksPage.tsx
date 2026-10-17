@@ -180,7 +180,7 @@ function RiskDetail({ r, state, day, me, meId, locked, writeReason, onAck, onPla
   ];
   const stepReason = writeReason || (r.state !== 'InProgress' ? '先制定处置方案' : false);
   return <DetailBody data-risk-detail={r.id} heading={<div><span className="mist-muted">{RISK_TYPE_LABEL[riskType(r)]} · {src ? `${SOURCE_LABEL[src.kind]} ${src.label}` : '来源未记录'}</span><div className="mist-h2" style={{ fontSize: 19, marginTop: 4 }}>{r.title}</div></div>}>
-    <div className="mist-row" style={{ flexWrap: 'wrap' }}><Pill tone={STATE_TONE[r.state]}>{r.disposition === 'waived' ? '已豁免' : RISK_STATE_LABEL[r.state]}</Pill><Pill tone={LEVEL[level].tone}>{LEVEL[level].label}{high && !done ? ' · 高风险' : ''}</Pill><Pill>负责人 {r.owner}</Pill>{r.release && !done && <Pill tone="warn">已获准带风险放行</Pill>}</div>
+    <div className="mist-row" style={{ flexWrap: 'wrap' }}><Pill tone={STATE_TONE[r.state]}>{r.disposition === 'waived' ? '已豁免' : RISK_STATE_LABEL[r.state]}</Pill><Pill tone={LEVEL[level].tone}>{LEVEL[level].label}{high && !done ? ' · 高风险' : ''}</Pill><Pill>负责人 {r.owner}</Pill>{r.release && !done && <Pill tone="warn">{r.release.shipmentId ? `带风险放行已用于 ${r.release.shipmentCode || '一票出运'}` : '已获准带风险放行（可放行一票）'}</Pill>}</div>
     {raised && !done && <p className="mist-note">登记时为{LEVEL[r.level].label}，来源预警当前已升为{LEVEL[level].label}，按当前等级处理。</p>}
     {esc && <div className="mist-col" data-risk-escalation>
       <Banner tone="warn" title={`待部门主管审批 · ${RISK_ACTION_LABEL[esc.action || 'authorize']}`}>{esc.requestedBy} · {shortWhen(esc.requestedAt)}：{esc.reason}</Banner>

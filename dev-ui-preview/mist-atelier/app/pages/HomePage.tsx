@@ -7,6 +7,7 @@ import { IMG, STAGES } from '../data';
 import { useNav } from '../nav';
 import { useMistSession } from '../runtime/auth';
 import { useMistWorkspace } from '../runtime/workspace';
+import { useMyDisplayName } from '../runtime/me';
 import { visibleMistNotifications } from '../runtime/notificationPreferences';
 import { useOptionalMistReviews } from '../runtime/reviews';
 import { mistWorkQueue, mistMyTasks, mistEmailFollowUpTaskIds, type MistWorkOptions } from '../runtime/workQueue';
@@ -20,7 +21,7 @@ function weekDays(date: string) {
 const money = (value: number) => value.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export function HomePage() {
-  const { go, openAI } = useNav(), toast = useToast(), session = useMistSession(), workspace = useMistWorkspace();
+  const { go, openAI } = useNav(), toast = useToast(), session = useMistSession(), workspace = useMistWorkspace(), myName = useMyDisplayName(workspace.workspace, workspace.state);
   const { state, loading, saving, pending } = workspace;
   const [range, setRange] = React.useState<'today' | 'week'>('today');
   const [today, setToday] = React.useState(() => dateKey(new Date()));
@@ -84,7 +85,7 @@ export function HomePage() {
   const dateLabel = new Date(`${today}T12:00:00`).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
   return (
     <MistPage>
-      <PageHeader variant="greeting" eyebrow={`${dateLabel} · ${workspace.workspace?.name ?? '工作空间'}`} title={<>{greeting}，<em>{state?.settings.profileName?.trim() || session.user?.displayName || '同事'}</em></>}
+      <PageHeader variant="greeting" eyebrow={`${dateLabel} · ${workspace.workspace?.name ?? '工作空间'}`} title={<>{greeting}，<em>{myName || '同事'}</em></>}
         description={!state ? (loading ? '正在读取你的工作空间…' : '工作空间尚未读取成功，请重试。') : `${hidden.size ? '当前可见' : '当前有'} ${allTasks.length + queue.length} 件事等你推进，其中 ${allTasks.filter(task => task.due === today).length} 件今天到期${queue.length ? `，${queue.length} 件来自审批、QC、出运或财务` : ''}。`}
         actions={<><Segmented<'today' | 'week'> ariaLabel="时间范围" value={range} onChange={setRange} options={[{ value: 'today', label: '今天' }, { value: 'week', label: '本周' }]} />
           <Button variant="primary" icon={Plus} disabled={busy || !state || !session.hasPermission('products:write')} onClick={() => go('development/new')}>新建</Button></>} />

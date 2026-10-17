@@ -686,6 +686,15 @@ export function mistCommandPermission(command: MistCommand): string | null {
   if(['settings.update','notification.read','notification.readAll','task.complete','calendar.save','member.groups.set'].includes(command.type))return null;
   throw new MistCommandError('VALIDATION','未知操作');
 }
+/** 「核对出运交接」：后勤已实际接手该订单的出运（订舱、装箱、单据、报关任一已登记，或已备妥/已出运）即视为核对完毕，自动办结。 */
+function closeTakenOverHandoffs(state: MistState){
+  const f=state.fulfillment;if(!f)return;
+  for(const task of state.tasks){
+    if(task.done||task.kind!=='shipping'||task.target?.view!=='orders/detail')continue;
+    const orderId=task.target.id;
+    if(f.shipments.some(s=>s.state!=='cancelled'&&s.lines.some(l=>l.orderId===orderId)&&(s.state==='ready'||s.state==='departed'||!!s.booking||f.packing.some(r=>r.shipmentId===s.id)||f.documents.some(d=>d.shipmentId===s.id&&d.status!=='void')||f.customs.some(c=>c.shipmentId===s.id))))task.done=true;
+  }
+}
 export function applyMistCommand(original: MistState, command: MistCommand, context: MistContext): {state:MistState;result:MistCommandResult} {
   return applyMistCommandUnbound(original, command, context);
 }
@@ -698,7 +707,7 @@ function applyMistCommandUnbound(original: MistState, command: MistCommand, cont
   if(command.type.startsWith('order.governance.')){const result=applyOrderGovernanceCommand(state,command as OrderGovernanceCommand,context);recalculate(state);assertOrderFundingIntegrity(state);return {state,result};}
   if(command.type.startsWith('funding.')){const result=applyOrderFundingCommand(state,command as OrderFundingCommand,context);recalculate(state);return {state,result};}
   if(command.type.startsWith('payable.')){const result=applyPayablesCommand(state,command as PayablesCommand,context);recalculate(state);return {state,result};}
-  if(command.type.startsWith('fulfillment.')){const result=applyFulfillmentCommand(state,command as FulfillmentCommand,context);normalizeMistState(state,context);recalculate(state);return {state,result};}
+  if(command.type.startsWith('fulfillment.')){const result=applyFulfillmentCommand(state,command as FulfillmentCommand,context);closeTakenOverHandoffs(state);normalizeMistState(state,context);recalculate(state);return {state,result};}
   if(command.type==='market.lead.convertToCrm'){const result=convertLeadToCrm(state,command.payload as Extract<MarketCommand,{type:'market.lead.convertToCrm'}>['payload'],context);recalculate(state);return {state,result};}
   if(command.type.startsWith('market.')){const result=applyMarketCommand(state,command as MarketCommand,context);for(const order of state.orders)if(!original.orders.some(old=>old.id===order.id)&&!order.governance){order.governance=createOrderGovernance(context);order.state='订单草稿';order.tone='neutral';order.checklist=['拟发范围确认','收货与贸易条款确认','收款条件核对'].map((label,index)=>({id:order.id+'-check-'+index,label,done:false,note:''}));}normalizeMistState(state,context);recalculate(state);return {state,result};}
   if(command.type.startsWith('platform.')){const result=applyPlatformCommand(state,command as PlatformCommand,context);normalizeMistState(state,context);recalculate(state);return {state,result};}

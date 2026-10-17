@@ -243,6 +243,22 @@ export class MistRepository {
         await this.authorize(db, prior);
         this.contract.normalizeMistState?.(found.state,this.context(actor));return this.view(found,actor);
       }
+      if (defaultOnly && localMode(actor) && actor.userId.startsWith('demo-')) {
+        // 本机演示：示例经办人共用一个演示工作空间（周敏 demo-reviewer 为所有者，其余经办人为成员），
+        // 以便按岗位切换身份走通同一套协作链。所有者移除某人后不再自动加回，该人改用自己的默认空间。
+        const owner = 'demo-reviewer', shared: MistWorkspaceRow | null = await db.mistWorkspace.findUnique({ where: { ownerId_slug: { ownerId: owner, slug: 'default' } } });
+        if (shared && !archived(shared) && (shared.ownerId === actor.userId || memberIds(shared.state).includes(actor.userId))) { this.contract.normalizeMistState?.(shared.state, this.context(actor)); return this.view(shared, actor); }
+        if (!shared) {
+          const ownerProfile = MIST_LOCAL_PROFILES.find(p => p.id === owner)!, context = this.context({ ...actor, userId: owner, displayName: ownerProfile.name } as TokenPayload);
+          const state: any = this.contract.createMistState(context, 'demo'), workspaceId = randomUUID(), others = MIST_LOCAL_PROFILES.filter(p => p.id.startsWith('demo-') && p.id !== owner);
+          state.settings.workspaceName = name; state.memberIds = others.map(p => p.id);
+          state.members = others.map(p => ({ userId: p.id, name: p.name, addedBy: owner, addedByName: ownerProfile.name, addedAt: context.now }));
+          await this.writeDemoFiles(workspaceId, state);
+          const row = await db.mistWorkspace.create({ data: { id: workspaceId, ownerId: owner, slug: 'default', name, revision: 0, state } });
+          await this.authorize(db, prior);
+          return this.view(row, actor);
+        }
+      }
       if (defaultOnly) {
         // A default lookup selects an existing active workspace before creating
         // anything. Named workspaces and archive continuations need not own the

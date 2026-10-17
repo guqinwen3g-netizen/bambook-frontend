@@ -75,10 +75,17 @@ export const MIST_LOCAL_PROFILES=[
   {id:'local-finance',name:'财务（测试）',roleId:SYSTEM_ROLE_IDS.FINANCE},
   {id:'local-qc',name:'质检（测试）',roleId:SYSTEM_ROLE_IDS.QC},
   {id:'local-logistics',name:'后勤单证（测试）',roleId:SYSTEM_ROLE_IDS.LOGISTICS},
+  // 演示工作空间里的经办人：用他们的身份进入，能看到示例数据中各自负责、待自己处理的事项（只在本机演示模式存在）。
+  {id:'demo-sales',name:'顾言',roleId:SYSTEM_ROLE_IDS.SALES,title:'业务员',department:'服装部'},
+  {id:'demo-buyer',name:'沈禾',roleId:SYSTEM_ROLE_IDS.SALES,title:'业务员',department:'面料部'},
+  {id:'demo-reviewer',name:'周敏',roleId:SYSTEM_ROLE_IDS.SALES_MANAGER,title:'业务主管',department:'服装部'},
+  {id:'demo-qc',name:'许言',roleId:SYSTEM_ROLE_IDS.QC,title:'QC',department:'质检'},
+  {id:'demo-warehouse',name:'陈晓',roleId:SYSTEM_ROLE_IDS.LOGISTICS,title:'后勤单证',department:'储运'},
+  {id:'demo-finance',name:'林舒',roleId:SYSTEM_ROLE_IDS.FINANCE,title:'财务',department:'财务部'},
 ] as const;
 export function mistLocalPublicUser(profileId:string){const profile=MIST_LOCAL_PROFILES.find(p=>p.id===profileId);if(!profile)invalid('本地工作身份不存在',401);
   if(!('roleId' in profile))return{id:profile.id,displayName:profile.name,email:'',roles:['owner'],roleIds:['role-super-admin'],permissions:['*'],departmentIds:[],department:'本地工作空间',globalBusinessScope:true,authorizationLoaded:true,mistLocal:true};
-  return{id:profile.id,displayName:profile.name,email:'',roles:[] as string[],roleIds:[profile.roleId],permissions:getDefaultScopeListForRole(profile.roleId),departmentIds:[],department:'本地工作空间',globalBusinessScope:false,authorizationLoaded:true,mistLocal:true};}
+  return{id:profile.id,displayName:profile.name,email:'',roles:[] as string[],roleIds:[profile.roleId],permissions:getDefaultScopeListForRole(profile.roleId),departmentIds:[],department:'department' in profile?profile.department:'本地工作空间',globalBusinessScope:false,authorizationLoaded:true,mistLocal:true};}
 export type MistLocalRuntime=ReturnType<typeof createMistLocalRuntime>;
 export function createMistLocalRuntime(options:{directory?:string;host?:string;env?:NodeJS.ProcessEnv;now?:()=>number}={}){
   assertMistLocalMode(options.host??'127.0.0.1',options.env??process.env);

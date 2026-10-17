@@ -28,7 +28,7 @@ export interface MistSession {
   hasRole: (...roles: AgentRole[]) => boolean;
   /** Present only for the explicit server-provided local workspace mode. */
   localMode?: boolean;
-  localProfiles?: Array<{id:string;name:string}>;
+  localProfiles?: Array<{id:string;name:string;title?:string}>;
   selectLocalProfile?: (profileId:string) => Promise<void>;
 }
 const SessionContext = React.createContext<MistSession | null>(null);

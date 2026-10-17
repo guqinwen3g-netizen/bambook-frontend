@@ -9,13 +9,15 @@ export async function mistApprovalAuthority(db:any,actor:TokenPayload,kind:strin
   // 风险处理权：按当前账号此刻的岗位权限重建（risk:write 不限来源；否则只认本人客户/订单 + 现有订单写/客户档案写权限）。
   if(kind.startsWith('platform.risk.'))authority.risk={all:hasScope(actor,'risk:write' as any),orders:hasScope(actor,'orders:write' as any),customers:hasScope(actor,'relations:write' as any)};
   if((actor as any).mistLocal===true && process.env.MIST_LOCAL_WORKSPACE==='1' && process.env.NODE_ENV!=='production'){
-    for(const contract of ['purchase','processing'])for(const family of ['fabric','garment'])authority.supplier[`supplierCommitment.approvers.${contract}.${family}`]={version:1,userIds:['local-reviewer','local-manager']};
+    // 演示经办人（demo-*）的审批主管是周敏（demo-reviewer，业务主管岗）；测试身份沿用本地审批员 / 业务主管测试身份。
+    const demo=String(actor.userId||'').startsWith('demo-'),single=demo?'demo-reviewer':'local-reviewer',managers=demo?['demo-reviewer']:['local-manager','local-reviewer'];
+    for(const contract of ['purchase','processing'])for(const family of ['fabric','garment'])authority.supplier[`supplierCommitment.approvers.${contract}.${family}`]={version:1,userIds:demo?managers:['local-reviewer','local-manager']};
     // 本地测试审批人：原全权限审批员 + 按现有岗位持有 procurement:approve / orders:write 的业务主管测试身份。
-    authority.claimReviewerId='local-reviewer';authority.businessReviewerId='local-reviewer';authority.orderReviewerIds={garment:['local-operator','local-reviewer','local-manager'],fabric:['local-operator','local-reviewer','local-manager']};
-    // 付款申请：业务主管测试身份按岗位持有 finance:payment_request:approve；原全权限审批员保留兼容。
-    authority.paymentReviewerIds=['local-manager','local-reviewer'];
-    // 风险申请：业务主管测试身份按岗位持有 risk:write；原全权限审批员保留兼容。申请人本人由命令排除。
-    if(kind.startsWith('platform.risk.'))authority.riskReviewerIds=['local-manager','local-reviewer'];
+    authority.claimReviewerId=single;authority.businessReviewerId=single;const orderReviewers=demo?managers:['local-operator','local-reviewer','local-manager'];authority.orderReviewerIds={garment:[...orderReviewers],fabric:[...orderReviewers]};
+    // 付款申请：业务主管按岗位持有 finance:payment_request:approve。
+    authority.paymentReviewerIds=[...managers];
+    // 风险申请：业务主管按岗位持有 risk:write；申请人本人由命令排除。
+    if(kind.startsWith('platform.risk.'))authority.riskReviewerIds=[...managers];
     return authority;
   }
   if(kind.startsWith('order.governance.')){

@@ -7,6 +7,7 @@ import { Avatar, BackLink, Banner, Button, Card, CardFooter, CardHeader, Checkbo
 import type { MistConfirmation, MistDev, MistQc, MistRound, MistVersion } from '../../../../server/src/shared/mistWorkspace';
 import { IMG, STAGES } from '../data';
 import { useMistWorkspace } from '../runtime/workspace';
+import { useMyDisplayName } from '../runtime/me';
 import { useNav } from '../nav';
 import { developmentFactoryOptions, InlineDevelopmentFactoryDialog } from './DevCreatePage';
 import { devVersions, developmentRoundBlocker, minorParent, minorVersionBlocker, minorVersions } from '../../../../server/src/shared/mistDevelopmentRounds';
@@ -52,7 +53,7 @@ export function qcMeasurementFacts(form:QcForm):Pick<MistQc,'measurements'|'appe
 }
 
 export function DevDetailPage(){
-  const {go,route}=useNav();const {state,loading,error,run,uploadFile,downloadFile,fileUrl,pending,recover,saving}=useMistWorkspace();const toast=useToast();
+  const {go,route}=useNav();const {state,loading,error,run,uploadFile,downloadFile,fileUrl,pending,recover,saving}=useMistWorkspace();const myName=useMyDisplayName(useMistWorkspace().workspace,state);const toast=useToast();
   const dev=state?.devs.find(item=>item.id===route.id),versions=state&&dev?devVersions(state,dev):[]; // 按开发案版本顺序，小版本紧跟所属大版本
   const fabricDomain=!!dev&&developmentDomain(dev.values)==='fabric';
   const [versionId,setVersionId]=React.useState(route.versionId||''),[form,setForm]=React.useState<Form>(()=>emptyForm()),[dialog,setDialog]=React.useState<'confirm'|'actions'|'revise'|'minor'|'archive'|'sample'|'qc'|'edit'|'round'|'qcDecide'|'close'|'product'|null>(null),[busy,setBusy]=React.useState(false),[failure,setFailure]=React.useState('');
@@ -62,7 +63,7 @@ export function DevDetailPage(){
   const reportUploadScope=React.useRef<string|null>(null);
   const live=React.useRef(true),busyRef=React.useRef(false);React.useEffect(()=>{live.current=true;return()=>{live.current=false;};},[]);
   React.useEffect(()=>{setVersionId(route.versionId||dev?.currentVersionId||'');},[route.id,route.versionId,dev?.id]);
-  React.useEffect(()=>{if(!version){setQc(qcForm(null,state?.settings.profileName||''));return;}const last=version.confirmationDraft||version.confirmations.at(-1);setForm(last?{confirmer:last.confirmer,organization:last.organization,confirmedAt:localConfirmationTime(new Date(last.confirmedAt)),basis:last.basis,originalText:last.originalText,result:last.result}:dev&&developmentInitiator(dev.values)==='internal'?emptyForm('内部需求方',dev.values.requester||''):emptyForm(dev?.customer));setSample({sample:version.sample==='—'?'':version.sample,quantity:String(version.sampleQuantity||1),form:version.sampleForm||dev?.values.sampleForm||'',unit:version.sampleUnit||dev?.values.sampleUnit||'',location:version.sampleLocation||'',color:version.sampleColor||dev?.values.color||'',returnedAt:localConfirmationTime()});setQc(qcForm(version.qc,state?.settings.profileName||''));setFailure('');},[version?.id]);
+  React.useEffect(()=>{if(!version){setQc(qcForm(null,myName));return;}const last=version.confirmationDraft||version.confirmations.at(-1);setForm(last?{confirmer:last.confirmer,organization:last.organization,confirmedAt:localConfirmationTime(new Date(last.confirmedAt)),basis:last.basis,originalText:last.originalText,result:last.result}:dev&&developmentInitiator(dev.values)==='internal'?emptyForm('内部需求方',dev.values.requester||''):emptyForm(dev?.customer));setSample({sample:version.sample==='—'?'':version.sample,quantity:String(version.sampleQuantity||1),form:version.sampleForm||dev?.values.sampleForm||'',unit:version.sampleUnit||dev?.values.sampleUnit||'',location:version.sampleLocation||'',color:version.sampleColor||dev?.values.color||'',returnedAt:localConfirmationTime()});setQc(qcForm(version.qc,myName));setFailure('');},[version?.id]);
   const [confirmSampleIds,setConfirmSampleIds]=React.useState<string[]>([]);React.useEffect(()=>{const saved=version?.confirmationDraft||version?.confirmations.at(-1);setConfirmSampleIds(saved?.samples?.map(sample=>sample.sampleId)||[]);},[version?.id]);
   const versionSamples=state&&version?developmentVersionSamples(state,version):[],needsForms=!!(state&&dev&&version&&confirmationNeedsForms(state,dev,version));
   const [compareIds,setCompareIds]=React.useState<string[]>([]),[compareOpen,setCompareOpen]=React.useState(false);
@@ -199,7 +200,7 @@ export function DevDetailPage(){
     :version.qc?.result==='conditional'?<Banner tone="warn" title="需关注 · QC 有保留通过">{version.qc.opinion||'请查看 QC 报告'}</Banner>
     :!version.qc?<Banner tone="neutral" title={version.qcHistory?.length?'整改中 · 待复检':'QC 待评审'}>QC 通过或有保留通过后才能记录需求方确认。</Banner>:null;
   const qcReviewedAt=version?.qc?localConfirmationTime(new Date(version.qc.reviewedAt)):'';
-  const openQc=()=>{setQc(qcForm(version?.qc,state?.settings.profileName||''));setFailure('');setDialog('qc');};
+  const openQc=()=>{setQc(qcForm(version?.qc,myName));setFailure('');setDialog('qc');};
   const setMeasurement=(key:string,patch:Partial<MeasurementDraft>)=>setQc(previous=>({...previous,measurements:previous.measurements.map(row=>row.key===key?{...row,...patch}:row)}));
   return <MistPage>
     <BackLink onClick={backToSource}>{route.customerId?'返回客户档案':'开发与寻样'}</BackLink>
@@ -237,7 +238,7 @@ export function DevDetailPage(){
             {needsForms&&<div className="mist-field" data-full="true" role="group" aria-label="确认针对的形态"><span className="mist-field-label">确认针对的形态 <span className="mist-muted">（必选）</span></span>{versionSamples.map(item=><Checkbox key={item.id} checked={confirmSampleIds.includes(item.id)} label={`${item.form} · ${item.code} · ${item.quantity} ${item.unit}`} onChange={checked=>setConfirmSampleIds(previous=>checked?[...previous.filter(id=>id!==item.id),item.id]:previous.filter(id=>id!==item.id))} />)}</div>}
             <Field label="需求方原文" full><TextArea value={form.originalText} onChange={event=>set('originalText',event.target.value)} placeholder="记录认可意见、修改要求或不采用原因" /></Field>
           </FormGrid></div>
-          <CardFooter><span className="mist-note"><ShieldCheck className="mist-icon" data-size="xs" />{state?.settings.profileName}登记 · 对应本版实物与报告</span><span className="mist-spacer" /><Button variant="quiet" disabled={!version||busy} onClick={()=>void act('draft')}>存为草稿</Button><Button variant="primary" iconRight={ArrowRight} disabled={!version||busy||!qcAllowsConfirm||!!currentFormError||!!sameConfirmation} onClick={()=>setDialog('confirm')}>{sameConfirmation?'本版已记录':'保存确认'}</Button></CardFooter>
+          <CardFooter><span className="mist-note"><ShieldCheck className="mist-icon" data-size="xs" />{myName}登记 · 对应本版实物与报告</span><span className="mist-spacer" /><Button variant="quiet" disabled={!version||busy} onClick={()=>void act('draft')}>存为草稿</Button><Button variant="primary" iconRight={ArrowRight} disabled={!version||busy||!qcAllowsConfirm||!!currentFormError||!!sameConfirmation} onClick={()=>setDialog('confirm')}>{sameConfirmation?'本版已记录':'保存确认'}</Button></CardFooter>
         </Card>
         <Card id="mist-dev-qc"><CardHeader title="QC 评审" tools={<><span className="mist-muted" style={{fontSize:12.5}}>{version?.qc?`${version.qc.reviewer} · ${qcReviewedAt.slice(5,10).replace('-','/')} ${qcReviewedAt.slice(11)}`:'待评审'}</span><Button size="sm" disabled={!version||busy||qcFailed||!!version?.qcDecision||!!version?.confirmations.length||!!qcBlocker} title={qcBlocker} onClick={openQc}>{version?.qc?'更新报告':version?.qcHistory?.length?'提交复检':'录入报告'}</Button></>}>{version?.qc&&<Pill tone={version.qc.result==='reject'?'bad':version.qc.result==='conditional'?'warn':'ok'}>{qcLabel[version.qc.result]}</Pill>}</CardHeader>
           {!fabricDomain&&<><SummaryNumbers items={[{label:'测量点',value:measurements.length},{label:'公差内',value:measureStats.within},{label:'需关注',value:measureStats.attention,tone:'warn'},{label:'外观缺陷',value:version?.qc?.appearanceDefects??'—'}]} />

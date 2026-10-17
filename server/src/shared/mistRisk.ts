@@ -31,7 +31,8 @@ export type RiskRecord = {
   /** 关闭方式：经审批关闭 / 豁免；直接关闭的低风险与早期记录不写。 */
   disposition?: 'closed' | 'waived';
   /** 最近一次获批的带风险放行：风险仍未关闭，继续跟进。 */
-  release?: { escalationId: string; approvedBy: string; at: string; note: string };
+  /** 带风险放行（单次）：出运登记时写入 shipmentId 即用掉，下一票须重新申请。 */
+  release?: { escalationId: string; approvedBy: string; at: string; note: string; shipmentId?: string; shipmentCode?: string; usedAt?: string };
 };
 export type RiskSignal = { key: string; type: RiskType; level: RiskRecord['level']; title: string; basis: string; source: { kind: RiskSourceKind; id: string; label: string }; orderId: string; since: string };
 
