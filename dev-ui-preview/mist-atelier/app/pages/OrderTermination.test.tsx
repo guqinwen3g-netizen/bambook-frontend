@@ -8,14 +8,14 @@ import { applyMistCommand, createMistState, type MistState } from '../../../../s
 import { Nav } from '../nav';
 const store = vi.hoisted(() => ({ state: null as MistState | null, loading: false, error: '', run: vi.fn(), refresh: vi.fn(), downloadFile: vi.fn(), uploadFile: vi.fn() }));
 vi.mock('../runtime/workspace', () => ({ useMistWorkspace: () => store }));
-vi.mock('../runtime/auth', () => ({ useMistSession: () => ({ status: 'authenticated', sessionKey: 't', user: { id: 'sales', displayName: '业务员甲' }, hasPermission: () => true }) }));
+vi.mock('../runtime/auth', () => { const useMistSession = () => ({ status: 'authenticated', sessionKey: 't', user: { id: 'sales', displayName: '业务员甲' }, hasPermission: () => true }); return { useMistSession, useOptionalMistSession: useMistSession }; });
 import { OrderDetailPage } from './OrderDetailPage';
 import { OrderListPage } from './OrderListPage';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let host: HTMLElement, root: Root, orderId: string, sequence = 0;
 const go = vi.fn();
-const context = { id: () => `term-${++sequence}`, now: '2026-10-13T02:00:00.000Z', actorName: '业务员甲' };
+const context = { id: () => `term-${++sequence}`, now: '2026-10-13T02:00:00.000Z', actorName: '业务员甲', actorId: 'sales' };
 type G = { governance: { status: string; approvedSnapshot?: unknown; cancellation?: Record<string, unknown>; termination?: Record<string, unknown> } };
 const gov = (i = 0) => (store.state!.orders[i] as unknown as G).governance;
 function render(view: 'orders/detail' | 'orders' = 'orders/detail') {
@@ -25,7 +25,7 @@ beforeEach(() => {
   sequence = 0; go.mockClear(); store.run.mockReset();
   const empty = createMistState(context, 'empty');
   empty.customers.push({ id: 'customer-a', code: 'C-A', name: '客户甲', country: '', city: '', industry: '', owner: '业务员甲', grade: 'A', currency: 'USD', terms: '', incoterm: '', categories: '', creditLimit: 0, since: '2026-01-01' });
-  const result = applyMistCommand(empty, { type: 'order.create', payload: { type: 'garment', customerId: 'customer-a', season: 'AW28', currency: 'USD', due: '2026-10-30', owner: '业务员甲', lines: [{ name: '外套', style: 'T-01', img: 'coat', qty: 10, unit: '件', price: 1 }] } }, context);
+  const result = applyMistCommand(empty, { type: 'order.create', payload: { type: 'garment', customerId: 'customer-a', season: 'AW28', currency: 'USD', due: '2026-10-30', ownerId:'sales', lines: [{ name: '外套', style: 'T-01', img: 'coat', qty: 10, unit: '件', price: 1 }] } }, context);
   store.state = result.state; orderId = result.result.orderId!;
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
 });

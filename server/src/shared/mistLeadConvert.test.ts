@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyMistCommand, createMistState, type MistContext, type MistState } from './mistWorkspace';
 
-const ctx = (): MistContext => { let n = 0; return { id: () => `lc-${++n}`, now: '2026-10-14T02:00:00.000Z', actorName: '顾言' }; };
+const ctx = (): MistContext => { let n = 0; return { id: () => `lc-${++n}`, now: '2026-10-14T02:00:00.000Z', actorName: '顾言', actorId: 'u-gu' }; };
 const demo = () => { const c = ctx(); return { c, s: createMistState(c, 'demo') }; };
 const run = (s: MistState, command: any, c: MistContext) => applyMistCommand(s, command, c);
 
@@ -19,7 +19,7 @@ describe('线索一键转 CRM', () => {
   });
   it('同名客户不重复建立；失败时不落下半截数据', () => {
     const { c, s } = demo(); const lead = s.market.leads.find(l => l.name === 'Clara Weiss')!;
-    const named = run(s, { type: 'market.customer.create', payload: { input: { name: 'weiss & söhne', country: '', city: '', industry: '', owner: '顾言', grade: '', currency: 'EUR', terms: '', incoterm: '', categories: '', creditLimit: 0, since: '2026-10-14' } } }, c).state;
+    const named = run(s, { type: 'market.customer.create', payload: { input: { name: 'weiss & söhne', country: '', city: '', industry: '', ownerId: 'u-gu', grade: '', currency: 'EUR', terms: '', incoterm: '', categories: '', creditLimit: 0, since: '2026-10-14' } } }, c).state;
     const before = named.customers.length;
     expect(() => run(named, { type: 'market.lead.convertToCrm', payload: { id: lead.id } }, c)).toThrow(/已有同名客户/);
     expect(() => run(s, { type: 'market.lead.convertToCrm', payload: { id: lead.id, opportunity: { title: '', domain: 'fabric', amount: '1', currency: 'EUR', expectedDate: '' } } }, c)).toThrow();

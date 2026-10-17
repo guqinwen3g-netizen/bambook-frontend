@@ -34,9 +34,9 @@ export function caseFactoryLetters(state: MistState, dev: MistDev): Record<strin
   const letters: Record<string, string> = { ...(dev.factoryLetters || {}) };
   const used = new Set(Object.values(letters));
   for (const version of devVersions(state, dev)) {
-    if (!version.factory || letters[version.factory]) continue;
+    if (!version.factoryId || letters[version.factoryId]) continue;
     const letter = version.factoryLetter || parseVersionLabel(version.label)?.letter;
-    if (letter && !used.has(letter)) { letters[version.factory] = letter; used.add(letter); }
+    if (letter && !used.has(letter)) { letters[version.factoryId] = letter; used.add(letter); }
   }
   return letters;
 }

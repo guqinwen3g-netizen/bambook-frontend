@@ -8,7 +8,7 @@ import {createMistState} from '../../../../../server/src/shared/mistWorkspace';
 import {Nav} from '../../nav';
 const store=vi.hoisted(()=>({w:null as any,write:true,csv:vi.fn()}));
 vi.mock('../../runtime/workspace',()=>({useMistWorkspace:()=>store.w}));
-vi.mock('../../runtime/auth',()=>({useMistSession:()=>({user:{id:'actor'},hasPermission:()=>store.write})}));
+vi.mock('../../runtime/auth', () => { const useMistSession = ()=>({user:{id:'actor'},hasPermission:()=>store.write}); return { useMistSession, useOptionalMistSession: useMistSession }; });
 vi.mock('./ModuleWorkbench',()=>({downloadModuleCsv:store.csv}));
 import {CostPage} from './CostPage';
 import {costEvidenceRows,costOrderEvidence} from './CostEvidence';

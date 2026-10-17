@@ -1,12 +1,14 @@
 /** 新建订单入口：手工新建、从报价转单、从开发版本转单、从产品档案复购。都进入同一份订单草稿。 */
 import React from 'react';
 import { ArrowLeft } from 'lucide-react';
-import { Banner, Button, Checkbox, Dialog, EmptyState, Field, FormGrid, Mono, SearchField, TextInput, useToast } from '../../../../components/mist';
+import { Banner, Button, Checkbox, Dialog, EmptyState, Field, FormGrid, Mono, SearchField, Select, TextInput, useToast } from '../../../../components/mist';
 import type { MistOrder } from '../../../../server/src/shared/mistWorkspace';
 import { quotationConversionBlockerText, quotationConversionBlockers, type MarketProduct, type MarketQuotation, type MarketState } from '../../../../server/src/shared/mistMarket';
 import { developmentDomain } from '../../../../server/src/shared/mistDevelopmentDomain';
 import { quotationPendingLines } from '../../../../server/src/shared/mistQuotationLineConversion';
 import { useMistWorkspace } from '../runtime/workspace';
+import { useOptionalMistSession } from '../runtime/auth';
+import { defaultMemberId, memberSelectOptions, workspaceMembers } from '../runtime/members';
 import { useNav } from '../nav';
 
 const ROW: React.CSSProperties = { flexDirection: 'row', alignItems: 'center', gap: 12, width: '100%' };
@@ -33,10 +35,11 @@ export function convertibleQuotations(state: QuoteSourceState, type: Domain): Ma
 export function OrderSourceDialog({ open, onClose, type, customerId, canWrite }: { open: boolean; onClose: () => void; type: Domain; customerId?: string; canWrite: boolean }) {
   const { go } = useNav(), toast = useToast(), w = useMistWorkspace();
   const state = w.state as (typeof w.state & { market?: MarketState }) | null;
+  const session = useOptionalMistSession(), members = workspaceMembers(w.workspace, w.state, session?.user);
   const [kind, setKind] = React.useState<Kind | null>(null), [q, setQ] = React.useState(''), [picked, setPicked] = React.useState(''), [due, setDue] = React.useState(''), [owner, setOwner] = React.useState(''), [lineIds, setLineIds] = React.useState<string[]>([]);
   const [busy, setBusy] = React.useState(false), [failure, setFailure] = React.useState(''), lock = React.useRef(false), alive = React.useRef(true);
   React.useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
-  React.useEffect(() => { if (open) { setKind(null); setQ(''); setPicked(''); setDue(''); setOwner(state?.settings.profileName || ''); setFailure(''); } }, [open]);
+  React.useEffect(() => { if (open) { setKind(null); setQ(''); setPicked(''); setDue(''); setOwner(defaultMemberId(members, session?.user?.id)); setFailure(''); } }, [open]);
   const domainLabel = type === 'fabric' ? '面料' : '成衣';
   const quotes = convertibleQuotations(state, type).filter(quote => !customerId || quote.customerId === customerId);
   const versions = (state?.versions || []).filter(version => !version.archivedAt && version.confirmations.at(-1)?.result === 'approved').map(version => ({ version, dev: state!.devs.find(dev => dev.id === version.devId) })).filter(row => row.dev && (developmentDomain(row.dev.values) === 'fabric' ? 'fabric' : 'garment') === type && (!customerId || row.dev.customerId === customerId));
@@ -61,10 +64,10 @@ export function OrderSourceDialog({ open, onClose, type, customerId, canWrite }:
     if (lock.current || busy) return;
     if (!picked) { setFailure('请选择一份报价'); return; }
     if (!chosen.length) { setFailure('请至少勾选一个条目'); return; }
-    if (!due || !owner.trim()) { setFailure('请填写订单交期和负责人'); return; }
+    if (!due || !owner) { setFailure('请填写订单交期和负责人'); return; }
     lock.current = true; setBusy(true); setFailure('');
     try {
-      const receipt = await w.run({ type: 'market.quotation.convert', payload: { id: picked, type, due, owner: owner.trim(), lineIds: chosen } } as never);
+      const receipt = await w.run({ type: 'market.quotation.convert', payload: { id: picked, type, due, ownerId: owner, lineIds: chosen } } as never);
       const orderId = (receipt.result as { orderId?: string }).orderId;
       if (!orderId) throw new Error('报价已转单，但回执缺少订单编号。请到报价详情核对，勿重复转单。');
       if (alive.current) { toast('已从报价生成订单草稿，待补合同依据后提交主单审批'); onClose(); go('orders/detail', orderId, { customerId, section: type }); }
@@ -104,7 +107,7 @@ export function OrderSourceDialog({ open, onClose, type, customerId, canWrite }:
         <small className="mist-muted">勾选本次转单的条目；未勾选的条目之后可再转另一张订单，或在报价详情标记不再转。</small>
         {pickedLines.map(line => { const blocked = blockers.find(b => b.lineId === line.id); return <Checkbox key={line.id} checked={chosen.includes(line.id)} disabled={!!blocked || busy} onChange={on => setLineIds(ids => on ? [...ids, line.id] : ids.filter(id => id !== line.id))} label={<span>{line.name} · <span className="mist-num">{line.qty} {line.unit} × {line.price}</span>{blocked && <small className="mist-tone-warn"> · 未获认可，暂不能转</small>}</span>} />; })}
       </div>}
-      {kind === 'quotation' ? <FormGrid><Field label="订单交期" required><TextInput aria-label="订单交期" type="date" value={due} onChange={event => setDue(event.target.value)} /></Field><Field label="负责人" required><TextInput aria-label="负责人" value={owner} onChange={event => setOwner(event.target.value)} /></Field></FormGrid>
+      {kind === 'quotation' ? <FormGrid><Field label="订单交期" required><TextInput aria-label="订单交期" type="date" value={due} onChange={event => setDue(event.target.value)} /></Field><Field label="负责人" required><Select aria-label="负责人" value={owner} placeholder="选择负责人" onChange={event => setOwner(event.target.value)} options={memberSelectOptions(members)} /></Field></FormGrid>
         : <p className="mist-note">将带入品名、款号 / 品号与单位；数量、销售单价、交期在草稿中填写，来源会随条目一起保存。</p>}
       {kind === 'quotation' && <p className="mist-note">报价的条目、数量、单价与币种原样承接；转单后订单为草稿，仍需上传客户 PO / 书面确认并提交主单审批。</p>}
     </div>}

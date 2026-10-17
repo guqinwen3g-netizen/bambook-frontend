@@ -7,12 +7,14 @@ import { IMG, STAGES, fmt } from '../data';
 import { useNav } from '../nav';
 import { useMistWorkspace } from '../runtime/workspace';
 import { useMistSession } from '../runtime/auth';
+import { defaultMemberId, memberSelectOptions, workspaceMembers } from '../runtime/members';
 import { ModuleEditorPage, type ModuleEditorSpec } from './modules/ModuleWorkbench';
 import { CustomerMailPanel, FollowUpPanel, OpportunityPanel } from './CustomerRelations';
 
 export function CustomerPage() {
   const { go, route, openAI } = useNav(), toast = useToast(), session = useMistSession();
-  const { state, loading, error, run, refresh, downloadFile } = useMistWorkspace();
+  const { state, loading, error, run, refresh, downloadFile, workspace } = useMistWorkspace();
+  const members = workspaceMembers(workspace, state, session.user);
   const requestedId = route.id ?? route.customerId;
   const customer = requestedId ? state?.customers.find(item => item.id === requestedId) : state?.customers[0];
   const [tab, setTab] = React.useState('overview');
@@ -41,18 +43,18 @@ export function CustomerPage() {
   };
   const createSpec:ModuleEditorSpec={
     title:'新建客户',submitLabel:'创建客户档案',
-    initialValues:{name:'',code:'',country:'',city:'',industry:'',owner:state?.settings.profileName||session.user?.displayName||'',grade:'',currency:state?.settings.companyProfile?.defaultCurrency||'USD',terms:'',incoterm:'',categories:'',since:'',creditLimit:0},
+    initialValues:{name:'',code:'',country:'',city:'',industry:'',ownerId:defaultMemberId(members,session.user?.id),grade:'',currency:state?.settings.companyProfile?.defaultCurrency||'USD',terms:'',incoterm:'',categories:'',since:'',creditLimit:0},
     fields:[
       {key:'name',label:'客户名称',required:true},{key:'code',label:'客户编码',hint:'留空时由工作区自动生成唯一编码'},
       {key:'country',label:'国家'},{key:'city',label:'城市'},{key:'industry',label:'行业'},
-      {key:'owner',label:'客户经理',required:true},{key:'grade',label:'等级'},
+      {key:'ownerId',label:'客户经理',type:'select',required:true,options:memberSelectOptions(members),hint:'按账号选择本空间成员'},{key:'grade',label:'等级'},
       {key:'currency',label:'结算币种',type:'select',required:true,options:[...new Set(['USD','EUR','CNY','GBP','HKD',state?.settings.companyProfile?.defaultCurrency||'USD'])].map(value=>({value,label:value}))},
       {key:'terms',label:'付款条款'},{key:'incoterm',label:'贸易术语'},{key:'categories',label:'主要品类'},
       {key:'since',label:'合作起始日',type:'date'},{key:'creditLimit',label:'信用额度',type:'number',min:0,step:'0.01'},
     ],
     submit:async values=>{
       const value=(key:string)=>String(values[key]??'');
-      const receipt=await run({type:'market.customer.create',payload:{input:{name:value('name'),code:value('code'),country:value('country'),city:value('city'),industry:value('industry'),owner:value('owner'),grade:value('grade'),currency:value('currency'),terms:value('terms'),incoterm:value('incoterm'),categories:value('categories'),since:value('since'),creditLimit:Number(values.creditLimit)}}});
+      const receipt=await run({type:'market.customer.create',payload:{input:{name:value('name'),code:value('code'),country:value('country'),city:value('city'),industry:value('industry'),ownerId:value('ownerId'),grade:value('grade'),currency:value('currency'),terms:value('terms'),incoterm:value('incoterm'),categories:value('categories'),since:value('since'),creditLimit:Number(values.creditLimit)}}});
       const id=receipt.result.customerId;
       if(typeof id!=='string'||!id)throw new Error('保存回执没有客户编号，请核对原操作结果');
       setCreating(false);go('crm',id,{customerId:id});
@@ -116,8 +118,8 @@ export function CustomerPage() {
       {contact?.email && <Button icon={Mail} disabled={!emailValid(contact.email)} title="使用本机邮件应用撰写，Bambook不会发送邮件" onClick={() => writeMail(contact.email)}>写邮件</Button>}
     </Drawer>
     <Dialog open={deleteContact} onClose={() => { if (!busy) setDeleteContact(false); }} title="删除联系人？" description={contact?.name} footer={<><Button onClick={() => setDeleteContact(false)}>取消</Button><Button variant="danger" loading={busy} onClick={async () => { if (!contact?.id || busy) return; setBusy(true); try { await run({ type: 'market.contact.delete', payload: { kind:'customer',parentId:customer.id,id: contact.id } }); setDeleteContact(false); setContact(null); toast('联系人已删除'); } catch (problem) { setFailure(problem instanceof Error ? problem.message : '删除失败'); } finally { setBusy(false); } }}>删除联系人</Button></>} />
-    <Drawer open={!!edit} onClose={() => { if (!busy) setEdit(null); }} title="编辑客户资料" size="lg" footer={<Button variant="primary" loading={busy} onClick={async () => { if (!edit || busy) return; setBusy(true); setFailure(''); const { id, ...patch } = edit; try { await run({ type: 'market.customer.update', payload: { id, patch } }); setEdit(null); toast('客户资料已保存'); } catch (problem) { setFailure(problem instanceof Error ? problem.message : '资料保存失败'); } finally { setBusy(false); } }}>保存资料</Button>}>
-      {failure && <Banner tone="bad" title="资料未保存">{failure}</Banner>}<FormGrid>{(['name', 'country', 'city', 'industry', 'owner', 'grade', 'terms', 'incoterm', 'categories', 'since'] as const).map((key, index) => <Field key={key} label={['客户名称', '国家', '城市', '行业', '客户经理', '等级', '付款条款', '贸易术语', '主要品类', '合作起始日'][index]}><TextInput type={key === 'since' ? 'date' : 'text'} value={edit?.[key] ?? ''} onChange={event => setEdit(value => value ? { ...value, [key]: event.target.value } : value)} /></Field>)}<Field label="结算币种"><Select value={edit?.currency ?? 'USD'} onChange={event => setEdit(value => value ? { ...value, currency: event.target.value } : value)} options={[...new Set(['USD', 'EUR', 'CNY', 'GBP', 'HKD',edit?.currency||'USD'])]} /></Field><Field label="信用额度"><TextInput type="number" min={0} value={edit?.creditLimit ?? 0} onChange={event => setEdit(value => value ? { ...value, creditLimit: Number(event.target.value) } : value)} /></Field></FormGrid>
+    <Drawer open={!!edit} onClose={() => { if (!busy) setEdit(null); }} title="编辑客户资料" size="lg" footer={<Button variant="primary" loading={busy} onClick={async () => { if (!edit || busy) return; setBusy(true); setFailure(''); const { id, owner: _owner, ...patch } = edit; try { await run({ type: 'market.customer.update', payload: { id, patch } }); setEdit(null); toast('客户资料已保存'); } catch (problem) { setFailure(problem instanceof Error ? problem.message : '资料保存失败'); } finally { setBusy(false); } }}>保存资料</Button>}>
+      {failure && <Banner tone="bad" title="资料未保存">{failure}</Banner>}<FormGrid>{(['name', 'country', 'city', 'industry', 'grade', 'terms', 'incoterm', 'categories', 'since'] as const).map((key, index) => <Field key={key} label={['客户名称', '国家', '城市', '行业', '等级', '付款条款', '贸易术语', '主要品类', '合作起始日'][index]}><TextInput type={key === 'since' ? 'date' : 'text'} value={edit?.[key] ?? ''} onChange={event => setEdit(value => value ? { ...value, [key]: event.target.value } : value)} /></Field>)}<Field label="客户经理" hint="按账号选择本空间成员"><Select aria-label="客户经理" value={edit?.ownerId ?? ''} onChange={event => setEdit(value => value ? { ...value, ownerId: event.target.value } : value)} options={memberSelectOptions(members, { current: { id: edit?.ownerId, name: edit?.owner } })} /></Field><Field label="结算币种"><Select aria-label="结算币种" value={edit?.currency ?? 'USD'} onChange={event => setEdit(value => value ? { ...value, currency: event.target.value } : value)} options={[...new Set(['USD', 'EUR', 'CNY', 'GBP', 'HKD',edit?.currency||'USD'])]} /></Field><Field label="信用额度"><TextInput type="number" min={0} value={edit?.creditLimit ?? 0} onChange={event => setEdit(value => value ? { ...value, creditLimit: Number(event.target.value) } : value)} /></Field></FormGrid>
     </Drawer>
     <Dialog open={frequency} onClose={() => setFrequency(false)} title="业务动态统计"><KeyValue items={[{ label: '全部业务动态', value: events.length }, { label: '最近 30 天业务动态', value: events.filter(event => Date.now() - new Date(event.at).getTime() <= 30 * 86400000).length }, { label: '最近业务动态', value: events[0] ? new Date(events[0].at).toLocaleString('zh-CN') : '暂无记录' }]} /></Dialog>
   </MistPage>;

@@ -9,7 +9,7 @@ import {calculatePlatformPricing} from '../../../../../server/src/shared/mistPla
 import {Nav} from '../../nav';
 const store=vi.hoisted(()=>({value:null as any,write:true,csv:vi.fn()}));
 vi.mock('../../runtime/workspace',()=>({useMistWorkspace:()=>store.value}));
-vi.mock('../../runtime/auth',()=>({useMistSession:()=>({user:{id:'actor'},hasPermission:()=>store.write})}));
+vi.mock('../../runtime/auth', () => { const useMistSession = ()=>({user:{id:'actor'},hasPermission:()=>store.write}); return { useMistSession, useOptionalMistSession: useMistSession }; });
 vi.mock('./ModuleWorkbench',()=>({downloadModuleCsv:store.csv}));
 import {PricingPage,validatePlatformPricingDraft,pricingOrderEvidence} from './PricingPage';
 let host:HTMLElement,root:Root,route:any;const go=vi.fn(),valid={purchaseCostCny:'100',refundRate:'13',exchangeRate:'7.2',profitMargin:'20',commissionRate:'5',orderId:'order',basis:'CNY/米，工厂书面报价、退税与汇率有效日2026-10-14'};

@@ -306,7 +306,7 @@ export function createSupplierRouter(options: SupplierRouterOptions): Router {
     }
   });
 
-  router.delete('/:id', requireWrite, requireSupplierWrite, async (req: Request, res: Response) => {
+  router.delete('/:id', requireWrite, requirePermission('suppliers:admin') /* P6：评级/删除档案须主管 */, async (req: Request, res: Response) => {
     try {
       await service.deleteProfile(req.params.id, actorIdFromRequest(req));
       notify('delete', [req.params.id]);
@@ -349,7 +349,7 @@ export function createSupplierRouter(options: SupplierRouterOptions): Router {
     }
   });
 
-  router.post('/:id/evaluations', requireWrite, requireSupplierWrite, async (req: Request, res: Response) => {
+  router.post('/:id/evaluations', requireWrite, requirePermission('suppliers:admin') /* P6：评级/删除档案须主管 */, async (req: Request, res: Response) => {
     try {
       const evaluation = await service.addEvaluation(req.params.id, req.body as FactoryEvaluationInput, actorIdFromRequest(req));
       notify('add_evaluation', [evaluation.id]);

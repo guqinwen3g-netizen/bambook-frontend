@@ -9,7 +9,7 @@ import { Nav } from '../../nav';
 
 const bridge = vi.hoisted(() => ({ current: null as any, perms: new Set<string>() }));
 vi.mock('../../runtime/workspace', () => ({ useMistWorkspace: () => bridge.current }));
-vi.mock('../../runtime/auth', () => ({ useMistSession: () => ({ user: { id: 'u', displayName: '总领导' }, hasPermission: (p: string) => bridge.perms.has(p), hasRole: () => false, canAccessView: () => true }) }));
+vi.mock('../../runtime/auth', () => { const useMistSession = () => ({ user: { id: 'u', displayName: '总领导' }, hasPermission: (p: string) => bridge.perms.has(p), hasRole: () => false, canAccessView: () => true }); return { useMistSession, useOptionalMistSession: useMistSession }; });
 import { QuoteMarginFloorPanel } from './QuoteMarginFloorPanel';
 let host: HTMLDivElement, root: Root | undefined, state: MistState;
 let seq = 0; const ctx: MistContext = { id: () => 'mf-' + (++seq), actorName: '总领导', now: '2026-10-14T02:00:00.000Z' };

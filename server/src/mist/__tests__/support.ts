@@ -5,10 +5,15 @@ import type { MistContract } from '../repository';
 /** In-memory transactional test fixture only. It never connects to a database. */
 export class MemoryMistDatabase {
   workspaces = new Map<string, any>(); receipts = new Map<string, any>(); businessSequences = new Map<string, any>(); failReceipt = false;
+  /** 账号表（包 A 成员目录）：未登记的账号视为在职账号、显示名为账号编号；测试可登记停用 / 删除状态。 */
+  accounts = new Map<string, { displayName?: string; status?: string; deletedAt?: Date | null }>();
   private queue = Promise.resolve();
   private delegates(workspaces: Map<string, any>, receipts: Map<string, any>, businessSequences = this.businessSequences) {
     return {
       $queryRawUnsafe: async () => [],
+      userAccount: {
+        findMany: async ({ where }: any) => ((where?.id?.in ?? []) as string[]).map(id => { const a = this.accounts.get(id); return { id, displayName: a?.displayName ?? id, status: a?.status ?? 'active', deletedAt: a?.deletedAt ?? null }; }),
+      },
       mistWorkspace: {
         findFirst: async ({ where }: any) => [...workspaces.values()].find(row => Object.entries(where).every(([key, value]) => row[key] === value)) ?? null,
         findMany: async ({ where }: any = {}) => [...workspaces.values()].filter(row => !where || !Object.keys(where).length ? true : where.OR ? where.OR.some((rule:any)=>rule.ownerId===row.ownerId || (rule.state && (row.state[rule.state.path?.[0]||'reviewerIds']||[]).includes(rule.state.array_contains[0]))) : row.ownerId === where.ownerId),

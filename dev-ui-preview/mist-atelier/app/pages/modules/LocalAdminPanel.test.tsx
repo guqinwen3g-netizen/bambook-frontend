@@ -9,7 +9,7 @@ import { LocalAdminPanel, type LocalCompanyProfile } from './LocalAdminPanel';
 
 const bridge = vi.hoisted(() => ({ localMode: true, sessionKey: 'local-a', workspace: null as any, run: vi.fn(), recover: vi.fn() }));
 vi.mock('../../runtime/workspace', () => ({ useMistWorkspace: () => bridge.workspace }));
-vi.mock('../../runtime/auth', () => ({ useMistSession: () => ({ localMode: bridge.localMode, sessionKey: bridge.sessionKey, user: { id: 'local-user', displayName: '本地经办人' } }) }));
+vi.mock('../../runtime/auth', () => { const useMistSession = () => ({ localMode: bridge.localMode, sessionKey: bridge.sessionKey, user: { id: 'local-user', displayName: '本地经办人' } }); return { useMistSession, useOptionalMistSession: useMistSession }; });
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 let host: HTMLElement, root: Root;

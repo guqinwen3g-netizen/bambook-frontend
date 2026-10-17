@@ -1,11 +1,12 @@
 import {describe,it,expect} from 'vitest';
+import { withTestFactories } from './__tests__/utils/devFactories';
 import {applyMistCommand,createMistState,type DevelopmentValues,type MistContext,type MistCommand} from './mistWorkspace';
 import {emptyFabricRequirements} from './mistDevelopmentDomain';
 import {developmentBusinessDateTime,developmentVersionComparison,versionSource,versionTimelineStatus} from './mistDevelopmentCompare';
 
 /** 隔离合成数据：成衣案（3 厂 2 轮）与面料案（2 厂 2 轮），覆盖未返样、QC 中、需关注、认可、不采用。 */
 function fixture(){
-  let n=0;const ctx:MistContext={id:()=>`cmp-${++n}`,now:'2026-10-16T09:00:00Z',actorName:'测试业务员'};let state=createMistState(ctx,'empty');
+  let n=0;const ctx:MistContext={id:()=>`cmp-${++n}`,now:'2026-10-16T09:00:00Z',actorName:'测试业务员',actorId:'test-sales'};let state=withTestFactories(createMistState(ctx,'empty'));
   state.customers.push({id:'c',name:'合成客户',code:'C',country:'',city:'',industry:'',owner:'',grade:'',currency:'EUR',terms:'',incoterm:'',categories:'',creditLimit:0,since:''});
   state.market.suppliers.push(...['合成面料甲厂','合成面料乙厂'].map(name=>({id:name,code:name,name,type:'面料工厂',capabilities:'织造',status:'active',country:'',address:'',capacity:0,capacityUnit:'米',leadDays:0,blockReason:'',contacts:[],fileIds:[],note:'',createdAt:ctx.now,updatedAt:ctx.now}) as any));
   const run=(command:MistCommand)=>{const r=applyMistCommand(state,command,ctx);state=r.state;return r.result as Record<string,any>;};
@@ -78,7 +79,7 @@ describe('BB-DEV-11 多版本对比',()=>{
 describe('BB-DEV-11 对比时间按上海业务时区显示（回修 PR118）',()=>{
   /** 合成数据：返样跨 UTC 日界，QC 评审跨月，需求方确认跨年；三处时间均来自对比 helper。 */
   function timed(){
-    let n=0;const ctx:MistContext={id:()=>`tz-${++n}`,now:'2027-01-05T09:00:00Z',actorName:'测试业务员'};let state=createMistState(ctx,'empty');
+    let n=0;const ctx:MistContext={id:()=>`tz-${++n}`,now:'2027-01-05T09:00:00Z',actorName:'测试业务员',actorId:'test-sales'};let state=withTestFactories(createMistState(ctx,'empty'));
     state.customers.push({id:'c',name:'合成客户',code:'C',country:'',city:'',industry:'',owner:'',grade:'',currency:'EUR',terms:'',incoterm:'',categories:'',creditLimit:0,since:''});
     const run=(command:MistCommand)=>{const r=applyMistCommand(state,command,ctx);state=r.state;return r.result as Record<string,any>;};
     const devId=run({type:'development.submit',payload:{values:{name:'时区合成',customer:'c',style:'TZ-1',season:'AW',category:'大衣',kind:'new',fabric:'羊毛',color:'灰',target:'',sizeBase:'M',goal:'时区',factories:['A厂','B厂'],due:'2026-12-30',collaborators:[],sampleQuantity:1} as DevelopmentValues,fileIds:[]}}).devId as string;

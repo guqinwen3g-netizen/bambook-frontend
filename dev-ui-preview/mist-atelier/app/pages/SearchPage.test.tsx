@@ -6,7 +6,7 @@ import { Nav } from '../nav';
 import { SearchPage } from './SearchPage';
 
 const bridge = vi.hoisted(() => ({ state: null as any, can: (_: string) => true }));
-vi.mock('../runtime/auth', () => ({ useMistSession: () => ({ canAccessView: (v: string) => bridge.can(v) }) }));
+vi.mock('../runtime/auth', () => { const useMistSession = () => ({ canAccessView: (v: string) => bridge.can(v) }); return { useMistSession, useOptionalMistSession: useMistSession }; });
 vi.mock('../runtime/workspace', () => ({ useMistWorkspace: () => ({ state: bridge.state, workspace: bridge.state ? { name: '真实空间' } : null }) }));
 let root: Root | undefined, host: HTMLDivElement; const go = vi.fn();
 beforeEach(() => {

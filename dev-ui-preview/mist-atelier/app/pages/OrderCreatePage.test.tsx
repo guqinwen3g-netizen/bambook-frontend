@@ -6,15 +6,16 @@ import { getAllByLabelText, getByLabelText, getByRole, getByText } from '@testin
 import { MistRoot, ToastProvider } from '../../../../components/mist';
 import { applyMistCommand, createMistState, type MistState } from '../../../../server/src/shared/mistWorkspace';
 import { Nav } from '../nav';
-const store = vi.hoisted(() => ({ state: null as MistState | null, loading: false, error: '', workspace:{id:'a'} as {id:string}, run: vi.fn() }));
+const store = vi.hoisted(() => ({ state: null as MistState | null, loading: false, error: '', workspace:{id:'a',ownerId:'sales'} as {id:string;ownerId?:string}, run: vi.fn() }));
 vi.mock('../runtime/workspace', () => ({ useMistWorkspace: () => store }));
+vi.mock('../runtime/auth', () => { const useMistSession = () => ({ status: 'authenticated', sessionKey: 's', user: { id: 'sales', displayName: '业务员甲' }, hasPermission: () => true }); return { useMistSession, useOptionalMistSession: useMistSession }; });
 import { OrderCreatePage } from './OrderCreatePage';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let host: HTMLElement, root: Root;
 const go = vi.fn();
 let sequence = 0;
-const context = { id: () => `amount-${++sequence}`, now: '2026-10-13T02:00:00.000Z', actorName: '业务员甲' };
+const context = { id: () => `amount-${++sequence}`, now: '2026-10-13T02:00:00.000Z', actorName: '业务员甲', actorId: 'sales' };
 function input(label: string, value: string) {
   const node = getByLabelText(host, new RegExp(`^${label}\\s*\\*?$`)) as HTMLInputElement|HTMLTextAreaElement;
   act(() => { Object.getOwnPropertyDescriptor(node.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype, 'value')!.set!.call(node, value); node.dispatchEvent(new Event('input', { bubbles: true })); });
@@ -26,7 +27,7 @@ async function enterLine(qty: string, price: string) {
 }
 function amount(label: string) { return getByText(host, label, { selector: 'dt' }).nextElementSibling?.textContent; }
 beforeEach(() => {
-  sequence = 0; store.workspace={id:'a'}; store.state = createMistState(context, 'empty');
+  sequence = 0; store.workspace={id:'a',ownerId:'sales'}; store.state = createMistState(context, 'empty');
   store.state.customers.push({ id: 'customer-a', code: 'C-A', name: '客户甲', country: '', city: '', industry: '', owner: '业务员甲', grade: 'A', currency: 'USD', terms: '', incoterm: '', categories: '', creditLimit: 0, since: '2026-01-01' });
   store.run.mockReset(); go.mockReset();
   store.run.mockImplementation(async command => {

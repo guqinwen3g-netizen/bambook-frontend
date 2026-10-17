@@ -12,7 +12,7 @@ const bridge=vi.hoisted(()=>({current:null as any}));
 vi.mock('../runtime/workspace',()=>({useMistWorkspace:()=>bridge.current}));
 
 let root:Root|undefined,host:HTMLDivElement,state:MistState,devId='';const go=vi.fn();
-let n=0;const ctx:MistContext={id:()=>`ui-${++n}`,now:'2026-10-16T09:00:00Z',actorName:'业务员'};
+let n=0;const ctx:MistContext={id:()=>`ui-${++n}`,now:'2026-10-16T09:00:00Z',actorName:'业务员',actorId:'sales'};
 const supplier=(name:string)=>({id:name,code:name,name,type:'成衣工厂',capabilities:'缝制',status:'active',country:'',address:'',capacity:0,capacityUnit:'件',leadDays:0,blockReason:'',contacts:[],fileIds:[],note:'',createdAt:ctx.now,updatedAt:ctx.now}) as any;
 const apply=(command:MistCommand)=>{const r=applyMistCommand(state,command,ctx);state=r.state;return r;};
 function render(versionId?:string){return root!.render(<Nav.Provider value={{route:{view:'development/detail',id:devId,versionId},go,theme:'light',toggleTheme:vi.fn(),openPalette:vi.fn(),openAI:vi.fn()}}><DevDetailPage/></Nav.Provider>);}

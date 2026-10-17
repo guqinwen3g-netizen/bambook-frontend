@@ -16,7 +16,7 @@ function fixture() {
  // Uploaded metadata fixture only; it represents the written contract without external I/O.
  state.files.push({id:'uploaded',name:'signed.pdf',mimeType:'application/pdf',size:4,storageKey:'workspace/uploaded',createdAt:context.now});
  const run=(command:MistCommand,actor=context)=>{const next=applyMistCommand(state,command,actor);state=next.state;return next.result;};
- const orderId=run({type:'order.create',payload:{type:'garment',customerId:'customer',season:'AW26',currency:'USD',due:'2026-12-01',owner:'业务员',governance:{kind:'external',poNumber:'CROSS-PO',confirmationFileIds:['uploaded'],internalPurpose:'',receiver:'',paymentMethod:'TT',depositPercent:30,paymentNote:'30%定金，余款按合同',incoterm:'FOB',deliveryPlace:'上海'},lines:[{name:'衬衫',style:'S1',img:'coat',qty:10,unit:'件',price:10}]}}).orderId!;
+ const orderId=run({type:'order.create',payload:{type:'garment',customerId:'customer',season:'AW26',currency:'USD',due:'2026-12-01',ownerId:'sales',governance:{kind:'external',poNumber:'CROSS-PO',confirmationFileIds:['uploaded'],internalPurpose:'',receiver:'',paymentMethod:'TT',depositPercent:30,paymentNote:'30%定金，余款按合同',incoterm:'FOB',deliveryPlace:'上海'},lines:[{name:'衬衫',style:'S1',img:'coat',qty:10,unit:'件',price:10}]}}).orderId!;
  const lineId=state.orderLines[0].id;
  run({type:'order.governance.submit',payload:{orderId}});run({type:'order.governance.decide',payload:{id:orderId,decision:'approved',note:'已核对客户书面合同'}},{...context,actorId:'leader'});
  run({type:'finance.importReceipts',payload:{receipts:[{date:'2026-10-13',payer:'现有客户',amount:30,currency:'USD',ref:'CROSS-DEPOSIT'}]}});run({type:'funding.assign',payload:{receiptId:state.receipts[0].id,customerId:'customer',orderId,amount:30,note:'本订单合同定金'}});

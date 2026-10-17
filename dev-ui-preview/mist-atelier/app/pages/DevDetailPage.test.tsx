@@ -24,7 +24,7 @@ describe('version confirmation form',()=>{
 
 let root:Root|undefined,host:HTMLDivElement;const go=vi.fn();
 const record: MistDev={id:'dev-a',code:'DEV-A',name:'工作空间实际开发',style:'STYLE-A',owner:'业务员',customer:'客户',customerId:'customer-a',due:'2026-10-30',dueRel:'待交付',stage:4,state:'已确认',tone:'ok',ver:'R1-A-1',fac:2,img:'coat',factory:'工厂 A',sample:'SP-A',fabric:'羊毛',goal:'真实开发要求',currentVersionId:'va',versionIds:['va','vb'],values:{name:'实际开发',style:'STYLE-A',sizeBase:'M',factories:['工厂 A','工厂 B']} as any,fileIds:[],createdAt:'2026-10-13T00:00:00Z',updatedAt:'2026-10-13T00:00:00Z'};
-const version=(id:string,label:string,reviewer:string):MistVersion=>({id,devId:'dev-a',label,factory:`工厂 ${id}`,sample:`SP-${id}`,sampleQuantity:2,size:'M',fabric:'羊毛',img:'coat',fileIds:[],returnedAt:'2026-10-12T00:00:00Z',qc:{result:'pass',reviewer,reviewedAt:'2026-10-12T01:00:00Z',report:`QC-${id}`,opinion:`${id}的意见`},confirmations:[],archivedAt:null,note:''});
+const version=(id:string,label:string,reviewer:string):MistVersion=>({id,devId:'dev-a',label,factory:`工厂 ${id}`,factoryId:`sup-${id.slice(1)}`,sample:`SP-${id}`,sampleQuantity:2,size:'M',fabric:'羊毛',img:'coat',fileIds:[],returnedAt:'2026-10-12T00:00:00Z',qc:{result:'pass',reviewer,reviewedAt:'2026-10-12T01:00:00Z',report:`QC-${id}`,opinion:`${id}的意见`},confirmations:[],archivedAt:null,note:''});
 beforeEach(()=>{(globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;go.mockReset();bridge.current={state:{devs:[record],versions:[version('va','R1-A-1','评审 A'),version('vb','R2-B-1','评审 B')],files:[],events:[],orders:[],settings:{profileName:'业务员'}},loading:false,error:'',run:vi.fn(async()=>({requestId:'confirmed',revision:2,result:{devId:'dev-a'}})),uploadFile:vi.fn(),downloadFile:vi.fn()};});
 afterEach(async()=>{if(root)await act(async()=>root!.unmount());root=undefined;host?.remove();});
 async function mount(versionId='va',customerId?:string){host=document.createElement('div');document.body.append(host);root=createRoot(host);await act(async()=>root!.render(<Nav.Provider value={{route:{view:'development/detail',id:'dev-a',versionId,customerId},go,theme:'light',toggleTheme:vi.fn(),openPalette:vi.fn(),openAI:vi.fn()}}><DevDetailPage/></Nav.Provider>));}
@@ -121,7 +121,7 @@ describe('development plan factory source and return context',()=>{
  it('edits plan factories using actual suppliers and can add one without losing plan input',async()=>{
   bridge.current.state.market={suppliers:[{id:'live',name:'真实新增工厂',type:'成衣加工',capabilities:'缝制',status:'active'}]};bridge.current.state.drafts=[];
   await mount();await act(async()=>document.querySelector<HTMLButtonElement>('button[aria-label="更多"]')!.click());await click('编辑开发计划');await fill('开发目标','保留的计划目标');expect(document.body.textContent).toContain('真实新增工厂');expect(document.body.textContent).not.toContain('江南成衣');
-  const candidate=[...document.querySelectorAll('label')].find(label=>label.textContent==='真实新增工厂')?.querySelector<HTMLInputElement>('input');expect(candidate).toBeTruthy();await act(async()=>candidate!.click());await click('保存计划');expect(bridge.current.run).toHaveBeenCalledWith({type:'development.update',payload:{devId:'dev-a',patch:expect.objectContaining({goal:'保留的计划目标',factories:expect.arrayContaining(['真实新增工厂'])})}});
+  const candidate=[...document.querySelectorAll('label')].find(label=>label.textContent==='真实新增工厂')?.querySelector<HTMLInputElement>('input');expect(candidate).toBeTruthy();await act(async()=>candidate!.click());await click('保存计划');expect(bridge.current.run).toHaveBeenCalledWith({type:'development.update',payload:{devId:'dev-a',patch:expect.objectContaining({goal:'保留的计划目标',factories:expect.arrayContaining(['live'])})}});
  });
 });
 
@@ -175,7 +175,7 @@ describe('BB-DEV-7 QC gate on the detail page',()=>{
     expect(textarea.value).toContain('克重偏低 20g');expect(document.body.textContent).toContain('重新打样 · 来源 R1-A-1 QC 不通过');
     await click('下一步：逐厂要求');
     const submit=[...document.querySelectorAll('button')].find(item=>item.textContent?.startsWith('建立 '))!;await act(async()=>submit.click());
-    expect(bridge.current.run).toHaveBeenCalledWith(expect.objectContaining({type:'development.round.create',payload:expect.objectContaining({devId:'dev-a',factories:['工厂 va'],referenceVersionIds:['va'],resampleFromVersionId:'va',factoryTasks:[expect.objectContaining({factory:'工厂 va',sampleForm:'米样',sampleUnit:'米'})]})}));
+    expect(bridge.current.run).toHaveBeenCalledWith(expect.objectContaining({type:'development.round.create',payload:expect.objectContaining({devId:'dev-a',factories:['sup-a'],referenceVersionIds:['va'],resampleFromVersionId:'va',factoryTasks:[expect.objectContaining({factory:'sup-a',sampleForm:'米样',sampleUnit:'米'})]})}));
   });
   it('shows 需关注 with the QC opinion for a conditional pass and still allows confirmation',async()=>{
     const v=bridge.current.state.versions.find((row:any)=>row.id==='va');v.qc={...v.qc,result:'conditional',opinion:'领口略紧，量产前确认'};

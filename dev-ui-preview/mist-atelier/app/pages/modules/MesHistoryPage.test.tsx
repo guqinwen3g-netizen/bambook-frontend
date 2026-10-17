@@ -10,7 +10,7 @@ import {Nav} from '../../nav';
 const store=vi.hoisted(()=>({state:null as MistState|null,loading:false,error:'',saving:false,pending:null,run:vi.fn(),refresh:vi.fn(),uploadFile:vi.fn(),downloadFile:vi.fn()}));
 const api=vi.hoisted(()=>({listOutsourcingOrders:vi.fn(),getOutsourcingOrder:vi.fn()}));
 vi.mock('../../runtime/workspace',()=>({useMistWorkspace:()=>store}));
-vi.mock('../../runtime/auth',()=>({useMistSession:()=>({user:{id:'u',displayName:'经办人'},sessionKey:'s',hasPermission:()=>true,canAccessView:()=>true})}));
+vi.mock('../../runtime/auth', () => { const useMistSession = ()=>({user:{id:'u',displayName:'经办人'},sessionKey:'s',hasPermission:()=>true,canAccessView:()=>true}); return { useMistSession, useOptionalMistSession: useMistSession }; });
 vi.mock('../../../../../services/apiService',()=>({apiService:api}));
 import {MesHistoryPage} from './MesHistoryPage';
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;

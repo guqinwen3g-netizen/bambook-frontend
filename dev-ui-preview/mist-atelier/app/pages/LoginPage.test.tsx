@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MistRoot, ToastProvider } from '../../../../components/mist';
 import { Nav } from '../nav';
 const seam = vi.hoisted(() => ({ session: { signingIn: false, status: 'anonymous', error: '', login: vi.fn(), clearError: vi.fn() } }));
-vi.mock('../runtime/auth', () => ({ useMistSession: () => seam.session }));
+vi.mock('../runtime/auth', () => { const useMistSession = () => seam.session; return { useMistSession, useOptionalMistSession: useMistSession }; });
 import { LoginPage } from './LoginPage';
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 let root: Root | undefined, host: HTMLElement | undefined;

@@ -10,7 +10,7 @@ import {Nav} from '../../nav';
 const store=vi.hoisted(()=>({state:null as MistState|null,loading:false,error:'',saving:false,pending:null,run:vi.fn(),refresh:vi.fn(),uploadFile:vi.fn(),downloadFile:vi.fn()}));
 const session=vi.hoisted(()=>({id:'qc-a',denied:new Set<string>()}));
 vi.mock('../../runtime/workspace',()=>({useMistWorkspace:()=>store}));
-vi.mock('../../runtime/auth',()=>({useMistSession:()=>({user:{id:session.id,displayName:'QC甲'},sessionKey:'s',hasPermission:(p:string)=>!session.denied.has(p),canAccessView:()=>true})}));
+vi.mock('../../runtime/auth', () => { const useMistSession = ()=>({user:{id:session.id,displayName:'QC甲'},sessionKey:'s',hasPermission:(p:string)=>!session.denied.has(p),canAccessView:()=>true}); return { useMistSession, useOptionalMistSession: useMistSession }; });
 import {QcWorkbenchPage} from './QcWorkbenchPage';
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;
 let host:HTMLElement,root:Root;const go=vi.fn();

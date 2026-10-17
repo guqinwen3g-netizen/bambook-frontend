@@ -1,4 +1,5 @@
 import {beforeEach,afterEach,expect,it,vi,describe} from 'vitest';
+import { withTestFactories } from '../shared/__tests__/utils/devFactories';
 import {mkdtemp,rm,readdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
@@ -28,7 +29,7 @@ const notice=(requestId:string,label:string,extra:Record<string,unknown>={})=>ex
 beforeEach(async()=>{
  directory=await mkdtemp(path.join(tmpdir(),'mist-dev-notice-'));db=new MemoryMistDatabase();auth=testAuthority();auth.users.get('owner')!.permissions=['products:read','products:write'];files=new MistPrivateFiles(directory);renderPdf.mockClear();htmls.length=0;revision=0;
  repo=new MistRepository(db,contract,files,auth.authorize,()=>new Date(now),undefined,renderPdf);workspaceId=(await repo.create(testActor(),{name:'通知单仓储测试空间',seed:'empty'})).id;
- const s=state();s.settings.companyProfile={...company};
+ const s=withTestFactories(state());s.settings.companyProfile={...company};
  s.customers.push({id:'c',name:'测试客户',code:'C',country:'',city:'',industry:'',owner:'',grade:'',currency:'EUR',terms:'',incoterm:'',categories:'',creditLimit:0,since:''});
  let n=0;const ctx:contract.MistContext={id:()=>`seed-${++n}`,now,actorName:'业务员',actorId:'owner'};let next=s;
  const run=(c:contract.MistCommand)=>{const r=contract.applyMistCommand(next,c,ctx);next=r.state;return r.result as Record<string,any>;};

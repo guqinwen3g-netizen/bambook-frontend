@@ -19,7 +19,10 @@ export function versionQcFlag(version: Pick<MistVersion, 'qc' | 'qcDecision' | '
   if (!version.qc && version.qcHistory?.length) return { tone: 'warn', label: '整改待复检' };
   return null;
 }
-type FactoryOption = { name: string; historical: boolean; unavailable: boolean };
+/** 工厂选项：id 为供应商 ID（稳定引用），name 为供应商当前名称。 */
+type FactoryOption = { id: string; name: string; historical: boolean; unavailable: boolean };
+/** 供应商 ID → 当前名称（用于展示与提示）。 */
+export const factoryLabel = (state: MistState | undefined, id: string) => state?.market?.suppliers.find(s => s.id === id)?.name || id;
 
 /** 预览：本轮将生成的版本号（已参与工厂沿用原字母，新工厂取下一个未用字母）。 */
 export function previewRoundLabels(state: MistState, dev: MistDev, factories: string[]): string[] {
@@ -30,17 +33,17 @@ export function previewRoundLabels(state: MistState, dev: MistDev, factories: st
   });
 }
 /** 分步校验：返回第 step 步（0 起）之前及本步的第一个问题；不传 step 时校验全部。 */
-export function newRoundError(input: NewRoundInput, dev?: MistDev, step = NEW_ROUND_STEPS.length - 1): string | null {
+export function newRoundError(input: NewRoundInput, dev?: MistDev, step = NEW_ROUND_STEPS.length - 1, nameOf: (id: string) => string = id => id): string | null {
   if (step >= 1) {
     if (!input.factories.length) return '请至少选择一家参与工厂';
     const duplicated = duplicateRoundFactories(input.factories);
-    if (duplicated.length) return `同一轮内工厂不能重复：${duplicated.join('、')}`;
+    if (duplicated.length) return `同一轮内工厂不能重复：${duplicated.map(nameOf).join('、')}`;
   }
   if (step >= 2) {
     if (!input.requirements.trim()) return '请填写本轮共同要求';
     if (!/^\d{4}-\d{2}-\d{2}$/.test(input.targetDate)) return '请填写本轮目标日期';
   }
-  if (step >= 3 && dev) for (const task of input.factoryTasks || []) { const error = factoryTaskError(dev, task); if (error) return error; }
+  if (step >= 3 && dev) for (const task of input.factoryTasks || []) { const error = factoryTaskError(dev, { ...task, factory: nameOf(task.factory) }); if (error) return error; }
   return null;
 }
 /** 本轮各工厂任务：已填写的沿用，未填写的按开发案计划样品与本轮目标日期。 */
@@ -55,7 +58,7 @@ export function DevRoundsCard({ state, dev, versionId, busy, onSelect, onCreate,
   const views = developmentRoundViews(state, dev), letters = caseFactoryLetters(state, dev);
   const label = (id: string) => state.versions.find(version => version.id === id)?.label || '已不可见版本';
   return <Card id="mist-dev-rounds">
-    <CardHeader title="开发轮次" sub={Object.keys(letters).length ? `工厂字母固定：${Object.entries(letters).map(([factory, letter]) => `${letter} ${factory}`).join(' · ')}` : '尚无参与工厂'} tools={(blocker => <><Button size="sm" icon={Plus} disabled={busy || !!blocker} title={blocker || undefined} onClick={onCreate}>开新一轮</Button>{blocker && <span className="mist-note">{blocker}</span>}</>)(developmentRoundBlocker(state, dev))} />
+    <CardHeader title="开发轮次" sub={Object.keys(letters).length ? `工厂字母固定：${Object.entries(letters).map(([factory, letter]) => `${letter} ${factoryLabel(state, factory)}`).join(' · ')}` : '尚无参与工厂'} tools={(blocker => <><Button size="sm" icon={Plus} disabled={busy || !!blocker} title={blocker || undefined} onClick={onCreate}>开新一轮</Button>{blocker && <span className="mist-note">{blocker}</span>}</>)(developmentRoundBlocker(state, dev))} />
     {views.length ? views.map(view => <div key={view.number} className="mist-section" style={{ padding: '10px 22px' }} data-round={view.number}>
       <div className="mist-row"><Pill tone={view.round ? 'accent' : 'neutral'}>{view.number ? `R${view.number}` : '未编号'}</Pill>
         <span className="mist-muted" style={{ fontSize: 12.5 }}>{`${view.versions.length} 个版本 · `}{view.round ? `目标 ${view.round.targetDate}${view.round.referenceVersionIds.length ? ` · 参考 ${view.round.referenceVersionIds.map(label).join('、')}` : ''}${view.round.fileIds.length ? ` · 附件 ${view.round.fileIds.length}` : ''}` : '历史记录 · 按原版本号只读展示'}</span></div>
@@ -105,7 +108,7 @@ export function NewRoundDialog({ open, state, dev, busy, failure, factoryOptions
   const tasks = roundTasks(dev, form, edited), input: NewRoundInput = { ...form, factoryTasks: tasks };
   const setTask = (task: FactoryTaskInput, patch: Partial<FactoryTaskInput>) => setEdited(previous => ({ ...previous, [task.factory]: { ...task, ...patch } }));
   const blocker = developmentRoundBlocker(state, dev), preview = previewRoundLabels(state, dev, form.factories);
-  const stepError = (index: number) => blocker || newRoundError(input, dev, index), error = stepError(step), last = step === NEW_ROUND_STEPS.length - 1;
+  const stepError = (index: number) => blocker || newRoundError(input, dev, index, id => factoryLabel(state, id)), error = stepError(step), last = step === NEW_ROUND_STEPS.length - 1;
   const reachable = (index: number) => index <= step || NEW_ROUND_STEPS.slice(0, index).every((_, previous) => !stepError(previous));
   return <Dialog open={open} onClose={() => !busy && onClose()} width={760} icon={Layers} title={`开启第 ${nextRoundNumber(state, dev)} 轮`} description="每家参与工厂在本轮形成一个版本；之前各轮记录保持不变。" footer={<>
     <Button variant="quiet" disabled={busy} onClick={onClose}>取消</Button>
@@ -122,7 +125,7 @@ export function NewRoundDialog({ open, state, dev, busy, failure, factoryOptions
     </FormGrid>}
     {step === 1 && <FormGrid>
       <div className="mist-field" data-full="true" role="group" aria-label="参与工厂"><span className="mist-field-label">参与工厂（可留用、可新增）</span>
-        {factoryOptions.map(factory => { const letter = caseFactoryLetters(state, dev)[factory.name]; return <Checkbox key={factory.name} checked={form.factories.includes(factory.name)} disabled={factory.unavailable && !form.factories.includes(factory.name)} label={`${factory.name}${letter ? ` · 字母 ${letter}` : ' · 首次参与'}${factory.unavailable ? ' · 已停用' : ''}`} onChange={checked => toggle('factories', factory.name, checked)} />; })}
+        {factoryOptions.map(factory => { const letter = caseFactoryLetters(state, dev)[factory.id]; return <Checkbox key={factory.id} checked={form.factories.includes(factory.id)} disabled={factory.unavailable && !form.factories.includes(factory.id)} label={`${factory.name}${letter ? ` · 字母 ${letter}` : ' · 首次参与'}${factory.unavailable ? ' · 当前不可用' : ''}`} onChange={checked => toggle('factories', factory.id, checked)} />; })}
         {!factoryOptions.length && <p className="mist-note">尚无实际工厂，请先添加。</p>}<Button onClick={onAddFactory}>新增工厂</Button></div>
       <Field label="将建立的版本"><p className="mist-note">{preview.length ? preview.join('、') : '选择工厂后显示'}</p></Field>
     </FormGrid>}
@@ -135,8 +138,8 @@ export function NewRoundDialog({ open, state, dev, busy, failure, factoryOptions
     </FormGrid>}
     {step === 3 && <>
       <p className="mist-note" style={{ whiteSpace: 'pre-wrap' }}>共同要求：{form.requirements}</p>
-      {tasks.map((task, index) => <section key={task.factory} role="group" aria-label={`${task.factory} 逐厂要求`} className="mist-section" style={{ padding: '10px 0' }}>
-        <div className="mist-row"><Mono>{preview[index]}</Mono><b>{task.factory}</b></div>
+      {tasks.map((task, index) => <section key={task.factory} role="group" aria-label={`${factoryLabel(state, task.factory)} 逐厂要求`} className="mist-section" style={{ padding: '10px 0' }}>
+        <div className="mist-row"><Mono>{preview[index]}</Mono><b>{factoryLabel(state, task.factory)}</b></div>
         <FormGrid>
           <Field label="差异要求" full hint="只写本厂与共同要求不同的部分，可留空"><TextArea value={task.extraRequirements} onChange={event => setTask(task, { extraRequirements: event.target.value })} /></Field>
           <Field label="样品形态" required hint={fabric ? '米样按米，剪片类按份' : undefined}><TextInput value={task.sampleForm} onChange={event => setTask(task, { sampleForm: event.target.value })} /></Field>

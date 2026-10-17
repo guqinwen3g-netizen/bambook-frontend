@@ -16,7 +16,7 @@ function fixture(){
  state.market.products.push(product('p','garment','active','g','ok'),product('parch','garment','archived'),product('pfab','fabric','active'));
  const contract:OrderGovernanceInput={kind:'external',poNumber:'PO-1',confirmationFileIds:['contract-file'],internalPurpose:'',receiver:'',paymentMethod:'TT',depositPercent:30,paymentNote:'30%定金',incoterm:'FOB',deliveryPlace:'上海'};
  const run=(command:MistCommand,actor=c)=>{const out=applyMistCommand(state,command,actor);state=out.state;return out.result;};
- const create=(source:Record<string,string>,o:{type?:'garment'|'fabric';customerId?:string;governance?:OrderGovernanceInput}={})=>run({type:'order.create',payload:{type:o.type||'garment',customerId:o.customerId??'A',season:'AW27',currency:'USD',due:'2026-12-01',owner:'业务员',governance:o.governance||contract,lines:[{name:'大衣',style:'C1',img:'coat',qty:10,unit:'件',price:10,...source}]}} as MistCommand);
+ const create=(source:Record<string,string>,o:{type?:'garment'|'fabric';customerId?:string;governance?:OrderGovernanceInput}={})=>run({type:'order.create',payload:{type:o.type||'garment',customerId:o.customerId??'A',season:'AW27',currency:'USD',due:'2026-12-01',ownerId:'sales',governance:o.governance||contract,lines:[{name:'大衣',style:'C1',img:'coat',qty:10,unit:'件',price:10,...source}]}} as MistCommand);
  return {get state(){return state;},set state(v:MistState){state=v;},c,contract,run,create};
 }
 const lineOf=(f:ReturnType<typeof fixture>,orderId:string)=>f.state.orderLines.find(l=>l.orderId===orderId) as Record<string,unknown>;

@@ -11,7 +11,7 @@ import {Nav} from '../../nav';
 const store=vi.hoisted(()=>({state:null as MistState|null,workspace:{id:'isolated-ui',revision:0},loading:false,error:'',saving:false,pending:null,run:vi.fn(),downloadFile:vi.fn(),uploadFile:vi.fn()}));
 const permissions=vi.hoisted(()=>({inventory:true}));
 vi.mock('../../runtime/workspace',()=>({useMistWorkspace:()=>store}));
-vi.mock('../../runtime/auth',()=>({useMistSession:()=>({user:{id:'business'},sessionKey:'session',hasPermission:(permission:string)=>permission==='inventory:write'?permissions.inventory:true,canAccessView:()=>true})}));
+vi.mock('../../runtime/auth', () => { const useMistSession = ()=>({user:{id:'business'},sessionKey:'session',hasPermission:(permission:string)=>permission==='inventory:write'?permissions.inventory:true,canAccessView:()=>true}); return { useMistSession, useOptionalMistSession: useMistSession }; });
 vi.mock('../../../../../services/apiService',()=>({apiService:{}}));
 import {InventoryPage} from './FulfillmentPages';
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;

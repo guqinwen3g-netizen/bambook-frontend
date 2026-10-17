@@ -17,11 +17,11 @@ describe('canonical order amount previews', () => {
 
   it('matches the persisted server total after individually rounded lines are accumulated', () => {
     let sequence = 0;
-    const context: MistContext = { id: () => `amount-${++sequence}`, now: '2026-10-13T02:00:00.000Z', actorName: '业务员甲' };
+    const context: MistContext = { id: () => `amount-${++sequence}`, now: '2026-10-13T02:00:00.000Z', actorName: '业务员甲', actorId: 'sales' };
     const state = createMistState(context, 'empty');
     state.customers.push({ id: 'customer-a', code: 'C-A', name: '客户甲', country: '', city: '', industry: '', owner: '业务员甲', grade: 'A', currency: 'USD', terms: '', incoterm: '', categories: '', creditLimit: 0, since: '2026-01-01' });
     const lines = [{ qty: 1.005, price: 1 }, { qty: 1.005, price: 1 }, { qty: 0.3, price: 0.1 }];
-    const result = applyMistCommand(state, { type: 'order.create', payload: { type: 'garment', customerId: 'customer-a', season: 'AW28', currency: 'USD', due: '2026-10-30', owner: '业务员甲', lines: lines.map((line, index) => ({ ...line, name: '条目', style: `SKU-${index}`, img: 'coat', unit: '件' })) } }, context);
+    const result = applyMistCommand(state, { type: 'order.create', payload: { type: 'garment', customerId: 'customer-a', season: 'AW28', currency: 'USD', due: '2026-10-30', ownerId:'sales', lines: lines.map((line, index) => ({ ...line, name: '条目', style: `SKU-${index}`, img: 'coat', unit: '件' })) } }, context);
     expect(orderAmounts(lines).total).toBe(2.05);
     expect(orderAmounts(lines).total).toBe(result.state.orders[0].amount);
   });

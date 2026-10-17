@@ -7,9 +7,9 @@ import { getAllByRole, getByRole, getByLabelText, queryByRole } from '@testing-l
 import { MistRoot, ToastProvider } from '../../../../components/mist';
 import type { MistState } from '../../../../server/src/shared/mistWorkspace';
 import { Nav } from '../nav';
-const store = vi.hoisted(() => ({ state: null as MistState | null, loading: false, error: '', run: vi.fn(), refresh: vi.fn(), downloadFile: vi.fn(), uploadFile: vi.fn() }));
+const store = vi.hoisted(() => ({ state: null as MistState | null, loading: false, error: '', workspace: { id: 'w', ownerId: 'test-user' }, run: vi.fn(), refresh: vi.fn(), downloadFile: vi.fn(), uploadFile: vi.fn() }));
 vi.mock('../runtime/workspace', () => ({ useMistWorkspace: () => store }));
-vi.mock('../runtime/auth', () => ({ useMistSession: () => ({ status:'authenticated', sessionKey:'order-test', user:{id:'test-user',displayName:'负责人'}, hasPermission:()=>true }) }));
+vi.mock('../runtime/auth', () => { const useMistSession = () => ({ status:'authenticated', sessionKey:'order-test', user:{id:'test-user',displayName:'负责人'}, hasPermission:()=>true }); return { useMistSession, useOptionalMistSession: useMistSession }; });
 import { OrderListPage } from './OrderListPage';
 import { OrderDetailPage } from './OrderDetailPage';
 import { OrderCreatePage } from './OrderCreatePage';
@@ -97,9 +97,9 @@ it('creates an order from explicit independent lines and navigates only after th
   render(<OrderCreatePage />, { view: 'orders/new', customerId: 'customer-a' });
   input('季节 / 批次', 'AW28'); await click(getByRole(host, 'button', { name: '下一步' }));
   input('品名', '新增款式'); input('款号 / 品号', 'SKU-NEW'); input('数量', '12'); input('单价 USD', '8.50');
-  await click(getByRole(host, 'button', { name: '下一步' })); input('交期', today()); input('负责人', '业务员甲');
+  await click(getByRole(host, 'button', { name: '下一步' })); input('交期', today()); expect((getByLabelText(host, /^负责人/) as HTMLSelectElement).value).toBe('test-user');
   await click(getByRole(host, 'button', { name: '下一步' })); await click(getByRole(host, 'button', { name: '下一步' })); await click(getByRole(host, 'button', { name: '创建订单草稿' }));
-  expect(store.run.mock.calls[0][0]).toMatchObject({ type: 'order.create', payload: { customerId: 'customer-a', lines: [{ name: '新增款式', style: 'SKU-NEW', qty: 12, price: 8.5, unit: '件' }] } });
+  expect(store.run.mock.calls[0][0]).toMatchObject({ type: 'order.create', payload: { customerId: 'customer-a', ownerId: 'test-user', lines: [{ name: '新增款式', style: 'SKU-NEW', qty: 12, price: 8.5, unit: '件' }] } });
   expect(go).not.toHaveBeenCalled(); await act(async () => pending.resolve({ requestId: 'r1', revision: 2, result: { orderId: 'new-order' } }));
   expect(go).toHaveBeenCalledWith('orders/detail', 'new-order',{customerId:'customer-a',section:'garment'});
 });

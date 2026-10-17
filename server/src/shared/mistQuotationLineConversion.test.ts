@@ -13,7 +13,7 @@ const accepted=(s:MistState&{market:MarketState},ctx:MistContext,count=3)=>{
   run(s,{type:'market.quotation.status',payload:{id,status:'Sent',evidence:'交付'}},ctx);run(s,{type:'market.quotation.status',payload:{id,status:'Accepted',evidence:'接受'}},ctx);
   return {id,q:()=>s.market.quotations.find(q=>q.id===id)!};
 };
-const convert=(s:MistState,ctx:MistContext,id:string,lineIds?:string[])=>run(s,{type:'market.quotation.convert',payload:{id,type:'fabric',due:'2026-12-01',owner:'业务员',...(lineIds?{lineIds}:{})}},ctx);
+const convert=(s:MistState,ctx:MistContext,id:string,lineIds?:string[])=>run(s,{type:'market.quotation.convert',payload:{id,type:'fabric',due:'2026-12-01',ownerId:'sales',...(lineIds?{lineIds}:{})}},ctx);
 describe('BB-QUO-5 报价按条目转订单',()=>{
  it('converts 2 of 3 lines into order A, the 3rd into order B, and rejects converting a converted line again',()=>{
   const {ctx,s}=setup(),{id,q}=accepted(s,ctx);const [l1,l2,l3]=q().lines;
@@ -55,7 +55,7 @@ describe('BB-QUO-5 报价按条目转订单',()=>{
   expect(()=>convert(s,ctx,mixed,[])).toThrow(/至少选择一个条目/);
   expect(()=>convert(s,ctx,mixed,[q().lines[0].id])).toThrow(/不在此报价中/);
   const f=convert(s,ctx,mixed,[mq.lines[0].id]).orderId;expect(f).toBeTruthy();
-  const gOrder=run(s,{type:'market.quotation.convert',payload:{id:mixed,type:'garment',due:'2026-12-01',owner:'业务员',lineIds:[mq.lines[1].id]}},ctx).orderId as string;
+  const gOrder=run(s,{type:'market.quotation.convert',payload:{id:mixed,type:'garment',due:'2026-12-01',ownerId:'sales',lineIds:[mq.lines[1].id]}},ctx).orderId as string;
   expect(s.orders.find(o=>o.id===gOrder)!.type).toBe('garment');expect(quotationConversionComplete(mq)).toBe(true);
  });
  it('keeps legacy whole-quotation conversions readable as all converted and idempotent for old callers',()=>{

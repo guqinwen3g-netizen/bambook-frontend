@@ -12,7 +12,7 @@ function fixture(){
  state.files.push({id:'f',name:'po.pdf',mimeType:'application/pdf',size:1,storageKey:'w/f',createdAt:c.now});
  const contract:OrderGovernanceInput={kind:'external',poNumber:'PO-1',confirmationFileIds:['f'],internalPurpose:'',receiver:'',paymentMethod:'TT',depositPercent:30,paymentNote:'30%定金',incoterm:'FOB',deliveryPlace:'上海'};
  const run=(command:MistCommand,actor=c)=>{const out=applyMistCommand(state,command,actor);state=out.state;return out.result;};
- const create=(type:'garment'|'fabric',line:Record<string,unknown>)=>run({type:'order.create',payload:{type,customerId:'A',season:'AW27',currency:'USD',due:'2026-12-01',owner:'业务员',governance:contract,lines:[{name:type==='fabric'?'双面呢':'大衣',style:'C1',img:'coat',unit:type==='fabric'?'米':'件',price:10,...line}]}} as MistCommand);
+ const create=(type:'garment'|'fabric',line:Record<string,unknown>)=>run({type:'order.create',payload:{type,customerId:'A',season:'AW27',currency:'USD',due:'2026-12-01',ownerId:'sales',governance:contract,lines:[{name:type==='fabric'?'双面呢':'大衣',style:'C1',img:'coat',unit:type==='fabric'?'米':'件',price:10,...line}]}} as MistCommand);
  return {get state():MistState{return state;},c,contract,run,create};
 }
 const lineOf=(f:ReturnType<typeof fixture>,orderId:string)=>f.state.orderLines.find(l=>l.orderId===orderId) as unknown as {id:string;qty:number;breakdown?:OrderLineBreakdown};

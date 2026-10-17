@@ -7,10 +7,10 @@ import { MistRoot, ToastProvider } from '../../../../components/mist';
 import { applyMistCommand, createMistState, type MistState } from '../../../../server/src/shared/mistWorkspace';
 import { developmentDomain } from '../../../../server/src/shared/mistDevelopmentDomain';
 import { Nav, type Route } from '../nav';
-const store = vi.hoisted(() => ({ state: null as MistState | null, loading: false, error: '', workspace: { id: 'a' } as { id: string }, run: vi.fn(), refresh: vi.fn() }));
+const store = vi.hoisted(() => ({ state: null as MistState | null, loading: false, error: '', workspace: { id: 'a', ownerId: 'u' } as { id: string; ownerId?: string }, run: vi.fn(), refresh: vi.fn() }));
 const auth = vi.hoisted(() => ({ write: true }));
 vi.mock('../runtime/workspace', () => ({ useMistWorkspace: () => store }));
-vi.mock('../runtime/auth', () => ({ useMistSession: () => ({ status: 'authenticated', sessionKey: 's', user: { id: 'u', displayName: '业务员甲' }, hasPermission: () => auth.write }) }));
+vi.mock('../runtime/auth', () => { const useMistSession = () => ({ status: 'authenticated', sessionKey: 's', user: { id: 'u', displayName: '业务员甲' }, hasPermission: () => auth.write }); return { useMistSession, useOptionalMistSession: useMistSession }; });
 import { OrderCreatePage } from './OrderCreatePage';
 import { OrderListPage } from './OrderListPage';
 import { currentLineStage, lineShipping, lineStages } from './orderLineTrack';
@@ -19,7 +19,7 @@ import { OrderLineQuotationValue, OrderLineSourceValue } from './orderLineSource
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let host: HTMLElement, root: Root, sequence = 0;
 const go = vi.fn();
-const context = { id: () => `id-${++sequence}`, now: '2026-10-13T02:00:00.000Z', actorName: '业务员甲' };
+const context = { id: () => `id-${++sequence}`, now: '2026-10-13T02:00:00.000Z', actorName: '业务员甲', actorId: 'u' };
 const product = { id: 'prd-1', sku: 'CC-COAT-14', name: '双面羊毛大衣', category: 'garment', status: 'active', season: 'AW27', supplierId: '', supplierCode: '', composition: '', specification: '双面呢', color: '', unit: '件', cost: '', currency: 'USD', sourceDevId: '', sourceVersionId: '' };
 function render(route: Route, page: React.ReactNode) { act(() => root.render(<MistRoot><ToastProvider><Nav.Provider value={{ route, go, openAI: vi.fn(), theme: 'light', toggleTheme: vi.fn(), openPalette: vi.fn() }}>{page}</Nav.Provider></ToastProvider></MistRoot>)); }
 function input(label: string, value: string, scope: HTMLElement = host) {
@@ -65,7 +65,7 @@ it('converts an accepted quotation from the new-order source dialog and keeps ma
   await click(getByRole(document.body, 'radio', { name: /QT-0042/ }));
   input('订单交期', '2026-12-10', document.body);
   await click(getByRole(document.body, 'button', { name: '转为订单草稿' }));
-  expect(store.run).toHaveBeenCalledWith({ type: 'market.quotation.convert', payload: { id: 'qt-1', type: 'garment', due: '2026-12-10', owner: '业务员甲', lineIds: ['ql'] } });
+  expect(store.run).toHaveBeenCalledWith({ type: 'market.quotation.convert', payload: { id: 'qt-1', type: 'garment', due: '2026-12-10', ownerId: 'u', lineIds: ['ql'] } });
   const order = store.state!.orders[0];
   expect(go).toHaveBeenCalledWith('orders/detail', order.id, { customerId: undefined, section: 'garment' });
   await click(getAllByRole(host, 'button', { name: '新建订单' })[0]);
@@ -86,7 +86,7 @@ it('BB-QUO-5 converts only the ticked quotation lines and keeps the rest availab
   await click(box('qb'));
   input('订单交期', '2026-12-10', document.body);
   await click(getByRole(document.body, 'button', { name: '转为订单草稿' }));
-  expect(store.run).toHaveBeenCalledWith({ type: 'market.quotation.convert', payload: { id: 'qt-2', type: 'garment', due: '2026-12-10', owner: '业务员甲', lineIds: ['qa'] } });
+  expect(store.run).toHaveBeenCalledWith({ type: 'market.quotation.convert', payload: { id: 'qt-2', type: 'garment', due: '2026-12-10', ownerId: 'u', lineIds: ['qa'] } });
   const first = store.state!.orders[0];
   expect(store.state!.orderLines.filter(row => row.orderId === first.id).map(row => row.qty)).toEqual([100]);
   await click(getAllByRole(host, 'button', { name: '新建订单' })[0]);

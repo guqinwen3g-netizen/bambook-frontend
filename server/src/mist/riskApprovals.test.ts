@@ -34,8 +34,8 @@ async function fixture(){
  const workspace=await repo.create(testActor(),{name:'Risk approvals',seed:'empty'});let revision=0,sequence=0;
  const run=async(command:any)=>{const next=await repo.execute(seller(),workspace.id,{requestId:'risk-command-'+(++sequence),expectedRevision:revision,command});revision=next.workspace.revision;return next;};
  const upload=async()=>{const next=await repo.upload(seller(),workspace.id,{requestId:'risk-upload-'+(++sequence),expectedRevision:revision},{name:'PO.pdf',mimeType:'application/pdf',bytes:Buffer.from('%PDF-1.4\nwritten purchase order\n%%EOF')});revision=next.workspace.revision;return next.workspace.state.files.at(-1)!;};
- const customerId=(await run({type:'market.customer.create',payload:{input:{name:'风险测试客户',country:'CN',city:'',industry:'服装',owner:'owner',grade:'A',currency:'USD',terms:'OA',incoterm:'FOB',categories:'成衣',creditLimit:0,since:'2026-10-13'}}})).receipt.result.customerId as string;
- const order=async(owner:string,po:string)=>{const file=await upload();return (await run({type:'order.create',payload:{type:'garment',customerId,season:'AW26',currency:'USD',due:'2026-12-01',owner,governance:{kind:'external',poNumber:po,confirmationFileIds:[file.id],internalPurpose:'',receiver:'',paymentMethod:'OA',depositPercent:null,paymentNote:'发票日起30天',incoterm:'FOB',deliveryPlace:'上海'},lines:[{name:'外套',style:'A',img:'coat',qty:4,unit:'件',price:15}]}})).receipt.result.orderId as string;};
+ const customerId=(await run({type:'market.customer.create',payload:{input:{name:'风险测试客户',country:'CN',city:'',industry:'服装',ownerId:'owner',grade:'A',currency:'USD',terms:'OA',incoterm:'FOB',categories:'成衣',creditLimit:0,since:'2026-10-13'}}})).receipt.result.customerId as string;
+ const order=async(owner:string,po:string)=>{const file=await upload();return (await run({type:'order.create',payload:{type:'garment',customerId,season:'AW26',currency:'USD',due:'2026-12-01',ownerId:owner,governance:{kind:'external',poNumber:po,confirmationFileIds:[file.id],internalPurpose:'',receiver:'',paymentMethod:'OA',depositPercent:null,paymentNote:'发票日起30天',incoterm:'FOB',deliveryPlace:'上海'},lines:[{name:'外套',style:'A',img:'coat',qty:4,unit:'件',price:15}]}})).receipt.result.orderId as string;};
  return {workspace,run,order,customerId,revision:()=>revision,setRevision:(r:number)=>{revision=r;}};
 }
 const risk=(orderId:string,owner='owner',level='critical')=>({type:'platform.risk.save',payload:{orderId,title:'尾款逾期 45 天',level,basis:'CI 到期未收',owner,type:'credit'}});
@@ -74,9 +74,9 @@ describe('风险分级权限经仓储与统一审批全链路',()=>{
   expect((await repo.decideReview(testActor('manager'),f.workspace.id,review.id,{...input('approve-close'),expectedRevision:decided.receipt.revision-1})).replayed).toBe(true);
  });
  it('他人订单的风险、无主管路由与自审路由都在服务端拒绝',async()=>{
-  const f=await fixture(),mine=await f.order('owner','RISK-PO-2'),theirs=await f.order('别人','RISK-PO-3');
+  const f=await fixture(),mine=await f.order('owner','RISK-PO-2'),theirs=await f.order('owner','RISK-PO-3');
   // 订单负责人由订单流程按创建人写入；这里直接把一张单改成他人负责，模拟同组同事的订单。
-  db.workspaces.get(f.workspace.id).state.orders.find((o:any)=>o.id===theirs).owner='别人';
+  Object.assign(db.workspaces.get(f.workspace.id).state.orders.find((o:any)=>o.id===theirs),{owner:'别人',ownerId:'colleague'});
   expect(db.workspaces.get(f.workspace.id).state.orders.find((o:any)=>o.id===mine).owner).toBe('owner');
   await expect(f.run(risk(theirs))).rejects.toMatchObject({code:'FORBIDDEN'});
   await expect(f.run(risk(mine,'别人'))).rejects.toMatchObject({code:'FORBIDDEN'});

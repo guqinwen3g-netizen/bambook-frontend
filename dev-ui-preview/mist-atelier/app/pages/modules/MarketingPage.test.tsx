@@ -8,7 +8,7 @@ import { Nav } from '../../nav';
 import { createMistState, type MistState } from '../../../../../server/src/shared/mistWorkspace';
 const bridge = vi.hoisted(() => ({ current: null as any, permissions: true }));
 vi.mock('../../runtime/workspace', () => ({ useMistWorkspace: () => bridge.current }));
-vi.mock('../../runtime/auth', () => ({ useMistSession: () => ({ user: { id: 'sales' }, hasPermission: () => bridge.permissions, hasRole: () => false, canAccessView: () => true }) }));
+vi.mock('../../runtime/auth', () => { const useMistSession = () => ({ user: { id: 'sales' }, hasPermission: () => bridge.permissions, hasRole: () => false, canAccessView: () => true }); return { useMistSession, useOptionalMistSession: useMistSession }; });
 let host: HTMLDivElement, root: Root | undefined, state: MistState; const go = vi.fn();
 beforeEach(() => {
   (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true; go.mockReset(); bridge.permissions = true;

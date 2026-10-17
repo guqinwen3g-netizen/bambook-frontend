@@ -7,7 +7,7 @@ import {AssistantPage} from './PlatformPages';
 import {Nav} from '../../nav';
 const mock=vi.hoisted(()=>({workspace:null as any,fetch:vi.fn(),sessionKey:'session-a',readOrders:true}));
 vi.mock('../../runtime/workspace',()=>({useMistWorkspace:()=>mock.workspace}));
-vi.mock('../../runtime/auth',()=>({useMistSession:()=>({sessionKey:mock.sessionKey,user:{id:'actor'},hasPermission:(scope:string)=>scope!=='orders:read'||mock.readOrders})}));
+vi.mock('../../runtime/auth', () => { const useMistSession = ()=>({sessionKey:mock.sessionKey,user:{id:'actor'},hasPermission:(scope:string)=>scope!=='orders:read'||mock.readOrders}); return { useMistSession, useOptionalMistSession: useMistSession }; });
 vi.mock('../../../../../services/apiService',()=>({apiService:{getAuthHeaders:()=>({'X-Test-Auth':'authenticated'})}}));
 let root:Root|undefined,host:HTMLDivElement;const go=vi.fn();
 const view=()=> <Nav.Provider value={{route:{view:'assistant'},go,theme:'light',toggleTheme:vi.fn(),openPalette:vi.fn(),openAI:vi.fn()}}><AssistantPage/></Nav.Provider>;

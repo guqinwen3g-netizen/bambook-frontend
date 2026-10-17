@@ -9,8 +9,9 @@ import { applyMistCommand, type MistCommand, type MistContext, type MistState } 
 import { emptyFabricRequirements } from './mistDevelopmentDomain';
 import { demoFileRecord, type DemoFileTemplate } from './mistDemoFiles';
 import { riskSignals } from './mistRisk';
+import { MIST_DEMO_ACCOUNTS } from './mistAccounts';
 
-export const DEMO_SEED_VERSION = 13;
+export const DEMO_SEED_VERSION = 14;
 export type DemoSeedFailure = { step: string; message: string };
 
 const DAY = 86400000;
@@ -29,7 +30,8 @@ export function seedDemoModules(initial: MistState, context: MistContext): { sta
     // 演示叙事中的财务、采购、业务均按已有处理权推进；风险申请由演示主管周敏审批。
     risk: { all: true, orders: true, customers: true }, riskReviewerIds: ['demo-reviewer'],
   };
-  const actor = (actorName: string, actorId: string): MistContext => ({ ...context, actorName, actorId, authority });
+  // 演示人物目录：示例数据的负责人 / 经手人按账号引用这些人物（包 A）。
+  const actor = (actorName: string, actorId: string): MistContext => ({ ...context, actorName, actorId, authority, members: MIST_DEMO_ACCOUNTS });
   const sales = actor('顾言', 'demo-sales'), buyer = actor('沈禾', 'demo-buyer'), reviewer = actor('周敏', 'demo-reviewer'), inspector = actor('许言', 'demo-qc'), warehouse: MistContext = { ...actor('陈晓', 'demo-warehouse'), can: scope => scope === 'customs:clear' }; // 演示后勤/单证岗：唯一登记清关完成的身份
   const run = (step: string, command: MistCommand, ctx: MistContext = sales): Record<string, unknown> | null => {
     try { const r = applyMistCommand(state, command, ctx); state = r.state; return r.result as Record<string, unknown>; }
@@ -53,7 +55,9 @@ export function seedDemoModules(initial: MistState, context: MistContext): { sta
 
   /* ───────── 供应商与联系人 ───────── */
   const supplier = (code: string, name: string, type: string, capabilities: string, capacity: number, capacityUnit: string, leadDays: number, address: string, contact: [string, string, string, string]) => {
-    const sid = id(run('supplier ' + name, { type: 'market.supplier.save', payload: { input: { code, name, type, country: '中国', address, capabilities, capacity, capacityUnit, leadDays, fileIds: [], note: '' } } }));
+    const existing = state.market.suppliers.find(s => s.code === code);
+    const handlerIds = type === '成衣加工' ? { garment: 'demo-sales' } : type === '辅料' ? { garment: 'demo-buyer', fabric: 'demo-buyer' } : { fabric: 'demo-buyer' };
+    const sid = id(run('supplier ' + name, { type: 'market.supplier.save', payload: { id: existing?.id, input: { code, name, type, country: '中国', address, capabilities, capacity, capacityUnit, leadDays, fileIds: [], note: '', handlerIds } } }));
     if (sid) run('supplier contact ' + name, { type: 'market.contact.save', payload: { kind: 'supplier', parentId: sid, name: contact[0], role: contact[1], email: contact[2], phone: contact[3], primary: true } });
     return sid;
   };
@@ -90,7 +94,7 @@ export function seedDemoModules(initial: MistState, context: MistContext): { sta
   const ss27 = id(run('season SS27', { type: 'market.season.save', payload: { input: { code: 'SS27', name: '2027 春夏', startDate: day(60), endDate: day(240), status: 'Planning', milestones: [{ label: '趋势定调', date: day(70) }, { label: '面料开发截止', date: day(110) }], fileIds: [], note: '' } } }));
 
   /* ───────── 面料开发（独立面料线） ───────── */
-  const fabricValues = { ...{ name: '燕麦色羊毛混纺双面呢', customer: c0.id, style: '', season: 'AW27', category: '双面呢', kind: 'new' as const, fabric: '420 g/m² 双面呢，手感软糯不起球', color: '燕麦色', target: '7.80', targetCurrency: 'EUR', targetUnit: '米', sizeBase: '', goal: '替代现款双面呢，降低起球等级', factories: ['华盛毛纺'], due: day(25), collaborators: [], sampleQuantity: 3, sampleForm: '米样', sampleUnit: '米' }, domain: 'fabric' as const, fabricRequirements: { ...emptyFabricRequirements(), composition: '羊毛:70\n涤纶:30', weightValue: '420', weightUnit: 'g/m²', widthValue: '148', widthUnit: 'cm', weave: '双面斜纹', yarn: '2/26Nm 粗纺', finish: '缩绒', usage: '大衣', handle: '软糯' } };
+  const fabricValues = { ...{ name: '燕麦色羊毛混纺双面呢', customer: c0.id, style: '', season: 'AW27', category: '双面呢', kind: 'new' as const, fabric: '420 g/m² 双面呢，手感软糯不起球', color: '燕麦色', target: '7.80', targetCurrency: 'EUR', targetUnit: '米', sizeBase: '', goal: '替代现款双面呢，降低起球等级', factories: [huasheng], due: day(25), collaborators: [], sampleQuantity: 3, sampleForm: '米样', sampleUnit: '米' }, domain: 'fabric' as const, fabricRequirements: { ...emptyFabricRequirements(), composition: '羊毛:70\n涤纶:30', weightValue: '420', weightUnit: 'g/m²', widthValue: '148', widthUnit: 'cm', weave: '双面斜纹', yarn: '2/26Nm 粗纺', finish: '缩绒', usage: '大衣', handle: '软糯' } };
   const fabricDev = huasheng ? run('fabric development', { type: 'development.submit', payload: { values: fabricValues, fileIds: [] } }) : null;
   const fabricDevId = id(fabricDev, 'devId'), fabricVersionId = id(fabricDev, 'versionId');
   if (fabricDevId) {
@@ -134,7 +138,7 @@ export function seedDemoModules(initial: MistState, context: MistContext): { sta
   if (fabricQuote) {
     run('quote fabric sent', { type: 'market.quotation.status', payload: { id: fabricQuote, status: 'Sent', evidence: '邮件发送报价 PDF 给 Emma Clarke' } });
     run('quote fabric accepted', { type: 'market.quotation.status', payload: { id: fabricQuote, status: 'Accepted', evidence: '客户邮件确认 3,600 米，按报价执行' } });
-    const converted = run('quote fabric convert', { type: 'market.quotation.convert', payload: { id: fabricQuote, type: 'fabric', due: day(55), owner: '顾言' } });
+    const converted = run('quote fabric convert', { type: 'market.quotation.convert', payload: { id: fabricQuote, type: 'fabric', due: day(55), ownerId: 'demo-sales' } });
     if (id(converted, 'orderId')) approveOrder(id(converted, 'orderId'), 'CC-F-PO-0912', 30);
   }
   const coatQuote = quote('quote coat', c1.id, 'USD', 21, [{ productId: coatProduct, qty: '800', price: '72.50' }, { productId: vest, qty: '600', price: '29.50' }], '补单报价，含两款。');
@@ -186,7 +190,7 @@ export function seedDemoModules(initial: MistState, context: MistContext): { sta
 
   /* ───────── 客户关系：商机与跟进 ───────── */
   const fabricOrder = state.market.quotations.find(q => q.id === fabricQuote)?.convertedOrderId || '';
-  const opp = (step: string, input: { customerId: string; title: string; domain: 'garment' | 'fabric'; amount: string; currency: string; expectedDate: string; note: string; devIds?: string[]; quotationIds?: string[]; orderIds?: string[] }) => id(run(step, { type: 'crm.opportunity.save', payload: { input: { owner: '顾言', devIds: [], quotationIds: [], orderIds: [], ...input } } }));
+  const opp = (step: string, input: { customerId: string; title: string; domain: 'garment' | 'fabric'; amount: string; currency: string; expectedDate: string; note: string; devIds?: string[]; quotationIds?: string[]; orderIds?: string[] }) => id(run(step, { type: 'crm.opportunity.save', payload: { input: { ownerId: 'demo-sales', devIds: [], quotationIds: [], orderIds: [], ...input } } }));
   const oppCoat = opp('opp coat', { customerId: c1.id, title: 'AW27 大衣与马甲补单', domain: 'garment', amount: '75700.00', currency: 'USD', expectedDate: day(20), note: '客户希望 2 月中旬到港', quotationIds: coatQuote ? [coatQuote] : [] });
   if (oppCoat) { run('opp coat sampling', { type: 'crm.opportunity.stage', payload: { id: oppCoat, stage: 'sampling', note: '确认用现款版型' } }); if (coatQuote) run('opp coat quoting', { type: 'crm.opportunity.stage', payload: { id: oppCoat, stage: 'quoting', note: '已发送补单报价' } }); }
   const oppFabric = opp('opp fabric', { customerId: c0.id, title: '双面呢面料 3,600 米', domain: 'fabric', amount: '28080.00', currency: 'EUR', expectedDate: day(-2), note: '', devIds: fabricDevId ? [fabricDevId] : [], quotationIds: fabricQuote ? [fabricQuote] : [], orderIds: fabricOrder ? [fabricOrder] : [] });
@@ -312,7 +316,7 @@ export function seedDemoModules(initial: MistState, context: MistContext): { sta
 
   /* ───────── 关系智库：一家同时是客户和供应商的组织；一个因逾期冻结的往来 ───────── */
   const boyuanSupplier = supplier('SUP-0006', '博远纺织贸易', '面料贸易', '现货里布 · 衬布 · 小批量面料调货', 50000, '米/月', 7, '浙江绍兴柯桥区中国轻纺城东区 2 号楼', ['何静', '采购与销售', 'hejing@boyuan-textile.cn', '0575-8566 1027']);
-  const boyuan = run('customer boyuan', { type: 'market.customer.create', payload: { input: { name: '博远纺织贸易', country: '中国', city: '绍兴', industry: '面料贸易', owner: '顾言', grade: 'B', currency: 'CNY', terms: '月结 30 天', incoterm: 'EXW', categories: '面料', creditLimit: 200000, since: day(-200) } } });
+  const boyuan = run('customer boyuan', { type: 'market.customer.create', payload: { input: { name: '博远纺织贸易', country: '中国', city: '绍兴', industry: '面料贸易', ownerId: 'demo-sales', grade: 'B', currency: 'CNY', terms: '月结 30 天', incoterm: 'EXW', categories: '面料', creditLimit: 200000, since: day(-200) } } });
   const boyuanRelation = boyuan ? String((boyuan as { relationId?: string }).relationId || '') : '';
   if (boyuanRelation && boyuanSupplier) run('relation link boyuan', { type: 'market.relation.linkSupplier', payload: { id: boyuanRelation, supplierId: boyuanSupplier } });
   const luneRelation = state.market.relations.find(r => r.customerId === c2.id);

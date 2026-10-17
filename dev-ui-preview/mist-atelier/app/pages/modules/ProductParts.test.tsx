@@ -8,7 +8,7 @@ import {createMistState,type MistContext} from '../../../../../server/src/shared
 import {createMarketState,applyMarketCommand} from '../../../../../server/src/shared/mistMarket';
 const bridge=vi.hoisted(()=>({current:null as any}));
 vi.mock('../../runtime/workspace',()=>({useMistWorkspace:()=>bridge.current}));
-vi.mock('../../runtime/auth',()=>({useMistSession:()=>({user:{id:'sales'},hasPermission:()=>true,hasRole:()=>false,canAccessView:()=>true})}));
+vi.mock('../../runtime/auth', () => { const useMistSession = ()=>({user:{id:'sales'},hasPermission:()=>true,hasRole:()=>false,canAccessView:()=>true}); return { useMistSession, useOptionalMistSession: useMistSession }; });
 let host:HTMLDivElement,root:Root|undefined;const go=vi.fn();
 const base={season:'AW26',supplierId:'',supplierCode:'',composition:'',specification:'',color:'',cost:'0',sourceDevId:'',sourceVersionId:''};
 beforeEach(()=>{(globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;go.mockReset();let next=0;const ctx:MistContext={id:()=>`p-${++next}`,actorName:'业务员',now:'2026-10-13T00:00:00.000Z'};const state:any=createMistState(ctx,'empty');state.market=createMarketState(ctx,state);state.customers=[{id:'c1',name:'现有客户',code:'C1',country:'',city:'',industry:'',owner:'业务员',grade:'',currency:'EUR',terms:'',incoterm:'',categories:'',creditLimit:0,since:''},{id:'c2',name:'第二客户',code:'C2',country:'',city:'',industry:'',owner:'业务员',grade:'',currency:'USD',terms:'',incoterm:'',categories:'',creditLimit:0,since:''}];

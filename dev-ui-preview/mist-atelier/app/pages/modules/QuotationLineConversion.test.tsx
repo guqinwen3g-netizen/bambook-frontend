@@ -8,7 +8,7 @@ import { applyMistCommand, createMistState, type MistContext, type MistState } f
 
 const bridge = vi.hoisted(() => ({ current: null as any }));
 vi.mock('../../runtime/workspace', () => ({ useMistWorkspace: () => bridge.current }));
-vi.mock('../../runtime/auth', () => ({ useMistSession: () => ({ user: { id: 'demo-sales', displayName: '顾言' }, hasPermission: () => true, hasRole: () => false, canAccessView: () => true }) }));
+vi.mock('../../runtime/auth', () => { const useMistSession = () => ({ user: { id: 'demo-sales', displayName: '顾言' }, hasPermission: () => true, hasRole: () => false, canAccessView: () => true }); return { useMistSession, useOptionalMistSession: useMistSession }; });
 let host: HTMLDivElement, root: Root | undefined, state: MistState; const go = vi.fn();
 const ctx: MistContext = { id: (() => { let n = 0; return () => `q5-${++n}`; })(), actorName: '顾言', actorId: 'demo-sales', now: '2026-10-14T02:00:00.000Z' };
 const line = (i: number) => ({ id: `ql-${i}`, productId: '', sourceDevId: '', sourceVersionId: '', name: `面料${i}`, style: `F-${i}`, specification: '', qty: String(10 * i), unit: '米', price: '2.50', amount: (25 * i).toFixed(2), cost: '1.00' });
@@ -18,7 +18,7 @@ beforeEach(() => {
   state = createMistState(ctx, 'demo');
   state.market.quotations.push({ id: 'qt-q5', code: 'QT-Q5-0001', customerId: state.customers[0].id, currency: 'USD', season: 'AW27', validUntil: '2026-12-31', deliveryTerms: 'FOB', paymentTerms: 'TT', status: 'Accepted', lines: [line(1), line(2), line(3)], total: '150.00', deliveryEvidence: '邮件', responseEvidence: '客户只确认前两色', approval: null, convertedOrderId: null, fileIds: [], note: '', createdAt: '2026-10-01T00:00:00.000Z', updatedAt: '2026-10-01T00:00:00.000Z' } as never);
   const run = vi.fn(async (command: any) => { const r = applyMistCommand(state, command, ctx); Object.assign(state, r.state); return { result: r.result }; });
-  bridge.current = { state, run, error: '', refresh: vi.fn(), loading: false, saving: false, pending: null, upload: vi.fn() };
+  bridge.current = { state, workspace: { id: 'w', ownerId: 'demo-sales' }, run, error: '', refresh: vi.fn(), loading: false, saving: false, pending: null, upload: vi.fn() };
 });
 afterEach(async () => { if (root) await act(async () => root!.unmount()); root = undefined; document.body.innerHTML = ''; vi.useRealTimers(); });
 const Page = MARKET_PAGES.quotations;
