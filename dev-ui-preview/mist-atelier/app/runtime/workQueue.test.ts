@@ -47,9 +47,11 @@ describe('my work queue sources', () => {
     const state = base();
     state.fulfillment.shipments = [{ id: 'sh-1', code: 'SH-1', customer: '客户', state: 'departed', departedAt: '2026-10-14T00:00:00Z' }, { id: 'sh-2', code: 'SH-2', customer: '客户', state: 'departed', documentsSentAt: '2026-10-14' }, { id: 'sh-3', code: 'SH-3', customer: '客户', state: 'ready' }] as any;
     state.fulfillment.shipments.push({ id: 'sh-4', code: 'SH-4', customer: '客户', state: 'preparing', plannedDate: '2026-10-20', lines: [] } as any);
-    const business = (p: string) => p === 'orders:write', logistics = (p: string) => p === 'shipments:write';
+    const business = (p: string) => p === 'orders:write', logistics = (p: string) => p === 'logistics:handle';
     expect(mistWorkQueue(state, { canRead: all, can: business, me: 'me', today: '2026-10-15' }).map(item => item.target)).toEqual([{ view: 'shipments', id: 'sh-1' }, { view: 'shipments', id: 'sh-3' }]);
     expect(mistWorkQueue(state, { canRead: all, can: logistics, me: 'me', today: '2026-10-15' }).map(item => [item.target.id, item.when])).toEqual([['sh-4', '待接手']]);
+    // 业务员也有 shipments:write，但没有后勤岗位标识，不接收待物流接手。
+    expect(mistWorkQueue(state, { canRead: all, can: p => p === 'shipments:write', me: 'me', today: '2026-10-15' })).toEqual([]);
     expect(mistWorkQueue(state, { canRead: all, me: 'me', today: '2026-10-15' })).toEqual([]);
   });
   it('returns my recently rejected payment requests until a new request replaces them', () => {

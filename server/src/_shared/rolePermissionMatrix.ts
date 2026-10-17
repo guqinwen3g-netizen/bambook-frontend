@@ -168,6 +168,7 @@ export const PERMISSION_SCOPES = {
   'customs:write': '单证签发/修正案创建',
   'customs:clear': '登记出口申报与清关完成（海关申报/放行事实；仅后勤/单证与领导）',
   'customs:admin': '单证模板/公司抬头签章配置',
+  'logistics:handle': '后勤接手：出运交接、待物流接手的事项归本人处理（只决定待办归属，不授予任何操作）',
   'qc:read': '质检工作台/疵点记录查看',
   'qc:write': 'QC疵点录入/QC结果登记',
   'qc:inspect': '专业 QC 检验与正式样品评审执行',
@@ -774,6 +775,8 @@ const LOGISTICS_BASE: RolePermissionMatrix = {
   'customs:admin': true,
   // 清关完成（海关放行）事实只由后勤/单证登记；业务员只能保存草稿/已申报
   'customs:clear': true,
+  // 后勤岗位标识：出运交接、待物流接手进入本岗位的「我的工作」（业务员也有 shipments:write，不能用它区分岗位）
+  'logistics:handle': true,
   // 保留既有跨流程协作能力；常规采购/库存由业务组经办，scope 不代表独立仓储岗位
   'procurement:read': true,
   'procurement:write': true,

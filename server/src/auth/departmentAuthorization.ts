@@ -16,6 +16,8 @@ export function departmentAuthorization(user: any, roleIds: string[], grantedPer
     if (scope === 'shipments:write' || scope === 'customs:write') return has('logistics');
     // Recording the customs-cleared fact belongs to logistics/documentation staff only.
     if (scope === 'customs:clear') return has('logistics');
+    // The logistics duty marker only routes hand-over work; it follows the same department as the work itself.
+    if (scope === 'logistics:handle') return has('logistics');
     // Payment requests and business approvals belong to their original role gates.
     if (/^(invoices|vouchers):write$/.test(scope)) return has('finance');
     return true;

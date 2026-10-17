@@ -1,6 +1,6 @@
 import {describe,expect,it} from 'vitest';
 import {applyMistCommand,createMistState,type MistCommand,type MistContext} from './mistWorkspace';
-import { isPendingFinanceMistInvoice, isRecognizedMistInvoice, mistCommandPermission } from './mistWorkspace';
+import { isPendingFinanceMistInvoice, isRecognizedMistInvoice, mistCommandPermission, MIST_LOGISTICS_DUTY } from './mistWorkspace';
 import { FULFILLMENT_CUSTOMS_CLEAR_SCOPE } from './mistFulfillment';
 import { DEFAULT_ROLE_PERMISSION_MATRIX, SYSTEM_ROLE_IDS, hasPermission } from '../_shared/rolePermissionMatrix';
 import { DEFAULT_ROLE_PERMISSION_MATRIX as FRONTEND_MATRIX } from '../../../lib/rolePermissionMatrix';
@@ -127,6 +127,16 @@ describe('A · 清关完成只能由后勤/单证登记', () => {
     expect(departmentAuthorization(user(['garment_business']), ['role-sales'], ['customs:clear']).permissions).toEqual([]);
     expect(departmentAuthorization(user(['logistics']), ['role-logistics'], ['customs:clear']).permissions).toEqual(['customs:clear']);
     expect(departmentAuthorization({}, ['role-super-admin'], ['customs:clear']).permissions).toEqual(['customs:clear']);
+  });
+  it('后勤岗位标识 logistics:handle 只授予后勤单证，与清关权限分开；前后端矩阵一致，并受后勤部门门禁', () => {
+    for (const matrix of [DEFAULT_ROLE_PERMISSION_MATRIX, FRONTEND_MATRIX as any]) {
+      expect(matrix[SYSTEM_ROLE_IDS.LOGISTICS]['logistics:handle']).toBe(true);
+      for (const role of [SYSTEM_ROLE_IDS.SALES, SYSTEM_ROLE_IDS.SALES_MANAGER, SYSTEM_ROLE_IDS.ADMIN, SYSTEM_ROLE_IDS.FINANCE, SYSTEM_ROLE_IDS.QC]) expect(matrix[role]['logistics:handle']).not.toBe(true);
+    }
+    expect(MIST_LOGISTICS_DUTY).toBe('logistics:handle');
+    const user = (businessAttributes: string[]) => ({ primaryDepartment: { name: '部门', parentId: 'company', status: 'active', metadata: { businessAttributes } } });
+    expect(departmentAuthorization(user(['garment_business']), ['role-logistics'], ['logistics:handle']).permissions).toEqual([]);
+    expect(departmentAuthorization(user(['logistics']), ['role-logistics'], ['logistics:handle']).permissions).toEqual(['logistics:handle']);
   });
   it('命令权限映射：草稿仍是 customs:write，已申报/已清关要求 customs:clear', () => {
     expect(mistCommandPermission(customs('s', 'draft'))).toBe('customs:write');

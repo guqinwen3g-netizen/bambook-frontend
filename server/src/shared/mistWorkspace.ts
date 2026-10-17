@@ -208,8 +208,8 @@ export type MistTarget = { view: string; id?: string; versionId?: string; custom
  * 两者都为空的事项不进入任何人的「我的工作」和侧栏数字。
  */
 export type MistTask = { id: string; title: string; due: string; done: boolean; kind: string; target: MistTarget; assigneeIds: string[]; permission?: string };
-/** 后勤单证岗位：仅后勤单证持有「登记已申报/已清关」(customs:clear)；业务员也有 shipments:write，不能用它区分后勤。 */
-export const MIST_LOGISTICS_DUTY = 'customs:clear';
+/** 后勤岗位标识（logistics:handle）：只决定出运交接、待物流接手等事项归谁，不授予任何操作；与清关等操作权限分开调整。 */
+export const MIST_LOGISTICS_DUTY = 'logistics:handle';
 /** 订单负责人账号（变更、取消、客诉后续由订单负责人跟进）。 */
 export function mistOrderOwnerIds(root: Pick<MistState, 'orders'>, orderId: string): string[] { const owner = root.orders.find(order => order.id === orderId)?.ownerId; return owner ? [owner] : []; }
 export type MistNotification = { id: string; title: string; detail: string; at: string; readAt: string | null; target: MistTarget; category?:'qc'|'shipping'|'suggestion'|'general' };

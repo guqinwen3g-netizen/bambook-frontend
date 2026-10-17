@@ -1,4 +1,4 @@
-import { isPendingFinanceMistInvoice, type MistState, type MistTarget, type MistTask } from '../../../../server/src/shared/mistWorkspace';
+import { isPendingFinanceMistInvoice, MIST_LOGISTICS_DUTY, type MistState, type MistTarget, type MistTask } from '../../../../server/src/shared/mistWorkspace';
 import type { MistReview } from './reviews';
 import { shipmentStage } from '../pages/modules/ShipmentsPage';
 import { financeReceiptDisplay } from '../pages/FinancePage';
@@ -60,7 +60,7 @@ export function mistWorkQueue(state: MistState | null | undefined, options: Mist
   }
   if (canRead('shipments')) for (const shipment of state.fulfillment.shipments) {
     const stage = shipmentStage(state, shipment);
-    const intake = stage === 'intake' && can('shipments:write'), business = stage === 'business' && can('orders:write'), unsent = stage === 'departed' && !shipment.documentsSentAt && can('orders:write');
+    const intake = stage === 'intake' && can(MIST_LOGISTICS_DUTY), business = stage === 'business' && can('orders:write'), unsent = stage === 'departed' && !shipment.documentsSentAt && can('orders:write');
     if (!intake && !business && !unsent) continue;
     push({ id: 'shipping:' + shipment.id, source: 'shipping', title: `${shipment.code} · ${intake ? '待物流接手' : business ? '资料已回，待发送 CI/PL' : '已出运，单据待寄送'}`, meta: [shipment.customer, (unsent ? shipment.departedAt : shipment.plannedDate)?.slice(0, 10)].filter(Boolean).join(' · '),
       when: intake ? '待接手' : business ? '待发单' : '待交单', urgent: !unsent && !!shipment.plannedDate && shipment.plannedDate <= today, at: (unsent ? shipment.departedAt : shipment.plannedDate) || '', target: { view: 'shipments', id: shipment.id } });
