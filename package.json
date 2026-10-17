@@ -16,6 +16,8 @@
     "mist:check": "node scripts/check-mist.mjs",
     "mist:docs": "node scripts/gen-mist-docs.mjs",
     "mist:shots": "node scripts/mist-shots.mjs",
+    "mist:overflow": "node scripts/mist-overflow/scan.mjs",
+    "mist:overflow:quick": "node scripts/mist-overflow/scan.mjs --quick",
     "dev:desktop": "VITE_UI_MODE=desktop vite --port 3000",
     "build": "vite build",
     "build:desktop": "VITE_UI_MODE=desktop vite build",

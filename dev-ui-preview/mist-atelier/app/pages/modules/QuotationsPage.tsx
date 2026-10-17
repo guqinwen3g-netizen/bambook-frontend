@@ -285,7 +285,7 @@ function QuotationDetail({ q, state, canMaintainCompany, all, day, me, can, canO
     {!!q.costingSnapshots?.length&&<DetailBlock title="核算历史"><span className="mist-note">{q.costingSnapshots.length} 份不可覆盖快照；编辑草稿重建条目后，旧快照仅历史，不自动绑定新行。当前行从条目核算查看。</span><Button onClick={()=>onOpen('quotations',q.id,{section:'cost-history'})}>查看全部核算历史</Button></DetailBlock>}
     {versions.length > 1 && <DetailBlock title="版本">
       <div className="mist-col" style={{ gap: 6 }} data-quotation-versions>{versions.map(v => <Button key={v.id} variant={v.id === q.id ? 'secondary' : 'quiet'} aria-current={v.id === q.id || undefined} onClick={() => onOpen('quotations', v.id)}>
-        <span className="mist-row" style={{ gap: 8, width: '100%' }}><Pill tone={v.id === q.id ? 'accent' : 'neutral'}>{version(v)}</Pill><span className="mist-num">{v.currency} {v.total}</span><span className="mist-muted">至 {v.validUntil.slice(5)}</span><span className="mist-spacer" /><span>{quotationStageLabel(v)}</span></span>
+        <span className="mist-row" data-wrap style={{ gap: 8, rowGap: 4, width: '100%' }}><Pill tone={v.id === q.id ? 'accent' : 'neutral'}>{version(v)}</Pill><span className="mist-num">{v.currency} {v.total}</span><span className="mist-muted">至 {v.validUntil.slice(5)}</span><span className="mist-spacer" /><span>{quotationStageLabel(v)}</span></span>
       </Button>)}</div>
     </DetailBlock>}
     <DetailBlock title="客户反馈记录"><span className="mist-note">{q.feedback?.length||0} 条结构化反馈；区分客户原话、业务判断和未知原因。还价不改本版单价，接受 / 未接受仍从主线确认。</span><Button onClick={()=>onOpen('quotations',q.id,{section:'feedback'})}>查看客户反馈</Button></DetailBlock>

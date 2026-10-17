@@ -16,7 +16,7 @@ export type Column<T> = {
   render: (row: T, index: number) => React.ReactNode;
   /** 提供则表头可点击排序 */
   sortValue?: (row: T) => string | number;
-  /** 窄屏(≤760)隐藏该列 */
+  /** 窄屏(≤760)或表格自身放不下全部列时优先隐藏该列（次要列） */
   hideOnMobile?: boolean;
 };
 export type DataTableProps<T> = {
@@ -43,16 +43,39 @@ export function DataTable<T>({ columns, rows, rowKey, selectedKey, onRowClick, o
   const inheritedDensity = React.useContext(MistDensityContext);
   const density = explicitDensity ?? inheritedDensity;
   const [sort, setSort] = React.useState<{ key: string; dir: 1 | -1 } | null>(null);
-  const cols = columns.map(c => c.width || '1fr').join(' ');
+  const cols = columns.map(c => fitTrack(c.width)).join(' ');
+  const compactCols = columns.filter(c => !c.hideOnMobile).map(c => fitTrack(c.width)).join(' ');
+  const tableRef = React.useRef<HTMLDivElement>(null);
+  // 自适应：按表格自身宽度（而非视口）判断能否放下全部列。放不下 → 先隐藏次要列 → 仍放不下 → 卡片式堆叠。
+  // 只改 data-fit 属性，不触发 React 重渲染；minWidth 表格是设计好的表内横向滚动，不参与。
+  React.useLayoutEffect(() => {
+    const el = tableRef.current;
+    if (!el || minWidth) return;
+    let lastWidth = -1;
+    const fit = () => {
+      const width = el.clientWidth;
+      if (width === lastWidth) return;
+      lastWidth = width;
+      el.dataset.fit = 'full';
+      if (!tableOverflows(el)) return;
+      if (compactCols !== cols) { el.dataset.fit = 'compact'; if (!tableOverflows(el)) return; }
+      el.dataset.fit = 'stack';
+    };
+    fit();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => fit());
+    ro.observe(el);
+    return () => ro.disconnect();
+  });
   const sorted = React.useMemo(() => {
     if (!sort) return rows;
     const col = columns.find(c => c.key === sort.key);
     if (!col?.sortValue) return rows;
     return [...rows].sort((a, b) => { const x = col.sortValue!(a), y = col.sortValue!(b); return (x > y ? 1 : x < y ? -1 : 0) * sort.dir; });
   }, [rows, sort, columns]);
-  const style = { ['--mist-cols' as string]: cols } as React.CSSProperties;
+  const style = { ['--mist-cols' as string]: cols, ['--mist-cols-compact' as string]: compactCols || cols } as React.CSSProperties;
   const body = (
-    <div className="mist-table" role="table" aria-label={ariaLabel} style={style}>
+    <div ref={tableRef} className="mist-table" role="table" aria-label={ariaLabel} style={style}>
       <div className="mist-thead" role="row">
         {columns.map(c => c.sortValue
           ? <button key={c.key} type="button" role="columnheader" className={c.align === 'right' ? 'mist-cell-r' : undefined} data-hide-sm={c.hideOnMobile || undefined}
@@ -79,7 +102,21 @@ export function DataTable<T>({ columns, rows, rowKey, selectedKey, onRowClick, o
       {footer && <div className="mist-tfoot">{footer}</div>}
     </div>
   );
-  return minWidth ? <div className="mist-table-scroll" style={{ ['--mist-table-min' as string]: `${minWidth}px` }}>{body}</div> : body;
+  return minWidth ? <div className="mist-table-scroll" data-mist-scroll="x" style={{ ['--mist-table-min' as string]: `${minWidth}px` }}>{body}</div> : body;
+}
+
+/** 列宽 → grid 轨道。fr 列允许收缩但保留可读的最小宽度（放不下时由 DataTable 降级为隐藏次要列/堆叠，而不是撑宽页面）。 */
+export function fitTrack(width?: string) {
+  const w = (width || '1fr').trim();
+  return /^\d*\.?\d+fr$/.test(w) ? `minmax(var(--mist-col-min, 96px), ${w})` : w;
+}
+function tableOverflows(el: HTMLElement) {
+  for (const row of Array.from(el.children) as HTMLElement[]) {
+    if (!row.classList.contains('mist-thead') && !row.classList.contains('mist-tr')) continue;
+    if (row.offsetParent === null) continue;
+    if (row.scrollWidth > row.clientWidth + 1) return true;
+  }
+  return false;
 }
 
 /* ───────────── Sparkline ───────────── */

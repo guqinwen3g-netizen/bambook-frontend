@@ -263,7 +263,7 @@ export function EmailsPage() {
 
   const navItem = (key: string, active: boolean, onClick: () => void, icon: React.ReactNode, label: React.ReactNode, badge?: number, title?: string) =>
     <button key={key} type="button" className="mist-mail-navitem" data-active={active || undefined} onClick={onClick} title={title}>{icon}<span className="mist-mail-navlabel">{label}</span>{badge ? <b>{badge}</b> : null}</button>;
-  const nav = <Card as="nav" className="mist-mail-nav" aria-label="邮箱与文件夹">
+  const nav = <Card as="nav" className="mist-mail-nav" aria-label="邮箱与文件夹" data-mist-scroll="x">
     <div className="mist-mail-navgroup">
       <span className="mist-eyebrow">邮箱</span>
       {navItem('all', accountId === 'all', () => changeAccount('all'), <Mail size={15} />, '全部邮箱', email.messages.filter(m => m.folder === 'inbox' && !m.read).length)}

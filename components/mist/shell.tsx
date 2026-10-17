@@ -2,7 +2,7 @@ import React from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { ArrowLeft, Bell, ChevronDown, ChevronRight, Moon, PanelLeft, Search, Sun } from 'lucide-react';
 import { MistMark, MistWordmark } from './MistMark';
-import { AIBadge, Avatar, Icon, IconButton, Kbd } from './primitives';
+import { AIBadge, Avatar, Icon, IconButton, Kbd, plainText } from './primitives';
 import { cx, type ThemeMode } from './types';
 
 /* ───────────── Root / Theme ───────────── */
@@ -95,8 +95,8 @@ export function MistTopbar({ crumbs, scrolled, sync, theme, onToggleTheme, onSea
           const last = i === crumbs.length - 1;
           const content = c.mono ? <span className="mist-mono">{c.label}</span> : c.label;
           return <React.Fragment key={i}>
-            {i > 0 && <span data-hide-sm={crumbs[i - 1].hideOnMobile || undefined}><Icon icon={ChevronRight} size="xs" /></span>}
-            {last ? <b data-hide-sm={c.hideOnMobile || undefined}>{content}</b> : c.onClick ? <button type="button" onClick={c.onClick} data-hide-sm={c.hideOnMobile || undefined}>{content}</button> : <span data-hide-sm={c.hideOnMobile || undefined}>{content}</span>}
+            {i > 0 && <span className="mist-crumb-sep" data-hide-sm={crumbs[i - 1].hideOnMobile || undefined}><Icon icon={ChevronRight} size="xs" /></span>}
+            {last ? <b data-hide-sm={c.hideOnMobile || undefined} title={plainText(c.label) || undefined}>{content}</b> : c.onClick ? <button type="button" onClick={c.onClick} data-hide-sm={c.hideOnMobile || undefined} title={plainText(c.label) || undefined}>{content}</button> : <span data-hide-sm={c.hideOnMobile || undefined} title={plainText(c.label) || undefined}>{content}</span>}
           </React.Fragment>;
         })}
       </div>

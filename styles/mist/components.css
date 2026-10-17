@@ -218,7 +218,7 @@
 .mist-input[data-disabled] { opacity: .55; pointer-events: none; }
 .mist-root[data-theme="dark"] .mist-input select option, :is(.dark,[data-theme="dark"]) .mist-root .mist-input select option { background: var(--mist-card); }
 
-.mist-search { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; border-radius: var(--mist-r-md); background: var(--mist-fill); color: var(--mist-ink-3); min-width: 280px; transition: background var(--mist-dur); }
+.mist-search { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; border-radius: var(--mist-r-md); background: var(--mist-fill); color: var(--mist-ink-3); min-width: min(280px, 100%); transition: background var(--mist-dur); }
 .mist-search:focus-within { background: var(--mist-accent-tint); }
 .mist-search input { border: 0; outline: 0; background: none; flex: 1; font-size: var(--mist-text-md); color: var(--mist-ink); min-width: 0; }
 .mist-search input::placeholder { color: var(--mist-ink-3); }

@@ -103,7 +103,7 @@ export function VerticalSteps({ steps, current, onSelect, mode = 'step' }: { ste
     reveal();window.addEventListener('resize',reveal);return()=>window.removeEventListener('resize',reveal);
   },[current]);
   return (
-    <Card as="nav" className="mist-vsteps">
+    <Card as="nav" className="mist-vsteps" data-mist-scroll="x">
       {steps.map((s, i) => (
         <button ref={s.id===current?selected:undefined} key={s.id} type="button" aria-current={s.id === current ? mode : undefined} data-state={s.done ? 'done' : undefined} onClick={() => onSelect(s.id)}>
           {mode === 'step' ? <span className="mist-step-k">{s.done && s.id !== current ? <Icon icon={Check} size="xs" /> : i + 1}</span> : s.icon && <Icon icon={s.icon} size="sm" />}
@@ -117,7 +117,7 @@ export function VerticalSteps({ steps, current, onSelect, mode = 'step' }: { ste
 /** 流程节点（订单履约 / 出运 / 审批链）。 */
 export function FlowSteps({ nodes }: { nodes: Array<{ label: string; caption?: string; icon: LucideIcon; state: StepState }> }) {
   return (
-    <div className="mist-flow">{nodes.map((n, i) => (
+    <div className="mist-flow" data-mist-scroll="x">{nodes.map((n, i) => (
       <React.Fragment key={i}>
         {i > 0 && <span className="mist-flow-bar" data-done={n.state === 'done' || n.state === 'now' ? true : undefined} />}
         <div className="mist-flow-node" data-state={n.state === 'todo' ? undefined : n.state}>
