@@ -21,7 +21,7 @@ function select(label: string, value: string) { const c = getByLabelText(documen
 let po: any, ctx: any;
 beforeEach(() => {
   let serial = 0; const context = ctx = { id: () => `ui-${++serial}`, actorName: '财务', actorId: 'finance', now: new Date().toISOString(), authority: { supplier: {}, paymentReviewerIds: ['manager'] } };
-  const state = createMistState(context, 'demo'); po = state.fulfillment.purchases.find(p => p.code === 'PO-2026-00001');
+  const state = createMistState(context, 'demo'); state.payables!.bills = []; /* 演示自带出口退税专票；本组从没有票据开始 */ po = state.fulfillment.purchases.find(p => p.code === 'PO-2026-00001');
   store.value = { state, workspace: { id: 'space' }, loading: false, saving: false, pending: null, run: vi.fn(async (command: any) => { const r = applyMistCommand(store.value.state, command, context); store.value.state = r.state; render(); return { requestId: 'req', revision: 1, result: r.result }; }) };
   go.mockReset(); route = { view: 'payment-vouchers', section: 'payables' };
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);

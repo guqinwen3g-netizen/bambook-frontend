@@ -20,6 +20,7 @@ import {lineQuantityFromBreakdown,type OrderLineBreakdown} from './mistOrderBrea
 import {isLineClosed} from './mistOrderClosure';
 import {createOrderGovernance,applyOrderGovernanceCommand,orderGovernancePermission,getOrderGovernanceReviews,assertOrderApproved,assertOrderWritable,assertOrderNotTerminated,type OrderGovernanceFields,type OrderGovernanceCommand,type OrderGovernanceInput} from './mistOrderGovernance';
 import {createOrderFundingState,applyOrderFundingCommand,orderFundingCommandPermission,assertOrderDepositCovered,assertOrderFundingIntegrity,type OrderFundingState,type OrderFundingCommand} from './mistOrderFunding';
+import {createExportRebateState,applyExportRebateCommand,exportRebateCommandPermission,rebateReceiptUsedMinor,type ExportRebateState,type ExportRebateCommand} from './mistExportRebate';
 import {createPayablesState,applyPayablesCommand,payablesCommandPermission,getPayableReviews,type PayablesState,type PayablesCommand} from './mistPayables';
 
 /** Mist's typed business workspace. Shared by its API and the approved frontend. */
@@ -219,6 +220,8 @@ export type MistSettings = { companyProfile?:MistCompanyProfile; theme: 'light' 
 export type MistState = {
   orderFunding?:OrderFundingState;
   payables?:PayablesState;
+  /** 出口退税：退税率版本与退税申报（配单、核准、到账勾稽）。 */
+  exportRebate?:ExportRebateState;
   workspaceArchive?: {at:string;actorId:string};
   schemaVersion: 1; devs: MistDev[]; versions: MistVersion[]; rounds?: MistRound[]; drafts: MistDraft[]; fabrics: MistFabric[];
   orders: MistOrder[]; orderLines: MistOrderLine[]; productions: MistProduction[];
@@ -235,7 +238,7 @@ export type MistState = {
   memberGroups?:MistMemberGroupAssignment[];
 };
 export type MistOrderInput = { type: 'garment' | 'fabric'; customerId: string; season: string; currency: string; due: string; ownerId: string; governance?:OrderGovernanceInput; lines: Array<Omit<MistOrderLine, 'id' | 'orderId' | 'made' | 'qc'> & OrderLineSource & {breakdown?:OrderLineBreakdown}> };
-export type MistCommand = FulfillmentCommand | MarketCommand | PlatformCommand | EmailCommand | CrmCommand | OrderGovernanceCommand | OrderFundingCommand | PayablesCommand
+export type MistCommand = FulfillmentCommand | MarketCommand | PlatformCommand | EmailCommand | CrmCommand | OrderGovernanceCommand | OrderFundingCommand | PayablesCommand | ExportRebateCommand
   | { type: 'development.saveDraft'; payload: { draftId?: string; values: DevelopmentValues; fileIds: string[] } }
   | { type: 'development.submit'; payload: { draftId?: string; values: DevelopmentValues; fileIds: string[] } }
   | { type: 'development.update'; payload: { devId: string; patch: Partial<DevelopmentValues> } }
@@ -578,7 +581,8 @@ function updateDev(state: MistState, dev: MistDev, context: MistContext) {
 function recalculate(state: MistState) {
   for(const invoice of state.invoices) invoice.open=isRecognizedMistInvoice(invoice)?major(Math.max(0,mistMoneyMinor(invoice.amount)-state.allocations.filter(a=>a.invoiceId===invoice.id).reduce((s,a)=>s+mistMoneyMinor(a.amount),0)-platformCreditAppliedMinor(state,invoice.id))):0;
   for(const receipt of state.receipts){
-    receipt.remaining=major(Math.max(0,mistMoneyMinor(receipt.amount)-state.allocations.filter(a=>a.receiptId===receipt.id).reduce((s,a)=>s+mistMoneyMinor(a.amount),0)));
+    // 退税到账勾稽同样占用流水余额。
+    receipt.remaining=major(Math.max(0,mistMoneyMinor(receipt.amount)-state.allocations.filter(a=>a.receiptId===receipt.id).reduce((s,a)=>s+mistMoneyMinor(a.amount),0)-rebateReceiptUsedMinor(state,receipt.id)));
     if(receipt.remaining===0) receipt.state='matched';
   }
   for(const order of state.orders){
@@ -668,6 +672,7 @@ export function mistCommandPermission(command: MistCommand): string | null {
   if(command.type.startsWith('order.governance.'))return orderGovernancePermission(command as OrderGovernanceCommand);
   if(command.type.startsWith('funding.'))return orderFundingCommandPermission(command as OrderFundingCommand);
   if(command.type.startsWith('payable.'))return payablesCommandPermission(command as PayablesCommand);
+  if(command.type.startsWith('rebate.'))return exportRebateCommandPermission(command as ExportRebateCommand);
   if(command.type.startsWith('fulfillment.'))return fulfillmentCommandPermission(command as FulfillmentCommand);
   if(command.type.startsWith('market.'))return marketCommandPermission(command as MarketCommand);
   if(command.type.startsWith('platform.'))return platformCommandPermission(command as PlatformCommand);
@@ -707,6 +712,7 @@ function applyMistCommandUnbound(original: MistState, command: MistCommand, cont
   if(command.type.startsWith('order.governance.')){const result=applyOrderGovernanceCommand(state,command as OrderGovernanceCommand,context);recalculate(state);assertOrderFundingIntegrity(state);return {state,result};}
   if(command.type.startsWith('funding.')){const result=applyOrderFundingCommand(state,command as OrderFundingCommand,context);recalculate(state);return {state,result};}
   if(command.type.startsWith('payable.')){const result=applyPayablesCommand(state,command as PayablesCommand,context);recalculate(state);return {state,result};}
+  if(command.type.startsWith('rebate.')){const result=applyExportRebateCommand(state,command as ExportRebateCommand,context);recalculate(state);return {state,result};}
   if(command.type.startsWith('fulfillment.')){const result=applyFulfillmentCommand(state,command as FulfillmentCommand,context);closeTakenOverHandoffs(state);normalizeMistState(state,context);recalculate(state);return {state,result};}
   if(command.type==='market.lead.convertToCrm'){const result=convertLeadToCrm(state,command.payload as Extract<MarketCommand,{type:'market.lead.convertToCrm'}>['payload'],context);recalculate(state);return {state,result};}
   if(command.type.startsWith('market.')){const result=applyMarketCommand(state,command as MarketCommand,context);for(const order of state.orders)if(!original.orders.some(old=>old.id===order.id)&&!order.governance){order.governance=createOrderGovernance(context);order.state='订单草稿';order.tone='neutral';order.checklist=['拟发范围确认','收货与贸易条款确认','收款条件核对'].map((label,index)=>({id:order.id+'-check-'+index,label,done:false,note:''}));}normalizeMistState(state,context);recalculate(state);return {state,result};}
@@ -1274,8 +1280,8 @@ export function normalizeMistState(state:MistState,context:MistContext):void {
   };
   for(const event of state.events||[])if(eventLabels[event.text])event.text=eventLabels[event.text];
   if(!Array.isArray(state.rounds))state.rounds=[];
-  const defaults={fulfillment:createFulfillmentState(context,state),market:createMarketState(context,state),platform:createPlatformState(context,state),email:createEmailState(context,state),crm:createCrmState(context,state),orderFunding:createOrderFundingState(context,state),payables:createPayablesState(context,state)};
-  for(const name of ['fulfillment','market','platform','email','crm','orderFunding','payables'] as const){
+  const defaults={fulfillment:createFulfillmentState(context,state),market:createMarketState(context,state),platform:createPlatformState(context,state),email:createEmailState(context,state),crm:createCrmState(context,state),orderFunding:createOrderFundingState(context,state),payables:createPayablesState(context,state),exportRebate:createExportRebateState()};
+  for(const name of ['fulfillment','market','platform','email','crm','orderFunding','payables','exportRebate'] as const){
     if(!state[name]) (state as any)[name]=defaults[name];
     else for(const [key,value] of Object.entries(defaults[name])) if((state[name] as any)[key]===undefined)(state[name] as any)[key]=structuredClone(value);
   }

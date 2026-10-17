@@ -134,6 +134,28 @@ it('lists LC-paid orders and rebate evidence without inventing LC terms or refun
   expect(lc.textContent).toContain('SO-1');expect(lc.textContent).toContain('L/C at sight');expect(lc.textContent).toContain('S');
   await click(getByRole(host,'tab',{name:/退税/}));
   const rebate=getByRole(host,'table',{name:'退税资料核对'});
-  expect(rebate.textContent).toContain('已全部收汇');expect(rebate.textContent).toContain('尚未接入');expect(rebate.textContent).toContain('2 / 3');
-  expect(host.textContent).toContain('参考退税额与到账勾稽尚未接入');
+  expect(rebate.textContent).toContain('已全部收汇');expect(rebate.textContent).toContain('未登记');expect(rebate.textContent).toContain('缺退税率');expect(rebate.textContent).toContain('2 / 3');
+  expect(host.textContent).toContain('还没有退税率');
+});
+
+it('lets finance match VAT special invoices to a departed declaration and file the rebate claim',async()=>{
+  const st=store.state!,f=st.fulfillment;
+  f.shipments.push(shipment('s',{state:'departed',departedAt:'2026-10-13T02:00:00Z'} as any));f.customs.push(customs('s','cleared',{hsCode:'6202.1300'}));
+  f.purchases.push({id:'po',code:'PC-1',orderId:'o'} as any);
+  st.payables!.bills.push({id:'b1',code:'AP-1',supplierId:'sup',supplier:'嘉兴制衣',invoiceNo:'0451001',invoiceDate:'2026-10-10',currency:'CNY',amount:113000,taxAmount:13000,taxRate:'13%',lines:[{purchaseId:'po'}],terms:[],due:'2026-11-10',dueBasis:'',fileIds:[],note:'',state:'open',registeredAt:'2026-10-10T00:00:00Z',registeredBy:'财务'} as any);
+  (st as any).exportRebate={rates:[{id:'rt',code:'RR-1',hsCode:'6202.13',rate:'13',effectiveFrom:'2020-03-20',basis:'公告',createdAt:'2026-10-01T00:00:00Z',actor:'财务'}],claims:[]};
+  render();
+  await click(getByRole(host,'tab',{name:/退税/}));
+  const table=getByRole(host,'table',{name:'退税资料核对'});
+  expect(table.textContent).toContain('可配 1 张');expect(table.textContent).toContain('预计 13,000.00 CNY');expect(table.textContent).toContain('2 / 3');
+  await click(Array.from(table.querySelectorAll('[role="row"]')).find(r=>r.textContent?.includes('D-s')) as HTMLElement);
+  const detail=host.querySelector('[data-customs-detail="cus-s"]') as HTMLElement;
+  expect(getByRole(detail,'table',{name:'CUS-S 可配专票'}).textContent).toContain('0451001');
+  await click(getByRole(detail,'button',{name:'登记退税申报'}));
+  const dialog=getByRole(document.body,'dialog');
+  typeInto(getByRole(dialog,'textbox',{name:'申报批次号 / 受理回执号'}) as HTMLInputElement,'202610-01');
+  await click(getByRole(dialog,'button',{name:'登记申报'}));
+  expect(store.run).toHaveBeenLastCalledWith({type:'rebate.claim.file',payload:expect.objectContaining({customsId:'cus-s',billIds:['b1'],batchRef:'202610-01'})});
+  session.denied.add('invoices:write');render();
+  expect((getByRole(host.querySelector('[data-customs-detail="cus-s"]') as HTMLElement,'button',{name:'登记退税申报'}) as HTMLButtonElement).disabled).toBe(true);
 });

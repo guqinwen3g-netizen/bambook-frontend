@@ -11,7 +11,7 @@ import { demoFileRecord, type DemoFileTemplate } from './mistDemoFiles';
 import { riskSignals } from './mistRisk';
 import { MIST_DEMO_ACCOUNTS } from './mistAccounts';
 
-export const DEMO_SEED_VERSION = 15;
+export const DEMO_SEED_VERSION = 16;
 export type DemoSeedFailure = { step: string; message: string };
 
 const DAY = 86400000;
@@ -309,6 +309,12 @@ export function seedDemoModules(initial: MistState, context: MistContext): { sta
       run('ready 017', { type: 'fulfillment.shipments.ready', payload: { id: ship } }, warehouse);
       run('documents sent 017', { type: 'fulfillment.shipments.sent', payload: { id: ship, at: at(-5, 9) } }, sales);
       run('depart 017', { type: 'fulfillment.shipments.depart', payload: { id: ship, at: at(-4, 6), evidence: '船公司装船通知 · 提单 MSKU77412093', fileIds: [] } }, warehouse);
+      /* 出口退税：向江南成衣采购成品（工厂开 13% 增值税专票）→ 财务登记专票与退税率；退税申报留给财务在报关页演示配单。 */
+      const unit017 = state.orderLines.find(l => l.id === job017.lineId)?.unit || '套';
+      const finishedPo = id(run('purchase finished 017', { type: 'fulfillment.procurement.save', payload: { orderId: order017.id, lineId: job017.lineId, kind: 'finished', supplierId: jiangnan, supplier: '', description: '修身羊毛西装套装成品（含面辅料、加工、包装）· 第一批 500 件', quantity: 500, unit: unit017, price: 452, currency: 'CNY', due: day(-8), terms: '出运后 30 天付清，凭增值税专用发票', destination: '上海洋山', note: '含税价，税率 13%', fileIds: [] } }, buyer));
+      approveAndConfirm(finishedPo, 'purchase finished 017', -30);
+      if (finishedPo) run('bill vat 017', { type: 'payable.bill.register', payload: { supplierId: jiangnan, invoiceNo: '33002641 04517712', invoiceDate: day(-3), currency: 'CNY', amount: 226000, taxAmount: 26000, taxRate: '13%', lines: [{ purchaseId: finishedPo, amount: 226000 }], due: day(26), dueBasis: '合同：出运后 30 天付清', fileIds: [demoFile('vat-invoice', finishedPo, '增值税专用发票 江南成衣 SO-G-2026-017（演示）.pdf')], note: '数电专票，已勾选确认用途（出口退税）' } }, finance);
+      run('rebate rate 6203.31', { type: 'rebate.rate.save', payload: { hsCode: '6203.31', rate: '13', effectiveFrom: '2019-04-01', basis: '财政部 税务总局 海关总署公告 2019 年第 39 号（演示）' } }, finance);
     }
   }
   const order018 = state.orders.find(o => o.code === 'SO-G-2026-018');

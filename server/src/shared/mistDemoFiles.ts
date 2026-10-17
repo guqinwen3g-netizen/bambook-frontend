@@ -5,7 +5,7 @@
 import type { MistFile, MistState } from './mistWorkspace';
 
 export const DEMO_FILE_PREFIX = 'demo-seed/';
-export type DemoFileTemplate = 'customer-po' | 'commercial-invoice' | 'packing-list' | 'customs-release' | 'supplier-contract';
+export type DemoFileTemplate = 'customer-po' | 'commercial-invoice' | 'packing-list' | 'customs-release' | 'supplier-contract' | 'vat-invoice';
 
 export function demoFileRecord(id: string, template: DemoFileTemplate, ref: string, name: string, createdAt: string): MistFile {
   return { id, name, mimeType: 'application/pdf', size: 0, storageKey: `${DEMO_FILE_PREFIX}${template}/${encodeURIComponent(ref)}`, createdAt };
@@ -23,7 +23,7 @@ export function renderDemoFile(state: MistState, file: MistFile): Uint8Array {
   const purchase = state.fulfillment?.purchases.find(p => p.id === ref);
   const shipment = state.fulfillment?.shipments.find(s => s.id === ref);
   const body: string[] = [];
-  const title = { 'customer-po': 'PURCHASE ORDER', 'commercial-invoice': 'COMMERCIAL INVOICE', 'packing-list': 'PACKING LIST', 'customs-release': 'CUSTOMS RELEASE NOTICE', 'supplier-contract': 'SUPPLY CONTRACT' }[template] || 'DOCUMENT';
+  const title = { 'customer-po': 'PURCHASE ORDER', 'commercial-invoice': 'COMMERCIAL INVOICE', 'packing-list': 'PACKING LIST', 'customs-release': 'CUSTOMS RELEASE NOTICE', 'supplier-contract': 'SUPPLY CONTRACT', 'vat-invoice': 'VAT SPECIAL INVOICE (FAPIAO)' }[template] || 'DOCUMENT';
   if (template === 'customer-po' && order) {
     body.push(`Buyer: ${ascii(customer?.name || order.customer)}`, `Seller: Bambook Apparel Co., Ltd.`, `Order: ${order.code}    Season: ${ascii(order.season)}    Currency: ${order.currency}`, `Delivery: ${order.due}    Terms: ${ascii(customer?.incoterm || 'FOB Shanghai')}    Payment: ${ascii(customer?.terms || 'T/T')}`, '');
     body.push('Style                         Qty        Unit price');
@@ -38,6 +38,10 @@ export function renderDemoFile(state: MistState, file: MistFile): Uint8Array {
     else { const c = state.fulfillment.customs.find(x => x.shipmentId === shipment.id); body.push(`Declaration: ${ascii(c?.declarationNo || '')}`, `HS code: ${ascii(c?.hsCode || '')}    Declared: ${c?.declaredAt || ''}    Released: ${c?.clearedAt || ''}`, `Broker: Shanghai customs broker (on file)`); }
   } else if (template === 'supplier-contract' && purchase) {
     body.push(`Supplier: ${ascii(purchase.supplier)}`, `Contract: ${purchase.code}    Order: ${state.orders.find(o => o.id === purchase.orderId)?.code || ''}`, `Quantity: ${purchase.quantity} ${unit(purchase.unit)}    Unit price: ${purchase.currency} ${purchase.price}`, `Due: ${purchase.due}`);
+  } else if (template === 'vat-invoice' && purchase) {
+    const bill = state.payables?.bills.find(b => b.lines.some(l => l.purchaseId === purchase.id));
+    body.push(`Seller: ${ascii(purchase.supplier)}`, `Buyer: Bambook Apparel Co., Ltd.`, `Invoice No.: ${ascii(bill?.invoiceNo || '')}    Date: ${bill?.invoiceDate || ''}`, `Contract: ${purchase.code}    Order: ${state.orders.find(o => o.id === purchase.orderId)?.code || ''}`, `Goods: ${purchase.quantity} ${unit(purchase.unit)}`,
+      `Amount incl. VAT: ${purchase.currency} ${(bill?.amount ?? 0).toFixed(2)}    VAT ${ascii(bill?.taxRate || '')}: ${purchase.currency} ${(bill?.taxAmount ?? 0).toFixed(2)}`, '', 'Purpose: export VAT refund (confirmed in e-tax system).');
   } else body.push('The referenced record is no longer in this workspace.');
   body.push('', '', 'Sample document generated for the Bambook demo workspace. Not a real commercial document.');
   return pdf(title, body);
