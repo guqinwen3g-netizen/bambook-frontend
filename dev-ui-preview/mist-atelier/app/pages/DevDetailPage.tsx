@@ -174,7 +174,7 @@ export function DevDetailPage(){
     catch(cause){if(live.current)setFailure(cause instanceof Error?cause.message:'附件上传失败');}finally{busyRef.current=false;if(live.current)setBusy(false);}
     return ids;
   };
-  const backToSource=()=>route.customerId?go('crm',route.customerId,{customerId:route.customerId}):go('development');
+  const backToSource=()=>route.customerId?go('crm',route.customerId,{customerId:route.customerId}):go('development',undefined,dev?{section:developmentDomain(dev.values)}:undefined);
   const editFactories=edit.factories.split(/[、,，\n]/).map(value=>value.trim()).filter(Boolean);
   const factoryOptions=developmentFactoryOptions(state,editFactories,dev?developmentDomain(dev.values):'garment');
   const recovery=pending?<Button loading={busy||saving} onClick={()=>void recoverWrite()}>核对原操作结果</Button>:null;

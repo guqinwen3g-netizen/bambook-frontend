@@ -43,6 +43,7 @@ import { SearchPage } from './pages/SearchPage';
 import { apiService } from '../../../services/apiService';
 import { platformBusinessDate } from '../../../server/src/shared/mistPlatform';
 import { visibleMistNotifications, mistDailyDigest } from './runtime/notificationPreferences';
+import { DEVELOPMENT_LIST_TABS, developmentCreateTarget, developmentListTab, developmentListTarget, type DevelopmentListTab } from './developmentEntry';
 const SEARCH_ICONS: Record<string, typeof Layers> = { 开发案: Layers, 订单: ClipboardList };
 
 const PAGES: Record<string, React.FC> = {
@@ -88,13 +89,14 @@ function useSections(): NavSection[] {
     ].filter(item => (item.id !== 'login' || !session.localMode) && (item.id !== 'system-settings' || session.canAccessView(View.SystemSettings))) }];
   }, [session.sessionKey, session.status, session.hasRole, session.canAccessView, state]);
 }
+const developmentCreateLabel = (section?: string) => DEVELOPMENT_LIST_TABS.find(tab => tab.value === (section === 'fabric' ? 'fabric' : 'garment'))!.create;
 function crumbsFor(route: Route, go: (view: string, id?: string) => void, objectLabel?: string, versionLabel?: string): Crumb[] {
   const base = route.view.split('/')[0], mod = getModuleByView(base as View);
   const label = mod?.productLabel ?? LABELS[base] ?? base;
   const crumbs: Crumb[] = [{ label: mod ? GROUPS[mod.nav.group] : base === 'workspace-settings' || base === 'approvals' || base === 'notifications' || base === 'search' ? '我的事务' : '设计系统', hideOnMobile: true }];
   if (route.view.includes('/')) {
     crumbs.push({ label, onClick: () => go(base) });
-    crumbs.push(route.view.endsWith('/new') ? { label: base === 'orders' ? '新建订单' : '新建开发案' } : { label: objectLabel || route.id || '未指定对象', mono: true });
+    crumbs.push(route.view.endsWith('/new') ? { label: base === 'orders' ? '新建订单' : route.id ? '继续开发草稿' : developmentCreateLabel(route.section) } : { label: objectLabel || route.id || '未指定对象', mono: true });
     if (route.versionId) crumbs.push({ label: versionLabel || route.versionId, mono: true });
   } else crumbs.push({ label });
   return crumbs;
@@ -120,6 +122,9 @@ function AppInner({ theme, setTheme }: { theme: ThemeMode; setTheme: (theme: The
   React.useEffect(()=>{aiController.current?.abort();aiController.current=null;aiRun.current=null;aiHistory.current=[];setAiBusy(false);setAiUseRouteSource(false);},[aiScope]);
   React.useEffect(()=>setAiUseRouteSource(false),[route.view,route.id]);
   const sections = useSections();
+  // 侧栏「开发与寻样」回到本次会话最近查看的页签；未查看过时为「成衣开发」。
+  const lastDevelopmentTab = React.useRef<DevelopmentListTab>('garment');
+  if (route.view === 'development') lastDevelopmentTab.current = developmentListTab(route.section);
   const go = React.useCallback((view: string, id?: string, target: RouteTarget = {}) => {
     const next = { view, id, ...target };
     setRoute(next); writeMistRoute(next); setPalette(false); setAI(false); setNotifications(false);
@@ -203,14 +208,25 @@ function AppInner({ theme, setTheme }: { theme: ThemeMode; setTheme: (theme: The
   useHotkey('j', () => { if (session.status === 'authenticated') openAI(); }, { meta: true });
   const commands: CommandItem[] = [
     ...(state ? workspaceSearchRecords(state, view => session.canAccessView(view as View)).map(r => ({ id: r.view + '-' + r.id, group: r.group, label: r.label, hint: r.hint, keywords: r.keywords, icon: SEARCH_ICONS[r.group], run: () => go(r.view, r.id, r.target) })) : []),
-    ...sections.flatMap(section => section.items.map(item => ({ id: 'go-' + item.id, group: '跳转', label: item.label, hint: section.label, icon: item.icon, run: () => go(item.id) }))),
-    ...(canDevelopment?[{id:'new-dev',group:'操作',label:'新建开发案',run:()=>go('development/new')}]:[]),
+    ...sections.flatMap(section => section.items.map(item => ({ id: 'go-' + item.id, group: '跳转', label: item.label, hint: section.label, icon: item.icon, run: () => navigateModule(item.id) }))),
+    ...(canDevelopment ? DEVELOPMENT_LIST_TABS.flatMap(tab => {
+      const list = developmentListTarget(tab.value), create = developmentCreateTarget(tab.value);
+      return [
+        { id: 'go-development-' + tab.value, group: '跳转', label: tab.label, hint: '开发与寻样', keywords: '开发与寻样 ' + tab.label, run: () => go(list.view, list.id, list.target) },
+        { id: 'new-development-' + tab.value, group: '操作', label: tab.create, keywords: '新建 ' + tab.label, run: () => go(create.view, create.id, create.target) },
+      ];
+    }) : []),
     { id: 'approvals', group: '操作', label: '审批与放行', keywords: '审批 待我审批 放行 付款申请', icon: ClipboardList, run: () => go('approvals') },
     { id: 'notifications', group: '操作', label: '通知中心', keywords: '通知 提醒 未读 消息', icon: Bell, run: () => go('notifications') },
     { id: 'theme', group: '操作', label: '切换深浅色', icon: Moon, run: toggleTheme },
     { id: 'ai', group: '操作', label: '问小竹', hint: '⌘ J', icon: Sparkles, run: ()=>openAI() },
     ...(query.trim() ? [{ id: 'search-all', group: '搜索', label: '打开搜索结果页查看全部', keywords: query.trim(), icon: Search, run: () => go('search', undefined, { section: query.trim() }) }] : []),
   ];
+  function navigateModule(id: string) {
+    if (id !== 'development') { go(id); return; }
+    const target = developmentListTarget(lastDevelopmentTab.current);
+    go(target.view, target.id, target.target);
+  }
   const nav = { route, go, theme, toggleTheme, openPalette: () => setPalette(true), openAI };
   if (session.status === 'loading') return null;
   if (session.status === 'anonymous' && session.localMode) return <MistPage width="narrow"><Card><CardHeader title="工作区连接待核对" sub="本地工作身份由本机服务提供，无需输入旧账号密码。"/><div className="mist-card-body"><p>{session.error||'暂时无法读取本地工作身份，请重新连接。'}</p><Button variant="primary" loading={session.refreshing} onClick={()=>void session.refresh()}>重新进入本地工作区</Button></div></Card></MistPage>;
@@ -235,7 +251,7 @@ function AppInner({ theme, setTheme }: { theme: ThemeMode; setTheme: (theme: The
     <Nav.Provider value={nav}><MistReviewProvider><MistDensityContext.Provider value={state?.settings.density||'default'}>
       <MistAppShell collapsed={collapsed} scrollKey={route.view + (route.id ?? '')}
         sidebar={<MistSidebarPresentation sections={sections} activeId={base === 'development' ? 'development' : base}
-          onNavigate={id => go(id)} collapsed={collapsed} onToggleCollapsed={() => setCollapsed(value => !value)}
+          onNavigate={navigateModule} collapsed={collapsed} onToggleCollapsed={() => setCollapsed(value => !value)}
           workspace={{ symbol: (workspace.workspace?.name || name).slice(0,1), name: workspace.workspace?.name || '我的工作空间', caption: state?.settings.demoSeed ? '演示工作空间 · 示例数据' : '当前工作空间', onClick:()=>setSpaces(true) }}
           account={{ name, caption: roles, avatarUrl: user.avatarUrl ?? undefined, onClick: () => setAccount(true) }}
           onSearch={() => setPalette(true)}

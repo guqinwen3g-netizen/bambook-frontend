@@ -126,6 +126,11 @@ describe('development plan factory source and return context',()=>{
 });
 
 
+describe('development tab return',()=>{
+ const back=async()=>{const link=[...document.body.querySelectorAll<HTMLElement>('button,a')].find(item=>item.textContent?.trim()==='开发与寻样');expect(link).toBeTruthy();await act(async()=>link!.click());};
+ it('returns a garment development to the 成衣开发 tab',async()=>{await mount();await back();expect(go).toHaveBeenLastCalledWith('development',undefined,{section:'garment'});});
+ it('returns a fabric development to the 面料开发 tab',async()=>{bridge.current.state.devs=[{...bridge.current.state.devs[0],values:{...bridge.current.state.devs[0].values,domain:'fabric'}}];await mount();await back();expect(go).toHaveBeenLastCalledWith('development',undefined,{section:'fabric'});});
+});
 describe('fabric exact version detail',()=>{
  const useFabric=()=>{bridge.current.state.devs=[{...record,img:'clay',values:{...record.values,domain:'fabric',category:'斜纹',sizeBase:'',sampleForm:'米样',sampleUnit:'米'}}];bridge.current.state.versions[0]={...bridge.current.state.versions[0],qc:null,returnedAt:null,sample:'',size:''};};
  it('records an actual decimal metre sample and shows no garment size or stock photo',async()=>{

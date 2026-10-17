@@ -29,6 +29,20 @@ async function pickType(title='复刻'){const button=[...document.body.querySele
 async function click(text:string){const button=[...document.body.querySelectorAll('button')].find(item=>item.textContent?.trim()===text);expect(button,text).toBeTruthy();await act(async()=>button!.click());}
 
 describe('persisted five-step development creation',()=>{
+  it.each([[undefined,'garment','新建成衣开发案'],['fabric','fabric','新建面料开发案']])('enters the %s create flow directly and returns to the same development tab',async(section,tab,title)=>{
+    await mount(undefined,undefined,section);expect(document.body.querySelector('h1')?.textContent).toBe(title);
+    await click('开发与寻样');expect(go).toHaveBeenCalledWith('development',undefined,{section:tab});
+  });
+  it('continues a fabric draft from its own tab and returns to that tab',async()=>{
+    bridge.current.state.drafts=[{id:'draft-f',values:{domain:'fabric',initiator:'internal',requester:'面料组',name:'面料草稿',customer:'',style:'',season:'AW27',category:'',fabric:'',color:'',target:'',factories:[],due:'',kind:'new',goal:'',sizeBase:'',collaborators:[],sampleQuantity:2},fileIds:[],updatedAt:'2026-10-13T00:00:00Z'}];
+    await mount('draft-f',undefined,'fabric');expect(document.body.querySelector('h1')?.textContent).toBe('继续开发草稿');
+    await click('开发与寻样');expect(go).toHaveBeenCalledWith('development',undefined,{section:'fabric'});go.mockClear();
+    await click('存为草稿');expect(bridge.current.run).toHaveBeenCalledWith(expect.objectContaining({type:'development.saveDraft',payload:expect.objectContaining({draftId:'draft-f'})}));expect(go).toHaveBeenLastCalledWith('development',undefined,{section:'fabric'});
+  });
+  it('returns a saved garment draft to the 成衣开发 tab',async()=>{
+    bridge.current.state.drafts=[{id:'draft-a',values:savedValues(),fileIds:[],updatedAt:'2026-10-13T00:00:00Z'}];
+    await mount('draft-a');await click('存为草稿');expect(go).toHaveBeenLastCalledWith('development',undefined,{section:'garment'});
+  });
   it('collects every original field, uploads real files, and navigates by the returned entity IDs',async()=>{
     await mount();await fill('开发对象名称','新款外套');await fill('客户款号','STYLE-NEW');await pickType();await click('下一步');
     await fill('面料','纯羊毛');await fill('颜色','雾蓝');await fill('目标 FOB 单价','64.50');await fill('尺码基准','L');await fill('开发目标','验证肩线');await click('下一步');

@@ -27,7 +27,7 @@ export type ModuleMapEntry = { id: string; view: string; label: string; group: s
 export const MODULE_MAP: ModuleMapEntry[] = [
   // ── Wave 1：核心闭环（开发 → 订单 → QC → 出运）──
   { id: 'cockpit', view: 'cockpit', label: '我的工作', group: '我的事务', entry: 'dev-ui-preview/mist-atelier/app/pages/HomePage.tsx', lines: 103, template: 'workbench', wave: 1, notes: '参考页即成品。数据来自 workbenchFocus / 待办接口' },
-  { id: 'development', view: 'development', label: '开发与寻样', group: '订单履约', entry: 'dev-ui-preview/mist-atelier/app/pages/DevListPage.tsx', lines: 100, template: 'list-preview', detail: 'record-detail', create: true, wave: 1, notes: '参考页即成品；面料寻样为第二个 Tab' },
+  { id: 'development', view: 'development', label: '开发与寻样', group: '订单履约', entry: 'dev-ui-preview/mist-atelier/app/pages/DevListPage.tsx', lines: 100, template: 'list-preview', detail: 'record-detail', create: true, wave: 1, notes: '成衣开发｜面料开发｜面料寻样为三个并列页签，当前页签记在路由 section' },
   { id: 'samples', view: 'samples', label: '样品仓库', group: '订单履约', entry: 'dev-ui-preview/mist-atelier/app/pages/modules/FulfillmentPages.tsx', lines: 99, template: 'list-preview', detail: 'record-detail', create: true, wave: 1 },
   { id: 'orders', view: 'orders', label: '订单管理', group: '订单履约', entry: 'dev-ui-preview/mist-atelier/app/pages/OrderListPage.tsx', lines: 79, template: 'list-table', detail: 'document', create: true, wave: 1, notes: '面料订单/成衣订单用 Tabs' },
   { id: 'qc-workbench', view: 'qc-workbench', label: 'QC 工作台', group: '订单履约', entry: 'dev-ui-preview/mist-atelier/app/pages/modules/FulfillmentPages.tsx', lines: 99, template: 'board', detail: 'record-detail', wave: 1, notes: '验货任务=看板；报告=对象详情（MeasurementTable）；驻地/业务线配置=设置模板' },

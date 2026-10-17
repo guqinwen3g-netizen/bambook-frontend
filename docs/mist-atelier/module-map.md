@@ -28,7 +28,7 @@
 | ☐ | 模块 | view | 入口文件 | 行数 | 列表/主页模板 | 详情模板 | 新建 | 备注 |
 |---|---|---|---|---|---|---|---|---|
 | ☐ | 我的工作 | `cockpit` | `dev-ui-preview/mist-atelier/app/pages/HomePage.tsx` | 103 | T1 工作台 | — | — | 参考页即成品。数据来自 workbenchFocus / 待办接口 |
-| ☐ | 开发与寻样 | `development` | `dev-ui-preview/mist-atelier/app/pages/DevListPage.tsx` | 100 | T2 列表 + 预览 | T4 对象详情 | T9 | 参考页即成品；面料寻样为第二个 Tab |
+| ☐ | 开发与寻样 | `development` | `dev-ui-preview/mist-atelier/app/pages/DevListPage.tsx` | 100 | T2 列表 + 预览 | T4 对象详情 | T9 | 成衣开发｜面料开发｜面料寻样为三个并列页签，当前页签记在路由 section |
 | ☐ | 样品仓库 | `samples` | `dev-ui-preview/mist-atelier/app/pages/modules/FulfillmentPages.tsx` | 99 | T2 列表 + 预览 | T4 对象详情 | T9 |  |
 | ☐ | 订单管理 | `orders` | `dev-ui-preview/mist-atelier/app/pages/OrderListPage.tsx` | 79 | T3 宽表列表 | T5 单据详情 | T9 | 面料订单/成衣订单用 Tabs |
 | ☐ | QC 工作台 | `qc-workbench` | `dev-ui-preview/mist-atelier/app/pages/modules/FulfillmentPages.tsx` | 99 | T8 看板 | T4 对象详情 | — | 验货任务=看板；报告=对象详情（MeasurementTable）；驻地/业务线配置=设置模板 |

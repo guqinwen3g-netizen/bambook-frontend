@@ -363,6 +363,26 @@ describe('one Mist entry with real authentication and workspace state', () => {
     await mount(); await waitFor(() => expect(host!.textContent).toContain('没有待你审批的事项'));
     expect(host!.querySelector('h1')?.textContent).toContain('审批与放行'); expect(host!.textContent).not.toContain('没有查看权限');
   });
+  it('splits ⌘K development creation into three entries and lands the palette and sidebar on the exact tab', async () => {
+    const qs = () => Object.fromEntries(new URLSearchParams(location.search));
+    const palette = async (text: string, name: RegExp) => { await openSearch(); input(searchInput(), text); await click(getByRole(getByRole(host!, 'dialog', { name: '搜索' }), 'button', { name })); };
+    await signIn(); await mount(); await waitFor(() => expect(probes.home).toHaveBeenCalled());
+    await openSearch(); input(searchInput(), '新建');
+    const labels = [...getByRole(host!, 'dialog', { name: '搜索' }).querySelectorAll('button')].map(button => button.textContent || '');
+    expect(labels.some(label => label.startsWith('新建成衣开发案'))).toBe(true); expect(labels.some(label => label.startsWith('新建面料开发案'))).toBe(true); expect(labels.some(label => label.startsWith('新建面料寻样'))).toBe(true);
+    expect(labels.some(label => label.startsWith('新建开发案'))).toBe(false);
+    input(searchInput(), '新建成衣开发案'); await click(getByRole(getByRole(host!, 'dialog', { name: '搜索' }), 'button', { name: /^新建成衣开发案/ })); expect(qs()).toMatchObject({ view: 'development/new', section: 'garment' }); expect(qs().id).toBeUndefined();
+    await palette('新建面料开发案', /^新建面料开发案/); expect(qs()).toMatchObject({ view: 'development/new', section: 'fabric' });
+    await palette('新建面料寻样', /^新建面料寻样/); expect(qs()).toMatchObject({ view: 'development', id: 'new', section: 'sourcing' });
+    await palette('面料开发', /^面料开发.*开发与寻样/); expect(qs()).toMatchObject({ view: 'development', section: 'fabric' }); expect(qs().id).toBeUndefined();
+    await waitFor(() => expect(probes.development).toHaveBeenCalled());
+    await click(getByRole(host!, 'button', { name: /^我的工作/ })); expect(qs().view).toBe('cockpit');
+    await click(getByRole(host!, 'button', { name: /^开发与寻样/ })); expect(qs()).toMatchObject({ view: 'development', section: 'fabric' });
+    await palette('面料寻样', /^面料寻样.*开发与寻样/); expect(qs()).toMatchObject({ view: 'development', section: 'sourcing' });
+    act(() => root!.unmount()); host!.remove(); root = undefined; host = undefined;
+    await mount(); expect(qs()).toMatchObject({ view: 'development', section: 'sourcing' });
+    await click(getByRole(host!, 'button', { name: /^我的工作/ })); await click(getByRole(host!, 'button', { name: /^开发与寻样/ })); expect(qs()).toMatchObject({ view: 'development', section: 'sourcing' });
+  });
   it('opens the notification center outside the menu from global search and restores it from a direct link', async () => {
     await signIn(); await mount(); await waitFor(() => expect(probes.home).toHaveBeenCalled());
     await openSearch(); input(searchInput(), '通知中心');
