@@ -7,6 +7,7 @@ function ctx(actorName = '财务-林', now = '2026-10-14T02:00:00.000Z'): MistCo
 const today = '2026-10-14';
 function demo() {
   const c = ctx(), state = createMistState(c, 'demo');
+  state.payables!.bills = []; // 演示数据自带一张出口退税用的成品专票；本组用例从没有票据开始编号与核对。
   const po1 = state.fulfillment.purchases.find(p => p.code === 'PO-2026-00001')!; // 华盛毛纺 2400 米 × 46.5 = 111600 CNY
   const draft = state.fulfillment.purchases.find(p => p.state === 'draft' && p.supplierId === po1.supplierId)!;
   const po2 = state.fulfillment.purchases.find(p => p.code === 'PO-2026-00002')!;

@@ -18,8 +18,7 @@ export type RiskState = 'Open' | 'Acknowledged' | 'InProgress' | 'Escalated' | '
 /** 申请动作：关闭 / 豁免 / 带风险放行 / 其他受控授权（原“升级”语义，如额外费用）。 */
 export type RiskRequestAction = 'close' | 'waive' | 'release' | 'authorize';
 /**
- * 升级 / 处置申请。早期记录只有自由填写的 approver 名称（按原规则由 risk:admin 直接答复）；
- * 新申请带 requesterId / reviewerIds / snapshot，进入统一审批，审批人由服务端按部门主管路由冻结。
+ * 处置申请：带 requesterId / reviewerIds / snapshot，进入统一审批，审批人由服务端按部门主管路由冻结。
  */
 export type RiskEscalation = {
   id: string; approver: string; reason: string; requestedBy: string; requestedAt: string; decision: 'pending' | 'approved' | 'rejected' | 'withdrawn'; decisionNote: string; decidedBy: string; decidedAt: string;
@@ -32,7 +31,8 @@ export type RiskRecord = {
   /** 关闭方式：经审批关闭 / 豁免；直接关闭的低风险与早期记录不写。 */
   disposition?: 'closed' | 'waived';
   /** 最近一次获批的带风险放行：风险仍未关闭，继续跟进。 */
-  release?: { escalationId: string; approvedBy: string; at: string; note: string };
+  /** 带风险放行（单次）：出运登记时写入 shipmentId 即用掉，下一票须重新申请。 */
+  release?: { escalationId: string; approvedBy: string; at: string; note: string; shipmentId?: string; shipmentCode?: string; usedAt?: string };
 };
 export type RiskSignal = { key: string; type: RiskType; level: RiskRecord['level']; title: string; basis: string; source: { kind: RiskSourceKind; id: string; label: string }; orderId: string; since: string };
 
@@ -174,8 +174,8 @@ export type RiskCommand =
   | { type: 'platform.risk.decide'; payload: { id: string; escalationId: string; decision: 'approved' | 'rejected'; note: string } };
 
 /**
- * 入口门槛：直接答复（仅早期自由填写审批人的升级）沿用 risk:admin；其余命令以风险读权限进入，
- * 再在命令内按来源负责人与服务端重建的岗位权限核验处理权。新申请只能经统一审批答复（审批人需 risk:write）。
+ * 入口门槛：答复只经统一审批中心（审批人需 risk:write，按冻结的部门主管核验），直接命令须 risk:admin 作为兜底门槛；
+ * 其余命令以风险读权限进入，再在命令内按来源负责人与服务端重建的岗位权限核验处理权。
  */
 export function riskCommandPermission(command: RiskCommand) { return command.type === 'platform.risk.decide' ? 'risk:admin' : 'risk:read'; }
 export const RISK_REVIEW_PERMISSION = 'risk:write';
@@ -274,18 +274,17 @@ export function applyRiskCommand(root: MistState, risks: RiskRecord[], command: 
       const row = find(risks, v.id), e = pendingEscalation(row);
       if (!e || e.id !== v.escalationId) fail('这次升级已答复或已变化，请刷新后查看', 'CONFLICT');
       if (!['approved', 'rejected'].includes(v.decision)) fail('审批结果无效');
-      if (isReviewedEscalation(e!)) {
-        // 新申请：只认提交时冻结、且此刻仍按申请人部门路由有效的主管；直接命令无法换审批人或自审。
-        if (!c.actorId || c.actorId === e!.requesterId || !e!.reviewerIds!.includes(c.actorId) || !(c.authority?.riskReviewerIds || []).includes(c.actorId)) fail('当前账号不是本次风险申请的有效审批主管', 'FORBIDDEN');
-      } else if (e!.requestedBy === c.actorName) fail('申请人不能审批自己的升级', 'FORBIDDEN');
+      if (!isReviewedEscalation(e!)) fail('这次申请缺少系统确定的审批主管，请撤回后重新申请', 'CONFLICT');
+      // 只认提交时冻结、且此刻仍按申请人部门路由有效的主管；无法换审批人或自审。
+      if (!c.actorId || c.actorId === e!.requesterId || !e!.reviewerIds!.includes(c.actorId) || !(c.authority?.riskReviewerIds || []).includes(c.actorId)) fail('当前账号不是本次风险申请的有效审批主管', 'FORBIDDEN');
       const note = text(v.note, '审批意见'), action = e!.action || 'authorize', approved = v.decision === 'approved';
       e!.decision = v.decision; e!.decisionNote = note; e!.decidedBy = c.actorName; e!.decidedById = c.actorId; e!.decidedAt = c.now; row.state = 'InProgress'; row.updatedAt = c.now;
       if (approved && (action === 'close' || action === 'waive')) { row.state = 'Resolved'; row.disposition = action === 'close' ? 'closed' : 'waived'; row.resolution = (action === 'waive' ? '豁免：' : '') + e!.reason; row.closedAt = c.now; row.closedBy = e!.requestedBy; }
       if (approved && action === 'release') row.release = { escalationId: e!.id, approvedBy: c.actorName, at: c.now, note };
       for (const t of root.tasks) if (t.kind === 'risk-escalation:' + e!.id) t.done = true;
-      const label = isReviewedEscalation(e!) ? `${RISK_ACTION_LABEL[action]}申请${approved ? '已批准' : '已驳回，继续按原规则处理'}` : `升级${approved ? '已授权' : '未授权，继续按原规则处理'}`;
+      const label = `${RISK_ACTION_LABEL[action]}申请${approved ? '已批准' : '已驳回，继续按原规则处理'}`;
       root.notifications.unshift({ id: c.id(), title: `${row.title} · ${label}`, detail: `${c.actorName}：${note}`, at: c.now, readAt: null, target: { view: 'risks', id: row.id }, category: 'general' });
-      const text2 = isReviewedEscalation(e!) ? `${approved ? '批准' : '驳回'}${RISK_ACTION_LABEL[action]}申请${approved && row.state === 'Resolved' ? '（风险已' + (action === 'waive' ? '豁免关闭' : '关闭') + '）' : approved && action === 'release' ? '（带风险放行，风险继续跟进）' : ''}：${note}` : `${approved ? '批准升级（受控授权）' : '驳回升级（继续阻断）'}：${note}`;
+      const text2 = `${approved ? '批准' : '驳回'}${RISK_ACTION_LABEL[action]}申请${approved && row.state === 'Resolved' ? '（风险已' + (action === 'waive' ? '豁免关闭' : '关闭') + '）' : approved && action === 'release' ? '（带风险放行，风险继续跟进）' : ''}：${note}`;
       emit(root, c, row.id, text2); return { id: row.id };
     }
   }

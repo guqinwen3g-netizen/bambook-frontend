@@ -156,20 +156,19 @@ describe('高风险关闭、豁免、带风险放行走部门主管审批，结�
     expect(riskEffectiveLevel(s, s.platform!.risks[0], day)).toBe('critical');
     expect(() => run(s, { type: 'platform.risk.transition', payload: { id, state: 'Resolved', resolution: 'x' } }, c)).toThrow(/高风险/);
   });
-  it('早期自由填写审批人的待答复升级仍按原规则由他人答复；新建升级不再接受自由填写审批人', () => {
+  it('缺少系统审批主管的升级不能答复；新建升级不接受自由填写审批人', () => {
     const { state, order, owner } = owned(), boss = ctx('周经理');
     let s = run(state, save(order.id, owner), boss).state; const id = s.platform!.risks[0].id; s = inProgress(s, id, boss);
-    const legacy = structuredClone(s); const row = legacy.platform!.risks[0];
-    row.state = 'Escalated'; row.escalations = [{ id: 'legacy-e', approver: '周经理', reason: '空运费超预算', requestedBy: '顾言', requestedAt: '2026-10-01T00:00:00.000Z', decision: 'pending', decisionNote: '', decidedBy: '', decidedAt: '' }];
-    expect(getRiskReviews(legacy).filter(t => t.target.id === id)).toEqual([]);
-    expect(() => run(legacy, { type: 'platform.risk.decide', payload: { id, escalationId: 'legacy-e', decision: 'approved', note: 'ok' } }, ctx('顾言'))).toThrow(/不能审批自己/);
-    expect(run(legacy, { type: 'platform.risk.decide', payload: { id, escalationId: 'legacy-e', decision: 'approved', note: '同意空运' } }, boss).state.platform!.risks[0].state).toBe('InProgress');
+    const bare = structuredClone(s); const row = bare.platform!.risks[0];
+    row.state = 'Escalated'; row.escalations = [{ id: 'bare-e', approver: '周经理', reason: '空运费超预算', requestedBy: '顾言', requestedAt: '2026-10-01T00:00:00.000Z', decision: 'pending', decisionNote: '', decidedBy: '', decidedAt: '' }];
+    expect(getRiskReviews(bare).filter(t => t.target.id === id)).toEqual([]);
+    expect(() => run(bare, { type: 'platform.risk.decide', payload: { id, escalationId: 'bare-e', decision: 'approved', note: '同意空运' } }, boss)).toThrow(/撤回后重新申请/);
     expect(() => run(s, { type: 'platform.risk.escalate', payload: { id, approver: '周经理', reason: 'x' } }, boss)).toThrow(/不能在申请中指定/);
   });
 });
 
 describe('权限', () => {
-  it('直接答复需要 risk:admin（仅早期升级）；其余命令以风险读权限进入，处理权在命令内核验', () => {
+  it('直接答复命令须 risk:admin 兜底（正常经统一审批中心）；其余命令以风险读权限进入，处理权在命令内核验', () => {
     expect(platformCommandPermission({ type: 'platform.risk.decide', payload: { id: 'x', escalationId: 'e', decision: 'approved', note: 'n' } } as any)).toBe('risk:admin');
     for (const type of ['platform.risk.save', 'platform.risk.transition', 'platform.risk.plan', 'platform.risk.escalate', 'platform.risk.withdraw']) expect(platformCommandPermission({ type, payload: {} } as any)).toBe('risk:read');
   });

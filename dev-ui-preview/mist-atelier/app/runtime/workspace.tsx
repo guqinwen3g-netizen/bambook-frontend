@@ -81,6 +81,32 @@ function envelope(value: unknown, actorId: string, workspaceId?: string): MistWo
     || arrays.some(key => !Array.isArray(candidate.state[key])) || !object(candidate.state.settings) || !!candidate.state.workspaceArchive) throw new RequestError('工作区响应不完整或身份、来源不一致');
   return candidate;
 }
+/**
+ * 结构共享：新读到的工作区里没有变化的记录沿用旧对象，只有真正变了的记录换新引用。
+ * 后台同步他人修改时，正在编辑的表单、展开状态等依赖记录引用的页面不会因无关更新被重置。
+ */
+/** 后台同步版本号的间隔。 */
+export const MIST_SYNC_INTERVAL_MS = 15_000;
+export function shareStructure<T>(previous: unknown, next: T): T {
+  if (Object.is(previous, next)) return next;
+  if (Array.isArray(previous) && Array.isArray(next)) {
+    const byId = new Map<unknown, unknown>();
+    for (const item of previous) if (object(item) && typeof item.id === 'string') byId.set(item.id, item);
+    let same = previous.length === next.length;
+    const out = next.map((item, index) => {
+      const prior = object(item) && typeof item.id === 'string' && byId.has(item.id) ? byId.get(item.id) : previous[index];
+      const shared = shareStructure(prior, item); if (shared !== previous[index]) same = false; return shared;
+    });
+    return (same ? previous : out) as T;
+  }
+  if (object(previous) && object(next) && !Array.isArray(previous) && !Array.isArray(next)) {
+    const keys = Object.keys(next); let same = keys.length === Object.keys(previous).length;
+    const out: Record<string, unknown> = {};
+    for (const key of keys) { const shared = shareStructure(previous[key], next[key]); out[key] = shared; if (!Object.prototype.hasOwnProperty.call(previous, key) || shared !== previous[key]) same = false; }
+    return (same ? previous : out) as T;
+  }
+  return next;
+}
 function receipt(value: unknown, intent: Pending): MistRunReceipt {
   const candidate = value as MistRunReceipt;
   if (!candidate || candidate.requestId !== intent.requestId || candidate.revision !== intent.expectedRevision + 1 || !object(candidate.result)) throw new RequestError('操作回执与原请求或版本不一致');
@@ -240,7 +266,7 @@ export function MistWorkspaceProvider({ children }: { children: React.ReactNode 
   const put = React.useCallback((value: MistWorkspaceEnvelope, bound: Authority) => {
     assertIdentity(bound);
     const previous = latest.current.get(value.id);
-    const next = previous && previous.revision > value.revision ? previous : value;
+    const next = previous && previous.revision > value.revision ? previous : previous ? shareStructure(previous, value) : value;
     latest.current.set(next.id, next); snapshot.current = next; setCurrent({ key: bound.key, value: next });
   }, [assertIdentity]);
   const rememberSelection = React.useCallback((id: string, bound: Authority) => {
@@ -307,6 +333,36 @@ export function MistWorkspaceProvider({ children }: { children: React.ReactNode 
     } else setLoading(authority.status === 'loading');
     return () => { mounted.current = false; scopeEpoch.current++; readEpoch.current++; readController.current?.abort(); mutation.current = null; };
   }, [authority.key, authority.userId, authority.status, load, publishPending, publishCreate, forgetSelection]);
+
+  /**
+   * 后台同步：页面可见时每 15 秒（以及切回窗口时）只查一次版本号，别人有更新才静默读取完整内容。
+   * 不打断正在进行的保存、切换或待核对的请求；读到的内容经结构共享并入，没变的记录引用不变。
+   * 这样多人同时办公时，本页看到的版本始终接近最新，保存时极少因“落后太多”被要求刷新。
+   */
+  React.useEffect(() => {
+    if (authority.status !== 'authenticated' || !authority.userId || !boundWorkspaceId) return;
+    const bound = authority, workspaceId = boundWorkspaceId, epoch = boundEpoch;
+    let busy = false, stopped = false;
+    const quiet = () => stopped || !mounted.current || navigating.current || !!mutation.current || !!pendingRef.current || !!pendingCreateRef.current
+      || epoch !== scopeEpoch.current || snapshot.current?.id !== workspaceId || live.current.key !== bound.key || live.current.userId !== bound.userId || live.current.status !== 'authenticated';
+    const sync = async () => {
+      if (busy || typeof document !== 'undefined' && document.visibilityState === 'hidden' || quiet()) return;
+      busy = true;
+      try {
+        const known = snapshot.current!.revision, generation = readEpoch.current;
+        const head = await request(BASE + '/' + encodeURIComponent(workspaceId) + '/revision');
+        if (!Number.isSafeInteger(head?.revision) || head.revision <= known || quiet()) return;
+        const data = await request(BASE + '/' + encodeURIComponent(workspaceId));
+        if (quiet() || generation !== readEpoch.current) return;
+        put(envelope(data.workspace, bound.userId!, workspaceId), bound);
+      } catch { /* 后台同步失败不打扰当前操作，下一轮或下一次保存时再处理。 */ }
+      finally { busy = false; }
+    };
+    const timer = setInterval(() => { void sync(); }, MIST_SYNC_INTERVAL_MS);
+    const wake = () => { void sync(); };
+    window.addEventListener('focus', wake); document.addEventListener('visibilitychange', wake);
+    return () => { stopped = true; clearInterval(timer); window.removeEventListener('focus', wake); document.removeEventListener('visibilitychange', wake); };
+  }, [authority.key, authority.userId, authority.status, boundWorkspaceId, boundEpoch, put]);
 
   const lock = React.useCallback(() => {
     if (mutation.current) throw new RequestError('已有操作正在保存，请稍候');

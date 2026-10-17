@@ -1,8 +1,8 @@
-/** 外贸与报关：后勤单证按出运登记外部申报与放行事实（本系统不代替海关 / 单一窗口申报）；信用证与退税只核对已登记事实，未接入的部分明确写出。 */
+/** 外贸与报关：后勤单证按出运登记外部申报与放行事实（本系统不代替海关 / 单一窗口申报）；退税由财务按退税率版本配单申报、登记核准与到账勾稽；信用证只核对已登记事实，未接入的部分明确写出。 */
 import React from 'react';
 import { Download, FileText, Landmark, Pencil, Plus, Receipt, SearchX, Stamp } from 'lucide-react';
 import { Banner, Button, Card, CardHeader, Checklist, DataTable, Dropdown, EmptyState, Facts, MistPage, Mono, PageHeader, Pill, Pipeline, SearchField, Segmented, Tabs, TextLink, Toolbar, type Column, type Tone } from '../../../../../components/mist';
-import type { MistInvoice, MistOrder, MistState } from '../../../../../server/src/shared/mistWorkspace';
+import type { MistCommand, MistInvoice, MistOrder, MistState } from '../../../../../server/src/shared/mistWorkspace';
 import { isRecognizedMistInvoice } from '../../../../../server/src/shared/mistWorkspace';
 import type { FulfillmentCustoms, FulfillmentShipment } from '../../../../../server/src/shared/mistFulfillment';
 import { useMistWorkspace } from '../../runtime/workspace';
@@ -13,6 +13,8 @@ import { ModuleEditorDialog, type ModuleEditorSpec } from './ModuleWorkbench';
 import { emptyOption, Events, exportRecords, field, RecordFiles, SourceLink, text, today } from './fulfillmentKit';
 import { useRouteDraft } from './useRouteDraft';
 import { ActionBar, DetailBlock, DetailBody, ListDetail, shortWhen, type ReasonedAction } from './pageKit';
+import { REBATE_TONE, RebateClaimBlock, RebateRatesCard, rebateSummary } from './RebatePanel';
+import { REBATE_STATE_LABEL } from '../../../../../server/src/shared/mistExportRebate';
 import { MODE_LABEL, packedFor, packingMatched, shipmentStage, STAGE_LABEL, STAGE_TONE } from './ShipmentsPage';
 
 type Tab = 'declarations' | 'lc' | 'rebate';
@@ -39,7 +41,7 @@ export function customsFlags(root: MistState, c: FulfillmentCustoms) {
   return flags;
 }
 
-/** Export-rebate evidence that the workspace can actually show: customs release and collection of this shipment's issued CI receivables. */
+/** Export-rebate evidence: customs release, collection of this shipment's issued CI receivables, and VAT special invoices matched or available for matching. */
 export function rebateEvidence(root: MistState, c: FulfillmentCustoms) {
   const cis = root.fulfillment.documents.filter(d => d.shipmentId === c.shipmentId && d.type === 'CI' && d.status === 'issued');
   const invoices = cis.flatMap(d => { const invoice = d.invoiceId ? root.invoices.find(row => row.id === d.invoiceId) : undefined; return invoice && isRecognizedMistInvoice(invoice) ? [invoice] : []; });
@@ -47,13 +49,15 @@ export function rebateEvidence(root: MistState, c: FulfillmentCustoms) {
   for (const invoice of invoices) if (invoice.open > 0) open.set(invoice.currency, round((open.get(invoice.currency) || 0) + invoice.open));
   const released = c.status === 'cleared';
   const collected = invoices.length > 0 && invoices.length === cis.length && open.size === 0;
-  return { released, cis, invoices, open: [...open].map(([currency, amount]) => ({ currency, amount })), collected, ready: Number(released) + Number(collected) };
+  const vat = rebateSummary(root, c);
+  return { released, cis, invoices, open: [...open].map(([currency, amount]) => ({ currency, amount })), collected, vat, ready: Number(released) + Number(collected) + Number(vat.vatReady) };
 }
 const openText = (open: Array<{ currency: string; amount: number }>) => open.map(row => `${row.currency} ${fmt(row.amount, 2)}`).join(' / ');
 
 export function CustomsPage() {
   const { state, run, error, refresh, loading, saving, pending } = useMistWorkspace(), session = useMistSession(), { go, route } = useNav();
   const can = session.hasPermission('customs:write'), canClear = session.hasPermission('customs:clear'), canInvoices = session.hasPermission('invoices:read');
+  const canRebate = session.hasPermission('invoices:write'), canReconcile = session.hasPermission('invoices:reconcile');
   const [dialog, setDialog] = useRouteDraft<ModuleEditorSpec | null>(null);
   const [tabChoice, setTab] = React.useState<Tab>('declarations'), [domainChoice, setDomainChoice] = React.useState<Domain | null>(null);
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('all'), [flagFilter, setFlagFilter] = React.useState<FlagFilter>('all'), [query, setQuery] = React.useState('');
@@ -117,7 +121,8 @@ export function CustomsPage() {
     { key: 'code', header: '报关单', width: 'minmax(150px,1.3fr)', render: c => <div className="mist-col" style={{ gap: 2 }}><Mono>{c.declarationNo}</Mono><small className="mist-muted">{shipmentOf(c)?.code} · {shipmentOf(c)?.customer}</small></div> },
     { key: 'release', header: '报关单放行', width: '120px', render: c => c.status === 'cleared' ? <div className="mist-col" style={{ gap: 2, alignItems: 'flex-start' }}><Pill tone="ok">已放行</Pill><small className="mist-muted">{c.clearedAt}</small></div> : <Pill tone="warn">待放行</Pill> },
     { key: 'collect', header: '收汇', width: 'minmax(130px,1.1fr)', render: c => { const e = rebateEvidence(state!, c); return e.collected ? <Pill tone="ok">已全部收汇</Pill> : !e.cis.length ? <span className="mist-muted">未签发 CI</span> : e.open.length ? <span className="mist-tone-bad">未收 {openText(e.open)}</span> : <span className="mist-muted">CI 应收不可用</span>; } },
-    { key: 'vat', header: '增值税发票', width: '110px', hideOnMobile: true, render: () => <span className="mist-muted">尚未接入</span> },
+    { key: 'vat', header: '增值税专票', width: '110px', hideOnMobile: true, render: c => { const v = rebateEvidence(state!, c).vat; return v.claim ? `已配 ${v.claim.lines.length} 张` : v.candidates.length ? `可配 ${v.candidates.length} 张` : <span className="mist-muted">未登记</span>; } },
+    { key: 'claim', header: '退税申报', width: 'minmax(130px,1.1fr)', render: c => { const v = rebateEvidence(state!, c).vat; return v.claim ? <div className="mist-col" style={{ gap: 2, alignItems: 'flex-start' }}><Pill tone={REBATE_TONE[v.claim.state]}>{REBATE_STATE_LABEL[v.claim.state]}</Pill><small className="mist-muted">应退 {fmt(v.claim.expected, 2)} CNY</small></div> : v.rate && v.candidates.length ? <div className="mist-col" style={{ gap: 2 }}><span className="mist-muted">未申报</span><small className="mist-muted">预计 {fmt(v.preview, 2)} CNY</small></div> : <span className="mist-muted">{v.rate ? '未申报' : '缺退税率'}</span>; } },
     { key: 'ready', header: '资料', width: '90px', align: 'right', hideOnMobile: true, render: c => `${rebateEvidence(state!, c).ready} / 3` },
   ];
   const lcColumns: Column<MistOrder>[] = [
@@ -134,10 +139,11 @@ export function CustomsPage() {
   const empty = filtered
     ? <EmptyState icon={SearchX} title="没有符合条件的报关记录" description="换个关键词或清除筛选。" action={<Button onClick={() => { setQuery(''); setStatusFilter('all'); setFlagFilter('all'); }}>清除筛选</Button>} />
     : tab === 'rebate'
-      ? <EmptyState icon={Receipt} title="还没有可核对的退税资料" description="报关单登记为已申报或已放行后，会在这里核对放行与本票 CI 收汇。" />
+      ? <EmptyState icon={Receipt} title="还没有可核对的退税资料" description="报关单登记为已申报或已放行后，会在这里核对放行、本票 CI 收汇与增值税专票，并由财务登记退税申报。" />
       : <EmptyState icon={Stamp} title={invalidContext ? '来源出运不存在' : hasContext ? '本票还没有报关记录' : `还没有${domain === 'fabric' ? '面料' : '成衣'}报关记录`} description={invalidContext ? '请返回货运管理重新选择准确出运。' : '报关记录与出运一一对应：后勤接手出运后建立记录，向海关申报后登记报关单号，放行后登记放行日与依据。'} action={createButton && !invalidContext && eligible.length ? <Button icon={Plus} onClick={() => setDialog(createSpec())}>建立报关记录</Button> : undefined} />;
   const detail = selected && state
-    ? <CustomsDetail record={selected} state={state} can={can} canClear={canClear} canInvoices={canInvoices} locked={locked}
+    ? <CustomsDetail record={selected} state={state} can={can} canClear={canClear} canInvoices={canInvoices} canRebate={canRebate} canReconcile={canReconcile} locked={locked} open={setDialog} run={run}
+        onBill={id => go('payment-vouchers', id, { section: 'payables' })} onReceipt={id => go('payment-vouchers', id)}
         onEdit={() => setDialog(editSpec(selected))} onDeclare={() => setDialog(declareSpec(selected, selected.status === 'submitted'))} onRelease={() => { if (canClear) setDialog(releaseSpec(selected)); }}
         onAttach={ids => run({ type: 'fulfillment.customs.save', payload: payload(selected, { fileIds: ids }) })}
         onShipment={() => go('shipments', selected.shipmentId)} onDocuments={() => go('document-center', undefined, { section: selected.shipmentId })} onInvoice={id => go('invoices', id)} />
@@ -147,7 +153,7 @@ export function CustomsPage() {
 
   return <MistPage width="wide">
     <PageHeader eyebrow="订单履约 · 出口" title="外贸与报关"
-      description={invalidContext ? '指定出运不存在，请返回货运管理重新进入。' : contextShipment ? `${contextShipment.code} · ${contextShipment.customer} · 仅显示本票报关。` : '后勤单证按出运登记外部申报与放行事实；本系统不代替海关或单一窗口申报。信用证与退税只核对已登记事实。'}
+      description={invalidContext ? '指定出运不存在，请返回货运管理重新进入。' : contextShipment ? `${contextShipment.code} · ${contextShipment.customer} · 仅显示本票报关。` : '后勤单证按出运登记外部申报与放行事实；本系统不代替海关或单一窗口申报。退税由财务按退税率版本配单申报、登记核准与到账；信用证只核对已登记事实。'}
       actions={<>
         {contextShipment && <Button onClick={() => go('shipments', contextShipment.id)}>返回出运</Button>}
         {hasContext && <Button onClick={() => go('customs')}>查看全部报关</Button>}
@@ -181,7 +187,7 @@ export function CustomsPage() {
         { value: 'cleared', label: '已放行', count: statusCount('cleared'), color: 'var(--mist-ok)' },
       ]} />
     </>}
-    {tab === 'rebate' && <div className="mist-section"><Banner tone="neutral" title="参考退税额与到账勾稽尚未接入">服务端还没有退税率版本、供应商增值税发票与退税到账记录。下表只核对已登记的事实：报关单放行，以及本票已签发 CI 的应收是否全部收汇。</Banner></div>}
+    {tab === 'rebate' && state && <div className="mist-section"><RebateRatesCard state={state} canWrite={canRebate} locked={locked} open={setDialog} run={run} /></div>}
     {tab === 'lc'
       ? <>
         <div className="mist-section"><Banner tone="neutral" title="信用证台账尚未接入">服务端还没有信用证号、开证行、金额、最晚装运日、有效期、交单期与不符点记录，本页不做倒计时提醒。下面列出合同约定以信用证付款的订单及其出运，便于按原件人工核对；信用证原件请保存在订单合同附件中。</Banner></div>
@@ -195,8 +201,9 @@ export function CustomsPage() {
   </MistPage>;
 }
 
-function CustomsDetail({ record: c, state, can, canClear, canInvoices, locked, onEdit, onDeclare, onRelease, onAttach, onShipment, onDocuments, onInvoice }: {
-  record: FulfillmentCustoms; state: MistState; can: boolean; canClear: boolean; canInvoices: boolean; locked: boolean;
+function CustomsDetail({ record: c, state, can, canClear, canInvoices, canRebate, canReconcile, locked, open, run, onBill, onReceipt, onEdit, onDeclare, onRelease, onAttach, onShipment, onDocuments, onInvoice }: {
+  record: FulfillmentCustoms; state: MistState; can: boolean; canClear: boolean; canInvoices: boolean; canRebate: boolean; canReconcile: boolean; locked: boolean;
+  open: (spec: ModuleEditorSpec) => void; run: (command: MistCommand) => Promise<unknown>; onBill: (id: string) => void; onReceipt: (id: string) => void;
   onEdit: () => void; onDeclare: () => void; onRelease: () => void; onAttach: (ids: string[]) => Promise<unknown>; onShipment: () => void; onDocuments: () => void; onInvoice: (id: string) => void;
 }) {
   const f = state.fulfillment, s = f.shipments.find(row => row.id === c.shipmentId), flags = customsFlags(state, c);
@@ -258,11 +265,11 @@ function CustomsDetail({ record: c, state, can, canClear, canInvoices, locked, o
       <Checklist items={[
         { label: '报关单（海关放行）', done: evidence.released, note: evidence.released ? `${c.declarationNo} · 放行 ${c.clearedAt}` : `${c.declarationNo} · 待放行` },
         { label: '收汇（本票 CI 应收）', done: evidence.collected, note: !evidence.cis.length ? '本票尚未签发 CI' : evidence.collected ? `${evidence.invoices.length} 张应收已全部收汇` : evidence.open.length ? `未收 ${openText(evidence.open)}` : 'CI 对应应收不可用', noteTone: evidence.open.length ? 'bad' : undefined },
-        { label: '增值税专用发票', done: false, note: '尚未接入：服务端还没有供应商增值税发票记录' },
+        { label: '增值税专用发票', done: evidence.vat.vatReady, note: evidence.vat.claim ? `已配单 ${evidence.vat.claim.lines.length} 张 · ${evidence.vat.claim.code}` : evidence.vat.candidates.length ? `可配单 ${evidence.vat.candidates.length} 张（本票订单的人民币专票）` : '本票订单还没有登记人民币增值税专票（财务在应付登记）' },
       ]} />
       {canInvoices && evidence.invoices.length > 0 && <div className="mist-row" style={{ flexWrap: 'wrap' }}>{evidence.invoices.map((invoice: MistInvoice) => <TextLink key={invoice.id} icon={Receipt} onClick={() => onInvoice(invoice.id)}>查看应收 {invoice.code}</TextLink>)}</div>}
-      <span className="mist-note">参考退税额与退税到账勾稽尚未接入（缺退税率版本与到账记录）。</span>
     </DetailBlock>}
+    {c.status !== 'draft' && canInvoices && <RebateClaimBlock state={state} customs={c} canWrite={canRebate} canReconcile={canReconcile} locked={locked} open={open} run={run} onBill={onBill} onReceipt={onReceipt} />}
     <DetailBlock title="附件"><RecordFiles key={c.id} ids={c.fileIds} onAttach={can && c.status !== 'cleared' && !closed ? onAttach : undefined} />{!c.fileIds.length && <span className="mist-note">报关单、放行通知等原件作为附件保存</span>}</DetailBlock>
     <DetailBlock title="处理记录"><Events entity="customs" id={c.id} /></DetailBlock>
   </DetailBody>;

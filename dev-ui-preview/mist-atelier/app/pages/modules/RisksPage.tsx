@@ -4,7 +4,7 @@
  * 严重风险的关闭、豁免、带风险放行与其他受控授权提交申请，由申请人所在部门主管在审批中心答复，结果回到本风险。
  */
 import React from 'react';
-import { AlertTriangle, ArrowUpRight, Check, Download, FileText, Gavel, Plus, ShieldAlert, Undo2, ShieldCheck, UserCheck, X } from 'lucide-react';
+import { AlertTriangle, ArrowUpRight, Download, FileText, Gavel, Plus, ShieldAlert, Undo2, ShieldCheck, UserCheck } from 'lucide-react';
 import { Banner, Button, Card, Checklist, DataTable, EmptyState, Facts, MistPage, ObjectCell, PageHeader, Pill, Segmented, SummaryBar, Timeline, type Column, type Tone } from '../../../../../components/mist';
 import type { MistState } from '../../../../../server/src/shared/mistWorkspace';
 import { platformBusinessDate } from '../../../../../server/src/shared/mistPlatform';
@@ -51,7 +51,7 @@ export function RisksPage() {
   const [dialog, setDialog] = useRouteDraft<ModuleEditorSpec | null>(null);
   React.useEffect(() => { if (route.id) setPicked(route.id); }, [route.id]);
   const canAll = session.hasPermission('risk:write'), canOrders = session.hasPermission('orders:write'), canCustomers = session.hasPermission('relations:write');
-  const canDecide = session.hasPermission('risk:admin'), me = session.user?.displayName || '', meId = session.user?.id || '';
+  const me = session.user?.displayName || '', meId = session.user?.id || '';
   const can = canAll || canOrders || canCustomers;
   const locked = saving || !!pending;
   /** 处理权（与服务端同口径的前端提示；以服务端核验为准）：风险写权限不限来源，否则须是来源负责人且持对应岗位写权限。 */
@@ -100,7 +100,6 @@ export function RisksPage() {
     submit: v => run({ type: 'platform.risk.escalate', payload: { id: r.id, action: String(v.action) as RiskRequestAction, reason: String(v.reason ?? '') } }),
   });
   const withdrawSpec = (r: RiskRecord): ModuleEditorSpec => { const e = pendingEscalation(r)!; return { title: '撤回申请', submitLabel: '撤回', description: `撤回「${RISK_ACTION_LABEL[e.action || 'authorize']}」申请后，审批中心不再显示这条申请，风险回到处理中。`, initialValues: { reason: '' }, fields: [{ key: 'reason', label: '撤回原因', type: 'textarea' }], submit: v => run({ type: 'platform.risk.withdraw', payload: { id: r.id, escalationId: e.id, reason: String(v.reason ?? '') } }) }; };
-  const decideSpec = (r: RiskRecord, decision: 'approved' | 'rejected'): ModuleEditorSpec => { const e = pendingEscalation(r)!; return { title: decision === 'approved' ? '批准升级（受控授权）' : '驳回升级（继续阻断）', submitLabel: decision === 'approved' ? '批准' : '驳回', description: `${e.requestedBy} 申请：${e.reason}`, initialValues: { note: '' }, fields: [{ key: 'note', label: '审批意见', type: 'textarea', required: true }], submit: v => run({ type: 'platform.risk.decide', payload: { id: r.id, escalationId: e.id, decision, note: String(v.note ?? '') } }) }; };
   const closeSpec = (r: RiskRecord): ModuleEditorSpec => ({ title: `关闭 ${r.title}`, submitLabel: '确认关闭', description: '写明业务问题如何解决、依据是什么。忽略提醒不等于问题已解决；关闭后只读，可回看。', initialValues: { resolution: '' }, fields: [{ key: 'resolution', label: '关闭依据', type: 'textarea', required: true }], submit: v => run({ type: 'platform.risk.transition', payload: { id: r.id, state: 'Resolved', resolution: String(v.resolution ?? '') } }) });
 
   const signalCols: Column<RiskSignal>[] = [
@@ -118,8 +117,8 @@ export function RisksPage() {
 
   const selSignal = tab === 'signals' ? signals.find(s => s.key === picked) : undefined, selRisk = tab === 'ledger' ? risks.find(r => r.id === picked) : undefined;
   const detail = selSignal ? <SignalDetail s={selSignal} risk={openByKey.get(selSignal.key)} registerReason={handleReason(selSignal.source.kind, selSignal.source.id)} locked={locked} onRegister={() => setDialog(registerSpec(selSignal))} onOpenRisk={openRisk} onSource={() => openRiskSource(go, selSignal.source.kind, selSignal.source.id)} />
-    : selRisk ? <RiskDetail r={selRisk} state={state} day={day} me={me} meId={meId} canDecide={canDecide} locked={locked} writeReason={riskReason(selRisk)}
-      onAck={() => setDialog(ackSpec(selRisk))} onPlan={() => setDialog(planSpec(selRisk))} onEscalate={a => setDialog(escalateSpec(selRisk, a))} onWithdraw={() => setDialog(withdrawSpec(selRisk))} onDecide={d => setDialog(decideSpec(selRisk, d))} onClose={() => setDialog(closeSpec(selRisk))} onSource={(k, id) => openRiskSource(go, k, id)} onApprovals={() => go('approvals')} /> : null;
+    : selRisk ? <RiskDetail r={selRisk} state={state} day={day} me={me} meId={meId} locked={locked} writeReason={riskReason(selRisk)}
+      onAck={() => setDialog(ackSpec(selRisk))} onPlan={() => setDialog(planSpec(selRisk))} onEscalate={a => setDialog(escalateSpec(selRisk, a))} onWithdraw={() => setDialog(withdrawSpec(selRisk))} onClose={() => setDialog(closeSpec(selRisk))} onSource={(k, id) => openRiskSource(go, k, id)} onApprovals={() => go('approvals')} /> : null;
   const placeholder = <EmptyState icon={tab === 'signals' ? ShieldAlert : ShieldCheck} title={tab === 'signals' ? '预警详情' : '风险详情'} description={tab === 'signals' ? '选择一条预警，查看依据与原记录；需要统筹处理时登记为风险。' : '选择一条风险，查看处置进度、升级审批与关闭依据。'} />;
   const exportRows = () => tab === 'signals'
     ? downloadModuleCsv('风险预警.csv', ['预警', '类型', '等级', '来源', '依据', '登记状态'], signalRows.map(s => [s.title, RISK_TYPE_LABEL[s.type], LEVEL[s.level].label, `${SOURCE_LABEL[s.source.kind]} ${s.source.label}`, s.basis, openByKey.get(s.key) ? RISK_STATE_LABEL[openByKey.get(s.key)!.state] : '未登记']))
@@ -134,7 +133,7 @@ export function RisksPage() {
     <div className="mist-section" data-risk-summary><SummaryBar items={[
       { label: '未登记预警', value: unregistered.length, hint: unregistered.filter(s => s.level === 'critical').length ? `其中严重 ${unregistered.filter(s => s.level === 'critical').length}` : undefined, hintTone: 'bad' },
       { label: '未关闭风险', value: open.length, hint: open.filter(r => r.planDue && r.planDue < day).length ? `方案逾期 ${open.filter(r => r.planDue && r.planDue < day).length}` : undefined, hintTone: 'warn' },
-      { label: '待审批申请', value: escalated.length, hint: escalated.some(r => { const e = pendingEscalation(r)!; return isReviewedEscalation(e) ? e.reviewerIds!.includes(meId) : canDecide && e.requestedBy !== me; }) ? '需要你答复' : undefined, hintTone: 'warn' },
+      { label: '待审批申请', value: escalated.length, hint: escalated.some(r => { const e = pendingEscalation(r)!; return isReviewedEscalation(e) && e.reviewerIds!.includes(meId); }) ? '需要你答复' : undefined, hintTone: 'warn' },
       { label: '本月关闭', value: monthClosed.length },
     ]} /></div>
     <div className="mist-section mist-row" style={{ flexWrap: 'wrap', gap: 12 }}>
@@ -165,13 +164,12 @@ function SignalDetail({ s, risk, registerReason, locked, onRegister, onOpenRisk,
   </DetailBody>;
 }
 
-function RiskDetail({ r, state, day, me, meId, canDecide, locked, writeReason, onAck, onPlan, onEscalate, onWithdraw, onDecide, onClose, onSource, onApprovals }: { r: RiskRecord; state: MistState | null; day: string; me: string; meId: string; canDecide: boolean; locked: boolean; writeReason: string | false; onAck: () => void; onPlan: () => void; onEscalate: (action?: RiskRequestAction) => void; onWithdraw: () => void; onDecide: (d: 'approved' | 'rejected') => void; onClose: () => void; onSource: (k: RiskSourceKind, id: string) => void; onApprovals: () => void }) {
+function RiskDetail({ r, state, day, me, meId, locked, writeReason, onAck, onPlan, onEscalate, onWithdraw, onClose, onSource, onApprovals }: { r: RiskRecord; state: MistState | null; day: string; me: string; meId: string; locked: boolean; writeReason: string | false; onAck: () => void; onPlan: () => void; onEscalate: (action?: RiskRequestAction) => void; onWithdraw: () => void; onClose: () => void; onSource: (k: RiskSourceKind, id: string) => void; onApprovals: () => void }) {
   const src = riskSource(state, r), esc = pendingEscalation(r), done = r.state === 'Resolved';
   const level = riskEffectiveLevel(state, r, day), high = isHighRisk(level), raised = level !== r.level;
   const decided = (r.escalations || []).filter(e => e.decision !== 'pending');
   const events = (state?.events || []).filter(e => e.entityId === r.id);
-  const reviewed = !!esc && isReviewedEscalation(esc), mine = !!esc && (esc.requesterId ? esc.requesterId === meId : esc.requestedBy === me);
-  const decideReason = !canDecide ? '需要风险审批权限（负责人）' : esc && esc.requestedBy === me ? '申请人不能审批自己的升级' : false;
+  const mine = !!esc && (esc.requesterId ? esc.requesterId === meId : esc.requestedBy === me);
   const decisionText = (e: RiskEscalation) => e.decision === 'withdrawn' ? `${e.decidedBy}撤回` : `${e.decidedBy}${e.decision === 'approved' ? '批准' : '驳回'}`;
   const steps = [
     { label: '登记', done: true, note: `${r.createdBy || '—'} · ${shortWhen(r.createdAt)}` },
@@ -182,15 +180,12 @@ function RiskDetail({ r, state, day, me, meId, canDecide, locked, writeReason, o
   ];
   const stepReason = writeReason || (r.state !== 'InProgress' ? '先制定处置方案' : false);
   return <DetailBody data-risk-detail={r.id} heading={<div><span className="mist-muted">{RISK_TYPE_LABEL[riskType(r)]} · {src ? `${SOURCE_LABEL[src.kind]} ${src.label}` : '来源未记录'}</span><div className="mist-h2" style={{ fontSize: 19, marginTop: 4 }}>{r.title}</div></div>}>
-    <div className="mist-row" style={{ flexWrap: 'wrap' }}><Pill tone={STATE_TONE[r.state]}>{r.disposition === 'waived' ? '已豁免' : RISK_STATE_LABEL[r.state]}</Pill><Pill tone={LEVEL[level].tone}>{LEVEL[level].label}{high && !done ? ' · 高风险' : ''}</Pill><Pill>负责人 {r.owner}</Pill>{r.release && !done && <Pill tone="warn">已获准带风险放行</Pill>}</div>
+    <div className="mist-row" style={{ flexWrap: 'wrap' }}><Pill tone={STATE_TONE[r.state]}>{r.disposition === 'waived' ? '已豁免' : RISK_STATE_LABEL[r.state]}</Pill><Pill tone={LEVEL[level].tone}>{LEVEL[level].label}{high && !done ? ' · 高风险' : ''}</Pill><Pill>负责人 {r.owner}</Pill>{r.release && !done && <Pill tone="warn">{r.release.shipmentId ? `带风险放行已用于 ${r.release.shipmentCode || '一票出运'}` : '已获准带风险放行（可放行一票）'}</Pill>}</div>
     {raised && !done && <p className="mist-note">登记时为{LEVEL[r.level].label}，来源预警当前已升为{LEVEL[level].label}，按当前等级处理。</p>}
-    {esc && (reviewed ? <div className="mist-col" data-risk-escalation>
+    {esc && <div className="mist-col" data-risk-escalation>
       <Banner tone="warn" title={`待部门主管审批 · ${RISK_ACTION_LABEL[esc.action || 'authorize']}`}>{esc.requestedBy} · {shortWhen(esc.requestedAt)}：{esc.reason}</Banner>
       <ActionBar busy={locked} actions={[{ label: '到审批中心', icon: ArrowUpRight, onClick: onApprovals }, { label: '撤回申请', icon: Undo2, onClick: onWithdraw, hidden: !mine }]} />
-    </div> : <div className="mist-col" data-risk-escalation>
-      <Banner tone="warn" title={`待 ${esc.approver} 审批升级`}>{esc.requestedBy} · {shortWhen(esc.requestedAt)}：{esc.reason}</Banner>
-      <ActionBar busy={locked} actions={[{ label: '批准', icon: Check, onClick: () => onDecide('approved'), reason: decideReason }, { label: '驳回', icon: X, onClick: () => onDecide('rejected'), reason: decideReason }]} />
-    </div>)}
+    </div>}
     {!done && <ActionBar busy={locked} actions={[
       { label: '接手', icon: UserCheck, onClick: onAck, primary: true, hidden: r.state !== 'Open', reason: writeReason },
       { label: r.plan ? '更新处置方案' : '制定处置方案', icon: FileText, onClick: onPlan, primary: r.state === 'Acknowledged', hidden: r.state === 'Open' || !!esc, reason: writeReason },

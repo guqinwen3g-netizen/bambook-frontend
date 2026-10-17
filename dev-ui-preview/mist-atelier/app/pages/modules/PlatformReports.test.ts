@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { agingBucket, buildCustomerSales, buildOrderMargin, buildOrderProgress, buildReceivableAging } from './PlatformReports';
+import { agingBucket, buildCustomerSales, buildOrderMargin, buildOrderMarginCny, buildOrderProgress, buildReceivableAging } from './PlatformReports';
+import { applyMistCommand, createMistState, type MistCommand, type MistContext } from '../../../../../server/src/shared/mistWorkspace';
+import { rebateCandidateBills } from '../../../../../server/src/shared/mistExportRebate';
 
 const order = (id: string, o: Record<string, unknown> = {}) => ({ id, code: 'SO-' + id, customerId: 'c-' + (o.customer ?? 'A'), customer: 'A', currency: 'USD', amount: 100, due: '2026-10-20', progress: 50, state: '生产中', tone: 'neutral', createdAt: '2026-10-01T02:00:00Z', ...o });
 const invoice = (id: string, orderId: string, o: Record<string, unknown> = {}) => ({ id, code: 'INV-' + id, orderId, order: '', customer: 'A', currency: 'USD', amount: 100, open: 100, due: '2026-10-01', ...o });
@@ -38,5 +40,24 @@ describe('报表中心', () => {
       ['2', 'foreign', 80, 10, null, null, 0, 0, 'CNY 500.00'],
       ['3', 'nocost', 50, 0, null, null, 0, 0, ''],
     ]);
+  });
+
+  it('折算人民币毛利：按口径取汇率并标暂估，含退税毛利 = 不含退税毛利 + 本单核准退税；缺汇率不出毛利', () => {
+    let n = 0; const ctx: MistContext = { id: () => `rp-${++n}`, now: '2026-10-17T04:00:00Z', actorName: '林舒', actorId: 'demo-finance' };
+    let s = createMistState(ctx, 'demo');
+    const run = (command: MistCommand) => { s = applyMistCommand(s, command, ctx).state; };
+    const customs = s.fulfillment.customs.find(c => s.fulfillment.shipments.find(x => x.id === c.shipmentId)?.state === 'departed')!;
+    run({ type: 'rebate.claim.file', payload: { customsId: customs.id, billIds: rebateCandidateBills(s, customs).map(b => b.id), filedAt: '2026-10-16', batchRef: '202610-01' } });
+    run({ type: 'rebate.claim.approve', payload: { id: s.exportRebate!.claims[0].id, date: '2026-10-17', amount: 25000, ref: '审核通知', reason: '部分计税金额调减' } });
+    const pick = (basis: 'actual' | 'period' | 'quote') => buildOrderMarginCny(s, basis, '2026-10', '2026-10-17').find(r => r.code === 'SO-G-2026-017')!;
+    const period = pick('period');
+    expect(period).toMatchObject({ status: 'ok', estimated: true, revenue: 41850, revenueCny: 297888.3, rebate: { expected: 26000, approved: 25000, received: 0 } });
+    expect(period.fx?.label).toContain('2026-09 月末 7.1180');
+    expect(Math.round((period.marginIn! - period.marginEx!) * 100) / 100).toBe(25000);
+    expect(period.marginEx).toBe(Math.round((297888.3 - period.costCny!) * 100) / 100);
+    expect(pick('quote')).toMatchObject({ status: 'ok', estimated: true, revenueCny: 301320 });
+    expect(pick('actual')).toMatchObject({ status: 'norate', marginEx: null, marginIn: null, missing: ['USD'] });
+    const eur = buildOrderMarginCny(s, 'quote', '2026-10', '2026-10-17').find(r => r.currency === 'EUR')!;
+    expect(eur.status).toBe('norate');
   });
 });

@@ -425,6 +425,7 @@ const SALES_BASE: RolePermissionMatrix = {
   'seasons:read': true,
   'seasons:write': true,
   'marketing:read': true,
+  'marketing:write': true, // 外贸业务员自行经营展会/邮件推广、线索跟进与客户画册（不设市场专岗）
   'emails:read': true,
   'emails:write': true,
   // 订单履约
@@ -456,6 +457,7 @@ const SALES_BASE: RolePermissionMatrix = {
   'invoices:read': true,
   'vouchers:read': true,
   'pricing:read': true,
+  'pricing:write': true, // 业务员按单做报价核算（换汇成本/退税/利润试算）；利润底线与佣金规则仍为 pricing:admin
   'risk:read': true,
   // 平台域
   'knowledge:read': true,

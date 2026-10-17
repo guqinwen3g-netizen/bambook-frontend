@@ -5,7 +5,7 @@ import { MistCommandError, lineAmount, mistMoneyMinor, assertMistOrderApproved, 
 import type { MistState, MistContext, MistCommandResult, MistQc, MistTarget, MistProduction } from './mistWorkspace';
 import type { MistReviewTask } from './mistReview';
 import { supplierBusinessDay, supplierUnavailableReason } from './mistSupplierStatus';
-import { relationHoldReason } from './mistRelationHold';
+import { heldShipmentRelease, relationHoldReason } from './mistRelationHold';
 import { assertOrderLineOpen, assertShipmentWithinTolerance } from './mistOrderClosure';
 import {applyClaimInventoryCommand,claimInventoryPermission,type ClaimInventoryCommand,type ClaimInventoryWarehouse,type ClaimReturnReceipt,type ClaimReceivedRecord} from './mistClaimInventory';
 export type FulfillmentSource = {
@@ -1416,11 +1416,15 @@ export function applyFulfillmentCommand(root: MistState, command: FulfillmentCom
             const at = instant(p.at, ctx, '实际离港/起飞时间');
             if (at < s.documentsSentAt!)
                 fail('实际出运不得早于单据发送');
+            const hold = heldShipmentRelease(root as any, s.customerId);
+            if (hold.held && !hold.risk)
+                fail(hold.held + '。冻结期间出运须由部门主管批准「带风险放行」（风险管理 → 申请审批），每次批准放行一票', 'PRECONDITION');
             s.departureEvidence = text(p.evidence, '实际离港/起飞依据');
             s.fileIds = [...new Set([...s.fileIds, ...files(root, p.fileIds)])];
             s.departedAt = at;
             s.state = 'departed';
             audit(root, ctx, 'shipment', s.id, '已登记实际出运', { view: 'orders/detail', id: s.lines[0].orderId, orderLineId: s.lines[0].lineId });
+            if (hold.risk?.release) { Object.assign(hold.risk.release, { shipmentId: s.id, shipmentCode: s.code, usedAt: ctx.now }); audit(root, ctx, 'risk', hold.risk.id, `带风险放行已用于 ${s.code}（往来冻结中，下一票须重新申请）`, { view: 'risks', id: hold.risk.id }); }
             return { id: s.id };
         }
         case 'fulfillment.shipments.cancel': {

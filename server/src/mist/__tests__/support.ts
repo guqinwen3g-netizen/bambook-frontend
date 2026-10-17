@@ -26,6 +26,7 @@ export class MemoryMistDatabase {
       },
       mistCommandReceipt: {
         findUnique: async ({ where }: any) => receipts.get(`${where.workspaceId_requestId.workspaceId}:${where.workspaceId_requestId.requestId}`) ?? null,
+        findMany: async ({ where }: any) => ((where?.requestId?.in ?? []) as string[]).flatMap(requestId => { const row = receipts.get(`${where.workspaceId}:${requestId}`); return row ? [row] : []; }),
         create: async ({ data }: any) => { if (this.failReceipt) throw new Error('transaction failed'); receipts.set(`${data.workspaceId}:${data.requestId}`, data); return data; },
       },
       businessSequence: {

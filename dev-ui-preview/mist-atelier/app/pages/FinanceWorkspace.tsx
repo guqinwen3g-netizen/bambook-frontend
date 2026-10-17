@@ -4,7 +4,7 @@ import { ArrowDownLeft, ArrowUpRight, Landmark, ReceiptText } from 'lucide-react
 import { Banner, Button, Card, DataTable, EmptyState, Facts, Mono, ObjectCell, Pill, SearchField, Segmented, StatCard, StatGrid, Tabs, Toolbar, type Column } from '../../../../components/mist';
 import type { MistState, MistReceipt, MistPayment } from '../../../../server/src/shared/mistWorkspace';
 import { isActiveMistInvoice, mistBankAccountBalances, mistFxLockUsage, type MistFxRecord } from '../../../../server/src/shared/mistWorkspace';
-import { AccountAssignDialog, BankAccountDialog, FxDialog, FxReverseDialog, accountLabel, editAccountDraft, newAccountDraft, newFxDraft, useBankAccountCommand } from './FinanceBankAccounts';
+import { AccountAssignDialog, BankAccountDialog, FxDialog, FxPeriodRatesCard, FxReverseDialog, accountLabel, editAccountDraft, newAccountDraft, newFxDraft, useBankAccountCommand } from './FinanceBankAccounts';
 import { useMistWorkspace } from '../runtime/workspace';
 import { useNav } from '../nav';
 import { ActionBar, DetailBlock, DetailBody, ListDetail } from './modules/pageKit';
@@ -127,6 +127,7 @@ export function FinanceAccounts() {
     ]} empty={<EmptyState title="暂无锁汇或结汇记录" description="锁汇登记银行远期合同；结汇按银行水单登记，入账后计入账户余额。" />} /></Card>
     {fx && state && <FxDialog state={state} draft={fx} onClose={() => setFx(null)} />}
     {reversing && <FxReverseDialog record={reversing} onClose={() => setReversing(null)} />}
+    <FxPeriodRatesCard />
     <Card><DataTable ariaLabel="客户应收余额（原币）" rows={customers} rowKey={r => r.id} loading={loading} onRowClick={r => { if (r.customerId) go('payment-vouchers', undefined, { section: 'open', customerId: r.customerId }); }} columns={[
       { key: 'customer', header: '客户', render: r => <ObjectCell name={r.name} meta={r.customerId ? '由来源订单确认客户' : '缺少来源客户标识，请核对'} /> },
       { key: 'count', header: '未结票据', width: '90px', align: 'right', render: r => r.invoices }, { key: 'amount', header: '未收余额', width: '150px', align: 'right', render: r => money(r.amount, r.currency) },

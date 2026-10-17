@@ -45,6 +45,7 @@ export class MistLocalDatabase{
     },
     mistCommandReceipt:{
       findUnique:async({where}:any)=>{const pair=where.workspaceId_requestId;if(!pair)invalid('本地回执查询无效',500);return clone(store.receipts[JSON.stringify([pair.workspaceId,pair.requestId])]??null);},
+      findMany:async({where}:any)=>{const ids=where?.requestId?.in;if(typeof where?.workspaceId!=='string'||!Array.isArray(ids))invalid('本地回执查询无效',500);return ids.flatMap((requestId:string)=>{const row=store.receipts[JSON.stringify([where.workspaceId,requestId])];return row?[clone(row)]:[];});},
       create:async({data}:any)=>{const key=JSON.stringify([data.workspaceId,data.requestId]);if(store.receipts[key]||Object.values(store.receipts).some(row=>row.id===data.id))duplicate();store.receipts[key]=clone(data);return clone(data);},
     },
     businessSequence:{
@@ -56,7 +57,7 @@ export class MistLocalDatabase{
   async $transaction<T>(operation:(db:ReturnType<MistLocalDatabase['delegates']>)=>Promise<T>,_options?:unknown):Promise<T>{await this.ready;return serialized(this.directory,async()=>{const original=await this.readStore(),draft=structuredClone(original);const result=await operation(this.delegates(draft));if(JSON.stringify(draft)!==JSON.stringify(original))await this.persist(draft);return structuredClone(result);});}
   private async read<T>(operation:(db:ReturnType<MistLocalDatabase['delegates']>)=>Promise<T>){await this.ready;return serialized(this.directory,async()=>operation(this.delegates(await this.readStore())));}
   get mistWorkspace(){return{findFirst:(args:any)=>this.read(db=>db.mistWorkspace.findFirst(args)),findMany:(args:any={})=>this.read(db=>db.mistWorkspace.findMany(args)),findUnique:(args:any)=>this.read(db=>db.mistWorkspace.findUnique(args)),create:(args:any)=>this.$transaction(db=>db.mistWorkspace.create(args)),update:(args:any)=>this.$transaction(db=>db.mistWorkspace.update(args))};}
-  get mistCommandReceipt(){return{findUnique:(args:any)=>this.read(db=>db.mistCommandReceipt.findUnique(args)),create:(args:any)=>this.$transaction(db=>db.mistCommandReceipt.create(args))};}
+  get mistCommandReceipt(){return{findUnique:(args:any)=>this.read(db=>db.mistCommandReceipt.findUnique(args)),findMany:(args:any)=>this.read(db=>db.mistCommandReceipt.findMany(args)),create:(args:any)=>this.$transaction(db=>db.mistCommandReceipt.create(args))};}
   get businessSequence(){return{findUnique:(args:any)=>this.read(db=>db.businessSequence.findUnique(args)),upsert:(args:any)=>this.$transaction(db=>db.businessSequence.upsert(args)),update:(args:any)=>this.$transaction(db=>db.businessSequence.update(args))};}
   async $queryRawUnsafe(sql:string,..._parameters:unknown[]){return this.read(db=>db.$queryRawUnsafe(sql));}
   async health(){return this.read(async()=>({storage:'local-file',status:'ok'}));}
@@ -74,10 +75,17 @@ export const MIST_LOCAL_PROFILES=[
   {id:'local-finance',name:'财务（测试）',roleId:SYSTEM_ROLE_IDS.FINANCE},
   {id:'local-qc',name:'质检（测试）',roleId:SYSTEM_ROLE_IDS.QC},
   {id:'local-logistics',name:'后勤单证（测试）',roleId:SYSTEM_ROLE_IDS.LOGISTICS},
+  // 演示工作空间里的经办人：用他们的身份进入，能看到示例数据中各自负责、待自己处理的事项（只在本机演示模式存在）。
+  {id:'demo-sales',name:'顾言',roleId:SYSTEM_ROLE_IDS.SALES,title:'业务员',department:'服装部'},
+  {id:'demo-buyer',name:'沈禾',roleId:SYSTEM_ROLE_IDS.SALES,title:'业务员',department:'面料部'},
+  {id:'demo-reviewer',name:'周敏',roleId:SYSTEM_ROLE_IDS.SALES_MANAGER,title:'业务主管',department:'服装部'},
+  {id:'demo-qc',name:'许言',roleId:SYSTEM_ROLE_IDS.QC,title:'QC',department:'质检'},
+  {id:'demo-warehouse',name:'陈晓',roleId:SYSTEM_ROLE_IDS.LOGISTICS,title:'后勤单证',department:'储运'},
+  {id:'demo-finance',name:'林舒',roleId:SYSTEM_ROLE_IDS.FINANCE,title:'财务',department:'财务部'},
 ] as const;
 export function mistLocalPublicUser(profileId:string){const profile=MIST_LOCAL_PROFILES.find(p=>p.id===profileId);if(!profile)invalid('本地工作身份不存在',401);
   if(!('roleId' in profile))return{id:profile.id,displayName:profile.name,email:'',roles:['owner'],roleIds:['role-super-admin'],permissions:['*'],departmentIds:[],department:'本地工作空间',globalBusinessScope:true,authorizationLoaded:true,mistLocal:true};
-  return{id:profile.id,displayName:profile.name,email:'',roles:[] as string[],roleIds:[profile.roleId],permissions:getDefaultScopeListForRole(profile.roleId),departmentIds:[],department:'本地工作空间',globalBusinessScope:false,authorizationLoaded:true,mistLocal:true};}
+  return{id:profile.id,displayName:profile.name,email:'',roles:[] as string[],roleIds:[profile.roleId],permissions:getDefaultScopeListForRole(profile.roleId),departmentIds:[],department:'department' in profile?profile.department:'本地工作空间',globalBusinessScope:false,authorizationLoaded:true,mistLocal:true};}
 export type MistLocalRuntime=ReturnType<typeof createMistLocalRuntime>;
 export function createMistLocalRuntime(options:{directory?:string;host?:string;env?:NodeJS.ProcessEnv;now?:()=>number}={}){
   assertMistLocalMode(options.host??'127.0.0.1',options.env??process.env);

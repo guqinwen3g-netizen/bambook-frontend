@@ -79,6 +79,14 @@ export function mailMatches(state: MistState, m: EmailMessage, scope: MailScope)
   return !m.links.length;
 }
 
+/** 自动收信间隔：与常见邮件客户端的轮询频率一致。 */
+export const MAIL_AUTO_SYNC_MS = 5 * 60_000, MAIL_AUTO_SYNC_TICK_MS = 60_000, MAIL_AUTO_SYNC_FIRST_MS = 3_000;
+/** 需要后台同步的邮箱：真实且已绑定凭据、不在同步中，距上次成功同步与上次失败都已满间隔。 */
+export function emailAutoSyncDue(accounts: EmailAccount[], now: number): EmailAccount[] {
+  const old = (at: string | null | undefined) => !at || !(now - Date.parse(at) < MAIL_AUTO_SYNC_MS);
+  return accounts.filter(a => isReal(a) && a.credentialSet && a.connection !== 'not_connected' && a.connection !== 'syncing' && old(a.lastSyncAt) && old(a.lastError?.at));
+}
+
 export function EmailsPage() {
   const { state, run, error, refresh, recover, loading, saving, pending, mail: mailAction, closeMailReview, downloadFile } = useMistWorkspace(), session = useMistSession(), { go, route } = useNav(), toast = useToast();
   const can = session.hasPermission('emails:write'), canAdmin = session.hasPermission('emails:admin'), locked = saving || !!pending;
@@ -216,6 +224,29 @@ export function EmailsPage() {
     if (problems.length) setNotice({ tone: 'warn', title: '部分邮箱未完成同步', text: problems.join('；') });
     else toast(remaining ? `已同步一批，还有约 ${remaining} 封待同步，可再次同步` : '同步完成');
   };
+  // 自动收信：邮件页打开且窗口在前台时每分钟检查一次，距上次同步（或上次失败）满 5 分钟的已绑定邮箱在后台增量同步。
+  // 后台失败不打断当前操作（原因记在邮箱状态上）；手动"同步"随时可用。写信、核对等保存中的操作期间不发起。
+  const auto = React.useRef({ running: false, can, locked, accounts, toast, tried: new Map<string, number>() });
+  Object.assign(auto.current, { can, locked, accounts, toast });
+  React.useEffect(() => {
+    if (!mailAction) return;
+    const tick = async () => {
+      const ref = auto.current;
+      if (ref.running || !ref.can || ref.locked || (typeof document !== 'undefined' && document.visibilityState === 'hidden')) return;
+      const now = Date.now(), due = emailAutoSyncDue(ref.accounts, now).filter(a => !(now - (ref.tried.get(a.id) || 0) < MAIL_AUTO_SYNC_MS));
+      if (!due.length) return;
+      ref.running = true; let added = 0;
+      try {
+        for (const a of due) {
+          ref.tried.set(a.id, now);
+          try { const result = await mailAction({ kind: 'sync', accountId: a.id }); added += Number(result?.sync?.added || 0); } catch { /* 原因已写在邮箱状态上 */ }
+        }
+      } finally { ref.running = false; }
+      if (added) ref.toast(`收到 ${added} 封新邮件`);
+    };
+    const first = setTimeout(() => void tick(), MAIL_AUTO_SYNC_FIRST_MS), timer = setInterval(() => void tick(), MAIL_AUTO_SYNC_TICK_MS);
+    return () => { clearTimeout(first); clearInterval(timer); };
+  }, [mailAction]);
   const downloadAttachment = async (fileId: string) => { const file = state?.files.find(row => row.id === fileId); if (!file) { setFailure('附件文件不可用，请重新同步'); return; } setFailure(''); try { await downloadFile(file); } catch (problem) { setFailure(problemText(problem, '附件下载失败，请重试')); } };
   const blankInput = (account?: EmailAccount): EmailDraftInput => ({ accountId: account?.id || '', from: account?.address || '', to: '', cc: '', bcc: '', subject: '', body: account?.signature ? `\n\n--\n${account.signature}` : '', template: '', links: [], fileIds: [] });
   const defaultAccount = accounts.find(a => a.id === accountId) || accounts.find(a => a.kind === 'personal') || accounts[0];
@@ -300,7 +331,7 @@ export function EmailsPage() {
   return <MistPage width="wide">
     <PageHeader eyebrow="我的事务" title="智能邮箱" description="个人与共享邮箱的真实收发；可标记、关联客户 / 开发案 / 订单 / 发票，生成跟进待办，并把抽取资料提交给业务对象复核。"
       actions={<>
-        <Button icon={RotateCcw} disabled={!can || locked || !syncable.length} title={!syncable.length ? '没有已绑定凭据的真实邮箱可同步' : undefined} onClick={() => void syncNow()}>同步</Button>
+        <Button icon={RotateCcw} disabled={!can || locked || !syncable.length} title={!syncable.length ? '没有已绑定凭据的真实邮箱可同步' : '页面打开时每 5 分钟自动收信，也可立即同步'} onClick={() => void syncNow()}>同步</Button>
         <Button icon={Settings2} onClick={toAccounts}>邮箱账号</Button>
         {can && <Button variant="primary" icon={PenLine} disabled={!accounts.length || locked} title={accounts.length ? undefined : '尚未接入任何邮箱'} onClick={() => setCompose({ input: blankInput(defaultAccount) })}>写邮件</Button>}
       </>} />

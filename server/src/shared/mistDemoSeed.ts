@@ -11,7 +11,7 @@ import { demoFileRecord, type DemoFileTemplate } from './mistDemoFiles';
 import { riskSignals } from './mistRisk';
 import { MIST_DEMO_ACCOUNTS } from './mistAccounts';
 
-export const DEMO_SEED_VERSION = 14;
+export const DEMO_SEED_VERSION = 16;
 export type DemoSeedFailure = { step: string; message: string };
 
 const DAY = 86400000;
@@ -72,13 +72,13 @@ export function seedDemoModules(initial: MistState, context: MistContext): { sta
   cert(jiangnan, 'BSCI 社会责任审核', 'DBID 429-8811', 'amfori', -5);
   cert(jiangnan, 'ISO 9001', 'CN-QMS-22178', 'SGS', 410);
   cert(baotai, 'OEKO-TEX Standard 100', 'HK-024 77310', 'Hohenstein', 160);
-  const rate = (sid: string, grade: 'A' | 'B' | 'C' | 'D', period: string, note: string) => { if (sid) run('supplier rate ' + period, { type: 'market.supplier.rate', payload: { supplierId: sid, grade, period, note } }, buyer); };
+  const rate = (sid: string, grade: 'A' | 'B' | 'C' | 'D', period: string, note: string) => { if (sid) run('supplier rate ' + period, { type: 'market.supplier.rate', payload: { supplierId: sid, grade, period, note } }, reviewer); };
   rate(jiangnan, 'B', '2026 Q2', '交期稳定，返修率 2.1%，略高于目标');
   rate(jiangnan, 'A', '2026 Q3', '准交 100%，返修率降到 0.8%');
   rate(huasheng, 'B', '2026 Q3', '准交良好；一批燕麦色双面呢色差 20 米退回');
   rate(baotai, 'A', '2026 Q3', '到货点数无误，响应快');
   rate(hengcai, 'C', '2026 Q3', '两批色牢度不达标，已要求整改');
-  if (hengcai) run('supplier pause', { type: 'market.supplier.status', payload: { id: hengcai, status: 'paused', reason: '色牢度两批不达标，整改报告待复核' } }, buyer);
+  if (hengcai) run('supplier pause', { type: 'market.supplier.status', payload: { id: hengcai, status: 'paused', reason: '色牢度两批不达标，整改报告待复核' } }, reviewer);
 
   /* ───────── 往来单位：客户身份、货代、报关行 ───────── */
   const relation = (name: string, category: 'Customer' | 'Agent' | 'Partner' | 'Government', country: string, address: string, aliases: string[], customerId = '') => id(run('relation ' + name, { type: 'market.relation.save', payload: { input: { name, category, customerId, supplierId: '', country, address, aliases, fileIds: [], note: '' } } }));
@@ -203,6 +203,9 @@ export function seedDemoModules(initial: MistState, context: MistContext): { sta
 
   /* ───────── 定金到账与归属：导入银行流水后确认归属到订单（开产前置条件） ───────── */
   const finance = actor('林舒', 'demo-finance');
+  // 月末汇率（报表“月末暂估”口径）：财务每月初登记上月末中间价。
+  const prevMonth = (() => { const d = new Date(context.now); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - 1); return d.toISOString().slice(0, 7); })();
+  for (const [cur, rate] of [['USD', '7.1180'], ['EUR', '8.2915']] as const) run('fx month-end ' + cur, { type: 'fxrate.period.save', payload: { month: prevMonth, currency: cur, rate, source: `中国人民银行 ${prevMonth} 月末中间价（演示）` } }, finance);
   const pricingGarment = state.orders.find(o => o.code === 'SO-G-2026-017'), pricingFabric = state.orders.find(o => o.type === 'fabric');
   if (pricingGarment) run('pricing garment reference', { type: 'platform.pricing.save', payload: { orderId: pricingGarment.id, purchaseCostCny: 280, refundRate: 13, exchangeRate: 7.2, profitMargin: 20, commissionRate: 5, basis: '软件演示试算：羊毛西装套装 CNY/套；280 为演示工厂参考，退税13%、CNY/USD 7.2 仅为演示参数，不是实际成本或生效市场汇率。' } });
   if (pricingFabric) run('pricing fabric reference', { type: 'platform.pricing.save', payload: { orderId: pricingFabric.id, purchaseCostCny: 48, refundRate: 13, exchangeRate: 7.2, profitMargin: 20, commissionRate: 0, basis: '软件演示试算：毛呢面料 CNY/米；按演示规格与计价单位核对，参数仅供软件演示，不自动改报价或合同。' } });
@@ -252,15 +255,15 @@ export function seedDemoModules(initial: MistState, context: MistContext): { sta
 
   /* ───────── 样品：借出、寄客户 ───────── */
   const returnedSamples = state.fulfillment.samples.filter(s => s.available > 0);
-  if (returnedSamples[0]) run('sample lend', { type: 'fulfillment.samples.move', payload: { id: returnedSamples[0].id, kind: 'lend', quantity: 1, person: '沈禾', location: '版房', note: '版师核对袖笼', expectedReturn: day(3) } }, warehouse);
-  if (returnedSamples[1]) run('sample send', { type: 'fulfillment.samples.move', payload: { id: returnedSamples[1].id, kind: 'send', quantity: 1, person: 'DHL 1Z84 2207 31', location: 'Cedar & Crown 伦敦', note: '客户评审样' } }, warehouse);
+  if (returnedSamples[0]) run('sample lend', { type: 'fulfillment.samples.move', payload: { id: returnedSamples[0].id, kind: 'lend', quantity: 1, person: '沈禾', location: '版房', note: '版师核对袖笼', expectedReturn: day(3) } }, buyer);
+  if (returnedSamples[1]) run('sample send', { type: 'fulfillment.samples.move', payload: { id: returnedSamples[1].id, kind: 'send', quantity: 1, person: 'DHL 1Z84 2207 31', location: 'Cedar & Crown 伦敦', note: '客户评审样' } }, buyer);
 
   /* ───────── QC：产前样通过、生产中期抽检未通过、待领取任务 ───────── */
   const productionOf = (code: string) => state.productions.find(p => p.code === code);
   const sampleQc = (productionCode: string, role: 'pp' | 'shipping', result: 'pass' | 'reject', shipmentId?: string) => {
     const job = productionOf(productionCode); if (!job) return '';
     const source = { kind: 'orderLine' as const, orderId: job.orderId, lineId: job.lineId, productionId: job.id };
-    const sampleId = id(run(`sample ${role} ${productionCode}`, { type: 'fulfillment.samples.create', payload: { name: `${job.name} ${role === 'pp' ? '产前样' : '船样'}`, category: '成衣', form: '实物', quantity: 1, unit: '件', size: 'M', color: '', location: '样品间 A-3', source, role, shipmentId, note: '', fileIds: [] } }, warehouse));
+    const sampleId = id(run(`sample ${role} ${productionCode}`, { type: 'fulfillment.samples.create', payload: { name: `${job.name} ${role === 'pp' ? '产前样' : '船样'}`, category: '成衣', form: '实物', quantity: 1, unit: '件', size: 'M', color: '', location: '样品间 A-3', source, role, shipmentId, note: '', fileIds: [] } }, buyer));
     if (!sampleId) return '';
     const task = id(run(`qc ${role} ${productionCode}`, { type: 'fulfillment.qc.request', payload: { source, sampleId, kind: 'sample', domain: 'garment', factory: job.factory, location: job.factory + ' 样衣间', contact: '王建国', due: day(-1) } }, sales));
     if (!task) return '';
@@ -295,7 +298,7 @@ export function seedDemoModules(initial: MistState, context: MistContext): { sta
     run('terms 017', { type: 'fulfillment.shipments.sourceTerms', payload: { orderId: order017.id, consignee: 'Northwind Atelier AB, Stockholm', partialAllowed: true, mode: 'sea', confirmedAt: day(-40), evidence: '合同第 5 条，允许分批' } }, sales);
     for (const item of (state.orders.find(o => o.id === order017.id)?.checklist || []).filter(i => ['拟发范围确认', '收货与贸易条款确认', '收款条件核对'].includes(i.label))) run('checklist ' + item.label, { type: 'order.checklist', payload: { orderId: order017.id, itemId: item.id, done: true } } as unknown as MistCommand, sales);
     run('handoff 017', { type: 'order.handoff', payload: { orderId: order017.id, note: '第一批 500 件交接后勤安排出运' } } as unknown as MistCommand, sales);
-    const ship = id(run('shipment 017', { type: 'fulfillment.shipments.save', payload: { consignee: 'Northwind Atelier AB, Stockholm', mode: 'sea', portOfLoading: '上海洋山', portOfDischarge: '哥德堡', incoterm: 'FOB', plannedDate: day(-4), booking: 'MSKU 7741 2093', lines: [{ orderId: order017.id, lineId: job017.lineId, productionId: job017.id, quantity: job017.qty, factoryConfirmedAt: day(-7) }], note: '第一批', fileIds: [] } }, warehouse));
+    const ship = id(run('shipment 017', { type: 'fulfillment.shipments.save', payload: { consignee: 'Northwind Atelier AB, Stockholm', mode: 'sea', portOfLoading: '上海洋山', portOfDischarge: '哥德堡', incoterm: 'FOB', plannedDate: day(-4), booking: 'MSKU 7741 2093', lines: [{ orderId: order017.id, lineId: job017.lineId, productionId: job017.id, quantity: job017.qty, factoryConfirmedAt: day(-7) }], note: '第一批', fileIds: [] } }, sales));
     if (ship) {
       sampleQc('PO-L-0411', 'shipping', 'pass', ship);
       run('pack 017', { type: 'fulfillment.shipments.pack', payload: { id: ship, lines: Array.from({ length: 5 }, (_, i) => ({ lineId: job017.lineId, productionId: job017.id, carton: `${i * 20 + 1}-${i * 20 + 20}`, quantity: 100, netWeight: 96, grossWeight: 108, volume: 1.15, note: '' })) } }, warehouse);
@@ -309,6 +312,12 @@ export function seedDemoModules(initial: MistState, context: MistContext): { sta
       run('ready 017', { type: 'fulfillment.shipments.ready', payload: { id: ship } }, warehouse);
       run('documents sent 017', { type: 'fulfillment.shipments.sent', payload: { id: ship, at: at(-5, 9) } }, sales);
       run('depart 017', { type: 'fulfillment.shipments.depart', payload: { id: ship, at: at(-4, 6), evidence: '船公司装船通知 · 提单 MSKU77412093', fileIds: [] } }, warehouse);
+      /* 出口退税：向江南成衣采购成品（工厂开 13% 增值税专票）→ 财务登记专票与退税率；退税申报留给财务在报关页演示配单。 */
+      const unit017 = state.orderLines.find(l => l.id === job017.lineId)?.unit || '套';
+      const finishedPo = id(run('purchase finished 017', { type: 'fulfillment.procurement.save', payload: { orderId: order017.id, lineId: job017.lineId, kind: 'finished', supplierId: jiangnan, supplier: '', description: '修身羊毛西装套装成品（含面辅料、加工、包装）· 第一批 500 件', quantity: 500, unit: unit017, price: 452, currency: 'CNY', due: day(-8), terms: '出运后 30 天付清，凭增值税专用发票', destination: '上海洋山', note: '含税价，税率 13%', fileIds: [] } }, buyer));
+      approveAndConfirm(finishedPo, 'purchase finished 017', -30);
+      if (finishedPo) run('bill vat 017', { type: 'payable.bill.register', payload: { supplierId: jiangnan, invoiceNo: '33002641 04517712', invoiceDate: day(-3), currency: 'CNY', amount: 226000, taxAmount: 26000, taxRate: '13%', lines: [{ purchaseId: finishedPo, amount: 226000 }], due: day(26), dueBasis: '合同：出运后 30 天付清', fileIds: [demoFile('vat-invoice', finishedPo, '增值税专用发票 江南成衣 SO-G-2026-017（演示）.pdf')], note: '数电专票，已勾选确认用途（出口退税）' } }, finance);
+      run('rebate rate 6203.31', { type: 'rebate.rate.save', payload: { hsCode: '6203.31', rate: '13', effectiveFrom: '2019-04-01', basis: '财政部 税务总局 海关总署公告 2019 年第 39 号（演示）' } }, finance);
     }
   }
   const order018 = state.orders.find(o => o.code === 'SO-G-2026-018');
