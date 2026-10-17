@@ -2,11 +2,11 @@ import {describe,expect,it} from 'vitest';
 import {applyMistCommand,createMistState,MistCommandError,mistCommandPermission,mistMoneyMinor,mistBankAccountBalances,mistFxLockUsage,mistFxRate,type MistCommand,type MistContext} from './mistWorkspace';
 const context=()=>{let id=0;return {now:'2026-10-13T08:00:00.000Z',actorName:'验证员',id:()=>`test-${++id}`} satisfies MistContext;};
 function approvedOrderFixture(amount=100){
- const ctx:MistContext={...context(),actorId:'business',authority:{supplier:{},orderReviewerIds:{garment:['reviewer'],fabric:['reviewer']}}};let state=createMistState(ctx,'empty');
- state.customers.push({id:'customer',name:'客户公司',code:'C',country:'CN',city:'',industry:'',owner:'业务',grade:'',currency:'USD',terms:'',incoterm:'',categories:'',creditLimit:0,since:''});
+ const ctx:MistContext={...context(),actorId:'business',members:[{id:'business',name:'业务',active:true,groups:['fabric','garment']}],authority:{supplier:{},orderReviewerIds:{garment:['reviewer'],fabric:['reviewer']}}};let state=createMistState(ctx,'empty');
+ state.customers.push({id:'customer',name:'客户公司',code:'C',country:'CN',city:'',industry:'',owner:'业务',ownerId:'business',grade:'',currency:'USD',terms:'',incoterm:'',categories:'',creditLimit:0,since:''});
  state.files.push({id:'contract',name:'confirmed-contract.pdf',mimeType:'application/pdf',size:1,storageKey:'fixture/contract',createdAt:ctx.now});
  const run=(command:MistCommand,actor=ctx)=>{const result=applyMistCommand(state,command,actor);state=result.state;return result.result;};
- const orderId=run({type:'order.create',payload:{type:'garment',customerId:'customer',season:'AW',currency:'USD',due:'2026-12-01',owner:'业务',governance:{kind:'external',poNumber:'TEST-PO',confirmationFileIds:['contract'],internalPurpose:'',receiver:'',paymentMethod:'TT',depositPercent:30,paymentNote:'30%定金，余款按合同',incoterm:'FOB',deliveryPlace:'上海'},lines:[{name:'实际商品',style:'A',qty:1,unit:'件',price:amount,img:'coat'}]}}).orderId!;
+ const orderId=run({type:'order.create',payload:{type:'garment',customerId:'customer',season:'AW',currency:'USD',due:'2026-12-01',ownerId:'business',governance:{kind:'external',poNumber:'TEST-PO',confirmationFileIds:['contract'],internalPurpose:'',receiver:'',paymentMethod:'TT',depositPercent:30,paymentNote:'30%定金，余款按合同',incoterm:'FOB',deliveryPlace:'上海'},lines:[{name:'实际商品',style:'A',qty:1,unit:'件',price:amount,img:'coat'}]}}).orderId!;
  run({type:'order.governance.submit',payload:{orderId}});run({type:'order.governance.decide',payload:{id:orderId,decision:'approved',note:'核对已签合同主单'}},{...ctx,actorId:'reviewer'});
  return{ctx,orderId,run,get state(){return state;}};
 }

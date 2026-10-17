@@ -223,24 +223,36 @@ describe('来源负责人按稳定账号判断，不按显示姓名', () => {
     s = inProgress(s, id, me);
     expect(() => run(s, { type: 'platform.risk.plan', payload: { id, plan: 'y' } }, sales(owner, { orders: false }))).toThrow(/本人负责/);
   });
-  it('负责人绑定只由服务端写：本人建单绑定；改派他人解除；请求体带 ownerId 无效；改回本人重新绑定', () => {
+  it('负责人按账号 ID 选择：同名账号不会互相冒用；非成员 / 已停用被拒且数据不变；负责人不变的修改保留原账号', () => {
+    const members = [
+      { id: 'id-业务甲', name: '业务甲', active: true, groups: ['garment' as const] },
+      { id: 'id-twin-业务甲', name: '业务甲', active: true, groups: [] },
+      { id: 'id-业务乙', name: '业务乙', active: true, groups: [] },
+      { id: 'id-离职', name: '离职', active: false, groups: [] },
+    ];
+    const withMembers = (c: MistContext): MistContext => ({ ...c, members });
     const c0 = ctx('顾言'), base = createMistState(c0, 'empty');
-    const boss = ctx('周经理'), me = sales('业务甲'), impostor = twin('业务甲');
-    let s = run(base, { type: 'market.customer.create', payload: { input: { name: '合成客户', country: '', city: '', industry: '', owner: '业务甲', grade: '', currency: 'USD', terms: '', incoterm: '', categories: '', creditLimit: 0, since: '2026-10-14' } } }, me).state;
-    const cu = s.customers.find(x => x.name === '合成客户')!; expect(cu.ownerId).toBe('id-业务甲');
-    // 主管把客户改派给“业务乙”：只有姓名文本，不能确认账号 → 解除绑定。
-    s = run(s, { type: 'market.customer.update', payload: { id: cu.id, patch: { owner: '业务乙' } } }, boss).state;
-    expect(s.customers.find(x => x.id === cu.id)!.ownerId).toBeUndefined();
-    // 请求体想直接写入 ownerId：被忽略。
-    s = run(s, { type: 'market.customer.update', payload: { id: cu.id, patch: { city: '杭州', ownerId: 'id-业务甲' } as any } }, boss).state;
-    expect(s.customers.find(x => x.id === cu.id)!.ownerId).toBeUndefined();
-    // 同名账号把负责人填回“业务甲”：绑定的是执行人自己的账号，不会冒用原负责人账号。
-    const t = run(s, { type: 'market.customer.update', payload: { id: cu.id, patch: { owner: '业务甲' } } }, impostor).state;
+    const boss = withMembers(ctx('周经理')), me = withMembers(sales('业务甲')), impostor = withMembers(twin('业务甲'));
+    let s = run(base, { type: 'market.customer.create', payload: { input: { name: '合成客户', country: '', city: '', industry: '', ownerId: 'id-业务甲', grade: '', currency: 'USD', terms: '', incoterm: '', categories: '', creditLimit: 0, since: '2026-10-14' } } }, me).state;
+    const cu = s.customers.find(x => x.name === '合成客户')!; expect(cu).toMatchObject({ ownerId: 'id-业务甲', owner: '业务甲' });
+    // 只给姓名文本不再被接受。
+    expect(() => run(s, { type: 'market.customer.update', payload: { id: cu.id, patch: { owner: '业务乙' } as any } }, boss)).toThrow(/按账号选择/);
+    // 非成员 / 已停用账号：服务端拒绝，数据不变。
+    const before = JSON.stringify(s);
+    expect(() => run(s, { type: 'market.customer.update', payload: { id: cu.id, patch: { ownerId: 'id-外人' } } }, boss)).toThrow(/须为本工作区的成员账号/);
+    expect(() => run(s, { type: 'market.customer.update', payload: { id: cu.id, patch: { ownerId: 'id-离职' } } }, boss)).toThrow(/已停用/);
+    expect(JSON.stringify(s)).toBe(before);
+    // 改派给业务乙：写入账号与显示名快照，并留下“负责人：A→B”。
+    s = run(s, { type: 'market.customer.update', payload: { id: cu.id, patch: { ownerId: 'id-业务乙' } } }, boss).state;
+    expect(s.customers.find(x => x.id === cu.id)).toMatchObject({ ownerId: 'id-业务乙', owner: '业务乙' });
+    expect(s.events.some(e => e.text.includes('负责人：业务甲→业务乙'))).toBe(true);
+    // 同名的两个账号按 ID 区分。
+    const t = run(s, { type: 'market.customer.update', payload: { id: cu.id, patch: { ownerId: 'id-twin-业务甲' } } }, impostor).state;
     expect(t.customers.find(x => x.id === cu.id)!.ownerId).toBe('id-twin-业务甲');
-    s = run(s, { type: 'market.customer.update', payload: { id: cu.id, patch: { owner: '业务甲' } } }, me).state;
+    s = run(s, { type: 'market.customer.update', payload: { id: cu.id, patch: { ownerId: 'id-业务甲' } } }, boss).state;
     expect(s.customers.find(x => x.id === cu.id)!.ownerId).toBe('id-业务甲');
-    // 负责人不变的其他修改保留原绑定。
-    s = run(s, { type: 'market.customer.update', payload: { id: cu.id, patch: { city: '苏州' } } }, impostor).state;
+    // 负责人不变的其他修改保留原账号。
+    s = run(s, { type: 'market.customer.update', payload: { id: cu.id, patch: { city: '苏州' } } }, me).state;
     expect(s.customers.find(x => x.id === cu.id)!.ownerId).toBe('id-业务甲');
   });
 });

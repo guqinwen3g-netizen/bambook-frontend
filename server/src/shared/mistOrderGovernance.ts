@@ -1,6 +1,7 @@
 /** Formal order approval and proposed commercial changes, independent of the Mist view layer. */
 import {MistCommandError,lineAmount,mistMoneyMinor,type MistContext,type MistState,type MistOrder,type MistOrderLine,type MistCommandResult} from './mistWorkspace';
 import type {MistReviewTask} from './mistReview';
+import {ownerChangeText,resolveMember} from './mistAccounts';
 import {assertOrderLineSource,normalizeOrderLineSource} from './mistOrderSource';
 import {breakdownSummary,lineQuantityFromBreakdown,type OrderLineBreakdown} from './mistOrderBreakdown';
 import {CLOSE_SETTLEMENT_HINT,closureLabel,lineShipmentFacts,normalizeTolerancePercent,toleranceRange,toleranceText,type ClosableLine,type OrderLineClosure,lineShipLimit,overShipLabel,pendingOverShip,assertOrderLineOpen,type OverShipRequest} from './mistOrderClosure';
@@ -21,7 +22,7 @@ export type OrderCancellation={id:string;status:'pending'|'approved'|'rejected';
 export type OrderTermination={kind:'void'|'cancelled';reason:string;at:string;byId:string;byName:string};
 export type OrderGovernanceFields={contract:OrderGovernanceInput;status:'draft'|'pending'|'approved'|'rejected'|'void'|'cancelled';cancellation?:OrderCancellation;termination?:OrderTermination;rounds:OrderGovernanceRound[];effectiveVersion:number;approvedAt?:string;approvedBy?:string;approvedSnapshot?:OrderGovernanceSnapshot;changeDraft?:OrderGovernanceProposal};
 export type OrderGovernanceCommand=
- |{type:'order.governance.saveDraft';payload:{orderId:string;input:OrderGovernanceInput;orderPatch?:Partial<Pick<MistOrder,'season'|'currency'|'due'|'owner'>>;lines?:OrderGovernanceLine[];reason?:string}}
+ |{type:'order.governance.saveDraft';payload:{orderId:string;input:OrderGovernanceInput;orderPatch?:Partial<Pick<MistOrder,'season'|'currency'|'due'|'ownerId'>>;lines?:OrderGovernanceLine[];reason?:string}}
  |{type:'order.governance.submit';payload:{orderId:string}}
  |{type:'order.governance.decide';payload:{id:string;decision:'approved'|'rejected';note:string}}
  |{type:'order.governance.discardChange';payload:{orderId:string}}
@@ -96,7 +97,8 @@ export function applyOrderGovernanceCommand(root:MistState,command:OrderGovernan
    for(const line of root.orderLines.filter(l=>l.orderId===id) as ClosableLine[]){if(!line.closure||line.closure.status==='rejected')continue;const next=lines.find(l=>l.id===line.id);if(!next||next.qty!==line.qty||JSON.stringify(next.breakdown||null)!==JSON.stringify((line as ClosableLine&{breakdown?:unknown}).breakdown||null))fail(`条目「${line.style} · ${line.name}」${line.closure.status==='closed'?'已结案':'结案审批中'}，不能再改数量`,'PRECONDITION');}
    g.changeDraft={contract,orderPatch,lines,reason,status:'draft'};event(root,context,order,'保存订单变更草稿，原批准内容继续生效');
   }else{g.contract=contract;g.status='draft';applySnapshot(root,order,{...snapshot(root,order),...orderPatch,contract,lines});order.state='订单草稿';order.tone='neutral';event(root,context,order,'保存订单合同草稿');}
-  if(p.orderPatch?.owner!==undefined)order.owner=text(p.orderPatch.owner,'负责人',true);order.updatedAt=context.now;return{id,orderId:id};
+  if((p.orderPatch as Record<string,unknown>|undefined)?.owner!==undefined)fail('负责人须按账号选择');
+  if(p.orderPatch?.ownerId!==undefined&&p.orderPatch.ownerId!==order.ownerId){const next=resolveMember(context,p.orderPatch.ownerId,'订单负责人');event(root,context,order,ownerChangeText('负责人',order.owner,next.name));order.owner=next.name;order.ownerId=next.id;}order.updatedAt=context.now;return{id,orderId:id};
  }
  if(command.type==='order.governance.discardChange'){if(g.changeDraft?.status==='pending')fail('审批中的变更不能直接删除');delete g.changeDraft;event(root,context,order,'放弃尚未生效的变更草稿');return{id,orderId:id};}
  if(command.type==='order.governance.submit'){
@@ -212,7 +214,7 @@ function voidOrder(root:MistState,p:{orderId:string;reason:string},context:MistC
  if(g.status==='void')fail('订单已作废','PRECONDITION');if(g.status==='cancelled')fail('订单已取消','PRECONDITION');
  if(g.status==='pending')fail('订单审批中，请先撤回或等待审批决定后再作废','PRECONDITION');
  if(g.status==='approved')fail('已批准订单不能作废，请发起取消订单申请','PRECONDITION');
- if(order.owner&&order.owner!==context.actorName)fail('仅订单负责人可作废','FORBIDDEN');
+ if(order.ownerId!==context.actorId)fail('仅订单负责人可作废','FORBIDDEN');
  const reason=text(p.reason,'作废原因',true,500);
  g.status='void';g.termination={kind:'void',reason,at:context.now,byId:context.actorId||'',byName:context.actorName};delete g.changeDraft;
  order.state='已作废';order.tone='neutral';

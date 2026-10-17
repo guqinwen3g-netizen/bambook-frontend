@@ -15,7 +15,7 @@ const acceptedVersionQuote=(s:MistState&{market:MarketState},ctx:MistContext,ver
   run(s,{type:'market.quotation.status',payload:{id,status:'Sent',evidence:'已交付'}},ctx);run(s,{type:'market.quotation.status',payload:{id,status:'Accepted',evidence:'已接受'}},ctx);
   return {id,type:(fabric?'fabric':'garment') as 'fabric'|'garment',v,dev};
 };
-const convert=(s:MistState,ctx:MistContext,id:string,type:'fabric'|'garment')=>run(s,{type:'market.quotation.convert',payload:{id,type,due:'2026-12-01',owner:'业务员'}},ctx);
+const convert=(s:MistState,ctx:MistContext,id:string,type:'fabric'|'garment')=>run(s,{type:'market.quotation.convert',payload:{id,type,due:'2026-12-01',ownerId:'sales'}},ctx);
 describe('BB-QUO-4 转订单须开发版本已获需求方认可',()=>{
  it('rejects a quotation whose development version has no confirmation, naming the line and version, then converts after approval',()=>{
   const {ctx,s}=setup(),v=s.versions.find(x=>!x.archivedAt)!;v.confirmations=[];const {id,type,dev}=acceptedVersionQuote(s,ctx,v.id);
