@@ -9,7 +9,7 @@ const store=vi.hoisted(()=>({state:null as MistState|null,loading:false,error:''
 const session=vi.hoisted(()=>({denied:new Set<string>()}));
 vi.mock('../../runtime/workspace',()=>({useMistWorkspace:()=>store}));
 vi.mock('../../runtime/auth', () => { const useMistSession = ()=>({user:{id:'sales',displayName:'顾言'},sessionKey:'s',hasPermission:(p:string)=>!session.denied.has(p),canAccessView:()=>true}); return { useMistSession, useOptionalMistSession: useMistSession }; });
-import {EmailsPage,contactSuggestion} from './EmailsPage';
+import {EmailsPage,contactSuggestion,emailAutoSyncDue,MAIL_AUTO_SYNC_FIRST_MS,MAIL_AUTO_SYNC_TICK_MS} from './EmailsPage';
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;
 let host:HTMLElement,root:Root;const go=vi.fn();let n=0;
 const ctx={id:()=>'id-'+(++n),now:'2026-10-14T02:00:00Z',actorName:'顾言'} as any;
@@ -82,6 +82,36 @@ function realState(owner='sales'){
   return s as MistState;
 }
 function type(label:string,value:string){const el=document.querySelector(`[aria-label="${label}"]`) as HTMLInputElement;const proto=el instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:el instanceof HTMLSelectElement?HTMLSelectElement.prototype:HTMLInputElement.prototype;act(()=>{Object.getOwnPropertyDescriptor(proto,'value')!.set!.call(el,value);el.dispatchEvent(new Event(el instanceof HTMLSelectElement?'change':'input',{bubbles:true}));});}
+
+it('auto-syncs bound mailboxes in the background every 5 minutes and stays quiet on failure',async()=>{
+  vi.useFakeTimers({toFake:['setTimeout','setInterval','clearTimeout','clearInterval','Date']});
+  try{
+    vi.setSystemTime(new Date('2026-10-14T01:10:00Z'));
+    store.state=realState();store.mail.mockResolvedValue({sync:{added:2,remaining:0,failedFolders:[],error:null}});render();
+    expect(store.mail).not.toHaveBeenCalled();
+    await act(async()=>{await vi.advanceTimersByTimeAsync(MAIL_AUTO_SYNC_FIRST_MS);});
+    expect(store.mail).toHaveBeenCalledWith({kind:'sync',accountId:'acc-real'});
+    expect(document.body.textContent).toContain('收到 2 封新邮件');
+    // 刚同步过（lastSyncAt 更新）不再重复；保存中的操作期间不发起；失败不弹错误。
+    store.mail.mockReset();store.mail.mockRejectedValue(new Error('无法连接收信服务器'));
+    store.state={...store.state!,email:{...store.state!.email,accounts:store.state!.email.accounts.map(a=>({...a,lastSyncAt:'2026-10-14T01:10:00Z'}))}} as MistState;render();
+    await act(async()=>{await vi.advanceTimersByTimeAsync(MAIL_AUTO_SYNC_TICK_MS);});
+    expect(store.mail).not.toHaveBeenCalled();
+    await act(async()=>{await vi.advanceTimersByTimeAsync(5*MAIL_AUTO_SYNC_TICK_MS);});
+    expect(store.mail).toHaveBeenCalledTimes(1);
+    expect(host.textContent).not.toContain('无法连接收信服务器');
+  }finally{vi.useRealTimers();}
+});
+
+it('picks only real, bound, idle mailboxes whose last sync and last failure are both older than 5 minutes',()=>{
+  const now=Date.parse('2026-10-14T01:10:00Z'),a=realState().email.accounts[0];
+  expect(emailAutoSyncDue([a],now).map(x=>x.id)).toEqual(['acc-real']);
+  expect(emailAutoSyncDue([{...a,lastSyncAt:'2026-10-14T01:07:00Z'}],now)).toEqual([]);
+  expect(emailAutoSyncDue([{...a,lastError:{code:'MAIL_TIMEOUT',message:'超时',at:'2026-10-14T01:08:00Z'}}],now)).toEqual([]);
+  expect(emailAutoSyncDue([{...a,connection:'syncing'}],now)).toEqual([]);
+  expect(emailAutoSyncDue([{...a,credentialSet:false}],now)).toEqual([]);
+  expect(emailAutoSyncDue([{...a,example:true}],now)).toEqual([]);
+});
 
 it('syncs bound real mailboxes and reports connection state',async()=>{
   store.state=realState();store.mail.mockResolvedValue({sync:{remaining:0,failedFolders:[],error:null}});render();
