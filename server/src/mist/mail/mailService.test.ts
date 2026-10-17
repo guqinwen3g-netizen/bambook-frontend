@@ -419,6 +419,61 @@ describe('智能邮箱真实收发（服务端）', () => {
     expect((await t.owner.post(W + t.ws.id + '/email/sends/' + old.id + '/retry').send({}).expect(422)).body.error.message).toContain('取代');
   });
 
+  it('别名意图：B 回到未决的 A 后，A 变 sent / 重启 / 改内容时用 key B 重放都只回到 A，SMTP 始终 1 次', async () => {
+    const t = await setup(), id = await t.account('sales@sylway.cloud'); await t.bind(id);
+    const input = { accountId: id, from: 'sales@sylway.cloud', to: 'sales@sylway.cloud', cc: '', bcc: '', subject: '别名核对', body: '同一封邮件', template: '', links: [], fileIds: [] };
+    const post = (client: any, key: string, patch: Record<string, unknown> = {}, status = 200) => client.post(W + t.ws.id + '/email/sends').send({ requestKey: key, input: { ...input, ...patch } }).expect(status);
+    fake.smtpMode = 'deliver-then-drop';
+    const a = await post(t.owner, 'alias-key-a01');
+    expect(a.body.send.status).toBe('unknown'); expect(fake.deliveries).toHaveLength(1);
+    fake.smtpMode = 'ok';
+    // B 发出：服务端回到 A 并把 key B 登记为 A 的别名（B 的响应在客户端丢失也不影响）
+    const b = await post(t.owner, 'alias-key-b01');
+    expect(b.body.send).toMatchObject({ id: a.body.send.id, replayed: true, recovered: true, recoveredFor: 'alias-key-b01' });
+    expect(b.body.workspace.state.email.sends.find((s: any) => s.id === a.body.send.id).aliasKeys).toEqual(['alias-key-b01']);
+    expect(fake.deliveries).toHaveLength(1);
+    // A 被核实为 sent，之后核对 B：仍回到 A，不当成新发送
+    const verified = await t.owner.post(W + t.ws.id + '/email/sends/' + a.body.send.id + '/verify').send({}).expect(200);
+    expect(verified.body.send.status).toBe('sent');
+    const check = await post(t.owner, 'alias-key-b01');
+    expect(check.body.send).toMatchObject({ id: a.body.send.id, status: 'sent', replayed: true, recoveredFor: 'alias-key-b01' });
+    expect(fake.deliveries).toHaveLength(1);
+    // 重启运行时（同一数据目录）后再核对 B：一样
+    const restarted = createMistServer(undefined, { local: createMistLocalRuntime({ directory }), mailTransport: fake.transport() });
+    const client = request.agent(restarted); await client.get('/api/mist/session').expect(200);
+    expect((await post(client, 'alias-key-b01')).body.send).toMatchObject({ id: a.body.send.id, status: 'sent', recoveredFor: 'alias-key-b01' });
+    // key B 改内容重放：意图冲突，不投递
+    expect((await post(client, 'alias-key-b01', { body: '改过的正文' }, 409)).body.error.code).toBe('SEND_INTENT_CONFLICT');
+    expect((await post(t.owner, 'alias-key-b01', { subject: '别名核对（改）' }, 409)).body.error.code).toBe('SEND_INTENT_CONFLICT');
+    expect(fake.deliveries).toHaveLength(1);
+    expect((await t.latest()).state.email.sends).toHaveLength(1);
+  });
+  it('别名意图：A 变 failed 并被新发送取代后，用 key B 核对仍只回到 A，不投递', async () => {
+    const t = await setup(), id = await t.account('sales@sylway.cloud'); await t.bind(id);
+    const input = { accountId: id, from: 'sales@sylway.cloud', to: 'customer-demo@sylway.cloud', cc: '', bcc: '', subject: '失败后核对', body: '同一封邮件', template: '', links: [], fileIds: [] };
+    const post = (key: string, status = 200) => t.owner.post(W + t.ws.id + '/email/sends').send({ requestKey: key, input }).expect(status);
+    fake.smtpMode = 'drop-after-data';
+    const a = await post('alias-key-a02');
+    expect(a.body.send.status).toBe('unknown'); expect(fake.deliveries).toHaveLength(0);
+    fake.smtpMode = 'ok';
+    expect((await post('alias-key-b02')).body.send).toMatchObject({ id: a.body.send.id, recovered: true, recoveredFor: 'alias-key-b02' });
+    // 确认未送达后重发，服务器明确拒绝 → A 变 failed
+    fake.smtpMode = 'reject-login';
+    expect((await t.owner.post(W + t.ws.id + '/email/sends/' + a.body.send.id + '/retry').send({ confirmUnknown: true }).expect(200)).body.send.status).toBe('failed');
+    fake.smtpMode = 'ok';
+    expect(fake.deliveries).toHaveLength(0);
+    const failedCheck = await post('alias-key-b02');
+    expect(failedCheck.body.send).toMatchObject({ id: a.body.send.id, status: 'failed', replayed: true, recoveredFor: 'alias-key-b02' });
+    expect(fake.deliveries).toHaveLength(0);
+    // 新意图 C 明确重新发送：取代 A（这是 C 自己的 1 次投递）
+    const c = await post('alias-key-c02');
+    expect(c.body.send.status).toBe('sent'); expect(c.body.send.id).not.toBe(a.body.send.id); expect(fake.deliveries).toHaveLength(1);
+    expect(c.body.workspace.state.email.sends.find((s: any) => s.id === a.body.send.id).supersededById).toBe(c.body.send.id);
+    // 被取代后再核对 B：仍回到 A，不投递
+    const superseded = await post('alias-key-b02');
+    expect(superseded.body.send).toMatchObject({ id: a.body.send.id, status: 'failed', replayed: true, recoveredFor: 'alias-key-b02' });
+    expect(fake.deliveries).toHaveLength(1); expect(fake.attemptsSeen).toHaveLength(1);
+  });
   it('只在已发送中找到旧副本不能确认任何收件人：部分接收后补发自身断线，核对仍待确认', async () => {
     const t = await setup(), id = await t.account('sales@sylway.cloud'); await t.bind(id);
     fake.rejectRcpt.add('sales@sylway.cloud');

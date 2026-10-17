@@ -178,9 +178,9 @@ export class MistMailService {
     const { account } = await this.account(prior, workspaceId, String(input.accountId || ''));
     this.checkHosts(account); this.checkRecipients({ to: String(input.to || ''), cc: String(input.cc || ''), bcc: String(input.bcc || '') });
     const begun = await this.write(prior, workspaceId, 'email.server.send.begin', { mode: 'new', requestKey: body.requestKey, ...(body.draftId ? { draftId: String(body.draftId) } : {}), input, ...(body.forwardOfId ? { forwardOfId: String(body.forwardOfId) } : {}), messageId: `<${randomUUID()}@${domainOf(account.address)}>` });
-    const started = (begun.receipt as any).result as { id: string; status: string; existing: boolean; recovered?: boolean };
-    // 同一意图重放或同草稿/同内容的未决发送：返回原记录，不再投递。
-    if (started.existing) return { ...begun, send: { id: started.id, status: started.status, replayed: true, ...(started.recovered ? { recovered: true } : {}) } };
+    const started = (begun.receipt as any).result as { id: string; status: string; existing: boolean; recovered?: boolean; recoveredFor?: string };
+    // 同一意图重放或同草稿/同内容的未决发送：返回原记录，不再投递；recoveredFor 表示服务端已把本次 requestKey 登记为原记录的别名。
+    if (started.existing) return { ...begun, send: { id: started.id, status: started.status, replayed: true, ...(started.recovered ? { recovered: true } : {}), ...(started.recoveredFor ? { recoveredFor: started.recoveredFor } : {}) } };
     return this.deliver(prior, workspaceId, started.id);
   }
   async retry(prior: TokenPayload, workspaceId: string, sendId: string, confirmUnknown: unknown) {

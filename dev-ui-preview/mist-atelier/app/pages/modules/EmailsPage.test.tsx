@@ -279,3 +279,12 @@ it('a send intent held for manual review never offers verification or resend; cl
   expect(store.closeMailReview).toHaveBeenCalledTimes(1);expect(store.recover).not.toHaveBeenCalled();expect(store.mail).not.toHaveBeenCalled();
   expect(document.body.textContent).toContain('未发送任何邮件');expect(host.textContent).not.toContain('发送「草稿报价」待人工核对');expect(button('已人工核对，关闭记录')).toBeUndefined();
 });
+
+it('a server-confirmed recovered result for a lost intent says nothing was resent and opens the original record',async()=>{
+  const s=realState() as any;s.email.sends.push({...s.email.sends[0],id:'send-a',requestKey:'intent-a-0001',aliasKeys:['intent-b-0001'],subject:'草稿报价',status:'sent'});store.state=s;
+  store.pending=mailPending('intent-b-0001',{accountId:'acc-real',to:'buyer@partner.test',subject:'草稿报价'});render();
+  store.recover.mockImplementation(async()=>{store.pending=null;return {requestId:'intent-b-0001',revision:1,result:{send:{id:'send-a',status:'sent',replayed:true,recovered:true,recoveredFor:'intent-b-0001'}}};});
+  await click(button('核对发送结果')!);render();
+  expect(document.body.textContent).toContain('已有发送记录，未重复投递');expect(host.textContent).not.toContain('待人工核对');
+  expect(store.mail).not.toHaveBeenCalled();expect(store.recover).toHaveBeenCalledTimes(1);
+});

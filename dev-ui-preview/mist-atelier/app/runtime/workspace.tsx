@@ -44,7 +44,7 @@ export type MistMailAction =
   | { kind: 'send'; requestKey: string; draftId?: string; input?: Record<string, unknown>; forwardOfId?: string }
   | { kind: 'retry'; sendId: string; confirmUnknown?: boolean }
   | { kind: 'verify'; sendId: string };
-export interface MistMailResult { sync?: { remaining?: number; failedFolders?: string[]; error?: string | null; [key: string]: unknown }; send?: { id: string; status: string; message?: string; replayed?: boolean; recovered?: boolean; found?: boolean; foundIn?: string[]; confirmed?: boolean; recipients?: Array<{ address: string; status: string }> } }
+export interface MistMailResult { sync?: { remaining?: number; failedFolders?: string[]; error?: string | null; [key: string]: unknown }; send?: { id: string; status: string; message?: string; replayed?: boolean; recovered?: boolean; recoveredFor?: string; found?: boolean; foundIn?: string[]; confirmed?: boolean; recipients?: Array<{ address: string; status: string }> } }
 const Context = React.createContext<MistWorkspaceContext | null>(null);
 const BASE = '/api/mist/workspaces';
 const nonempty = (value: unknown): value is string => typeof value === 'string' && !!value.trim();
@@ -97,7 +97,7 @@ function validateReceiptState(value: MistWorkspaceEnvelope, acknowledged: MistRu
 }
 /** 发送回执须指向当前空间中由同一 requestKey 登记的发送记录，才算原意图已有结果。 */
 /** 本机发送结案登记：每个发送意图（原 requestKey）核实后记下它认领的回执（send.id）。只存编号，不含正文与凭据。 */
-type MailClaim = { workspaceId: string; requestKey: string; sendId: string; accountId: string; closedAt: string };
+type MailClaim = { workspaceId: string; requestKey: string; sendId: string; accountId: string; closedAt: string; alias?: boolean };
 const MAIL_CLAIMS = 'bambook.mist.mail-receipts:';
 const MAIL_REVIEW = 'MAIL_RECEIPT_MISMATCH', MAIL_MANUAL = 'MAIL_MANUAL_REVIEW';
 function readMailClaims(userId: string): MailClaim[] {
@@ -118,20 +118,24 @@ function writeMailClaim(userId: string, claim: MailClaim) {
 }
 const mailAddresses = (value: unknown) => [...new Set((String(value ?? '').match(/[^\s<>,;，；"']+@[^\s<>,;，；"']+/g) || []).map(item => item.toLowerCase()))].sort().join(',');
 const mailSubject = (value: unknown) => String(value ?? '').trim() || '（无主题）';
-/** 回执核对：回执必须指向当前空间里同一发件账号、同一 requestKey、主题与收件人一致、且未被其他意图认领的发送记录；任何一项不符都停在待人工核对。 */
+/** 回执核对：回执必须指向当前空间里同一发送人、同一发件账号、同一 requestKey（或服务端确认的别名）、主题 / 收件人 / 正文一致、且未被其他意图认领的发送记录；任何一项不符都停在待人工核对。 */
 function mailSendAcknowledged(data: any, value: MistWorkspaceEnvelope, intent: Pending, userId: string) {
   const id = data?.send?.id, sends = (value.state as any).email?.sends, input = intent.mail!.input;
   const stop = (reason: string) => { throw new RequestError('发送回执与原请求不符：' + reason + '；不算已发送，也不会重发，已停在待人工核对', 409, MAIL_REVIEW); };
   if (!nonempty(id) || !Array.isArray(sends)) stop('服务器没有返回可核对的发送记录');
   const row = sends.find((item: any) => item?.id === id);
   if (!row) stop('回执对应的发送记录不在当前空间');
+  // 服务端确认的关联：回执写明 recoveredFor = 本次 requestKey，且当前空间的原记录已持久登记该别名。
+  const alias = row.requestKey !== intent.requestId && data?.send?.recoveredFor === intent.requestId && Array.isArray(row.aliasKeys) && row.aliasKeys.includes(intent.requestId);
   const owner = readMailClaims(userId).find(item => item.workspaceId === intent.workspaceId && item.sendId === id && item.requestKey !== intent.requestId);
-  if (owner) stop('该回执已被其他发送意图认领');
-  if (row.requestKey !== intent.requestId) stop('回执属于其他发送请求');
+  if (owner && !alias) stop('该回执已被其他发送意图认领');
+  if (row.requestKey !== intent.requestId && !alias) stop('回执属于其他发送请求，服务端没有确认它是本次请求的结果');
+  if (row.createdById !== userId) stop('发送人不一致');
   if (row.accountId !== input.accountId) stop('发件账号不一致');
   if (mailSubject(row.subject) !== mailSubject(input.subject)) stop('主题不一致');
   if ((['to', 'cc', 'bcc'] as const).some(role => mailAddresses(row[role]) !== mailAddresses(input[role]))) stop('收件人不一致');
-  return { workspaceId: intent.workspaceId, requestKey: intent.requestId, sendId: id, accountId: String(input.accountId), closedAt: new Date().toISOString() } as MailClaim;
+  if (String(row.body ?? '').trim() !== String(input.body ?? '').trim()) stop('正文不一致');
+  return { workspaceId: intent.workspaceId, requestKey: intent.requestId, sendId: id, accountId: String(input.accountId), closedAt: new Date().toISOString(), ...(alias ? { alias: true } : {}) } as MailClaim;
 }
 const mailReviewCode = (failure: unknown) => failure instanceof RequestError && (failure.code === MAIL_REVIEW || failure.code === MAIL_MANUAL);
 const mailSendBody = (intent: Pending) => JSON.stringify({ requestKey: intent.mail!.requestKey, ...(intent.mail!.draftId ? { draftId: intent.mail!.draftId } : {}), input: intent.mail!.input, ...(intent.mail!.forwardOfId ? { forwardOfId: intent.mail!.forwardOfId } : {}) });
@@ -491,9 +495,9 @@ export function MistWorkspaceProvider({ children }: { children: React.ReactNode 
           // 本机已结案（例如结案后、清理待核对记录前刷新或重启）：只读取当前空间核对原回执，不再提交发送。
           const next = await request(BASE + '/' + encodeURIComponent(intent.workspaceId)); assertSource(authority, boundEpoch, boundWorkspaceId);
           const value = envelope(next.workspace, authority.userId!, intent.workspaceId), row = ((value.state as any).email?.sends || []).find((item: any) => item?.id === claimed.sendId);
-          mailSendAcknowledged({ send: { id: claimed.sendId } }, value, intent, authority.userId!);
+          mailSendAcknowledged({ send: { id: claimed.sendId, ...(claimed.alias ? { recoveredFor: intent.requestId } : {}) } }, value, intent, authority.userId!);
           put(value, authority); clearPending(authority);
-          return { requestId: intent.requestId, revision: value.revision, result: { send: { id: claimed.sendId, status: row?.status, replayed: true } } } as unknown as MistRunReceipt;
+          return { requestId: intent.requestId, revision: value.revision, result: { send: { id: claimed.sendId, status: row?.status, replayed: true, ...(claimed.alias ? { recovered: true, recoveredFor: intent.requestId } : {}) } } } as unknown as MistRunReceipt;
         }
         // 用原 requestKey 与原内容重放：服务端已登记则只返回原记录、不重复投递；从未收到则按已确认的原内容发送一次。
         const data = await request(BASE + '/' + encodeURIComponent(intent.workspaceId) + '/email/sends', { method: 'POST', body: mailSendBody(intent) });

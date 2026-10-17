@@ -139,6 +139,10 @@ export function EmailsPage() {
   const callMail = async (action: MistMailAction): Promise<MistMailResult | null> => { setFailure(''); try { return await mail(action); } catch (problem) { setFailure(problemText(problem, '操作未完成，请重试')); return null; } };
   const reportSend = (result: MistMailResult | null, again = false) => {
     const sent = result?.send; if (!sent) return false;
+    if (sent.replayed && sent.recoveredFor && sent.status === 'sent') {
+      setNotice({ tone: 'neutral', title: '已有发送记录，未重复投递', text: '服务端确认这次发送请求对应原发送记录（已发送），没有再次投递。已打开原记录。' });
+      openSend(sent.id); return true;
+    }
     if (sent.replayed && sent.status !== 'sent') {
       setNotice({ tone: 'warn', title: '已有发送记录，未重复投递', text: sent.recovered
         ? '这封邮件（同一草稿或相同内容）上次的发送还没有确定结果，已回到原发送记录，没有再次投递。请在待发送中核对或处理原记录。'

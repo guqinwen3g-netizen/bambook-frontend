@@ -58,6 +58,8 @@ export type EmailSend = {
   fingerprint?: string;
   /** 明确失败（无人接收）后，同一草稿或同内容以新的发送意图重新发送：旧记录保留、标记被取代，不再出现在待发送。 */
   supersededById?: string;
+  /** 服务端确认的别名发送意图：同一主体、同一邮箱、同一内容指纹的新 requestKey 回到本记录（recovered）时持久登记；之后用该 key 重放只回到本记录，不再投递。旧记录缺省按空。 */
+  aliasKeys?: string[];
   createdBy: string; createdById: string; createdAt: string; updatedAt: string;
 };
 export type EmailDraftInput = { accountId: string; from: string; to: string; cc: string; bcc: string; subject: string; body: string; template: string; links: EmailLink[]; fileIds: string[]; replyToId?: string };
@@ -492,11 +494,12 @@ function beginSend(root: MistState, payload: Extract<EmailCommand, { type: 'emai
   const forwardOfId = payload.forwardOfId ? message(root, String(payload.forwardOfId), context).id : undefined;
   const fingerprint = emailSendFingerprint({ ...draft, accountId: owner.id, ...(forwardOfId ? { forwardOfId } : {}) }), now = Date.parse(context.now);
   // 同一发送意图重放：内容一致回到原记录（不再投递）；内容不一致明确拒绝，不能拿旧结果冒充新内容已发送。
-  const prior = root.email.sends.find(row => row.requestKey === requestKey && row.createdById === context.actorId);
+  // 别名（aliasKeys）同样按 prior 处理：原记录变成 sent / failed / 被取代之后，用别名 key 重放也只回到原记录。
+  const prior = root.email.sends.find(row => row.createdById === context.actorId && (row.requestKey === requestKey || (row.aliasKeys || []).includes(requestKey)));
   if (prior) {
     account(root, prior.accountId, context);
     if (storedFingerprint(prior) !== fingerprint) fail('这次发送请求的内容与原发送记录不一致（收件人、主题、正文或附件已变化），未发送；原记录保留在发送记录中', 'SEND_INTENT_CONFLICT');
-    return { id: prior.id, status: emailSendEffectiveStatus(prior, now), existing: true };
+    return { id: prior.id, status: emailSendEffectiveStatus(prior, now), existing: true, ...(prior.requestKey !== requestKey ? { recovered: true, recoveredFor: requestKey } : {}) };
   }
   // 未决的原发送（发送中 / 结果不确定 / 部分未接收）不能被新意图绕过：同一草稿或同内容一律回到原记录，由核对或显式重发处理。
   const open = (row: EmailSend) => !row.supersededById && ['sending', 'unknown', 'partial'].includes(emailSendEffectiveStatus(row, now));
@@ -504,6 +507,12 @@ function beginSend(root: MistState, payload: Extract<EmailCommand, { type: 'emai
   const pending = mineSends.find(row => open(row) && ((payload.draftId && row.draftId === payload.draftId) || storedFingerprint(row) === fingerprint));
   if (pending) {
     if (payload.draftId && pending.draftId === payload.draftId && storedFingerprint(pending) !== fingerprint) fail('这份草稿上次的发送尚未确认结果，请先在待发送中核对或处理原记录，再发送修改后的内容', 'SEND_PENDING_VERIFY');
+    // 同主体（mineSends）、同邮箱、同内容指纹：把新 key 持久登记为原记录的别名，回执响应丢失后用该 key 核对仍回到原记录。
+    if (pending.accountId === owner.id && pending.createdById === context.actorId && storedFingerprint(pending) === fingerprint) {
+      pending.aliasKeys = [...new Set([...(pending.aliasKeys || []), requestKey])].slice(-50);
+      log(root, context, pending.id, `新的发送请求回到未决的原发送记录（未重复投递）：${pending.subject}`);
+      return { id: pending.id, status: emailSendEffectiveStatus(pending, now), existing: true, recovered: true, recoveredFor: requestKey };
+    }
     return { id: pending.id, status: emailSendEffectiveStatus(pending, now), existing: true, recovered: true };
   }
   if (owner.example) fail('示例邮箱不能发送真实邮件', 'PRECONDITION');
