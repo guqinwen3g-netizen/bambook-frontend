@@ -108,7 +108,7 @@ export function MistTopbar({ crumbs, scrolled, sync, theme, onToggleTheme, onSea
   const menu = React.useContext(MobileNavCtx);
   return (
     <header className="mist-topbar" data-scrolled={scrolled || undefined} data-has-back={onBack ? true : undefined}>
-      {menu && <button type="button" className="mist-top-menu" aria-label="打开菜单" aria-controls="mist-side" aria-expanded={menu.open} onClick={() => menu.setOpen(true)}><Icon icon={Menu} /></button>}
+      {menu && <button type="button" className="mist-top-menu" aria-label="打开菜单" title="菜单" aria-controls="mist-side" aria-expanded={menu.open} onClick={() => menu.setOpen(true)}><MistMark className="mist-top-menu-mark" /><Icon icon={Menu} size="xs" /></button>}
       {onBack && <button type="button" className="mist-top-back" aria-label={backLabel} title={backLabel} onClick={onBack}><Icon icon={ArrowLeft} /></button>}
       <div className="mist-crumbs">
         {crumbs.map((c, i) => {
@@ -151,9 +151,20 @@ export function MistAppShell({ sidebar, topbar, collapsed, children, scrollKey }
     window.addEventListener('scroll', h, { passive: true });
     return () => window.removeEventListener('scroll', h);
   }, []);
+  // 手机：从屏幕左边缘向右滑打开导航，在打开的导航上向左滑关闭。
+  const swipe = React.useRef<{ x: number; y: number; edge: boolean } | null>(null);
+  const onTouchStart = (e: React.TouchEvent) => { const t = e.touches[0]; swipe.current = t ? { x: t.clientX, y: t.clientY, edge: t.clientX <= 24 } : null; };
+  const onTouchEnd = (e: React.TouchEvent) => {
+    const start = swipe.current, t = e.changedTouches[0]; swipe.current = null;
+    if (!start || !t || typeof window.matchMedia !== 'function' || !window.matchMedia('(max-width: 760px)').matches) return;
+    const dx = t.clientX - start.x, dy = Math.abs(t.clientY - start.y);
+    if (dy > Math.abs(dx)) return;
+    if (!menuOpen && start.edge && dx > 60) setMenuOpen(true);
+    else if (menuOpen && dx < -60) setMenuOpen(false);
+  };
   return (
     <MobileNavCtx.Provider value={menu}>
-      <div className="mist-app" data-collapsed={collapsed || undefined} data-menu-open={menuOpen || undefined}>
+      <div className="mist-app" data-collapsed={collapsed || undefined} data-menu-open={menuOpen || undefined} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
         {sidebar}
         <main className="mist-canvas">
           {topbar(scrolled)}

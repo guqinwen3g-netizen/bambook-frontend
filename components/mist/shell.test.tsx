@@ -31,3 +31,27 @@ it('opens the mobile navigation from the topbar, closes it after navigating, and
     expect(host.querySelector('.mist-topbar')!.getAttribute('data-has-back')).toBe('true');
   } finally { act(() => root.unmount()); host.remove(); }
 });
+
+it('uses the brand mark as the mobile menu trigger and opens the menu with a left-edge swipe', () => {
+  (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+  const mm = window.matchMedia; window.matchMedia = ((q: string) => ({ matches: true, media: q, addEventListener() {}, removeEventListener() {} })) as any;
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host);
+  const touch = (type: 'touchstart' | 'touchend', x: number, y = 200) => {
+    const e = new Event(type, { bubbles: true }) as any; const t = [{ clientX: x, clientY: y }];
+    e.touches = type === 'touchstart' ? t : []; e.changedTouches = t; host.querySelector('.mist-app')!.dispatchEvent(e);
+  };
+  try {
+    act(() => root.render(<MistAppShell
+      sidebar={<MistSidebarPresentation sections={[{ id: 'g', label: '我的事务', items: [{ id: 'cockpit', label: '我的工作', icon: LayoutGrid }] }]} activeId="cockpit" onNavigate={() => {}} collapsed={false} onToggleCollapsed={() => {}} account={{ name: '顾言' }} />}
+      topbar={() => <MistTopbar crumbs={[{ label: '我的工作' }]} />}><p>内容</p></MistAppShell>));
+    const side = host.querySelector('.mist-side') as HTMLElement;
+    expect(host.querySelector('[aria-label="打开菜单"] .mist-top-menu-mark')).not.toBeNull();
+    act(() => { touch('touchstart', 120); touch('touchend', 260); });
+    expect(side.dataset.menuOpen).toBeUndefined();
+    act(() => { touch('touchstart', 8); touch('touchend', 120); });
+    expect(side.dataset.menuOpen).toBe('true');
+    act(() => { touch('touchstart', 260); touch('touchend', 100); });
+    expect(side.dataset.menuOpen).toBeUndefined();
+  } finally { act(() => root.unmount()); host.remove(); window.matchMedia = mm; }
+});
