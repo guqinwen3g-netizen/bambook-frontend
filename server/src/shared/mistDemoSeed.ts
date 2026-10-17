@@ -72,13 +72,13 @@ export function seedDemoModules(initial: MistState, context: MistContext): { sta
   cert(jiangnan, 'BSCI 社会责任审核', 'DBID 429-8811', 'amfori', -5);
   cert(jiangnan, 'ISO 9001', 'CN-QMS-22178', 'SGS', 410);
   cert(baotai, 'OEKO-TEX Standard 100', 'HK-024 77310', 'Hohenstein', 160);
-  const rate = (sid: string, grade: 'A' | 'B' | 'C' | 'D', period: string, note: string) => { if (sid) run('supplier rate ' + period, { type: 'market.supplier.rate', payload: { supplierId: sid, grade, period, note } }, buyer); };
+  const rate = (sid: string, grade: 'A' | 'B' | 'C' | 'D', period: string, note: string) => { if (sid) run('supplier rate ' + period, { type: 'market.supplier.rate', payload: { supplierId: sid, grade, period, note } }, reviewer); };
   rate(jiangnan, 'B', '2026 Q2', '交期稳定，返修率 2.1%，略高于目标');
   rate(jiangnan, 'A', '2026 Q3', '准交 100%，返修率降到 0.8%');
   rate(huasheng, 'B', '2026 Q3', '准交良好；一批燕麦色双面呢色差 20 米退回');
   rate(baotai, 'A', '2026 Q3', '到货点数无误，响应快');
   rate(hengcai, 'C', '2026 Q3', '两批色牢度不达标，已要求整改');
-  if (hengcai) run('supplier pause', { type: 'market.supplier.status', payload: { id: hengcai, status: 'paused', reason: '色牢度两批不达标，整改报告待复核' } }, buyer);
+  if (hengcai) run('supplier pause', { type: 'market.supplier.status', payload: { id: hengcai, status: 'paused', reason: '色牢度两批不达标，整改报告待复核' } }, reviewer);
 
   /* ───────── 往来单位：客户身份、货代、报关行 ───────── */
   const relation = (name: string, category: 'Customer' | 'Agent' | 'Partner' | 'Government', country: string, address: string, aliases: string[], customerId = '') => id(run('relation ' + name, { type: 'market.relation.save', payload: { input: { name, category, customerId, supplierId: '', country, address, aliases, fileIds: [], note: '' } } }));
@@ -252,15 +252,15 @@ export function seedDemoModules(initial: MistState, context: MistContext): { sta
 
   /* ───────── 样品：借出、寄客户 ───────── */
   const returnedSamples = state.fulfillment.samples.filter(s => s.available > 0);
-  if (returnedSamples[0]) run('sample lend', { type: 'fulfillment.samples.move', payload: { id: returnedSamples[0].id, kind: 'lend', quantity: 1, person: '沈禾', location: '版房', note: '版师核对袖笼', expectedReturn: day(3) } }, warehouse);
-  if (returnedSamples[1]) run('sample send', { type: 'fulfillment.samples.move', payload: { id: returnedSamples[1].id, kind: 'send', quantity: 1, person: 'DHL 1Z84 2207 31', location: 'Cedar & Crown 伦敦', note: '客户评审样' } }, warehouse);
+  if (returnedSamples[0]) run('sample lend', { type: 'fulfillment.samples.move', payload: { id: returnedSamples[0].id, kind: 'lend', quantity: 1, person: '沈禾', location: '版房', note: '版师核对袖笼', expectedReturn: day(3) } }, buyer);
+  if (returnedSamples[1]) run('sample send', { type: 'fulfillment.samples.move', payload: { id: returnedSamples[1].id, kind: 'send', quantity: 1, person: 'DHL 1Z84 2207 31', location: 'Cedar & Crown 伦敦', note: '客户评审样' } }, buyer);
 
   /* ───────── QC：产前样通过、生产中期抽检未通过、待领取任务 ───────── */
   const productionOf = (code: string) => state.productions.find(p => p.code === code);
   const sampleQc = (productionCode: string, role: 'pp' | 'shipping', result: 'pass' | 'reject', shipmentId?: string) => {
     const job = productionOf(productionCode); if (!job) return '';
     const source = { kind: 'orderLine' as const, orderId: job.orderId, lineId: job.lineId, productionId: job.id };
-    const sampleId = id(run(`sample ${role} ${productionCode}`, { type: 'fulfillment.samples.create', payload: { name: `${job.name} ${role === 'pp' ? '产前样' : '船样'}`, category: '成衣', form: '实物', quantity: 1, unit: '件', size: 'M', color: '', location: '样品间 A-3', source, role, shipmentId, note: '', fileIds: [] } }, warehouse));
+    const sampleId = id(run(`sample ${role} ${productionCode}`, { type: 'fulfillment.samples.create', payload: { name: `${job.name} ${role === 'pp' ? '产前样' : '船样'}`, category: '成衣', form: '实物', quantity: 1, unit: '件', size: 'M', color: '', location: '样品间 A-3', source, role, shipmentId, note: '', fileIds: [] } }, buyer));
     if (!sampleId) return '';
     const task = id(run(`qc ${role} ${productionCode}`, { type: 'fulfillment.qc.request', payload: { source, sampleId, kind: 'sample', domain: 'garment', factory: job.factory, location: job.factory + ' 样衣间', contact: '王建国', due: day(-1) } }, sales));
     if (!task) return '';
@@ -295,7 +295,7 @@ export function seedDemoModules(initial: MistState, context: MistContext): { sta
     run('terms 017', { type: 'fulfillment.shipments.sourceTerms', payload: { orderId: order017.id, consignee: 'Northwind Atelier AB, Stockholm', partialAllowed: true, mode: 'sea', confirmedAt: day(-40), evidence: '合同第 5 条，允许分批' } }, sales);
     for (const item of (state.orders.find(o => o.id === order017.id)?.checklist || []).filter(i => ['拟发范围确认', '收货与贸易条款确认', '收款条件核对'].includes(i.label))) run('checklist ' + item.label, { type: 'order.checklist', payload: { orderId: order017.id, itemId: item.id, done: true } } as unknown as MistCommand, sales);
     run('handoff 017', { type: 'order.handoff', payload: { orderId: order017.id, note: '第一批 500 件交接后勤安排出运' } } as unknown as MistCommand, sales);
-    const ship = id(run('shipment 017', { type: 'fulfillment.shipments.save', payload: { consignee: 'Northwind Atelier AB, Stockholm', mode: 'sea', portOfLoading: '上海洋山', portOfDischarge: '哥德堡', incoterm: 'FOB', plannedDate: day(-4), booking: 'MSKU 7741 2093', lines: [{ orderId: order017.id, lineId: job017.lineId, productionId: job017.id, quantity: job017.qty, factoryConfirmedAt: day(-7) }], note: '第一批', fileIds: [] } }, warehouse));
+    const ship = id(run('shipment 017', { type: 'fulfillment.shipments.save', payload: { consignee: 'Northwind Atelier AB, Stockholm', mode: 'sea', portOfLoading: '上海洋山', portOfDischarge: '哥德堡', incoterm: 'FOB', plannedDate: day(-4), booking: 'MSKU 7741 2093', lines: [{ orderId: order017.id, lineId: job017.lineId, productionId: job017.id, quantity: job017.qty, factoryConfirmedAt: day(-7) }], note: '第一批', fileIds: [] } }, sales));
     if (ship) {
       sampleQc('PO-L-0411', 'shipping', 'pass', ship);
       run('pack 017', { type: 'fulfillment.shipments.pack', payload: { id: ship, lines: Array.from({ length: 5 }, (_, i) => ({ lineId: job017.lineId, productionId: job017.id, carton: `${i * 20 + 1}-${i * 20 + 20}`, quantity: 100, netWeight: 96, grossWeight: 108, volume: 1.15, note: '' })) } }, warehouse);

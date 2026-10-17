@@ -51,7 +51,9 @@ const PAGES: Record<string, React.FC> = {
   ...FULFILLMENT_PAGES,...MARKET_PAGES,...PLATFORM_PAGES,
   emails: EmailsPage, cockpit: HomePage, development: DevListPage, 'development/detail': DevDetailPage, 'development/new': DevCreatePage,
   orders: OrderListPage, 'orders/detail': OrderDetailPage, 'orders/new': OrderCreatePage, calendar: CalendarPage, 'payment-vouchers': FinancePage, crm: CustomerPage,
-  'production-board': ProductionPage, 'system-settings': SettingsPage, settings: SettingsPage, 'workspace-settings': SettingsPage, approvals: ApprovalsPage, notifications: NotificationsPage, search: SearchPage, states: StatesPage, 'design-system': DesignSystemPage,
+  'production-board': ProductionPage, 'system-settings': SettingsPage, settings: SettingsPage, 'workspace-settings': SettingsPage, approvals: ApprovalsPage, notifications: NotificationsPage, search: SearchPage,
+  // 设计系统、空/加载/错误样张只在开发构建可达，正式构建不出现在侧栏，也不能经地址打开。
+  ...(import.meta.env.DEV ? { states: StatesPage, 'design-system': DesignSystemPage } : {}),
 };
 const LIVE_VIEWS = new Set(['emails','cockpit','development','development/detail','development/new','orders','orders/detail','orders/new','payment-vouchers','crm','production-board','calendar','system-settings','settings','workspace-settings','approvals','notifications','search']);
 const ROUTE_KEYS = ['view','id','versionId','batchId','section','customerId','orderLineId','productionId','detail'] as const;
@@ -83,10 +85,13 @@ function useSections(): NavSection[] {
       id: g.group, label: g.label, defaultClosed: !['overview', 'fulfillment'].includes(g.group),
       items: g.modules.map(m => ({ id: String(m.view), label: m.productLabel.replace('（开发中）', ''), icon: m.icon })),
     }));
-    return [...real, { id: 'handoff', label: '设计系统', items: [
-      { id: 'design-system', label: '设计系统', icon: Component }, { id: 'states', label: '空 / 加载 / 错误', icon: SquareDashed },
-      { id: 'login', label: '登录页', icon: KeyRound }, { id: 'system-settings', label: '系统设置', icon: Settings2 },
-    ].filter(item => (item.id !== 'login' || !session.localMode) && (item.id !== 'system-settings' || session.canAccessView(View.SystemSettings))) }];
+    const dev = import.meta.env.DEV;
+    const items = [
+      ...(dev ? [{ id: 'design-system', label: '设计系统', icon: Component }, { id: 'states', label: '空 / 加载 / 错误', icon: SquareDashed }] : []),
+      ...(dev && !session.localMode ? [{ id: 'login', label: '登录页', icon: KeyRound }] : []),
+      ...(session.canAccessView(View.SystemSettings) ? [{ id: 'system-settings', label: '系统设置', icon: Settings2 }] : []),
+    ];
+    return items.length ? [...real, { id: 'handoff', label: dev ? '设计系统' : '系统', items }] : real;
   }, [session.sessionKey, session.status, session.hasRole, session.canAccessView]);
 }
 /** 侧栏数字、模块页「待我处理」、首页合计共用同一口径（见 runtime/workQueue）。 */

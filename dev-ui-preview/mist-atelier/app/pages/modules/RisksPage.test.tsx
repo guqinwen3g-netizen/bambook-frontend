@@ -70,13 +70,11 @@ describe('风险管理与合规', () => {
     await click(button('撤回', document.body.querySelector('[role="dialog"]') as HTMLElement));
     expect(bridge.current.run).toHaveBeenCalledWith({ type: 'platform.risk.withdraw', payload: { id: r.id, escalationId: r.escalations![0].id, reason: '客户已付清' } });
   });
-  it('早期自由填写审批人的升级：仍由风险审批权限者直接答复', async () => {
-    const r = risk('Escalated'); const e = r.escalations![0]; delete e.requesterId; delete e.reviewerIds; delete e.action; e.approver = '周敏';
-    await mount(r.id); const d = detail(r.id);
-    expect(d.textContent).toContain('待 周敏 审批升级');
-    await click(button('批准', d)); await type('审批意见', '同意首期到账后放行一票');
-    await click(button('批准', document.body.querySelector('[role="dialog"]') as HTMLElement));
-    expect(bridge.current.run).toHaveBeenCalledWith({ type: 'platform.risk.decide', payload: { id: r.id, escalationId: e.id, decision: 'approved', note: '同意首期到账后放行一票' } });
+  it('审批只在审批中心办理：风险页不提供直接批准/驳回', async () => {
+    const r = risk('Escalated'); await mount(r.id); const d = detail(r.id);
+    expect(d.textContent).toContain('待部门主管审批');
+    expect(button('到审批中心', d)).toBeDefined();
+    expect(button('批准', d)).toBeUndefined(); expect(button('驳回', d)).toBeUndefined();
   });
   it('已关闭风险只读回看：审批记录（申请事项）与关闭依据', async () => {
     const r = risk('Resolved'); await mount(r.id);
