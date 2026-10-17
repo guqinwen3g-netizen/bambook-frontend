@@ -87,8 +87,8 @@ export function CustomerPage() {
           <DataTable density={state?.settings.density} ariaLabel="客户订单" rows={orders} rowKey={order => order.id} onRowClick={order => go('orders/detail', order.id, { customerId: customer.id })} empty={<EmptyState compact title="还没有订单" action={<Button onClick={() => go('orders/new', undefined, { customerId: customer.id })}>新建订单</Button>} />} columns={[
             { key: 'id', header: '订单', width: 'minmax(180px,1.6fr)', render: order => <ObjectCell thumb={<Thumb src={IMG[order.img]} size="sm" />} name={<Mono>{order.code}</Mono>} meta={order.season} /> },
             { key: 'a', header: '金额', width: '120px', align: 'right', render: order => <b className="mist-cell-strong mist-num">{fmt(order.amount, 2)} <span className="mist-muted">{order.currency}</span></b> },
-            { key: 'd', header: '交期', width: '64px', hideOnMobile: true, render: order => order.due },
-            { key: 's', header: '状态', width: '90px', render: order => <Pill tone={order.tone}>{order.state}</Pill> },
+            { key: 'd', header: '交期', width: '88px', hideOnMobile: true, render: order => <span className="mist-num">{order.due}</span> },
+            { key: 's', header: '状态', width: '120px', render: order => <Pill tone={order.tone}>{order.state}</Pill> },
           ]} /></Card>}
         {(tab === 'overview' || tab === 'dev') && <Card><CardHeader title="进行中的开发" sub={`${devs.length} 个开发案`} tools={<Button variant="quiet" size="sm" onClick={() => go('development', undefined, { customerId: customer.id })}>开发与寻样</Button>} />
           <DataTable density={state?.settings.density} ariaLabel="客户开发案" rows={devs} rowKey={dev => dev.id} onRowClick={dev => go('development/detail', dev.id, { customerId: customer.id, versionId: dev.currentVersionId ?? undefined })} empty={<EmptyState compact title="还没有开发案" />} columns={[

@@ -168,3 +168,6 @@ backups/
 
 # Snapshot: per-machine Mist identities and storage
 server/private/
+
+# Mist 溢出扫描输出（npm run mist:overflow）
+/mist-overflow/

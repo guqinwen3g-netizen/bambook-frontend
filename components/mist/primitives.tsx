@@ -4,6 +4,23 @@ import { ChevronLeft, ChevronRight, Loader2, Sparkles } from 'lucide-react'; // 
 import { cx, toneAttr, type Size, type Tone } from './types';
 import { AssistantEyes } from './AssistantEyes';
 
+/* ───────────── 长文本 ───────────── */
+/** 取 ReactNode 中的纯文本（用于截断时的 title 完整文本）。 */
+export function plainText(node: React.ReactNode): string {
+  if (node == null || typeof node === 'boolean') return '';
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(plainText).join('');
+  if (React.isValidElement<{ children?: React.ReactNode }>(node)) return plainText(node.props.children);
+  return '';
+}
+/** 文字被省略号截断时，悬停补上 title 显示完整文本（data-full-text 提供原文）。 */
+export function revealTruncatedTitle(e: React.PointerEvent<HTMLElement>) {
+  const el = e.currentTarget, full = el.dataset.fullText;
+  if (!full || el.title) return;
+  const t = el.querySelector<HTMLElement>('.mist-btn-t') ?? el;
+  if (t.scrollWidth > t.clientWidth + 1) el.title = full;
+}
+
 /* ───────────── Icon ───────────── */
 export type IconProps = { icon: LucideIcon; size?: Exclude<Size, 'md'> | 'md'; className?: string; label?: string };
 /** 统一图标：lucide 线性图标，描边 1.5。size: xs 13 / sm 15 / md 18(默认) / lg 22 */
@@ -26,10 +43,12 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(function 
   { variant = 'secondary', size = 'md', icon, iconRight, block, loading, children, className, type = 'button', disabled, ...rest }, ref) {
   return (
     <button ref={ref} type={type} className={cx('mist-btn', className)} disabled={disabled}
+      data-full-text={typeof children === 'string' ? children : undefined} onPointerEnter={revealTruncatedTitle}
       data-variant={variant === 'secondary' ? undefined : variant} data-size={size === 'md' ? undefined : size}
-      data-block={block || undefined} data-loading={loading || undefined} aria-busy={loading || undefined} {...rest}>
+      data-block={block || undefined} data-loading={loading || undefined} aria-busy={loading || undefined} {...rest}
+      {...(rest.onPointerEnter ? { onPointerEnter: (e: React.PointerEvent<HTMLButtonElement>) => { revealTruncatedTitle(e); rest.onPointerEnter!(e); } } : null)}>
       {loading ? <Icon icon={Loader2} size="sm" className="mist-spin" /* mist-allow */ /> : icon ? <Icon icon={icon} size="sm" /> : null}
-      {children}
+      {typeof children === 'string' || typeof children === 'number' ? <span className="mist-btn-t">{children}</span> : children}
       {iconRight && <Icon icon={iconRight} size="sm" />}
     </button>
   );
@@ -52,7 +71,7 @@ export function TextLink({ icon, iconRight, children, ...rest }: React.ButtonHTM
 /* ───────────── Pill / Chip / Tile / Kbd ───────────── */
 /** 状态标签（只读）。带圆点；plain 去掉圆点。tone 语义见 docs/03-components.md#状态色 */
 export function Pill({ tone = 'neutral', plain, children }: { tone?: Tone; plain?: boolean; children: React.ReactNode }) {
-  return <span className="mist-pill" data-tone={toneAttr(tone)} data-plain={plain || undefined}>{children}</span>;
+  return <span className="mist-pill" data-tone={toneAttr(tone)} data-plain={plain || undefined} title={plainText(children) || undefined}><span className="mist-pill-t">{children}</span></span>;
 }
 /** 筛选芯片（可点击，打开下拉）。label 灰，value 加粗。 */
 export function Chip({ label, value, icon, iconRight, pressed, ...rest }: React.ButtonHTMLAttributes<HTMLButtonElement> & { label: React.ReactNode; value?: React.ReactNode; icon?: LucideIcon; iconRight?: LucideIcon; pressed?: boolean }) {
@@ -73,7 +92,7 @@ export type Option<V extends string> = { value: V; label?: React.ReactNode; icon
 /** 分段器：2–4 个互斥视图（今天/本周、列表/看板）。 */
 export function Segmented<V extends string>({ options, value, onChange, ariaLabel }: { options: Option<V>[]; value: V; onChange: (v: V) => void; ariaLabel?: string }) {
   return (
-    <div className="mist-seg" role="group" aria-label={ariaLabel}>
+    <div className="mist-seg" role="group" aria-label={ariaLabel} data-mist-scroll="x">
       {options.map(o => (
         <button key={o.value} type="button" aria-pressed={o.value === value} aria-label={o.ariaLabel} onClick={() => onChange(o.value)}>
           {o.icon && <Icon icon={o.icon} size="sm" />}{o.label}
@@ -85,7 +104,7 @@ export function Segmented<V extends string>({ options, value, onChange, ariaLabe
 /** 页面级 Tabs（下划线指示）。用于同一模块内的子视图切换。 */
 export function Tabs<V extends string>({ options, value, onChange }: { options: Option<V>[]; value: V; onChange: (v: V) => void }) {
   return (
-    <div className="mist-tabs" role="tablist">
+    <div className="mist-tabs" role="tablist" data-mist-scroll="x">
       {options.map(o => (
         <button key={o.value} type="button" role="tab" aria-selected={o.value === value} onClick={() => onChange(o.value)}>
           {o.icon && <Icon icon={o.icon} size="sm" />}{o.label}{o.count != null && <span className="mist-tab-count">{o.count}</span>}
