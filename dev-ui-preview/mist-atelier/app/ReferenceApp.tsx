@@ -35,7 +35,8 @@ import { PLATFORM_PAGES } from './pages/modules/PlatformPages';
 import { LocalAdminPanel } from './pages/modules/LocalAdminPanel';
 import { LocalMesPage } from './pages/modules/LocalMesPage';
 import { EmailsPage } from './pages/modules/EmailsPage';
-import { MistReviewButton, MistReviewProvider } from './runtime/reviews';
+import { MistReviewButton, MistReviewProvider, useOptionalMistReviews } from './runtime/reviews';
+import { mistNavCounts } from './runtime/workQueue';
 import { ApprovalsPage } from './pages/ApprovalsPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { workspaceSearchRecords } from './runtime/search';
@@ -72,22 +73,27 @@ export function writeMistRoute(route: Route) {
   for (const key of ROUTE_KEYS) {
     if (route[key]) url.searchParams.set(key, route[key]!); else url.searchParams.delete(key);
   }
-  history.pushState({ ...history.state, mistRoute: route }, '', url);
+  history.pushState({ ...history.state, mistRoute: route, mistDepth: (Number(history.state?.mistDepth) || 0) + 1 }, '', url);
 }
 function useSections(): NavSection[] {
-  const session = useMistSession(), {state} = useMistWorkspace();
-  const counts:Record<string,number> = {cockpit:state?.tasks.filter(t=>!t.done).length||0,development:state?.devs.length||0,orders:state?.orders.length||0,'payment-vouchers':state?.receipts.filter(r=>r.remaining>0).length||0};
+  const session = useMistSession();
   return React.useMemo(() => {
     const modules = getPrimaryNavigationModules({ isAdmin: session.hasRole('owner', 'admin'), canAccessView: session.canAccessView });
     const real = groupPrimaryNavigationModules(modules).map(g => ({
       id: g.group, label: g.label, defaultClosed: !['overview', 'fulfillment'].includes(g.group),
-      items: g.modules.map(m => ({ id: String(m.view), label: m.productLabel.replace('（开发中）', ''), icon: m.icon, count: counts[String(m.view)] })),
+      items: g.modules.map(m => ({ id: String(m.view), label: m.productLabel.replace('（开发中）', ''), icon: m.icon })),
     }));
     return [...real, { id: 'handoff', label: '设计系统', items: [
       { id: 'design-system', label: '设计系统', icon: Component }, { id: 'states', label: '空 / 加载 / 错误', icon: SquareDashed },
       { id: 'login', label: '登录页', icon: KeyRound }, { id: 'system-settings', label: '系统设置', icon: Settings2 },
     ].filter(item => (item.id !== 'login' || !session.localMode) && (item.id !== 'system-settings' || session.canAccessView(View.SystemSettings))) }];
-  }, [session.sessionKey, session.status, session.hasRole, session.canAccessView, state]);
+  }, [session.sessionKey, session.status, session.hasRole, session.canAccessView]);
+}
+function CountedSidebar({ sections, ...rest }: React.ComponentProps<typeof MistSidebarPresentation>) {
+  const session = useMistSession(), { state } = useMistWorkspace(), reviews = useOptionalMistReviews();
+  const counts = mistNavCounts(state, { canRead: view => session.canAccessView(view as View), me: session.user?.id ?? '', reviews: reviews?.rows, today: platformBusinessDate(new Date()) });
+  const counted = sections.map(section => ({ ...section, items: section.items.map(item => ({ ...item, count: counts[item.id] || undefined })) }));
+  return <MistSidebarPresentation sections={counted} {...rest} />;
 }
 const developmentCreateLabel = (section?: string) => DEVELOPMENT_LIST_TABS.find(tab => tab.value === (section === 'fabric' ? 'fabric' : 'garment'))!.create;
 function crumbsFor(route: Route, go: (view: string, id?: string) => void, objectLabel?: string, versionLabel?: string): Crumb[] {
@@ -243,6 +249,9 @@ function AppInner({ theme, setTheme }: { theme: ThemeMode; setTheme: (theme: The
   const Page = session.localMode && route.view === 'admin-panel' ? LocalAdminPanel
     : session.localMode && route.view === 'mes' ? LocalMesPage
     : PAGES[route.view] ?? null;
+  // 二级页（详情 / 新建）：应用内有上一页时按历史返回，直接打开链接时回到所属模块。
+  const backTarget = route.view.includes('/') ? { view: base, label: module?.productLabel ?? LABELS[base] ?? '' } : null;
+  const goBack = () => { if ((Number(history.state?.mistDepth) || 0) > 0) history.back(); else if (backTarget) go(backTarget.view); };
   const user = session.user!;
   const workspaceProfileName = state?.settings.profileName?.trim() || '';
   const name = (workspace.workspace?.ownerId === user.id ? workspaceProfileName : '') || user.displayName || user.email;
@@ -250,13 +259,13 @@ function AppInner({ theme, setTheme }: { theme: ThemeMode; setTheme: (theme: The
   return (
     <Nav.Provider value={nav}><MistReviewProvider><MistDensityContext.Provider value={state?.settings.density||'default'}>
       <MistAppShell collapsed={collapsed} scrollKey={route.view + (route.id ?? '')}
-        sidebar={<MistSidebarPresentation sections={sections} activeId={base === 'development' ? 'development' : base}
+        sidebar={<CountedSidebar sections={sections} activeId={base === 'development' ? 'development' : base}
           onNavigate={navigateModule} collapsed={collapsed} onToggleCollapsed={() => setCollapsed(value => !value)}
           workspace={{ symbol: (workspace.workspace?.name || name).slice(0,1), name: workspace.workspace?.name || '我的工作空间', caption: state?.settings.demoSeed ? '演示工作空间 · 示例数据' : '当前工作空间', onClick:()=>setSpaces(true) }}
           account={{ name, caption: roles, avatarUrl: user.avatarUrl ?? undefined, onClick: () => setAccount(true) }}
           onSearch={() => setPalette(true)}
           assistant={{ title: '小竹', text: '查询当前工作空间的进展', onClick: ()=>openAI() }} />}
-        topbar={scrolled => <MistTopbar scrolled={scrolled} crumbs={crumbsFor(route, go, state?.devs.find(d=>d.id===route.id)?.code || state?.orders.find(o=>o.id===route.id)?.code, state?.versions.find(v=>v.id===route.versionId)?.label)}
+        topbar={scrolled => <MistTopbar scrolled={scrolled} onBack={backTarget ? goBack : undefined} backLabel={backTarget ? '返回' + backTarget.label : undefined} crumbs={crumbsFor(route, go, state?.devs.find(d=>d.id===route.id)?.code || state?.orders.find(o=>o.id===route.id)?.code, state?.versions.find(v=>v.id===route.versionId)?.label)}
           sync={{ state: workspace.error ? 'offline' : workspace.loading||workspace.saving ? 'syncing' : 'ok', text: workspace.saving ? '正在保存' : workspace.loading ? '读取工作空间' : workspace.error ? '需要核对同步状态' : live ? '已保存 · 工作空间' : '设计组件展示' }}
           theme={theme} onToggleTheme={toggleTheme} onSearch={() => setPalette(true)}
           extra={<MistReviewButton/>} notifications={{ unread: visibleNotifications.some(n=>!n.readAt), onClick:()=>setNotifications(true) }} onAsk={()=>openAI()} />}

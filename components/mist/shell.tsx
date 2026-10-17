@@ -1,6 +1,6 @@
 import React from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { ArrowLeft, Bell, ChevronDown, ChevronRight, Moon, PanelLeft, Search, Sun } from 'lucide-react';
+import { ArrowLeft, Bell, ChevronDown, ChevronRight, Menu, Moon, PanelLeft, Search, Sun, X } from 'lucide-react';
 import { MistMark, MistWordmark } from './MistMark';
 import { AIBadge, Avatar, Icon, IconButton, Kbd, plainText } from './primitives';
 import { cx, type ThemeMode } from './types';
@@ -37,6 +37,10 @@ export function useHotkey(key: string, handler: (e: KeyboardEvent) => void, opts
   }, [key, opts.meta, opts.shift]);
 }
 
+/* ───────────── Mobile navigation ───────────── */
+/** 手机端（≤760px）侧栏改为全屏导航抽屉：由 MistAppShell 持有开关，顶栏菜单按钮打开，侧栏内跳转后关闭。 */
+const MobileNavCtx = React.createContext<{ open: boolean; setOpen: (open: boolean) => void } | null>(null);
+
 /* ───────────── Sidebar ───────────── */
 export type NavItem = { id: string; label: string; icon: LucideIcon; count?: number };
 export type NavSection = { id: string; label: string; items: NavItem[]; defaultClosed?: boolean };
@@ -54,21 +58,32 @@ export type SidebarPresentationProps = {
 /** 侧栏（纯展示，无数据依赖）。生产环境用 MistSidebar（已接好模块注册表与权限）。 */
 export function MistSidebarPresentation({ sections, activeId, onNavigate, collapsed, onToggleCollapsed, workspace, account, onSearch, assistant }: SidebarPresentationProps) {
   const [closed, setClosed] = React.useState<Record<string, boolean>>(() => Object.fromEntries(sections.map(s => [s.id, !!s.defaultClosed && !s.items.some(i => i.id === activeId)])));
+  const menu = React.useContext(MobileNavCtx), open = !!menu?.open;
+  const close = () => menu?.setOpen(false);
+  // 手机导航抽屉：任何一次跳转后都收起；Esc 关闭。
+  const within = <A extends unknown[]>(fn?: (...args: A) => void) => fn && ((...args: A) => { close(); fn(...args); });
+  React.useEffect(() => {
+    if (!open) return;
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [open]);
   return (
-    <aside className="mist-side">
+    <aside className="mist-side" id="mist-side" data-menu-open={open || undefined}>
       <div className="mist-brand" {...(collapsed ? { role: 'button', tabIndex: 0, 'aria-label': '展开导航', onClick: onToggleCollapsed, onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Enter') onToggleCollapsed(); } } : {})}>
         <MistMark /><MistWordmark />
         <button type="button" className="mist-side-toggle" aria-label="收起导航" onClick={onToggleCollapsed}><Icon icon={PanelLeft} size="sm" /></button>
+        <button type="button" className="mist-side-close" aria-label="关闭菜单" onClick={close}><Icon icon={X} size="sm" /></button>
       </div>
-      {workspace && <button type="button" className="mist-ws" onClick={workspace.onClick}><span className="mist-ws-sym">{workspace.symbol}</span><div><b>{workspace.name}</b>{workspace.caption && <small>{workspace.caption}</small>}</div><Icon icon={ChevronDown} size="sm" /></button>}
-      {onSearch && <button type="button" className="mist-side-search" onClick={onSearch} title="搜索或跳转"><Icon icon={Search} size="sm" /><span>搜索或跳转</span><Kbd>⌘K</Kbd></button>}
+      {workspace && <button type="button" className="mist-ws" onClick={within(workspace.onClick)}><span className="mist-ws-sym">{workspace.symbol}</span><div><b>{workspace.name}</b>{workspace.caption && <small>{workspace.caption}</small>}</div><Icon icon={ChevronDown} size="sm" /></button>}
+      {onSearch && <button type="button" className="mist-side-search" onClick={within(onSearch)} title="搜索或跳转"><Icon icon={Search} size="sm" /><span>搜索或跳转</span><Kbd>⌘K</Kbd></button>}
       <nav className="mist-nav" aria-label="主导航">
         {sections.map(s => (
           <div key={s.id} className="mist-nav-group" data-closed={closed[s.id] || undefined}>
             <button type="button" className="mist-nav-head" aria-expanded={!closed[s.id]} onClick={() => setClosed(c => ({ ...c, [s.id]: !c[s.id] }))}>{s.label}<Icon icon={ChevronDown} size="xs" /></button>
             <div className="mist-nav-items"><div>
               {s.items.map(it => (
-                <button key={it.id} type="button" className="mist-nav-item" aria-current={it.id === activeId ? 'page' : undefined} title={it.label} onClick={() => onNavigate(it.id)}>
+                <button key={it.id} type="button" className="mist-nav-item" aria-current={it.id === activeId ? 'page' : undefined} title={it.label} onClick={() => { close(); onNavigate(it.id); }}>
                   <Icon icon={it.icon} /><span>{it.label}</span>{it.count ? <span className="mist-nav-count">{it.count}</span> : null}
                 </button>
               ))}
@@ -76,20 +91,25 @@ export function MistSidebarPresentation({ sections, activeId, onNavigate, collap
           </div>
         ))}
       </nav>
-      {assistant && <button type="button" className="mist-side-ai" onClick={assistant.onClick}><div className="mist-side-ai-t"><AIBadge />{assistant.title}</div><p>{assistant.text}</p></button>}
-      <button type="button" className="mist-me" onClick={account.onClick}><Avatar name={account.name} src={account.avatarUrl} /><div><b>{account.name}</b>{account.caption && <small>{account.caption}</small>}</div><Icon icon={ChevronDown} size="sm" /></button>
+      {assistant && <button type="button" className="mist-side-ai" onClick={within(assistant.onClick)}><div className="mist-side-ai-t"><AIBadge />{assistant.title}</div><p>{assistant.text}</p></button>}
+      <button type="button" className="mist-me" onClick={within(account.onClick)}><Avatar name={account.name} src={account.avatarUrl} /><div><b>{account.name}</b>{account.caption && <small>{account.caption}</small>}</div><Icon icon={ChevronDown} size="sm" /></button>
     </aside>
   );
 }
 
 /* ───────────── Topbar ───────────── */
 export type Crumb = { label: React.ReactNode; onClick?: () => void; mono?: boolean; hideOnMobile?: boolean };
-export function MistTopbar({ crumbs, scrolled, sync, theme, onToggleTheme, onSearch, notifications, onAsk, extra }: {
+export function MistTopbar({ crumbs, scrolled, sync, theme, onToggleTheme, onSearch, notifications, onAsk, extra, onBack, backLabel = '返回' }: {
   crumbs: Crumb[]; scrolled?: boolean; sync?: { state?: 'ok' | 'syncing' | 'offline'; text: string };
   theme?: ThemeMode; onToggleTheme?: () => void; onSearch?: () => void; notifications?: { unread: boolean; onClick: () => void }; onAsk?: () => void; extra?: React.ReactNode;
+  /** 二级页（详情、新建）返回上一页。手机端和独立窗口（PWA）没有浏览器返回键，顶栏常驻返回按钮。 */
+  onBack?: () => void; backLabel?: string;
 }) {
+  const menu = React.useContext(MobileNavCtx);
   return (
-    <header className="mist-topbar" data-scrolled={scrolled || undefined}>
+    <header className="mist-topbar" data-scrolled={scrolled || undefined} data-has-back={onBack ? true : undefined}>
+      {menu && <button type="button" className="mist-top-menu" aria-label="打开菜单" aria-controls="mist-side" aria-expanded={menu.open} onClick={() => menu.setOpen(true)}><Icon icon={Menu} /></button>}
+      {onBack && <button type="button" className="mist-top-back" aria-label={backLabel} title={backLabel} onClick={onBack}><Icon icon={ArrowLeft} /></button>}
       <div className="mist-crumbs">
         {crumbs.map((c, i) => {
           const last = i === crumbs.length - 1;
@@ -120,15 +140,27 @@ export function MistTopbar({ crumbs, scrolled, sync, theme, onToggleTheme, onSea
 export function MistAppShell({ sidebar, topbar, collapsed, children, scrollKey }: { sidebar: React.ReactNode; topbar: (scrolled: boolean) => React.ReactNode; collapsed?: boolean; children: React.ReactNode; scrollKey?: string }) {
   const ref = React.useRef<HTMLDivElement>(null);
   const [scrolled, setScrolled] = React.useState(false);
-  React.useEffect(() => { ref.current?.scrollTo({ top: 0 }); setScrolled(false); }, [scrollKey]);
+  React.useEffect(() => { ref.current?.scrollTo?.({ top: 0 }); if (typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 760px)').matches) window.scrollTo?.({ top: 0 }); setScrolled(false); }, [scrollKey]);
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const menu = React.useMemo(() => ({ open: menuOpen, setOpen: setMenuOpen }), [menuOpen]);
+  React.useEffect(() => { setMenuOpen(false); }, [scrollKey]);
+  // 手机端由文档本身滚动（.mist-scroll 不再是滚动容器），顶栏分隔线按窗口滚动判断。
+  React.useEffect(() => {
+    const mobile = () => typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 760px)').matches;
+    const h = () => { if (mobile()) setScrolled(window.scrollY > 4); };
+    window.addEventListener('scroll', h, { passive: true });
+    return () => window.removeEventListener('scroll', h);
+  }, []);
   return (
-    <div className="mist-app" data-collapsed={collapsed || undefined}>
-      {sidebar}
-      <main className="mist-canvas">
-        {topbar(scrolled)}
-        <div className="mist-scroll" ref={ref} onScroll={e => setScrolled((e.target as HTMLDivElement).scrollTop > 4)}>{children}</div>
-      </main>
-    </div>
+    <MobileNavCtx.Provider value={menu}>
+      <div className="mist-app" data-collapsed={collapsed || undefined} data-menu-open={menuOpen || undefined}>
+        {sidebar}
+        <main className="mist-canvas">
+          {topbar(scrolled)}
+          <div className="mist-scroll" ref={ref} onScroll={e => setScrolled((e.target as HTMLDivElement).scrollTop > 4)}>{children}</div>
+        </main>
+      </div>
+    </MobileNavCtx.Provider>
   );
 }
 

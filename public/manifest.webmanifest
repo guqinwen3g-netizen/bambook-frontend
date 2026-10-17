@@ -1,0 +1,33 @@
+{
+  "name": "Bambook 竹衍 · Mist Atelier",
+  "short_name": "竹衍",
+  "description": "面料与成衣开发、订单、生产与回款协同",
+  "lang": "zh-CN",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#7FA3B3",
+  "theme_color": "#7FA3B3",
+  "icons": [
+    {
+      "src": "brand/bambook-v3-app.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "brand/bambook-v3-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    },
+    {
+      "src": "brand/bambook-v3-app-32.png",
+      "sizes": "32x32",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

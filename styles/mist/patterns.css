@@ -6,6 +6,8 @@
 .mist-frame-root { height: 100%; }
 .mist-app { display: grid; grid-template-columns: var(--mist-side-w) minmax(0, 1fr); height: 100vh; background: var(--mist-shell); background-attachment: fixed; transition: grid-template-columns var(--mist-dur-slow) var(--mist-ease); overflow: hidden; }
 .mist-app[data-collapsed] { grid-template-columns: var(--mist-side-w-collapsed) minmax(0, 1fr); }
+/* 应用式触控：去掉点按高亮与双击缩放延迟，文字不随横竖屏自动放大。 */
+.mist-app { -webkit-tap-highlight-color: transparent; touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .mist-side { display: flex; flex-direction: column; padding: 22px 14px 16px; color: var(--mist-side-ink); min-height: 0; overflow: hidden; }
 .mist-brand { display: flex; align-items: center; gap: 11px; padding: 4px 8px 0; height: 40px; }
 .mist-brand-mark { width: 30px; height: 30px; color: #fff; flex: none; animation: mist-float 8s ease-in-out infinite; }
@@ -49,16 +51,24 @@
 .mist-me b { display: block; font-weight: var(--mist-fw-medium); font-size: var(--mist-text-sm); line-height: 1.2; }
 .mist-me small { font-size: var(--mist-text-2xs); color: var(--mist-side-ink-3); }
 .mist-me > .mist-icon { margin-left: auto; color: var(--mist-side-ink-3); }
+@media (min-width: 761px) {
 .mist-app[data-collapsed] :is(.mist-brand-word, .mist-ws > div, .mist-ws > .mist-icon, .mist-side-search > span, .mist-side-search .mist-kbd, .mist-nav-head, .mist-nav-item > span, .mist-side-ai, .mist-me > div, .mist-me > .mist-icon, .mist-side-toggle) { display: none; }
 .mist-app[data-collapsed] .mist-brand { justify-content: center; cursor: pointer; padding: 4px 0; }
 .mist-app[data-collapsed] .mist-ws { justify-content: center; padding: 9px 0; }
 .mist-app[data-collapsed] :is(.mist-nav-item, .mist-side-search) { justify-content: center; padding: 0; }
 .mist-app[data-collapsed] .mist-nav-group[data-closed] .mist-nav-items { grid-template-rows: 1fr; }
+}
 
 .mist-canvas { margin: var(--mist-canvas-inset) var(--mist-canvas-inset) var(--mist-canvas-inset) 0; background: var(--mist-canvas); border-radius: var(--mist-r-canvas); display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
 .mist-topbar { display: flex; align-items: center; gap: 12px; height: var(--mist-topbar-h); padding: 0 24px 0 32px; flex: none; border-bottom: 1px solid transparent; transition: border-color .2s; }
 .mist-topbar[data-scrolled] { border-bottom-color: var(--mist-line); }
 .mist-crumbs { display: flex; align-items: center; gap: 8px; font-size: var(--mist-text-sm); color: var(--mist-ink-3); min-width: 0; white-space: nowrap; overflow: hidden; }
+.mist-side-close, .mist-top-menu, .mist-top-back { display: none; }
+.mist-top-menu, .mist-top-back { flex: none; width: 38px; height: 38px; margin-left: -8px; border-radius: var(--mist-r-md); place-items: center; color: var(--mist-ink-2); }
+.mist-top-menu:hover, .mist-top-back:hover { background: var(--mist-fill); color: var(--mist-ink); }
+.mist-top-menu + .mist-top-back { margin-left: -6px; }
+/* 独立窗口（安装为应用）没有浏览器返回键：二级页顶栏常驻返回。 */
+@media (display-mode: standalone) { .mist-top-back { display: grid; } .mist-top-back ~ .mist-crumbs { margin-left: -4px; } }
 .mist-crumbs b { font-weight: var(--mist-fw-medium); color: var(--mist-ink); }
 .mist-crumbs button:hover { color: var(--mist-ink); }
 .mist-top-actions { margin-left: auto; display: flex; align-items: center; gap: 4px; }
@@ -200,6 +210,16 @@
 .mist-stage-tr { position: absolute; right: 16px; top: 16px; font-family: var(--mist-font-mono); font-size: var(--mist-text-2xs); color: var(--mist-ink-2); padding: 3px 8px; border-radius: var(--mist-r-xs); background: var(--mist-card); }
 .mist-stage-cap { position: absolute; left: 14px; bottom: 12px; font-size: var(--mist-text-2xs); color: var(--mist-ink-2); padding: 3px 8px; border-radius: var(--mist-r-xs); background: color-mix(in srgb, var(--mist-card) 60%, transparent); backdrop-filter: blur(8px); }
 .mist-preview-b { padding: 18px 20px 20px; display: flex; flex-direction: column; gap: 14px; }
+/* 列表 + 详情：选中对象后详情加宽（约 56%），列表按 data-col 逐列收起次要列；详情超出视口时在面板内滚动。 */
+@media (min-width: 1181px) {
+  .mist-split[data-list-detail]:has(> .mist-preview > .mist-preview-b) { grid-template-columns: minmax(0, 44fr) minmax(0, 56fr); }
+}
+@media (min-width: 1181px) and (max-width: 1320px) {
+  .mist-split[data-list-detail]:has(> .mist-preview > .mist-preview-b) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+@media (min-width: 1181px) {
+  .mist-split[data-list-detail] > .mist-preview { max-height: calc(100dvh - 112px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+}
 
 /* ════ 详情页 ════ */
 .mist-idrow { display: flex; align-items: center; gap: 18px; padding: 16px 0 22px; }
@@ -405,13 +425,15 @@
   .mist-detail[data-layout="main-rail"] { grid-template-columns: minmax(0, 1fr) 300px; }
   .mist-split { grid-template-columns: minmax(0, 1fr) 300px; }
 }
-@media (max-width: 1180px) {
+@media (min-width: 761px) and (max-width: 1180px) {
   .mist-app, .mist-app[data-collapsed] { grid-template-columns: var(--mist-side-w-collapsed) minmax(0, 1fr); }
   .mist-app :is(.mist-brand-word, .mist-ws > div, .mist-ws > .mist-icon, .mist-side-search > span, .mist-side-search .mist-kbd, .mist-nav-head, .mist-nav-item > span, .mist-side-ai, .mist-me > div, .mist-me > .mist-icon, .mist-side-toggle) { display: none; }
   .mist-app :is(.mist-nav-item, .mist-side-search) { justify-content: center; padding: 0; }
   .mist-app .mist-ws { justify-content: center; padding: 9px 0; }
   .mist-app .mist-brand { justify-content: center; padding: 4px 0; }
   .mist-app .mist-nav-group[data-closed] .mist-nav-items { grid-template-rows: 1fr; }
+}
+@media (max-width: 1180px) {
   .mist-split { grid-template-columns: 1fr; } .mist-preview { display: none; }
   .mist-grid > * { grid-column: 1 / -1 !important; }
   .mist-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -424,13 +446,26 @@
   .mist-auth { grid-template-columns: 1fr; } .mist-auth-brand { display: none; }
 }
 @media (max-width: 760px) {
-  .mist-app, .mist-app[data-collapsed] { display: block; height: auto; min-height: 100vh; overflow: visible; }
-  .mist-side { flex-direction: row; align-items: center; padding: 12px 14px; gap: 8px; }
-  .mist-side :is(.mist-ws, .mist-side-search, .mist-nav, .mist-side-ai) { display: none; }
-  .mist-app .mist-brand-word { display: block; } .mist-side .mist-me { margin-left: auto; }
-  .mist-canvas { margin: 0 8px 8px; border-radius: 24px; min-height: calc(100vh - 72px); }
-  .mist-scroll { padding: 6px 16px 40px; overflow: visible; }
-  .mist-topbar { padding: 0 10px 0 18px; }
+  /* 手机：全幅应用外壳。顶栏吸顶（菜单 / 返回 / 当前位置 / 操作），侧栏收为全屏导航抽屉。 */
+  .mist-app, .mist-app[data-collapsed] { display: block; height: auto; min-height: 100dvh; overflow: visible; background: var(--mist-canvas); }
+  .mist-side { display: none; }
+  .mist-side[data-menu-open] { display: flex; position: fixed; inset: 0; z-index: var(--mist-z-overlay); background: var(--mist-shell); background-attachment: fixed; padding: calc(14px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right)) calc(14px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left)); animation: mist-enter .25s var(--mist-ease) both; }
+  .mist-side[data-menu-open] .mist-side-toggle { display: none; }
+  .mist-side[data-menu-open] .mist-side-close { display: grid; margin-left: auto; width: 38px; height: 38px; border-radius: 10px; place-items: center; color: var(--mist-side-ink-2); }
+  .mist-side[data-menu-open] .mist-nav-item { height: 44px; }
+  .mist-app[data-menu-open] { overflow: hidden; height: 100dvh; }
+  .mist-canvas { margin: 0; border-radius: 0; min-height: 100dvh; overflow: clip; }
+  .mist-scroll { padding: 6px calc(16px + env(safe-area-inset-right)) calc(40px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left)); overflow: visible; }
+  .mist-topbar { position: sticky; top: 0; z-index: var(--mist-z-sticky); background: var(--mist-canvas); gap: 6px; height: calc(56px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) calc(8px + env(safe-area-inset-right)) 0 calc(14px + env(safe-area-inset-left)); }
+  .mist-top-menu, .mist-top-back { display: grid; }
+  .mist-crumbs { flex: 1 1 auto; }
+  .mist-topbar[data-has-back] .mist-crumbs > :not(b):not(.mist-crumb-sep:last-of-type) { display: none; }
+  .mist-topbar[data-has-back] .mist-crumbs > .mist-crumb-sep { display: none; }
+  .mist-top-actions { gap: 0; }
+  .mist-top-actions .mist-icon-btn[aria-label^="切换"] { display: none; }
+  .mist-app:has(.mist-topbar[data-has-back]) .mist-scroll .mist-back { display: none; }
+  /* iOS 聚焦字号小于 16px 的输入框会自动放大页面：手机端输入控件统一 16px。 */
+  .mist-root :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea) { font-size: 16px !important; }
   .mist-sync, .mist-ask > span:not(.mist-badge), .mist-crumbs [data-hide-sm] { display: none; }
   .mist-ask { padding: 0 6px; }
   .mist-page-head { flex-direction: column; align-items: flex-start; } .mist-page-head-acts { margin-left: 0; justify-content: flex-start; }
@@ -442,7 +477,7 @@
   .mist-thead { display: none; } .mist-tr { grid-template-columns: minmax(0, 1fr) auto !important; padding: 10px 14px; } .mist-tr > [data-hide-sm] { display: none; }
   .mist-pipeline { grid-template-columns: repeat(3, minmax(0, 1fr)); } .mist-pipeline > button { min-width: 0; padding: 10px 12px; gap: 6px; } .mist-pipeline small { white-space: normal; align-items: flex-start; line-height: 1.3; } .mist-pipeline small i { margin-top: 4px; } .mist-pipeline b { font-size: 22px; } .mist-search { min-width: 0; flex: 1 1 100%; } .mist-toolbar-right { margin-left: 0; }
   .mist-idrow { flex-wrap: wrap; } .mist-idrow-people { margin-left: 0; width: 100%; flex-wrap: wrap; gap: 18px; }
-  .mist-stepper { grid-template-columns: 1fr; } .mist-detail, .mist-detail > .mist-detail-rail { grid-template-columns: 1fr !important; }
+  .mist-stepper { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(150px, 1fr); overflow-x: auto; scrollbar-width: none; scroll-snap-type: x proximity; } .mist-stepper > * { scroll-snap-align: start; } .mist-detail, .mist-detail > .mist-detail-rail { grid-template-columns: 1fr !important; }
   .mist-rtl-row { flex-direction: column; overflow: visible; scroll-snap-type: none; } .mist-rtl-card { width: auto; }
   .mist-cmp table { min-width: calc(96px + var(--mist-cmp-n, 2) * 168px); } .mist-cmp th[scope="row"], .mist-cmp thead th:first-child { width: 96px; }
   .mist-choices { grid-template-columns: 1fr; } .mist-form, .mist-form[data-cols="3"] { grid-template-columns: 1fr; }
@@ -621,7 +656,10 @@
 .mist-table[data-fit="compact"] > :is(.mist-thead, .mist-tr) > [data-fit-hidden] { display: none; }
 .mist-table[data-fit="stack"] > :is(.mist-thead, .mist-tr) > [data-hide-sm] { display: none; }
 .mist-table[data-fit="stack"] > .mist-thead { display: none; }
-.mist-table[data-fit="stack"] > .mist-tr { grid-template-columns: minmax(0, 1fr) fit-content(50%) !important; padding: 10px 14px; }
+/* 堆叠：主列占满一行的剩余宽度，其余列按自然宽度靠右排在同一行；放不下时整体换到下一行并靠右，不再拆成错位的两列网格。 */
+.mist-table[data-fit="stack"] > .mist-tr { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; column-gap: 14px; row-gap: 6px; padding: 10px 14px; }
+.mist-table[data-fit="stack"] > .mist-tr > :first-child { flex: 1 1 180px; min-width: 0; }
+.mist-table[data-fit="stack"] > .mist-tr > :not(:first-child) { flex: 0 0 auto; max-width: 100%; }
 .mist-thead > span, .mist-thead > button { min-width: 0; white-space: normal; line-height: 1.25; }
 .mist-thead { height: auto; min-height: 44px; }
 .mist-tr > [role="cell"] { overflow-wrap: break-word; }

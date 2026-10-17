@@ -2,7 +2,16 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- 应用式视口：不缩放、铺满刘海屏；手机输入框统一 16px，避免 iOS 聚焦时自动放大。 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
+  <meta name="theme-color" content="#7FA3B3" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#101C35" media="(prefers-color-scheme: dark)" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="竹衍" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="format-detection" content="telephone=no" />
+  <link rel="manifest" href="/manifest.webmanifest" />
   <script>
     // Paint the startup surface before module loading; freeze it through the entrance.
     (() => {

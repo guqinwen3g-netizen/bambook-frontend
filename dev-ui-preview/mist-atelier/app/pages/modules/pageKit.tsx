@@ -31,7 +31,7 @@ export function ListDetail({ list, detail, drawerTitle, drawerSub, drawerOpen, o
   list: React.ReactNode; detail: React.ReactNode; drawerTitle: React.ReactNode; drawerSub?: React.ReactNode; drawerOpen: boolean; onDrawerClose: () => void;
 }) {
   const compact = useCompactLayout();
-  return <div className="mist-split">
+  return <div className="mist-split" data-list-detail="">
     {list}
     {!compact && <Card as="aside" className="mist-preview">{detail}</Card>}
     {compact && <Drawer open={drawerOpen} onClose={onDrawerClose} title={drawerTitle} sub={drawerSub} size="lg"><DetailSurface.Provider value="drawer">{detail}</DetailSurface.Provider></Drawer>}

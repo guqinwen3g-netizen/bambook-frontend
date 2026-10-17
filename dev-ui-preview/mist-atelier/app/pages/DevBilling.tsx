@@ -14,7 +14,7 @@ export function DevBillingCard({ state, dev, disabled, run }: Props) {
   const toast = useToast(), { go } = useNav();
   const [open, setOpen] = React.useState(false), [busy, setBusy] = React.useState(false), [failure, setFailure] = React.useState('');
   const [fee, setFee] = React.useState({ sampleId: '', amount: '', currency: 'CNY' });
-  if (!developmentCharged(dev.values)) return <Card><CardHeader title="开发费用" sub="不收费开发" /><p className="mist-note">本案为不收费开发，需求方认可即结案，不登记费用、不发起开票。</p></Card>;
+  if (!developmentCharged(dev.values)) return <Card><CardHeader title="开发费用" sub="不收费开发" /><p className="mist-note mist-card-body">本案为不收费开发，需求方认可即结案，不登记费用、不发起开票。</p></Card>;
   const summary = developmentFeeSummary(state, dev), request = dev.billing?.request, stage = developmentBillingStage(state, dev);
   const samples = developmentSamplesOf(state, dev), invoices = developmentBillingInvoices(state, dev);
   const unrecorded = samples.filter(sample => !makingFeeBlocker(state, dev, sample.id));
@@ -27,6 +27,7 @@ export function DevBillingCard({ state, dev, disabled, run }: Props) {
   const openFee = (sampleId = unrecorded[0]?.id || '') => { setFee({ sampleId, amount: '', currency: 'CNY' }); setFailure(''); setOpen(true); };
   return <Card>
     <CardHeader title="开发费用" sub={`收费开发 · 费用归属 ${developmentBillTo(dev) || '未指定需求方'}`} tools={stage && <Pill tone={stage.tone}>{stage.label}</Pill>} />
+    <div className="mist-card-body">
     {failure && !open && <Banner tone="bad" title="未完成">{failure}</Banner>}
     <div className="mist-section">
       <span className="mist-eyebrow">制作费（每条实物一笔总额）</span>
@@ -55,6 +56,7 @@ export function DevBillingCard({ state, dev, disabled, run }: Props) {
         <Pill tone={!isActiveMistInvoice(invoice) ? 'bad' : invoice.open <= 0 ? 'ok' : 'warn'}>{!isActiveMistInvoice(invoice) ? '已作废' : invoice.open <= 0 ? '已销账' : '待收款'}</Pill>
       </div>)}
     </div>}
+    </div>
     {!request && <CardFooter>
       {unrecorded.length > 0 && <Button disabled={disabled || busy} onClick={() => openFee()}>登记制作费</Button>}
       <Button variant="primary" icon={Send} loading={busy} disabled={disabled || busy || !!requestBlocker} title={requestBlocker || undefined} onClick={() => void execute({ type: 'development.billing.request', payload: { devId: dev.id } }, () => toast('已发起开票，财务将在财务模块开具票据'))}>发起开票</Button>

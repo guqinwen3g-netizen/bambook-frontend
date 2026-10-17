@@ -43,3 +43,15 @@ export function mistWorkQueue(state: MistState | null | undefined, options: { ca
 export function mistEmailFollowUpTaskIds(state: MistState | null | undefined) {
   return new Set((state?.email?.messages ?? []).flatMap(message => message.followUpTaskIds ?? []));
 }
+
+/**
+ * 侧栏数字只有一个口径：「我的工作」里需要我处理的事项（派生待办 + 未完成工作事项），按事项指向的模块归属；
+ * 「我的工作」显示全部合计，其余模块只显示指向自己的条数，没有待办不显示。总数、存量不在侧栏计数。
+ */
+export function mistNavCounts(state: MistState | null | undefined, options: { canRead: (view: string) => boolean; me: string; reviews?: MistReview[]; today: string }): Record<string, number> {
+  const counts: Record<string, number> = {};
+  const add = (view: string) => { const base = view.split('/')[0]; if (base && base !== 'cockpit') counts[base] = (counts[base] || 0) + 1; counts.cockpit = (counts.cockpit || 0) + 1; };
+  mistWorkQueue(state, options).forEach(item => add(item.target.view));
+  (state?.tasks ?? []).filter(task => !task.done).forEach(task => add(task.target?.view || 'cockpit'));
+  return counts;
+}
