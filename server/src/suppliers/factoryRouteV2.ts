@@ -70,6 +70,7 @@ export function createSuppliersV2Router(opts: SuppliersV2RouterOptions): Router 
     } catch (e: any) { const se = safeRouteError(e, { fallbackCode: 'INTERNAL_ERROR', fallbackMessage: SUPPLIERS_V2_FAIL }); res.status(se.status).json({ error: se.code, message: se.message }); }
   });
 
+  // P6：业务员（suppliers:write）维护档案/认证/产能；评级（evaluations）、拉黑/解除、删除档案须 suppliers:admin。
   router.post('/', requireWrite, requirePermission('suppliers:write'), async (req, res) => {
     try {
       const item = await svc.createProfile(req.body, actorId(req));
@@ -92,7 +93,7 @@ export function createSuppliersV2Router(opts: SuppliersV2RouterOptions): Router 
     } catch (e: any) { const se = safeRouteError(e, { fallbackCode: 'INTERNAL_ERROR', fallbackMessage: SUPPLIERS_V2_FAIL }); res.status(se.status).json({ error: se.code, message: se.message }); }
   });
 
-  router.delete('/:id', requireWrite, requirePermission('suppliers:write'), async (req, res) => {
+  router.delete('/:id', requireWrite, requirePermission('suppliers:admin'), async (req, res) => {
     try {
       await svc.deleteProfile(req.params.id, actorId(req));
       res.json({ ok: true, deleted: true });
@@ -100,14 +101,14 @@ export function createSuppliersV2Router(opts: SuppliersV2RouterOptions): Router 
   });
 
   // ── Blacklist ──
-  router.post('/:id/blacklist', requireWrite, requirePermission('suppliers:write'), async (req, res) => {
+  router.post('/:id/blacklist', requireWrite, requirePermission('suppliers:admin'), async (req, res) => {
     try {
       const item = await svc.setBlacklist(req.params.id, req.body?.reason || '', actorId(req));
       res.json({ ok: true, profile: serialize(item) });
     } catch (e: any) { const se = safeRouteError(e, { fallbackCode: 'INTERNAL_ERROR', fallbackMessage: SUPPLIERS_V2_FAIL }); res.status(se.status).json({ error: se.code, message: se.message }); }
   });
 
-  router.delete('/:id/blacklist', requireWrite, requirePermission('suppliers:write'), async (req, res) => {
+  router.delete('/:id/blacklist', requireWrite, requirePermission('suppliers:admin'), async (req, res) => {
     try {
       const item = await svc.clearBlacklist(req.params.id, actorId(req));
       res.json({ ok: true, profile: serialize(item) });
@@ -122,7 +123,7 @@ export function createSuppliersV2Router(opts: SuppliersV2RouterOptions): Router 
     } catch (e: any) { const se = safeRouteError(e, { fallbackCode: 'INTERNAL_ERROR', fallbackMessage: SUPPLIERS_V2_FAIL }); res.status(se.status).json({ error: se.code, message: se.message }); }
   });
 
-  router.post('/:id/evaluations', requireWrite, requirePermission('suppliers:write'), async (req, res) => {
+  router.post('/:id/evaluations', requireWrite, requirePermission('suppliers:admin'), async (req, res) => {
     try {
       const item = await svc.addEvaluation(req.params.id, req.body, actorId(req));
       res.json({ ok: true, evaluation: serialize(item) });
