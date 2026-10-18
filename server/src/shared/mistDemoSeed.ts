@@ -11,7 +11,7 @@ import { demoFileRecord, type DemoFileTemplate } from './mistDemoFiles';
 import { riskSignals } from './mistRisk';
 import { MIST_DEMO_ACCOUNTS } from './mistAccounts';
 
-export const DEMO_SEED_VERSION = 16;
+export const DEMO_SEED_VERSION = 17;
 export type DemoSeedFailure = { step: string; message: string };
 
 const DAY = 86400000;
@@ -205,7 +205,9 @@ export function seedDemoModules(initial: MistState, context: MistContext): { sta
   const finance = actor('林舒', 'demo-finance');
   // 月末汇率（报表“月末暂估”口径）：财务每月初登记上月末中间价。
   const prevMonth = (() => { const d = new Date(context.now); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - 1); return d.toISOString().slice(0, 7); })();
-  for (const [cur, rate] of [['USD', '7.1180'], ['EUR', '8.2915']] as const) run('fx month-end ' + cur, { type: 'fxrate.period.save', payload: { month: prevMonth, currency: cur, rate, source: `中国人民银行 ${prevMonth} 月末中间价（演示）` } }, finance);
+  // 再前一个月的月末汇率作为上月记账汇率（月初汇率），财务即可预览并登记上月期末调汇。
+  const prevMonth2 = (() => { const d = new Date(context.now); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - 2); return d.toISOString().slice(0, 7); })();
+  for (const [month, cur, rate] of [[prevMonth2, 'USD', '7.1320'], [prevMonth2, 'EUR', '8.3150'], [prevMonth, 'USD', '7.1180'], [prevMonth, 'EUR', '8.2915']] as const) run('fx month-end ' + month + cur, { type: 'fxrate.period.save', payload: { month, currency: cur, rate, source: `中国人民银行 ${month} 月末中间价（演示）` } }, finance);
   const pricingGarment = state.orders.find(o => o.code === 'SO-G-2026-017'), pricingFabric = state.orders.find(o => o.type === 'fabric');
   if (pricingGarment) run('pricing garment reference', { type: 'platform.pricing.save', payload: { orderId: pricingGarment.id, purchaseCostCny: 280, refundRate: 13, exchangeRate: 7.2, profitMargin: 20, commissionRate: 5, basis: '软件演示试算：羊毛西装套装 CNY/套；280 为演示工厂参考，退税13%、CNY/USD 7.2 仅为演示参数，不是实际成本或生效市场汇率。' } });
   if (pricingFabric) run('pricing fabric reference', { type: 'platform.pricing.save', payload: { orderId: pricingFabric.id, purchaseCostCny: 48, refundRate: 13, exchangeRate: 7.2, profitMargin: 20, commissionRate: 0, basis: '软件演示试算：毛呢面料 CNY/米；按演示规格与计价单位核对，参数仅供软件演示，不自动改报价或合同。' } });

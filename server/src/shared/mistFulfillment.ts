@@ -2,6 +2,7 @@
 import { DEVELOPMENT_BILLING_LOCK } from './mistDevelopmentBilling';
 import {developmentDomain} from './mistDevelopmentDomain';
 import { MistCommandError, lineAmount, mistMoneyMinor, assertMistOrderApproved, assertMistOrderDeposit, assertMistOrderOpen, isActiveMistInvoice, isRecognizedMistInvoice } from './mistWorkspace';
+import { platformBusinessDate } from './mistPlatform';
 import type { MistState, MistContext, MistCommandResult, MistQc, MistTarget, MistProduction } from './mistWorkspace';
 import type { MistReviewTask } from './mistReview';
 import { supplierBusinessDay, supplierUnavailableReason } from './mistSupplierStatus';
@@ -1515,7 +1516,7 @@ export function applyFulfillmentCommand(root: MistState, command: FulfillmentCom
                     fail('CI金额超过来源订单尚未开票额度');
                 const id = ctx.id();
                 // CI 只形成待财务确认的应收：确认前不计入余额、账龄、报表、催收，也不能核销。
-                root.invoices.push({ id, code: d.number, orderId: order.id, order: order.code, customer: order.customer, due: d.dueDate, amount, open: 0, currency: order.currency, financeStatus: 'pending', sourceDocumentId: d.id });
+                root.invoices.push({ id, code: d.number, orderId: order.id, order: order.code, customer: order.customer, due: d.dueDate, amount, open: 0, currency: order.currency, financeStatus: 'pending', sourceDocumentId: d.id, issuedAt: platformBusinessDate(ctx.now) });
                 d.invoiceId = id;
             }
             d.status = 'issued';
