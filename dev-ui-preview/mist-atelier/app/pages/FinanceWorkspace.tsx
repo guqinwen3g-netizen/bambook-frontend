@@ -4,7 +4,7 @@ import { ArrowDownLeft, ArrowUpRight, Landmark, ReceiptText } from 'lucide-react
 import { Banner, Button, Card, DataTable, EmptyState, Facts, Mono, ObjectCell, Pill, SearchField, Segmented, StatCard, StatGrid, Tabs, Toolbar, type Column } from '../../../../components/mist';
 import type { MistState, MistReceipt, MistPayment } from '../../../../server/src/shared/mistWorkspace';
 import { isActiveMistInvoice, mistBankAccountBalances, mistFxLockUsage, type MistFxRecord } from '../../../../server/src/shared/mistWorkspace';
-import { AccountAssignDialog, BankAccountDialog, FxDialog, FxPeriodRatesCard, FxReverseDialog, FxRevaluationCard, accountLabel, editAccountDraft, newAccountDraft, newFxDraft, useBankAccountCommand } from './FinanceBankAccounts';
+import { AccountAssignDialog, BankAccountDialog, FxDialog, FxPeriodRatesCard, FxReverseDialog, FxRevaluationCard, AccountStatusCell, accountLabel, editAccountDraft, newAccountDraft, newFxDraft, useBankAccountCommand } from './FinanceBankAccounts';
 import { useMistWorkspace } from '../runtime/workspace';
 import { useNav } from '../nav';
 import { ActionBar, DetailBlock, DetailBody, ListDetail } from './modules/pageKit';
@@ -114,6 +114,7 @@ export function FinanceAccounts() {
       { key: 'out', header: '归属付款', width: '150px', align: 'right', hideOnMobile: true, render: r => <span className="mist-num" title={`${r.paymentCount} 笔`}>{money(r.payments, r.account.currency)}</span> },
       { key: 'fx', header: '结汇划转', width: '150px', align: 'right', hideOnMobile: true, render: r => <span className="mist-num">{money(r.fxIn - r.fxOut, r.account.currency)}</span> },
       { key: 'balance', header: '账户余额', width: '150px', align: 'right', render: r => <span className="mist-num">{money(r.balance, r.account.currency)}</span> },
+      { key: 'status', header: '状态', width: '170px', render: r => <AccountStatusCell account={r.account} balance={r.balance} /> },
     ]} empty={<EmptyState title="暂无公司银行账户" description="点上方“新增账户”登记账户与期初余额。" />} /></Card>
     {editing && <BankAccountDialog draft={editing} used={used(editing.id)} onClose={() => setEditing(null)} />}
     <Card><DataTable ariaLabel="锁汇与结汇记录" rows={fxRows} rowKey={r => r.id} loading={loading} columns={[

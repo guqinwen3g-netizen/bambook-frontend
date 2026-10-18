@@ -64,7 +64,7 @@ export function BankAccountDialog({ draft, used, onClose }: { draft: AccountDraf
 /** 流水归属账户：只列同币种、期初日不晚于交易日的账户；改归属或解除须写原因。 */
 export function AccountAssignDialog({ state, kind, row, onClose }: { state: MistState; kind: 'receipt' | 'payment'; row: MistReceipt | MistPayment; onClose: () => void }) {
   const { execute, busy, failure, canWrite } = useBankAccountCommand(), toast = useToast();
-  const options = (state.bankAccounts || []).filter(a => a.currency === row.currency && a.openingDate <= row.date);
+  const options = (state.bankAccounts || []).filter(a => !a.closed && a.currency === row.currency && a.openingDate <= row.date);
   const [accountId, setAccountId] = React.useState(row.accountId || options[0]?.id || ''), [reason, setReason] = React.useState(''), [local, setLocal] = React.useState('');
   const changing = !!row.accountId, same = (row.accountId || '') === accountId;
   const submit = () => {
@@ -89,7 +89,7 @@ export function AccountAssignDialog({ state, kind, row, onClose }: { state: Mist
 
 type FxDraft = { kind: 'lock' | 'settlement'; date: string; bankName: string; currency: string; amount: string; rate: string; localCurrency: string; settleBy: string; ref: string; note: string; fromAccountId: string; toAccountId: string; localAmount: string; lockId: string };
 export const newFxDraft = (kind: 'lock' | 'settlement', state: MistState | null, lockId = ''): FxDraft => {
-  const lock = (state?.fxRecords || []).find(r => r.id === lockId), accounts = state?.bankAccounts || [];
+  const lock = (state?.fxRecords || []).find(r => r.id === lockId), accounts = (state?.bankAccounts || []).filter(a => !a.closed);
   const from = accounts.find(a => a.currency === (lock?.currency || 'USD')) || accounts.find(a => a.currency !== 'CNY'), to = accounts.find(a => a.currency === (lock?.localCurrency || 'CNY') && a.id !== from?.id);
   return { kind, date: platformBusinessDate(new Date()), bankName: lock?.bankName || from?.bankName || '', currency: lock?.currency || from?.currency || 'USD', amount: '', rate: '', localCurrency: lock?.localCurrency || 'CNY', settleBy: '', ref: '', note: '', fromAccountId: from?.id || '', toAccountId: to?.id || '', localAmount: '', lockId };
 };
@@ -119,7 +119,7 @@ export function FxDialog({ state, draft, onClose }: { state: MistState; draft: F
     setLocal('');
     void execute({ type: 'finance.fx.lock', payload: { date: form.date, bankName: form.bankName, currency: form.currency.trim().toUpperCase(), amount: Number(form.amount), rate: form.rate.trim(), localCurrency: form.localCurrency.trim().toUpperCase(), settleBy: form.settleBy, ref: form.ref, note: form.note } }, () => { toast('锁汇已登记'); onClose(); });
   };
-  const message = local || failure, accountOptions = (pick: (a: MistBankAccount) => boolean) => [{ value: '', label: '请选择账户' }, ...accounts.filter(pick).map(a => ({ value: a.id, label: `${a.code} · ${a.currency} · ${accountLabel(a)}` }))];
+  const message = local || failure, accountOptions = (pick: (a: MistBankAccount) => boolean) => [{ value: '', label: '请选择账户' }, ...accounts.filter(a => !a.closed && pick(a)).map(a => ({ value: a.id, label: `${a.code} · ${a.currency} · ${accountLabel(a)}` }))];
   return <Dialog open onClose={() => { if (!busy) onClose(); }} width={680} title={settle ? '登记结汇' : '登记锁汇'} description={settle ? '按银行结汇水单登记实际卖出的原币和入账本币；汇率由两笔金额得出，不估算。' : '登记与银行签订的远期锁汇合同；锁汇本身不改变账户余额，交割时另登记结汇。'}
     footer={<><Button disabled={busy} onClick={onClose}>取消</Button><Button variant="primary" loading={busy} disabled={busy || !canWrite} onClick={submit}>{settle ? '保存结汇' : '保存锁汇'}</Button></>}>
     <div className="mist-col">
@@ -239,4 +239,21 @@ export function FxRevaluationCard() {
     </Dialog>}
     <ModuleEditorDialog spec={spec} onClose={() => setSpec(null)} />
   </Card>;
+}
+
+/** 账户状态与销户 / 恢复：销户须余额为零、销户日后无流水（服务端校验）。 */
+export function AccountStatusCell({ account, balance }: { account: MistBankAccount; balance: number }) {
+  const { run, loading, saving, pending } = useMistWorkspace(), session = useMistSession();
+  const canWrite = session.hasPermission(MIST_FINANCE_SCOPES.voucher), busy = loading || saving || !!pending;
+  const [spec, setSpec] = React.useState<ModuleEditorSpec | null>(null);
+  const close: ModuleEditorSpec = { title: `销户 ${account.code} · ${account.name}`, submitLabel: '销户', description: '银行销户后登记。须账户余额为零（先转出余额、登记结息或手续费），销户日之后不能有流水；销户后不再记入新流水、结汇或归属。',
+    fields: [{ key: 'date', label: '销户日期', type: 'date', required: true }, { key: 'reason', label: '销户依据', type: 'textarea', required: true, hint: '如：中行销户回执编号' }], initialValues: { date: platformBusinessDate(new Date()), reason: '' },
+    submit: v => run({ type: 'finance.account.close', payload: { id: account.id, date: String(v.date || ''), reason: String(v.reason || '') } }) };
+  const reopen: ModuleEditorSpec = { title: `恢复 ${account.code}`, submitLabel: '恢复', description: `原销户日 ${account.closed?.date || ''}。仅在银行撤销销户或销户登记有误时恢复。`, fields: [{ key: 'reason', label: '恢复原因', type: 'textarea', required: true }], initialValues: { reason: '' },
+    submit: v => run({ type: 'finance.account.reopen', payload: { id: account.id, reason: String(v.reason || '') } }) };
+  return <span className="mist-row" onClick={e => e.stopPropagation()}>
+    {account.closed ? <Pill tone="neutral">已销户 {account.closed.date}</Pill> : <Pill tone="ok">使用中</Pill>}
+    {canWrite && (account.closed ? <Button size="sm" disabled={busy} onClick={() => setSpec(reopen)}>恢复</Button> : <Button size="sm" disabled={busy} title={Math.round(balance * 100) ? '余额须为零才能销户' : undefined} onClick={() => setSpec(close)}>销户</Button>)}
+    <ModuleEditorDialog spec={spec} onClose={() => setSpec(null)} />
+  </span>;
 }
