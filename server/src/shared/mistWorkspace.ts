@@ -20,7 +20,7 @@ import {lineQuantityFromBreakdown,type OrderLineBreakdown} from './mistOrderBrea
 import {isLineClosed} from './mistOrderClosure';
 import {createOrderGovernance,applyOrderGovernanceCommand,orderGovernancePermission,getOrderGovernanceReviews,assertOrderApproved,assertOrderWritable,assertOrderNotTerminated,type OrderGovernanceFields,type OrderGovernanceCommand,type OrderGovernanceInput} from './mistOrderGovernance';
 import {createOrderFundingState,applyOrderFundingCommand,orderFundingCommandPermission,assertOrderDepositCovered,assertOrderFundingIntegrity,type OrderFundingState,type OrderFundingCommand} from './mistOrderFunding';
-import {applyFxRateCommand,fxCommandPermission,type FxPeriodRate,type FxRateCommand} from './mistFxRates';
+import {applyFxRateCommand,fxCommandPermission,type FxPeriodRate,type FxRateCommand,type FxRevaluation} from './mistFxRates';
 import {createExportRebateState,applyExportRebateCommand,exportRebateCommandPermission,rebateReceiptUsedMinor,type ExportRebateState,type ExportRebateCommand} from './mistExportRebate';
 import {createPayablesState,applyPayablesCommand,payablesCommandPermission,getPayableReviews,type PayablesState,type PayablesCommand} from './mistPayables';
 
@@ -181,7 +181,9 @@ export function mistBankAccountBalances(state: Pick<MistState,'receipts'|'paymen
   const known = new Set((state.bankAccounts || []).map(a => a.id));
   return { accounts, unassigned: { receipts: state.receipts.filter(r => !r.accountId || !known.has(r.accountId)).length, payments: state.payments.filter(x => !x.accountId || !known.has(x.accountId)).length } };
 }
-export type MistInvoice = { id: string; code: string; orderId: string; order: string; customer: string; due: string; amount: number; open: number; currency: string; voidedAt?: string; voidReason?: string; voidedBy?: string; voidedById?: string; voidSourceDocumentId?: string;
+export type MistInvoice = { id: string; code: string; orderId: string; order: string; customer: string; due: string; amount: number; open: number; currency: string;
+  /** 开票业务日（YYYY-MM-DD，上海时区）；期末调汇按此判断截至月末的应收。 */
+  issuedAt?: string; voidedAt?: string; voidReason?: string; voidedBy?: string; voidedById?: string; voidSourceDocumentId?: string;
   /** BB-DEV-9：开发费用应收票据回链来源开发案（这类票据没有订单，orderId 为空）。 */
   devId?: string;
   /** CI 签发形成的应收须经财务确认：pending 待确认、confirmed 已确认、rejected 已驳回（同时作废、CI 退回草稿）。 */
@@ -232,6 +234,7 @@ export type MistState = {
   fxRecords?: MistFxRecord[];
   /** 月末汇率（报表暂估用），见 mistFxRates。 */
   fxPeriodRates?: FxPeriodRate[];
+  fxRevaluations?: FxRevaluation[];
   customers: MistCustomer[]; contacts: MistContact[]; files: MistFile[];
   events: MistEvent[]; tasks: MistTask[]; notifications: MistNotification[]; calendar: MistCalendarEvent[];
   settings: MistSettings; fulfillment:FulfillmentState; market:MarketState; platform:PlatformState; email:EmailState; crm:CrmState; reviewerIds?:string[];
@@ -972,7 +975,7 @@ function applyMistCommandUnbound(original: MistState, command: MistCommand, cont
       if(JSON.stringify(billingTotals(request.lines))!==JSON.stringify(request.totals))throw new MistCommandError('PRECONDITION','开票明细与合计不一致，请核对后重新发起');
       for(const total of request.totals){
         const id=context.id(), seq=state.invoices.filter(i=>i.code.startsWith('DI-'+year+'-')).length+1, code='DI-'+year+'-'+String(seq).padStart(4,'0');
-        state.invoices.push({id,code,orderId:'',order:dev.code,customer:request.billTo,due,amount:total.amount,open:total.amount,currency:total.currency,devId:dev.id});
+        state.invoices.push({id,code,orderId:'',order:dev.code,customer:request.billTo,due,amount:total.amount,open:total.amount,currency:total.currency,devId:dev.id,issuedAt:platformBusinessDate(context.now)});
         request.invoiceIds.push(id);
         event(state,context,'invoice',id,'开具开发费用发票 '+code+'（'+dev.code+'）：'+total.amount+' '+total.currency,{view:'payment-vouchers',id});
       }

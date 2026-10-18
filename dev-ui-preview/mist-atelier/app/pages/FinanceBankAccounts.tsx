@@ -1,7 +1,7 @@
 /** 公司银行账户台账：登记账户与期初、逐笔流水归属账户。余额 = 期初 + 已归属到账 − 已归属付款，按原币，不折算汇率。 */
 import React from 'react';
 import { Banner, Button, Card, CardHeader, DataTable, Dialog, EmptyState, Field, FormGrid, Pill, Select, TextInput, useToast } from '../../../../components/mist';
-import { readFxPeriodRates, type FxPeriodRate } from '../../../../server/src/shared/mistFxRates';
+import { FX_REVAL_KIND_LABEL, fxPrevMonth, fxRevaluationPreview, readFxPeriodRates, readFxRevaluations, type FxPeriodRate, type FxRevalLine, type FxRevaluation } from '../../../../server/src/shared/mistFxRates';
 import { ModuleEditorDialog, type ModuleEditorSpec } from './modules/ModuleWorkbench';
 import { MIST_FINANCE_SCOPES } from '../../../../server/src/shared/mistFinancePermissions';
 import { mistCommandPermission, mistFxLockUsage, mistFxRate, type MistBankAccount, type MistCommand, type MistFxRecord, type MistPayment, type MistReceipt, type MistState } from '../../../../server/src/shared/mistWorkspace';
@@ -185,6 +185,58 @@ export function FxPeriodRatesCard() {
       { key: 'source', header: '依据', width: 'minmax(160px,2fr)', hideOnMobile: true, render: r => <div className="mist-col" style={{ gap: 2 }}><span>{r.source}</span><small className="mist-muted">{r.actor} · {r.createdAt.slice(0, 10)}{r.voided ? ` · 作废：${r.voided.reason}` : ''}</small></div> },
       { key: 'act', header: '', width: '90px', align: 'right', render: r => r.voided ? <Pill tone="neutral">已作废</Pill> : canWrite ? <Button size="sm" disabled={busy} onClick={() => setSpec(voidSpec(r))}>作废</Button> : null },
     ]} empty={<EmptyState title="还没有月末汇率" description="每月初登记上月末各外币汇率，报表即可按月末暂估折算人民币毛利。" compact />} />
+    <ModuleEditorDialog spec={spec} onClose={() => setSpec(null)} />
+  </Card>;
+}
+
+const cny = (v: number) => (v < 0 ? '−' : '') + '¥' + Math.abs(v).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const gain = (v: number) => <span className="mist-num" style={{ color: v > 0 ? 'var(--mist-ok)' : v < 0 ? 'var(--mist-bad)' : undefined }}>{v > 0 ? '收益 ' : v < 0 ? '损失 ' : ''}{cny(Math.abs(v))}</span>;
+function RevalLinesTable({ lines, label }: { lines: FxRevalLine[]; label: string }) {
+  return <DataTable ariaLabel={label} rows={lines} rowKey={l => l.kind + l.refId} columns={[
+    { key: 'kind', header: '项目', width: '110px', render: l => FX_REVAL_KIND_LABEL[l.kind] },
+    { key: 'ref', header: '对象', width: 'minmax(160px,2fr)', render: l => l.ref },
+    { key: 'amount', header: '外币余额', width: '130px', align: 'right', render: l => <span className="mist-num">{l.currency} {l.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span> },
+    { key: 'rate', header: '记账 → 月末', width: '150px', align: 'right', hideOnMobile: true, render: l => <span className="mist-num" title={l.kind === 'settlement' ? '结汇按记账汇率转出，与实际成交汇率之差为已实现损益' : '月初汇率入账，按月末汇率重估'}>{l.bookRate} → {l.closingRate}{l.kind === 'settlement' ? '（成交）' : ''}</span> },
+    { key: 'book', header: '账面人民币', width: '130px', align: 'right', hideOnMobile: true, render: l => <span className="mist-num">{cny(l.bookCny)}</span> },
+    { key: 'closing', header: '重估 / 实收', width: '130px', align: 'right', hideOnMobile: true, render: l => <span className="mist-num">{cny(l.closingCny)}</span> },
+    { key: 'diff', header: '汇兑损益', width: '140px', align: 'right', render: l => gain(l.diff) },
+  ]} empty={<EmptyState title="没有外币项目" compact />} />;
+}
+/** 期末调汇：月初汇率记账、月末汇率重估外币银行存款 / 应收 / 待核销到账，当月结汇差额计已实现损益。 */
+export function FxRevaluationCard() {
+  const { state, run, loading, saving, pending } = useMistWorkspace(), session = useMistSession();
+  const canWrite = session.hasPermission(MIST_FINANCE_SCOPES.voucher), busy = loading || saving || !!pending;
+  const today = platformBusinessDate(new Date()), last = fxPrevMonth(today.slice(0, 7));
+  const [month, setMonth] = React.useState(last);
+  const [spec, setSpec] = React.useState<ModuleEditorSpec | null>(null);
+  const [detail, setDetail] = React.useState<FxRevaluation | null>(null);
+  const months = Array.from({ length: 12 }, (_, i) => { let m = today.slice(0, 7); for (let k = 0; k < i; k++) m = fxPrevMonth(m); return m; });
+  const view = state ? fxRevaluationPreview(state, month, today) : null;
+  const history = [...readFxRevaluations(state || {})].sort((a, b) => Number(!!a.voided) - Number(!!b.voided) || b.month.localeCompare(a.month));
+  const post: ModuleEditorSpec | null = view && { title: `登记 ${month} 期末调汇`, submitLabel: '登记', description: `按 ${view.monthEnd} 账面余额冻结明细：未实现 ${cny(view.unrealized)}、结汇已实现 ${cny(view.realized)}，合计 ${cny(view.total)}（正数为收益）。登记后作为外部账务期末调汇凭证依据；有误可作废重登。`,
+    fields: [{ key: 'note', label: '备注', type: 'textarea' }], initialValues: { note: '' }, submit: v => run({ type: 'fxrate.reval.post', payload: { month, note: String(v.note || '') } }) };
+  const voidSpec = (r: FxRevaluation): ModuleEditorSpec => ({ title: `作废 ${r.month} 期末调汇`, submitLabel: '作废', description: '作废后保留记录，可重新登记；须从最近一期倒着作废。', fields: [{ key: 'reason', label: '作废原因', type: 'textarea', required: true }], initialValues: { reason: '' },
+    submit: v => run({ type: 'fxrate.reval.void', payload: { id: r.id, reason: String(v.reason || '') } }) });
+  return <Card>
+    <CardHeader title="期末调汇 · 汇兑损益" sub="当月外币业务按月初汇率（上月末汇率）入账；月末按本月末汇率重估外币银行存款、外币应收与待核销到账，当月结汇与记账汇率之差为已实现损益。" tools={<span className="mist-row">
+      <Select aria-label="调汇月份" value={month} onChange={e => setMonth(e.target.value)} options={months.map(m => ({ value: m, label: m }))} />
+      {canWrite && <Button size="sm" disabled={busy || !view || view.blockers.length > 0} onClick={() => post && setSpec(post)}>登记期末调汇</Button>}</span>} />
+    <div className="mist-card-body mist-col">
+      {view && view.blockers.length > 0 && <Banner tone="warn" title="暂不能登记">{view.blockers.join('；')}</Banner>}
+      {view && view.currencies.length > 0 && <div className="mist-row" style={{ flexWrap: 'wrap', gap: 16 }}>{view.currencies.map(c => <span key={c.currency} className="mist-col" style={{ gap: 2 }}><b>{c.currency} · {c.bookRate} → {c.closingRate || '缺月末汇率'}</b><small className="mist-muted">未实现 {cny(c.unrealized)} · 结汇 {cny(c.realized)} · 合计 {cny(c.total)}</small></span>)}</div>}
+      {view && <RevalLinesTable lines={view.lines} label={`${month} 期末调汇预览`} />}
+      <span className="mist-note">余额按月末截止：银行按流水日期，应收按开票日期、核销按到账日期计入；外币应付暂不纳入（供应商结算为人民币）。须按月连续登记。</span>
+    </div>
+    <DataTable ariaLabel="已登记期末调汇" rows={history} rowKey={r => r.id} loading={loading} onRowClick={r => setDetail(r)} columns={[
+      { key: 'code', header: '记录', width: 'minmax(140px,1fr)', render: r => <div className="mist-col" style={{ gap: 2 }}><span className="mist-num">{r.code} · {r.month}</span><small className="mist-muted">{r.actor} · {r.createdAt.slice(0, 10)}{r.note ? ' · ' + r.note : ''}{r.voided ? ` · 作废：${r.voided.reason}` : ''}</small></div> },
+      { key: 'unrealized', header: '未实现', width: '140px', align: 'right', render: r => gain(r.unrealized) },
+      { key: 'realized', header: '结汇已实现', width: '140px', align: 'right', hideOnMobile: true, render: r => gain(r.realized) },
+      { key: 'total', header: '合计', width: '140px', align: 'right', render: r => gain(r.total) },
+      { key: 'act', header: '', width: '90px', align: 'right', render: r => r.voided ? <Pill tone="neutral">已作废</Pill> : canWrite ? <Button size="sm" disabled={busy} onClick={e => { e.stopPropagation(); setSpec(voidSpec(r)); }}>作废</Button> : null },
+    ]} empty={<EmptyState title="还没有登记期末调汇" description="每月结账时先登记本月末汇率，再登记期末调汇。" compact />} />
+    {detail && <Dialog open onClose={() => setDetail(null)} width={900} title={`${detail.code} · ${detail.month} 期末调汇明细`} description={`截至 ${detail.monthEnd}；登记时冻结，之后的流水变动不影响本记录。合计 ${cny(detail.total)}。`}>
+      <RevalLinesTable lines={detail.lines} label="期末调汇明细" />
+    </Dialog>}
     <ModuleEditorDialog spec={spec} onClose={() => setSpec(null)} />
   </Card>;
 }
