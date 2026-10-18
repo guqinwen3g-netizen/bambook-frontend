@@ -137,7 +137,9 @@ export type MistReceipt = { id: string; code: string; date: string; payer: strin
  * 公司银行账户台账。一个账户一个币种；期初余额为期初日期当天开始前的银行余额（可为负，如透支）。
  * 账户余额 = 期初 + 已归属到账 − 已归属付款（付款冲回的负额凭证自然加回）。不按汇率折算，不用收款减付款猜余额。
  */
-export type MistBankAccount = { id: string; code: string; name: string; bankName: string; accountNo: string; currency: string; openingDate: string; openingBalance: number; createdAt: string; actor: string; actorId?: string; updatedAt?: string };
+export type MistBankAccount = { id: string; code: string; name: string; bankName: string; accountNo: string; currency: string; openingDate: string; openingBalance: number; createdAt: string; actor: string; actorId?: string; updatedAt?: string;
+  /** 销户：须余额为零、销户日之后无流水；销户后不再记入新流水、结汇或归属，可按原因恢复（银行撤销销户或登记错误）。 */
+  closed?: { date: string; at: string; actor: string; reason: string } };
 export type MistBankAccountBalance = { account: MistBankAccount; receipts: number; payments: number; receiptCount: number; paymentCount: number; fxIn: number; fxOut: number; balance: number };
 /**
  * 锁汇 / 结汇记录。锁汇：与银行约定的远期汇率合同（原币金额 × 锁定汇率 = 合同本币金额），不动账户余额。
@@ -180,6 +182,12 @@ export function mistBankAccountBalances(state: Pick<MistState,'receipts'|'paymen
   });
   const known = new Set((state.bankAccounts || []).map(a => a.id));
   return { accounts, unassigned: { receipts: state.receipts.filter(r => !r.accountId || !known.has(r.accountId)).length, payments: state.payments.filter(x => !x.accountId || !known.has(x.accountId)).length } };
+}
+/** 账户可记入新流水：币种一致、不早于期初、未销户。 */
+export function assertAccountUsable(account: MistBankAccount, currency: string, day: string) {
+  if (account.closed) throw new MistCommandError('PRECONDITION', '账户 ' + account.code + ' 已于 ' + account.closed.date + ' 销户，不能再记入流水');
+  if (account.currency !== currency) throw new MistCommandError('VALIDATION', '账户币种 ' + account.currency + ' 与流水币种 ' + currency + ' 不同');
+  if (day < account.openingDate) throw new MistCommandError('PRECONDITION', '交易日期早于账户期初日期 ' + account.openingDate + '，已含在期初余额中');
 }
 export type MistInvoice = { id: string; code: string; orderId: string; order: string; customer: string; due: string; amount: number; open: number; currency: string;
   /** 开票业务日（YYYY-MM-DD，上海时区）；期末调汇按此判断截至月末的应收。 */
@@ -277,15 +285,17 @@ export type MistCommand = FulfillmentCommand | MarketCommand | PlatformCommand |
   | { type: 'order.handoff'; payload: { orderId: string; note?: string } }
   | { type: 'production.move'; payload: { id: string; col: MistProduction['col']; note?: string } }
   | { type: 'production.update'; payload: { id: string; pct: number; risk?: string; note?: string; startDate?: string; due?: string } }
-  | { type: 'finance.importReceipts'; payload: { receipts: Array<{ date: string; payer: string; amount: number; currency: string; ref: string }> } }
+  | { type: 'finance.importReceipts'; payload: { accountId?: string; receipts: Array<{ date: string; payer: string; amount: number; currency: string; ref: string }> } }
   | { type: 'finance.receivable.confirm'; payload: { invoiceId: string } }
   | { type: 'finance.receivable.reject'; payload: { invoiceId: string; reason: string } }
   | { type: 'finance.reconcile'; payload: { receiptId: string; invoiceId: string; amount?: number; payerBasis?:string } }
   | { type: 'finance.acceptSuggestions'; payload: { receiptIds: string[] } }
-  | { type: 'finance.payment.save'; payload: { date: string; payee: string; amount: number; currency: string; ref: string } }
+  | { type: 'finance.payment.save'; payload: { date: string; payee: string; amount: number; currency: string; ref: string; accountId?: string } }
   | { type: 'finance.allocation.reverse'; payload: { allocationId: string; reason: string } }
   | { type: 'finance.payment.reverse'; payload: { paymentId: string; reason: string } }
   | { type: 'finance.account.save'; payload: { id?: string; name: string; bankName: string; accountNo: string; currency: string; openingDate: string; openingBalance: number } }
+  | { type: 'finance.account.close'; payload: { id: string; date: string; reason: string } }
+  | { type: 'finance.account.reopen'; payload: { id: string; reason: string } }
   | { type: 'finance.account.assign'; payload: { kind: 'receipt' | 'payment'; id: string; accountId: string | null; reason?: string } }
   | { type: 'finance.fx.lock'; payload: { date: string; bankName: string; currency: string; amount: number; rate: string; localCurrency: string; settleBy: string; ref: string; note?: string } }
   | { type: 'finance.fx.settle'; payload: { date: string; fromAccountId: string; toAccountId: string; amount: number; localAmount: number; ref: string; note?: string; lockId?: string } }
@@ -690,7 +700,7 @@ export function mistCommandPermission(command: MistCommand): string | null {
   if(command.type.startsWith('order.')||command.type.startsWith('production.'))return 'orders:write';
   if(command.type==='finance.developmentInvoice.issue')return MIST_FINANCE_SCOPES.invoice;
   if(command.type==='finance.receivable.confirm'||command.type==='finance.receivable.reject')return MIST_FINANCE_SCOPES.invoice;
-  if(command.type==='finance.importReceipts'||command.type==='finance.payment.save'||command.type==='finance.payment.reverse'||command.type==='finance.account.save'||command.type==='finance.account.assign'||command.type.startsWith('finance.fx.'))return MIST_FINANCE_SCOPES.voucher;
+  if(command.type==='finance.importReceipts'||command.type==='finance.payment.save'||command.type==='finance.payment.reverse'||command.type==='finance.account.save'||command.type==='finance.account.assign'||command.type==='finance.account.close'||command.type==='finance.account.reopen'||command.type.startsWith('finance.fx.'))return MIST_FINANCE_SCOPES.voucher;
   if(command.type==='finance.reconcile'||command.type==='finance.acceptSuggestions'||command.type==='finance.allocation.reverse')return MIST_FINANCE_SCOPES.reconcile;
   if(command.type.startsWith('finance.'))throw new MistCommandError('VALIDATION','未知财务操作');
   if(command.type.startsWith('customer.')||command.type.startsWith('contact.'))return 'relations:write';
@@ -1085,10 +1095,12 @@ function applyMistCommandUnbound(original: MistState, command: MistCommand, cont
     case 'finance.importReceipts': {
       if(!Array.isArray(p.receipts)||!p.receipts.length||p.receipts.length>2000)throw new MistCommandError('VALIDATION','流水数量无效');
       let imported=0,skipped=0;
+      const into=p.accountId===undefined||p.accountId===''?undefined:find(state.bankAccounts||[],text(p.accountId,'入账账户'),'入账账户');
       for(const row of p.receipts){const amount=positive(row.amount,'到账金额');mistMoneyMinor(amount);const value={date:date(row.date),payer:text(row.payer,'付款方'),amount,currency:text(row.currency,'币种',true,3).toUpperCase(),ref:text(row.ref,'附言',false)};if(!/^[A-Z]{3}$/.test(value.currency))throw new MistCommandError('VALIDATION','币种无效');
-        if(value.ref&&state.receipts.some(r=>r.date===value.date&&r.payer===value.payer&&r.amount===value.amount&&r.currency===value.currency&&r.ref===value.ref)){skipped++;continue;}
-        const id=context.id();state.receipts.push({id,code:'BR-'+context.now.slice(0,10).replace(/-/g,'')+'-'+String(state.receipts.length+1).padStart(3,'0'),...value,remaining:amount,state:'unmatched'});imported++;}
-      event(state,context,'finance','receipts','导入 '+imported+' 笔到账流水，跳过 '+skipped+' 笔已存在流水');result={imported,skipped};break;
+        if(into)assertAccountUsable(into,value.currency,value.date);
+        if(value.ref&&state.receipts.some(r=>r.date===value.date&&r.payer===value.payer&&r.amount===value.amount&&r.currency===value.currency&&r.ref===value.ref&&(!into||!r.accountId||r.accountId===into.id))){skipped++;continue;}
+        const id=context.id();state.receipts.push({id,code:'BR-'+context.now.slice(0,10).replace(/-/g,'')+'-'+String(state.receipts.length+1).padStart(3,'0'),...value,remaining:amount,state:'unmatched',...(into?{accountId:into.id}:{})});imported++;}
+      event(state,context,'finance','receipts','导入 '+imported+' 笔到账流水'+(into?'（入账 '+into.code+'）':'')+'，跳过 '+skipped+' 笔已存在流水');result={imported,skipped};break;
     }
     case 'finance.reconcile':
     case 'finance.acceptSuggestions': {
@@ -1114,8 +1126,10 @@ function applyMistCommandUnbound(original: MistState, command: MistCommand, cont
     case 'finance.payment.save': {
       const amount=positive(p.amount,'付款金额');mistMoneyMinor(amount);const id=context.id();
       const currency=text(p.currency,'币种',true,3).toUpperCase();if(!/^[A-Z]{3}$/.test(currency))throw new MistCommandError('VALIDATION','币种无效');
-      state.payments.push({id,code:'PAY-'+context.now.slice(0,4)+'-'+String(state.payments.length+1).padStart(4,'0'),date:date(p.date),payee:text(p.payee,'收款方'),amount,currency,ref:text(p.ref,'备注',false),origin:'finance'});
-      event(state,context,'payment',id,'登记付款凭证');result={id};break;
+      const payDay=date(p.date),from=p.accountId===undefined||p.accountId===''?undefined:find(state.bankAccounts||[],text(p.accountId,'付款账户'),'付款账户');
+      if(from)assertAccountUsable(from,currency,payDay);
+      state.payments.push({id,code:'PAY-'+context.now.slice(0,4)+'-'+String(state.payments.length+1).padStart(4,'0'),date:payDay,payee:text(p.payee,'收款方'),amount,currency,ref:text(p.ref,'备注',false),origin:'finance',...(from?{accountId:from.id}:{})});
+      event(state,context,'payment',id,'登记付款凭证'+(from?'（付出 '+from.code+'）':''));result={id};break;
     }
     case 'finance.allocation.reverse': {
       const a=find(state.allocations,text(p.allocationId,'核销记录'),'核销记录'),reason=text(p.reason,'冲回原因',true,500);
@@ -1130,6 +1144,7 @@ function applyMistCommandUnbound(original: MistState, command: MistCommand, cont
     case 'finance.payment.reverse': {
       const v=find(state.payments,text(p.paymentId,'付款凭证'),'付款凭证'),reason=text(p.reason,'冲回原因',true,500);
       const blocked=mistPaymentReverseBlock(state,v);if(blocked)throw new MistCommandError('PRECONDITION',blocked);
+      const paidFrom=(state.bankAccounts||[]).find(x=>x.id===v.accountId);if(paidFrom?.closed)throw new MistCommandError('PRECONDITION','付款账户 '+paidFrom.code+' 已销户，不能再记入反向凭证；如确需冲回请先恢复该账户');
       const id=context.id(),voucherId=context.id();
       state.payments.push({id:voucherId,code:'PAY-'+context.now.slice(0,4)+'-'+String(state.payments.length+1).padStart(4,'0'),date:platformBusinessDate(context.now),payee:v.payee,amount:-v.amount,currency:v.currency,ref:'冲回 '+v.code+' · '+reason,origin:'finance',reversalOf:v.id,...(v.accountId?{accountId:v.accountId}:{})});
       state.financeReversals=[...(state.financeReversals||[]),{id,kind:'payment',targetId:v.id,amount:v.amount,currency:v.currency,reason,at:context.now,actor:context.actorName,...(context.actorId?{actorId:context.actorId}:{}),voucherId}];
@@ -1156,17 +1171,35 @@ function applyMistCommandUnbound(original: MistState, command: MistCommand, cont
       accounts.push({id,code,name,bankName,accountNo,currency,openingDate,openingBalance,createdAt:context.now,actor:context.actorName,...(context.actorId?{actorId:context.actorId}:{})});
       event(state,context,'finance',id,'登记银行账户 '+code+' '+name+'，期初 '+openingBalance+' '+currency+'（'+openingDate+'）');result={id};break;
     }
+    case 'finance.account.close': {
+      const a=find(state.bankAccounts||[],text(p.id,'银行账户'),'银行账户');
+      if(a.closed)throw new MistCommandError('PRECONDITION','该账户已销户');
+      const day=date(p.date,'销户日期'),reason=text(p.reason,'销户依据',true,500);
+      if(day>platformBusinessDate(context.now))throw new MistCommandError('VALIDATION','销户日期不能晚于今天');
+      if(day<a.openingDate)throw new MistCommandError('VALIDATION','销户日期不能早于期初日期 '+a.openingDate);
+      const fx=(state.fxRecords||[]).filter(r=>!r.reversed&&r.kind==='settlement'&&(r.fromAccountId===a.id||r.toAccountId===a.id));
+      const late=[...state.receipts.filter(r=>r.accountId===a.id),...state.payments.filter(x=>x.accountId===a.id),...fx].find(r=>r.date>day);
+      if(late)throw new MistCommandError('PRECONDITION','销户日之后仍有流水 '+late.code+'（'+late.date+'），请核对销户日期或先解除归属');
+      const bal=mistBankAccountBalances(state).accounts.find(x=>x.account.id===a.id)!.balance;
+      if(Math.round(bal*100)!==0)throw new MistCommandError('PRECONDITION','账户余额 '+bal.toFixed(2)+' '+a.currency+' 不为零，须先转出或登记销户结息/手续费后再销户');
+      a.closed={date:day,at:context.now,actor:context.actorName,reason};a.updatedAt=context.now;
+      event(state,context,'finance',a.id,'银行账户 '+a.code+' 销户（'+day+'）：'+reason);result={id:a.id};break;
+    }
+    case 'finance.account.reopen': {
+      const a=find(state.bankAccounts||[],text(p.id,'银行账户'),'银行账户');
+      if(!a.closed)throw new MistCommandError('PRECONDITION','该账户未销户');
+      const reason=text(p.reason,'恢复原因',true,500),was=a.closed.date;delete a.closed;a.updatedAt=context.now;
+      event(state,context,'finance',a.id,'恢复银行账户 '+a.code+'（原销户日 '+was+'）：'+reason);result={id:a.id};break;
+    }
     case 'finance.account.assign': {
       const kind=p.kind==='receipt'||p.kind==='payment'?p.kind:(()=>{throw new MistCommandError('VALIDATION','流水类型无效');})();
       const row:MistReceipt|MistPayment=kind==='receipt'?find(state.receipts,text(p.id,'到账流水'),'到账流水'):find(state.payments,text(p.id,'付款凭证'),'付款凭证');
       const accountId=p.accountId===null?null:text(p.accountId,'银行账户'),account=accountId?find(state.bankAccounts||[],accountId,'银行账户'):undefined;
       if((row.accountId||null)===accountId)throw new MistCommandError('PRECONDITION','该流水已归属此账户');
       const reason=row.accountId?text(p.reason,'调整原因',true,500):(p.reason===undefined?'':text(p.reason,'调整原因',false,500));
-      if(account){
-        if(account.currency!==row.currency)throw new MistCommandError('VALIDATION','账户币种 '+account.currency+' 与流水币种 '+row.currency+' 不同');
-        if(row.date<account.openingDate)throw new MistCommandError('PRECONDITION','交易日期早于账户期初日期 '+account.openingDate+'，已含在期初余额中');
-      }
+      if(account)assertAccountUsable(account,row.currency,row.date);
       const before=(state.bankAccounts||[]).find(a=>a.id===row.accountId);
+      if(before?.closed)throw new MistCommandError('PRECONDITION','原账户 '+before.code+' 已销户，流水归属已锁定；如需调整请先恢复该账户');
       if(account)row.accountId=account.id;else delete row.accountId;
       event(state,context,kind==='receipt'?'finance':'payment',row.id,(account?(before?'调整 '+row.code+' 归属账户 '+before.code+' → '+account.code:row.code+' 归属账户 '+account.code):'解除 '+row.code+' 的账户归属 '+(before?.code||''))+(reason?'：'+reason:''));
       result={id:row.id,accountId};break;
@@ -1188,6 +1221,7 @@ function applyMistCommandUnbound(original: MistState, command: MistCommand, cont
         const accounts=state.bankAccounts||[],from=find(accounts,text(p.fromAccountId,'卖出账户'),'卖出账户'),to=find(accounts,text(p.toAccountId,'入账账户'),'入账账户');
         if(from.id===to.id||from.currency===to.currency)throw new MistCommandError('VALIDATION','卖出账户与入账账户须为不同币种');
         if(from.openingDate>day||to.openingDate>day)throw new MistCommandError('PRECONDITION','结汇日期早于账户期初日期');
+        for(const acc of [from,to])if(acc.closed)throw new MistCommandError('PRECONDITION','账户 '+acc.code+' 已于 '+acc.closed.date+' 销户，不能记入结汇');
         const localAmount=positive(p.localAmount,'入账本币金额');mistMoneyMinor(localAmount);
         let lockId:string|undefined;
         if(p.lockId){const lock=find(records,text(p.lockId,'锁汇合同'),'锁汇合同');
